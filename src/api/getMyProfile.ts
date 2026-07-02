@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { createEndpoint, Teams } from 'zite-integrations-backend-sdk';
+import { createEndpoint } from 'zite-integrations-backend-sdk';
+import { fetchReferenceData } from './getClubReferenceData';
 
 export default createEndpoint({
   authenticated: true,
@@ -22,15 +23,13 @@ export default createEndpoint({
     const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
     const isCoach = roles.includes('Coach');
 
-    const teamsResult = await Teams.findAll({ filters: { active: true } });
+    // Use cached teams instead of querying Airtable directly
+    const { data: ref } = await fetchReferenceData();
     const userId = user.id;
 
-    const coachedTeams = teamsResult.records.filter(t => {
-      const coachIds = Array.isArray(t.coach) ? t.coach : t.coach ? [t.coach] : [];
-      const captainIds = Array.isArray(t.teamCaptain) ? t.teamCaptain : t.teamCaptain ? [t.teamCaptain] : [];
-      const secCapIds = Array.isArray(t.sectionCaptain) ? t.sectionCaptain : t.sectionCaptain ? [t.sectionCaptain] : [];
-      return coachIds.includes(userId) || captainIds.includes(userId) || secCapIds.includes(userId);
-    });
+    const coachedTeams = ref.teams.filter(t =>
+      t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
+    );
 
     return {
       preferredName: user.preferredName || user.givenNames || 'Coach',
@@ -40,9 +39,9 @@ export default createEndpoint({
       coachedTeams: coachedTeams
         .map(t => ({
           id: t.id,
-          teamName: t.teamName || '',
-          teamRank: t.teamRank || 99,
-          targetSquadSize: t.targetSquadSize || 16,
+          teamName: t.teamName,
+          teamRank: t.teamRank,
+          targetSquadSize: t.targetSquadSize,
         }))
         .sort((a, b) => a.teamRank - b.teamRank),
     };
