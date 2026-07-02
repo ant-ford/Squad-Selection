@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { createEndpoint, Teams, Matches, SquadSelections, AvailabilityExceptions } from 'zite-integrations-backend-sdk';
+import { createEndpoint, Matches, SquadSelections, AvailabilityExceptions } from 'zite-integrations-backend-sdk';
+import { fetchReferenceData } from './getClubReferenceData';
 
 const fixtureSchema = z.object({
   id: z.string(),
@@ -29,22 +30,18 @@ export default createEndpoint({
     fixtures: z.array(fixtureSchema),
   }),
   execute: async ({ input, context }) => {
-    // 1. Cache teams (1 call)
-    const teamsResult = await Teams.findAll({ filters: { active: true } });
-    const teams = teamsResult.records;
-    const teamsByName = new Map(teams.map(t => [t.teamName || '', t]));
+    // 1. Cached teams (0 calls when cached)
+    const { data: ref } = await fetchReferenceData();
+    const teamsByName = new Map(ref.teams.map(t => [t.teamName, t]));
 
     // Find this user's coached teams
     const userId = context.user.id;
-    const coachedTeams = teams.filter(t => {
-      const coachIds = Array.isArray(t.coach) ? t.coach : t.coach ? [t.coach] : [];
-      const captainIds = Array.isArray(t.teamCaptain) ? t.teamCaptain : t.teamCaptain ? [t.teamCaptain] : [];
-      const secCapIds = Array.isArray(t.sectionCaptain) ? t.sectionCaptain : t.sectionCaptain ? [t.sectionCaptain] : [];
-      return coachIds.includes(userId) || captainIds.includes(userId) || secCapIds.includes(userId);
-    });
-    const coachedTeamNames = new Set(coachedTeams.map(t => t.teamName || ''));
+    const coachedTeams = ref.teams.filter(t =>
+      t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
+    );
+    const coachedTeamNames = new Set(coachedTeams.map(t => t.teamName));
 
-    // 2. Fetch scheduled matches (1-2 calls)
+    // 2. Fetch scheduled matches (1 call)
     const matchesResult = await Matches.findAll({
       filters: { matchStatus: 'Scheduled' },
       limit: 100,
@@ -54,7 +51,6 @@ export default createEndpoint({
       .filter(m => m.date && m.date >= now)
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-    // Identify which matches involve our coached teams
     const relevantMatches = upcomingMatches.filter(m => {
       const home = m.homeTeam || '';
       const away = m.awayTeam || '';
@@ -68,8 +64,7 @@ export default createEndpoint({
       return { fixtures: [] };
     }
 
-    // 3. Fetch squad selections for these matches (1-2 calls)
-    const matchIds = new Set(relevantMatches.map(m => m.id));
+    // 3. Fetch squad selections (1-2 calls)
     const selectionsResult = await SquadSelections.findAll({ filters: {}, limit: 100 });
     let allSelections = selectionsResult.records;
     if (selectionsResult.hasMore) {
@@ -86,10 +81,12 @@ export default createEndpoint({
     }
 
     // Build lookup maps
+    const matchIds = new Set(relevantMatches.map(m => m.id));
+
     const selectionsByMatch = new Map<string, typeof allSelections>();
     for (const sel of allSelections) {
       const mId = Array.isArray(sel.match) ? sel.match[0] : sel.match;
-      if (!mId) continue;
+      if (!mId || !matchIds.has(mId)) continue;
       const existing = selectionsByMatch.get(mId) || [];
       existing.push(sel);
       selectionsByMatch.set(mId, existing);
@@ -98,7 +95,7 @@ export default createEndpoint({
     const exceptionsByMatch = new Map<string, typeof allExceptions>();
     for (const exc of allExceptions) {
       const mId = Array.isArray(exc.match) ? exc.match[0] : exc.match;
-      if (!mId) continue;
+      if (!mId || !matchIds.has(mId)) continue;
       const existing = exceptionsByMatch.get(mId) || [];
       existing.push(exc);
       exceptionsByMatch.set(mId, existing);
@@ -134,7 +131,7 @@ export default createEndpoint({
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount,
         reserveCount,
-        availableCount: 0, // Computed on frontend from total - maybe - unavailable
+        availableCount: 0,
         maybeCount,
         unavailableCount,
       };
