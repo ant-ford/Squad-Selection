@@ -1,0 +1,38 @@
+import { Match } from "../generated/domainTypes";
+import { MATCHES_FIELDS } from "../generated/fieldMaps";
+
+export function mapMatch(
+  record: any
+): Match {
+
+  const f = record.fields;
+
+  return {
+    id: record.id,
+
+    matchDate:
+      f[MATCHES_FIELDS.matchDate],
+
+    division:
+      f[MATCHES_FIELDS.division],
+
+    homeTeam:
+      f[MATCHES_FIELDS.homeTeam],
+
+    homeTeamScore:
+      f[MATCHES_FIELDS.homeTeamScore],
+
+    awayTeam:
+      f[MATCHES_FIELDS.awayTeam],
+
+    awayTeamScore:
+      f[MATCHES_FIELDS.awayTeamScore],
+
+    matchStatus:
+      f[MATCHES_FIELDS.matchStatus],
+
+    venue:
+      f[MATCHES_FIELDS.venue],
+
+  };
+}
