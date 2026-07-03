@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { getUpcomingFixtures, GetUpcomingFixturesOutputType } from 'zite-endpoints-sdk';
+import { getUpcomingFixtures, GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
-import type { ProfileData } from '@/components/CoachLayout';
+import type { ProfileData } from '@/api/getMyProfile';
 
-type Fixture = GetUpcomingFixturesOutputType['fixtures'][0];
+type Fixture = GetUpcomingFixturesOutput['fixtures'][0];
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
@@ -17,7 +17,7 @@ export default function FixtureList() {
   useEffect(() => {
     const filter = activeTab === 'all' ? undefined : activeTab;
     setLoading(true);
-    getUpcomingFixtures({ teamFilter: filter })
+    getUpcomingFixtures(filter)
       .then(data => setFixtures(data.fixtures))
       .catch(() => {})
       .finally(() => setLoading(false));

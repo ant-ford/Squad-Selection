@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { getPlayersForMatch, GetPlayersForMatchOutputType } from 'zite-endpoints-sdk';
+import { getPlayersForMatch, GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft } from 'lucide-react';
 import MatchHeader from '@/components/MatchHeader';
@@ -9,8 +9,8 @@ import PlayerRow from '@/components/PlayerRow';
 import BulkActionBar from '@/components/BulkActionBar';
 import PlayerFilters from '@/components/PlayerFilters';
 
-type Player = GetPlayersForMatchOutputType['players'][0];
-type MatchInfo = GetPlayersForMatchOutputType['match'];
+type Player = GetPlayersForMatchOutput['players'][0];
+type MatchInfo = GetPlayersForMatchOutput['match'];
 
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
@@ -24,7 +24,7 @@ export default function SquadSelection() {
   const loadData = useCallback(() => {
     if (!matchId) return;
     setLoading(true);
-    getPlayersForMatch({ matchId })
+    getPlayersForMatch(matchId)
       .then(data => {
         setMatch(data.match);
         setPlayers(data.players);

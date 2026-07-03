@@ -1,49 +1,43 @@
-import { z } from 'zod';
-import { createEndpoint } from 'zite-integrations-backend-sdk';
-import { fetchReferenceData } from './getClubReferenceData';
+import { getCurrentPeople } from '@/lib/auth';
+import { getClubReferenceData } from './getClubReferenceData';
 
-export default createEndpoint({
-  authenticated: true,
-  description: 'Returns the logged-in user role and coached teams',
-  inputSchema: z.object({}),
-  outputSchema: z.object({
-    preferredName: z.string(),
-    roles: z.array(z.string()),
-    isCoach: z.boolean(),
-    isAdmin: z.boolean(),
-    coachedTeams: z.array(z.object({
-      id: z.string(),
-      teamName: z.string(),
-      teamRank: z.number(),
-      targetSquadSize: z.number(),
-    })),
-  }),
-  execute: async ({ context }) => {
-    const user = context.user;
-    const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
-    const isCoach = roles.includes('Coach');
+export interface ProfileData {
+  preferredName: string;
+  roles: string[];
+  isCoach: boolean;
+  isAdmin: boolean;
+  coachedTeams: {
+    id: string;
+    teamName: string;
+    teamRank: number;
+    targetSquadSize: number;
+  }[];
+}
 
-    // Use cached teams instead of querying Airtable directly
-    const { data: ref } = await fetchReferenceData();
-    const userId = user.id;
+export async function getMyProfile(): Promise<ProfileData> {
+  const user = await getCurrentPeople();
+  const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
+  const isCoach = roles.includes('Coach');
 
-    const coachedTeams = ref.teams.filter(t =>
-      t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
-    );
+  const ref = await getClubReferenceData();
+  const userId = user.id;
 
-    return {
-      preferredName: user.preferredName || user.givenNames || 'Coach',
-      roles,
-      isCoach,
-      isAdmin: isCoach,
-      coachedTeams: coachedTeams
-        .map(t => ({
-          id: t.id,
-          teamName: t.teamName,
-          teamRank: t.teamRank,
-          targetSquadSize: t.targetSquadSize,
-        }))
-        .sort((a, b) => a.teamRank - b.teamRank),
-    };
-  },
-});
+  const coachedTeams = ref.teams.filter(t =>
+    t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
+  );
+
+  return {
+    preferredName: user.preferredName || user.givenNames || 'Coach',
+    roles,
+    isCoach,
+    isAdmin: isCoach,
+    coachedTeams: coachedTeams
+      .map(t => ({
+        id: t.id,
+        teamName: t.teamName,
+        teamRank: t.teamRank,
+        targetSquadSize: t.targetSquadSize,
+      }))
+      .sort((a, b) => a.teamRank - b.teamRank),
+  };
+}

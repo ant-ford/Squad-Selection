@@ -1,11 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from 'zite-auth-sdk';
+import { supabase } from '@/lib/supabase';
 import { LogOut, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { ProfileData } from '@/components/CoachLayout';
+import type { ProfileData } from '@/api/getMyProfile';
 
 export default function AppHeader({ profile }: { profile: ProfileData }) {
-  const { logout } = useAuth();
+  const logout = async () => {
+    await supabase.auth.signOut();
+    navigate('/');
+  };
   const navigate = useNavigate();
   const teamNames = profile.coachedTeams.map(t => t.teamName).join(', ');
 

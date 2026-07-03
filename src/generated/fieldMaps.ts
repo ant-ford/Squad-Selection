@@ -2,6 +2,7 @@ export const PEOPLE_FIELDS = {
   preferredName: "Preferred Name",
   givenNames: "Given Name(s)",
   surname: "Surname",
+  shirtNoValue: "Shirt No Value",
   email: "Email",
   active: "Active",
   registeredTeam: "Registered Team",
@@ -41,6 +42,8 @@ export const SQUADSELECTIONS_FIELDS = {
   match: "Match",
   selectedBy: "Selected By",
   selectedAt: "Selected At",
+  selectionStatus: "Selection Status",
+  selectionNotes: "Selection Notes",
 } as const;
 
 export const AVAILABILITYEXCEPTIONS_FIELDS = {

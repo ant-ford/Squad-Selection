@@ -3,6 +3,7 @@ export interface Player {
   preferredName?: string;
   givenNames?: string;
   surname?: string;
+  shirtNoValue?: string;
   email?: string;
   active?: boolean;
   registeredTeam?: string;
@@ -29,7 +30,7 @@ export interface Team {
 
 export interface Match {
   id: string;
-  matchDate: Date,
+  matchDate: string,
   division: string,
   homeTeam: string,
   homeTeamScore: number,
@@ -45,6 +46,8 @@ export interface SquadSelection {
   match?: string[];
   selectedBy?: string[];
   selectedAt?: string;
+  selectionStatus?: string;
+  selectionNotes?: string;
 }
 
 export interface AvailabilityException {

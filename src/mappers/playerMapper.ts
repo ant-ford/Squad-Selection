@@ -19,6 +19,9 @@ export function mapPlayer(
     surname:
       f[PEOPLE_FIELDS.surname],
 
+    shirtNoValue:
+      f[PEOPLE_FIELDS.shirtNoValue],
+
     email:
       f[PEOPLE_FIELDS.email],
 

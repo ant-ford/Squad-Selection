@@ -1,10 +1,12 @@
+// src/services/airtable.ts
 import Airtable from "airtable";
 
-const apiKey = process.env.AIRTABLE_TOKEN!;
-const baseId = process.env.AIRTABLE_BASE_ID!;
+const apiKey = import.meta.env.VITE_AIRTABLE_TOKEN;
+const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID;
 
-const base = new Airtable({
-  apiKey
-}).base(baseId);
+if (!apiKey || !baseId) {
+  throw new Error('Missing Airtable environment variables');
+}
 
+const base = new Airtable({ apiKey }).base(baseId);
 export default base;

@@ -1,31 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from 'zite-auth-sdk';
-import { getMyFixtures, GetMyFixturesOutputType } from 'zite-endpoints-sdk';
+import { useAuth } from '@/lib/useAuth';
+import { getMyFixtures, GetMyFixturesOutput } from '@/api/getMyFixtures';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 
-type Fixture = GetMyFixturesOutputType['fixtures'][0];
+type Fixture = GetMyFixturesOutput['fixtures'][0];
 
 export default function PlayerDashboard() {
-  const { user, isLoading, loginWithRedirect, logout } = useAuth();
+  const { user, isLoading, logout } = useAuth();
   const navigate = useNavigate();
-  const [data, setData] = useState<GetMyFixturesOutputType | null>(null);
+  const [data, setData] = useState<GetMyFixturesOutput | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      loginWithRedirect({ redirectUrl: window.location.href });
-    }
-  }, [isLoading, user, loginWithRedirect]);
 
   const loadData = useCallback(() => {
     if (!user) return;
     setLoading(true);
-    getMyFixtures({})
+    getMyFixtures()
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -89,7 +83,7 @@ export default function PlayerDashboard() {
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
               <p className="text-sm text-muted-foreground">
-                {data.registeredTeam || 'No team'}{data.playingPosition ? ` · ${data.playingPosition}` : ''}{data.shirtNo ? ` · #${data.shirtNo}` : ''}
+                {data.registeredTeam || 'No team'}{data.playingPosition ? ` · ${data.playingPosition}` : ''}{data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
               </p>
             </div>
           </div>

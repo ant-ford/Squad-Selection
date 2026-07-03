@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, parseISO } from 'date-fns';
-import { setAvailability } from 'zite-endpoints-sdk';
+import { setAvailability } from '@/api/setAvailability';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -35,12 +35,12 @@ export default function AvailabilitySheet({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await setAvailability({
+      await setAvailability(
         playerId,
-        matchIds: [fixture.id],
-        status: status as 'Available' | 'Maybe' | 'Unavailable',
-        notes,
-      });
+        [fixture.id],
+        status as 'Available' | 'Maybe' | 'Unavailable',
+        notes
+      );
       toast.success('Availability updated');
       onSaved();
     } catch {

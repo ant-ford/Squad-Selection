@@ -1,26 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { useAuth } from 'zite-auth-sdk';
-import { getMyProfile, GetMyProfileOutputType } from 'zite-endpoints-sdk';
+import { useAuth } from '@/lib/useAuth';
+import { getMyProfile, ProfileData } from '@/api/getMyProfile';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppHeader from '@/components/AppHeader';
 
-export type ProfileData = GetMyProfileOutputType;
-
 export default function CoachLayout() {
-  const { user, isLoading, loginWithRedirect } = useAuth();
+  const { user, isLoading } = useAuth();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      loginWithRedirect({ redirectUrl: window.location.href });
-    }
-  }, [isLoading, user, loginWithRedirect]);
-
-  useEffect(() => {
     if (!user) return;
-    getMyProfile({}).then(data => {
+    getMyProfile().then(data => {
       setProfile(data);
       setProfileLoading(false);
     }).catch(() => setProfileLoading(false));

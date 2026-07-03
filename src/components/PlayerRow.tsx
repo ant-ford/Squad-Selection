@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, Circle, Ban, AlertTriangle, Loader2 } from 'lucide-react';
-import { selectPlayer, removeSelection } from 'zite-endpoints-sdk';
+import {  selectPlayer } from '@/api/selectPlayer';
+import { removeSelection } from '@/api/removeSelection';
 import { toast } from 'sonner';
 
 type Player = {
@@ -41,10 +42,10 @@ export default function PlayerRow({
     setActing(true);
     try {
       if (isSelected) {
-        await removeSelection({ selectionId: player.selectionId });
+        await removeSelection(player.selectionId);
         toast.success(`${player.preferredName} removed`);
       } else {
-        await selectPlayer({ matchId, playerId: player.id, selectionStatus: 'Selected' });
+        await selectPlayer(matchId, player.id, 'Selected');
         toast.success(`${player.preferredName} selected`);
       }
       onRefresh();

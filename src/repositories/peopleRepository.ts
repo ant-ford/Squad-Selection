@@ -47,6 +47,13 @@ class PeopleRepository
 
     return players[0] ?? null;
   }
+
+  async findBySupabaseUserId(supabaseUserId: string): Promise<Player | null> {
+    const records = await this.findAll({
+      filterByFormula: `{supabaseUserId}="${supabaseUserId}"`  // use the actual field name from Airtable
+    });
+    return records.length > 0 ? records[0] : null;
+  }
 }
 
 export const peopleRepository =

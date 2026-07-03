@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { selectPlayer, removeSelection } from 'zite-endpoints-sdk';
+import { selectPlayer } from '@/api/selectPlayer';
+import { removeSelection } from '@/api/removeSelection';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -16,7 +17,7 @@ export default function BulkActionBar({
     let ok = 0;
     for (const pid of playerIds) {
       try {
-        await selectPlayer({ matchId, playerId: pid, selectionStatus: 'Reserve' });
+        await selectPlayer(matchId, pid, 'Reserve');
         ok++;
       } catch { /* skip failures */ }
     }

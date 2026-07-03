@@ -1,15 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { getPlayerFixtures, GetPlayerFixturesOutputType } from 'zite-endpoints-sdk';
+import { getPlayerFixtures, GetPlayerFixturesOutput } from '@/api/getPlayerFixtures';
 import { Skeleton } from '@/components/ui/skeleton';
 import AvailabilitySheet from '@/components/AvailabilitySheet';
 
-type Fixture = GetPlayerFixturesOutputType['fixtures'][0];
+type Fixture = GetPlayerFixturesOutput['fixtures'][0];
 
 export default function PlayerFixtures() {
   const { playerId } = useParams<{ playerId: string }>();
-  const [data, setData] = useState<GetPlayerFixturesOutputType | null>(null);
+  const [data, setData] = useState<GetPlayerFixturesOutput | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
@@ -17,7 +17,7 @@ export default function PlayerFixtures() {
   const loadData = useCallback(() => {
     if (!playerId) return;
     setLoading(true);
-    getPlayerFixtures({ playerId })
+    getPlayerFixtures(playerId)
       .then(setData)
       .catch(() => setError('Player not found or inactive'))
       .finally(() => setLoading(false));
