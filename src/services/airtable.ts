@@ -5,7 +5,7 @@ const apiKey = import.meta.env.VITE_AIRTABLE_TOKEN;
 const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID;
 
 if (!apiKey || !baseId) {
-  throw new Error('Missing Airtable environment variables');
+  console.warn("Using API backend");
 }
 
 const base = new Airtable({ apiKey }).base(baseId);
