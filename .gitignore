@@ -1,4 +1,13 @@
 node_modules
+dist/
 .env
 .env.local
 .env.*
+
+# wrangler files
+worker/.wrangler/
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
+
