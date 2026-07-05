@@ -12,7 +12,8 @@ export interface Player {
   isVisitingPlayer?: boolean;
   isSuspended?: boolean;
   matchesToServe?: number;
-  everRegisteredToPremier?: string;
+  everRegisteredToPremier?: boolean;
+  u21Eligible?: boolean;
   playerCoach?: string[];
 }
 
@@ -30,14 +31,19 @@ export interface Team {
 
 export interface Match {
   id: string;
-  matchDate: string,
-  division: string,
-  homeTeam: string,
-  homeTeamScore: number,
-  awayTeam: string,
-  awayTeamScore: number,
-  matchStatus: string,
+  matchDate: string;
+  /** Formula field: derived from Date using 1 July boundary. */
+  season?: string;
+  division: string;
+  /** Distinguishes League / Cup / Plate / Bowl. */
+  competitionType?: string;
+  homeTeam: string;
+  homeTeamScore: number;
+  awayTeam: string;
+  awayTeamScore: number;
+  matchStatus: string;
   venue?: string;
+  fixtureId?: string;
 }
 
 export interface SquadSelection {
@@ -60,8 +66,26 @@ export interface AvailabilityException {
 
 export interface MatchCard {
   id: string;
+  /** → People link. */
   player?: string[];
+  /** → Matches link. */
   match?: string[];
+  /** The team whose match this was (single select text). */
+  team?: string;
+  /** Player's registered team (single select text). */
+  playerTeam?: string;
+  /** Formula: Team != PlayerTeam. */
+  playUp?: boolean;
+  /** Role in this specific match — source of truth for GK exemption. */
+  goalkeeper?: boolean;
+  jersey?: number;
   goals?: number;
   cards?: string[];
+  u21?: boolean;
+  vp?: boolean;
+  captain?: boolean;
+  /** Inherited from match link (formula). */
+  season?: string;
+  fixtureId?: string;
+  rawPlayerName?: string;
 }

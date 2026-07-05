@@ -52,6 +52,12 @@ export function mapPlayer(
           .everRegisteredToPremier
       ],
 
+    u21Eligible:
+      f[
+        PEOPLE_FIELDS
+          .u21Eligible
+      ],
+
     playerCoach:
       f[PEOPLE_FIELDS.playerCoach]
   };
