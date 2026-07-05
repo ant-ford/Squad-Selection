@@ -3,7 +3,7 @@ import { json, errorJson, handleOptions, requireParam, HttpError } from "./http"
 import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
-import { getPlayersForMatch, selectPlayer, removeSelection, getAvailabilityForMatch, batchUpdateSquad } from "./squad";
+import { getPlayersForMatch, getSquadForMatch, selectPlayer, removeSelection, getAvailabilityForMatch, batchUpdateSquad } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 
 export type { Env };
@@ -29,7 +29,25 @@ export default {
 
     try {
       // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
+      // ---------------------------------------------------------------
       // Read endpoints
+      // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
       // ---------------------------------------------------------------
 
       if (method === "GET" && pathname === "/api/players/active") {
@@ -84,7 +102,25 @@ export default {
       }
 
       // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
+      // ---------------------------------------------------------------
       // NEW: Polling & Batch endpoints
+      // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
       // ---------------------------------------------------------------
 
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
@@ -99,7 +135,25 @@ export default {
       }
 
       // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
+      // ---------------------------------------------------------------
       // Write endpoints
+      // ---------------------------------------------------------------
+      // Public: squad visibility for players
+      // ---------------------------------------------------------------
+
+      const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
+      if (method === "GET" && matchSquadMatch) {
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
+
       // ---------------------------------------------------------------
 
       if (method === "POST" && pathname === "/api/select-player") {

@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll, useBatchUpdateSquad } from '@/lib/queries';
 import { toast } from 'sonner';
 import { ArrowLeft, Save, X } from 'lucide-react';
 import MatchHeader from '@/components/MatchHeader';
-import PlayerFilters from '@/components/PlayerFilters';
+import PlayerFilters, { EMPTY_FILTERS, filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import PlayerRow from '@/components/PlayerRow';
 import BulkActionBar from '@/components/BulkActionBar';
 
@@ -19,9 +19,11 @@ export default function SquadSelection() {
   const batchMutation = useBatchUpdateSquad(matchId!);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
   const [filter, setFilter] = useState('all');
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);`r`n`r`n  const handleFilterChange = useCallback((f: FilterState) => {`r`n    setFilters(f);`r`n    const params = filtersToParams(f);`r`n    setSearchParams(params ? params : {}, { replace: true });`r`n  }, [setSearchParams]);
 
   // Merge Server State + Polling State + Local Optimistic State
   const mergedPlayers = useMemo(() => {
