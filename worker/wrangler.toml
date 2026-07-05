@@ -1,3 +1,17 @@
 name = "hkfc-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
+
+# Non-secret config. AIRTABLE_BASE_ID is not sensitive on its own (it's
+# useless without AIRTABLE_TOKEN) so it's fine to commit here.
+[vars]
+AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
+# Uncomment and set to your deployed frontend origin to lock down CORS.
+# Defaults to "*" (any origin) if left unset.
+# ALLOWED_ORIGIN = "https://squad-selection.pages.dev"
+
+# AIRTABLE_TOKEN is a real credential and must NEVER be committed.
+# Set it with:
+#   wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml
+# For local `wrangler dev`, put it in worker/.dev.vars instead (gitignored) —
+# see worker/.dev.vars.example.

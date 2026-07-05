@@ -1,0 +1,2640 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..6d92f20
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,9 @@
++# Copy to .env.local. All VITE_* vars are bundled into the client, so only
++# put values here that are safe for anyone to see in devtools.
++#
++# Airtable credentials must NEVER appear in this file — they live only in
++# the Worker (see worker/.dev.vars.example / `wrangler secret put`).
++
++VITE_API_URL=https://hkfc-api.squad-selections.workers.dev
++VITE_SUPABASE_URL=https://your-project.supabase.co
++VITE_SUPABASE_ANON_KEY=your-supabase-anon-public-key
+diff --git a/package.json b/package.json
+index eb80e01..051462c 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,6 @@
+   "dependencies": {
+     "@supabase/ssr": "^0.12.0",
+     "@supabase/supabase-js": "^2.110.0",
+-    "airtable": "^0.12",
+     "date-fns": "^4",
+     "lucide-react": "latest",
+     "react": "^19",
+diff --git a/src/api/getClubReferenceData.ts b/src/api/getClubReferenceData.ts
+index f0775a9..195db12 100644
+--- a/src/api/getClubReferenceData.ts
++++ b/src/api/getClubReferenceData.ts
+@@ -1,93 +1,28 @@
+-import { peopleRepository, teamsRepository } from '@/repositories';
++import { apiGet } from '@/lib/apiClient';
+ import { getCached } from '@/lib/cache';
++import type { Player, Team } from '@/generated/domainTypes';
+ 
+-export type CachedPlayer = {
+-  id: string;
+-  preferredName: string;
+-  givenNames: string;
+-  surname: string;
+-  registeredTeam: string;
+-  playingPosition: string;
+-  playingAbility: string;
+-  isSuspended: boolean;
+-  matchesToServe: number;
+-  isVisitingPlayer: boolean;
+-  everRegisteredToPremier: string;
+-  active: boolean;
+-};
+-
+-export type CachedTeam = {
+-  id: string;
+-  teamName: string;
+-  teamRank: number;
+-  isPremier: boolean;
+-  targetSquadSize: number;
+-  active: boolean;
+-  coach: string[];
+-  teamCaptain: string[];
+-  sectionCaptain: string[];
+-};
+-
+-export type ReferenceData = {
+-  players: CachedPlayer[];
+-  teams: CachedTeam[];
++export interface ReferenceData {
++  players: Player[];
++  teams: Team[];
+   teamRankMap: Record<string, number>;
+   teamNames: string[];
+-};
++}
+ 
++/**
++ * Previously fetched Teams + People from Airtable directly (via
++ * teamsRepository / peopleRepository) and joined them client-side.
++ * That join now happens in the Worker (GET /api/reference-data); this
++ * just fetches the already-joined result and keeps the same short-lived
++ * in-memory cache so we don't re-hit the Worker on every render.
++ */
+ export async function fetchReferenceData(): Promise<{ data: ReferenceData; fromCache: boolean }> {
+-  return getCached<ReferenceData>('club-reference', async () => {
+-    // Fetch active teams
+-    const teamsRecords = await teamsRepository.findAll({
+-      filterByFormula: '{Active}=TRUE()'
+-    });
+-    const teams: CachedTeam[] = teamsRecords.map(t => ({
+-      id: t.id,
+-      teamName: t.teamName || '',
+-      teamRank: t.teamRank || 99,
+-      isPremier: t.isPremier || false,
+-      targetSquadSize: t.targetSquadSize || 16,
+-      active: t.active || false,
+-      coach: t.coach || [],
+-      teamCaptain: t.teamCaptain || [],
+-      sectionCaptain: t.sectionCaptain || [],
+-    }));
+-
+-    // Fetch active players (pagination support)
+-    const playerRecords = await peopleRepository.findAll({
+-      filterByFormula: '{Active}=TRUE()'
+-    });
+-    const players: CachedPlayer[] = playerRecords.map(p => ({
+-      id: p.id,
+-      preferredName: p.preferredName || '',
+-      givenNames: p.givenNames || '',
+-      surname: p.surname || '',
+-      registeredTeam: p.registeredTeam || '',
+-      playingPosition: p.playingPosition || '',
+-      playingAbility: p.playingAbility || '',
+-      isSuspended: p.isSuspended || false,
+-      matchesToServe: p.matchesToServe || 0,
+-      isVisitingPlayer: p.isVisitingPlayer || false,
+-      everRegisteredToPremier: p.everRegisteredToPremier || '',
+-      active: p.active || false,
+-    }));
+-
+-    const teamRankMap: Record<string, number> = {};
+-    for (const t of teams) {
+-      teamRankMap[t.teamName] = t.teamRank;
+-    }
+-
+-    return {
+-      players,
+-      teams,
+-      teamRankMap,
+-      teamNames: teams.map(t => t.teamName),
+-    };
+-  });
++  return getCached<ReferenceData>('club-reference', () =>
++    apiGet<ReferenceData>('/api/reference-data')
++  );
+ }
+ 
+-// This function is called directly from components (no Zite endpoint wrapper)
+ export async function getClubReferenceData(): Promise<ReferenceData> {
+   const { data } = await fetchReferenceData();
+   return data;
+-}
+\ No newline at end of file
++}
+diff --git a/src/api/getMyFixtures.ts b/src/api/getMyFixtures.ts
+index 28abb50..2599c23 100644
+--- a/src/api/getMyFixtures.ts
++++ b/src/api/getMyFixtures.ts
+@@ -1,6 +1,5 @@
+-import { matchesRepository, selectionsRepository, availabilityRepository } from '@/repositories';
+-import { getCurrentPeople } from '@/lib/auth';
+-import { getClubReferenceData } from './getClubReferenceData';
++import { apiGet } from '@/lib/apiClient';
++import { getCurrentSupabaseUser } from '@/lib/auth';
+ 
+ export interface MyFixture {
+   id: string;
+@@ -20,123 +19,25 @@ export interface MyFixture {
+   selectedCount: number;
+   targetSquadSize: number;
+ }
+-export type GetMyFixturesOutput = Awaited<ReturnType<typeof getMyFixtures>>;
+ 
+-export async function getMyFixtures(): Promise<{
++export interface GetMyFixturesOutput {
+   playerName: string;
+   registeredTeam: string;
+   playingPosition: string;
+   shirtNoValue: string;
+   isCoach: boolean;
+   fixtures: MyFixture[];
+-}> {
+-  const user = await getCurrentPeople();
+-  const teamName = user.registeredTeam || '';
+-  const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
+-  const isCoach = roles.includes('Coach');
+-
+-  // Fetch teams for name→rank mapping
+-  const ref = await getClubReferenceData();
+-  const teamsByName = new Map(ref.teams.map(t => [t.teamName, t]));
+-  const teamNames = new Set(ref.teams.map(t => t.teamName));
+-
+-  // Fetch matches for this team
+-  const allMatches = await matchesRepository.findAll({
+-    filterByFormula: '{Match Status}="Scheduled"'
+-  });
+-  const now = new Date().toISOString();
+-  const upcoming = allMatches
+-    .filter(m => m.matchDate && m.matchDate >= now)
+-    .filter(m => {
+-      const home = m.homeTeam || '';
+-      const away = m.awayTeam || '';
+-      return home === teamName || away === teamName;
+-    })
+-    .sort((a, b) => (a.matchDate || '').localeCompare(b.matchDate || ''));
+-
+-  if (upcoming.length === 0) {
+-    return {
+-      playerName: user.preferredName || user.givenNames || 'Player',
+-      registeredTeam: teamName,
+-      playingPosition: user.playingPosition || '',
+-      shirtNoValue: user.shirtNoValue || '',
+-      isCoach,
+-      fixtures: [],
+-    };
+-  }
+-
+-  const matchIds = upcoming.map(m => m.id);
+-
+-  // Fetch exceptions and selections for these matches
+-  const allExceptions = await availabilityRepository.findAll({});
+-  const playerExceptions = allExceptions.filter(e => {
+-    const pId = Array.isArray(e.player) ? e.player[0] : e.player;
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return pId === user.id && mId && matchIds.includes(mId);
+-  });
+-  const exceptionByMatch = new Map(playerExceptions.map(e => {
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return [mId || '', e];
+-  }));
+-
+-  const allSelections = await selectionsRepository.findAll({});
+-  const allMatchSelections = allSelections.filter(s => {
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return mId && matchIds.includes(mId);
+-  });
+-  const playerSelections = allMatchSelections.filter(s => {
+-    const pId = Array.isArray(s.player) ? s.player[0] : s.player;
+-    return pId === user.id;
+-  });
+-  const selectionByMatch = new Map(playerSelections.map(s => {
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return [mId || '', s];
+-  }));
+-
+-  // Count selections per match
+-  const selectedCountByMatch = new Map<string, number>();
+-  for (const s of allMatchSelections) {
+-    if (s.selectionStatus !== 'Selected') continue;
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    if (mId) selectedCountByMatch.set(mId, (selectedCountByMatch.get(mId) || 0) + 1);
+-  }
+-
+-  const fixtures = upcoming.map(m => {
+-    const home = m.homeTeam || '';
+-    const away = m.awayTeam || '';
+-    const isHome = home === teamName;
+-    const hkfcTeam = teamNames.has(home) ? home : away;
+-    const opponent = hkfcTeam === home ? away : home;
+-    const team = teamsByName.get(hkfcTeam);
+-    const exc = exceptionByMatch.get(m.id);
+-    const sel = selectionByMatch.get(m.id);
+-
+-    return {
+-      id: m.id,
+-      date: m.matchDate || '',
+-      homeTeam: home,
+-      awayTeam: away,
+-      hkfcTeam,
+-      opponent,
+-      isHome,
+-      venue: m.venue || '',
+-      division: m.division || '',
+-      availabilityStatus: exc?.availabilityStatus || 'Available',
+-      playerNotes: exc?.note || '',
+-      availabilityExceptionId: exc?.id || '',
+-      selectionStatus: sel?.selectionStatus || '',
+-      selectionNotes: sel?.selectionNotes || '',
+-      selectedCount: selectedCountByMatch.get(m.id) || 0,
+-      targetSquadSize: team?.targetSquadSize || 16,
+-    };
+-  });
++}
+ 
+-  return {
+-    playerName: user.preferredName || user.givenNames || 'Player',
+-    registeredTeam: teamName,
+-    playingPosition: user.playingPosition || '',
+-    shirtNoValue: user.shirtNoValue || '',
+-    isCoach,
+-    fixtures,
+-  };
+-}
+\ No newline at end of file
++/**
++ * Previously built this response by hand from Matches / Squad Selections /
++ * Availability Exceptions fetched straight from Airtable. That join now
++ * lives in the Worker (GET /api/my-fixtures); this just resolves the
++ * current user's email and asks for their fixtures.
++ */
++export async function getMyFixtures(): Promise<GetMyFixturesOutput> {
++  const user = await getCurrentSupabaseUser();
++  if (!user?.email) throw new Error('Not authenticated');
++
++  return apiGet<GetMyFixturesOutput>('/api/my-fixtures', { email: user.email });
++}
+diff --git a/src/api/getMyProfile.ts b/src/api/getMyProfile.ts
+index a384dab..df929f0 100644
+--- a/src/api/getMyProfile.ts
++++ b/src/api/getMyProfile.ts
+@@ -22,8 +22,11 @@ export async function getMyProfile(): Promise<ProfileData> {
+   const ref = await getClubReferenceData();
+   const userId = user.id;
+ 
+-  const coachedTeams = ref.teams.filter(t =>
+-    t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
++  const coachedTeams = ref.teams.filter(
++    (t) =>
++      (t.coach || []).includes(userId) ||
++      (t.teamCaptain || []).includes(userId) ||
++      (t.sectionCaptain || []).includes(userId)
+   );
+ 
+   return {
+@@ -32,12 +35,12 @@ export async function getMyProfile(): Promise<ProfileData> {
+     isCoach,
+     isAdmin: isCoach,
+     coachedTeams: coachedTeams
+-      .map(t => ({
++      .map((t) => ({
+         id: t.id,
+-        teamName: t.teamName,
+-        teamRank: t.teamRank,
+-        targetSquadSize: t.targetSquadSize,
++        teamName: t.teamName || '',
++        teamRank: t.teamRank ?? 99,
++        targetSquadSize: t.targetSquadSize || 16,
+       }))
+       .sort((a, b) => a.teamRank - b.teamRank),
+   };
+-}
+\ No newline at end of file
++}
+diff --git a/src/api/getPlayerFixtures.ts b/src/api/getPlayerFixtures.ts
+index 9e28b67..dbaf04a 100644
+--- a/src/api/getPlayerFixtures.ts
++++ b/src/api/getPlayerFixtures.ts
+@@ -1,68 +1,30 @@
+-import { peopleRepository, matchesRepository, availabilityRepository, selectionsRepository } from '@/repositories';
+-
+-export async function getPlayerFixtures(playerId: string) {
+-  const player = await peopleRepository.findById(playerId);
+-  if (!player || !player.active) {
+-    throw new Error('Player not found or inactive');
+-  }
+-
+-  const teamName = player.registeredTeam || '';
+-
+-  const allMatches = await matchesRepository.findAll({
+-    filterByFormula: '{Match Status}="Scheduled"'
+-  });
+-  const now = new Date().toISOString();
+-  const upcoming = allMatches
+-    .filter(m => m.matchDate && m.matchDate >= now)
+-    .filter(m => (m.homeTeam || '') === teamName || (m.awayTeam || '') === teamName)
+-    .sort((a, b) => (a.matchDate || '').localeCompare(b.matchDate || ''));
+-
+-  const matchIds = upcoming.map(m => m.id);
+-
+-  const allExceptions = await availabilityRepository.findAll({});
+-  const playerExceptions = allExceptions.filter(e => {
+-    const pId = Array.isArray(e.player) ? e.player[0] : e.player;
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return pId === playerId && mId && matchIds.includes(mId);
+-  });
+-  const exceptionByMatch = new Map(playerExceptions.map(e => {
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return [mId || '', e];
+-  }));
+-
+-  const allSelections = await selectionsRepository.findAll({});
+-  const playerSelections = allSelections.filter(s => {
+-    const pId = Array.isArray(s.player) ? s.player[0] : s.player;
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return pId === playerId && mId && matchIds.includes(mId);
+-  });
+-  const selectionByMatch = new Map(playerSelections.map(s => {
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return [mId || '', s];
+-  }));
+-
+-  const fixtures = upcoming.map(m => {
+-    const exc = exceptionByMatch.get(m.id);
+-    const sel = selectionByMatch.get(m.id);
+-    return {
+-      id: m.id,
+-      date: m.matchDate || '',
+-      homeTeam: m.homeTeam || '',
+-      awayTeam: m.awayTeam || '',
+-      venue: m.venue || '',
+-      division: m.division || '',
+-      availabilityStatus: exc?.availabilityStatus || 'Available',
+-      playerNotes: exc?.note || '',
+-      availabilityExceptionId: exc?.id || '',
+-      selectionStatus: sel?.selectionStatus || '',
+-    };
+-  });
++import { apiGet } from '@/lib/apiClient';
++
++export interface PlayerFixture {
++  id: string;
++  date: string;
++  homeTeam: string;
++  awayTeam: string;
++  venue: string;
++  division: string;
++  availabilityStatus: string;
++  playerNotes: string;
++  availabilityExceptionId: string;
++  selectionStatus: string;
++}
+ 
+-  return {
+-    playerName: player.preferredName || player.givenNames || 'Player',
+-    registeredTeam: teamName,
+-    fixtures,
+-  };
++export interface GetPlayerFixturesOutput {
++  playerName: string;
++  registeredTeam: string;
++  fixtures: PlayerFixture[];
+ }
+ 
+-export type GetPlayerFixturesOutput = Awaited<ReturnType<typeof getPlayerFixtures>>;
+\ No newline at end of file
++/**
++ * Unauthenticated, player-facing view reached via the Fillout URL
++ * parameter. Previously queried Airtable directly with the Airtable
++ * token embedded in the bundle; now calls the Worker, which holds
++ * the token instead.
++ */
++export async function getPlayerFixtures(playerId: string): Promise<GetPlayerFixturesOutput> {
++  return apiGet<GetPlayerFixturesOutput>(`/api/player-fixtures/${encodeURIComponent(playerId)}`);
++}
+diff --git a/src/api/getPlayersForMatch.ts b/src/api/getPlayersForMatch.ts
+index 85ecd10..530475c 100644
+--- a/src/api/getPlayersForMatch.ts
++++ b/src/api/getPlayersForMatch.ts
+@@ -1,163 +1,49 @@
+-import { peopleRepository, teamsRepository, matchesRepository, availabilityRepository, selectionsRepository } from '@/repositories';
+-import { getCurrentPeople } from '@/lib/auth';
+-import { getClubReferenceData } from './getClubReferenceData';
++import { apiGet } from '@/lib/apiClient';
+ 
+-// Helper to check eligibility and build blocks/warnings
+-function evaluatePlayerEligibility(
+-  player: any,
+-  match: any,
+-  teamRankMap: Record<string, number>,
+-  existingSelections: any[],
+-  playerSelectionsForOtherMatches: any[]
+-) {
+-  const blocks: { rule: string; reason: string }[] = [];
+-  const warnings: { rule: string; reason: string }[] = [];
+-  const conflicts: { type: string; team: string; matchId: string }[] = [];
+-
+-  // Suspension
+-  if (player.isSuspended || (player.matchesToServe && player.matchesToServe > 0)) {
+-    blocks.push({ rule: 'SUSPENDED', reason: 'Player is suspended' });
+-  }
+-
+-  // Higher-to-lower movement (7.2a)
+-  const home = match.homeTeam || '';
+-  const away = match.awayTeam || '';
+-  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
+-  const targetTeamRank = teamRankMap[hkfcTeam] || 99;
+-  const playerTeamRank = teamRankMap[player.registeredTeam || ''] || 99;
+-  if (playerTeamRank < targetTeamRank) {
+-    blocks.push({ rule: 'HIGHER_TO_LOWER', reason: 'Higher-to-lower movement blocked (7.2a)' });
+-  }
+-
+-  // Visiting player fixed team (6.4)
+-  if (player.isVisitingPlayer && player.registeredTeam !== hkfcTeam) {
+-    blocks.push({ rule: 'VISITING_FIXED', reason: 'Visiting player fixed to registered team (6.4)' });
+-  }
+-
+-  // Check for duplicate selection in this match
+-  const alreadySelected = existingSelections.some(s => {
+-    const pId = Array.isArray(s.player) ? s.player[0] : s.player;
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return pId === player.id && mId === match.id;
+-  });
+-  if (alreadySelected) {
+-    blocks.push({ rule: 'DUPLICATE', reason: 'Already selected for this match' });
+-  }
+-
+-  // Conflicts: selected/reserve for other matches on same day? We'll keep as warnings.
+-  // For simplicity, we'll just show if they are selected for another match on same day.
+-  // (Not implemented fully; can be added later)
+-
+-  return { blocks, warnings, conflicts };
++export interface EligibilityIssue {
++  rule: string;
++  reason: string;
+ }
+ 
+-export async function getPlayersForMatch(matchId: string) {
+-  const user = await getCurrentPeople(); // need coach permissions? We'll check later.
+-  const ref = await getClubReferenceData();
+-  const teamRankMap = ref.teamRankMap;
+-  const teamsByName = new Map(ref.teams.map(t => [t.teamName, t]));
+-
+-  const match = await matchesRepository.findById(matchId);
+-  if (!match) throw new Error('Match not found');
+-
+-  // Determine HKFC team from match
+-  const home = match.homeTeam || '';
+-  const away = match.awayTeam || '';
+-  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
+-  if (!hkfcTeam) throw new Error('Cannot determine HKFC team for this match');
+-
+-  // Fetch all active players (or those eligible for this team? We'll use all active)
+-  const allPlayers = await peopleRepository.findAll({
+-    filterByFormula: '{Active}=TRUE()'
+-  });
+-
+-  // Fetch existing selections for this match
+-  const allSelections = await selectionsRepository.findAll({});
+-  const matchSelections = allSelections.filter(s => {
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return mId === matchId;
+-  });
+-  const selectionMap = new Map<string, any>();
+-  for (const sel of matchSelections) {
+-    const pId = Array.isArray(sel.player) ? sel.player[0] : sel.player;
+-    if (pId) selectionMap.set(pId, sel);
+-  }
+-
+-  // Fetch availability exceptions for this match
+-  const allExceptions = await availabilityRepository.findAll({});
+-  const matchExceptions = allExceptions.filter(e => {
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return mId === matchId;
+-  });
+-  const exceptionMap = new Map<string, any>();
+-  for (const exc of matchExceptions) {
+-    const pId = Array.isArray(exc.player) ? exc.player[0] : exc.player;
+-    if (pId) exceptionMap.set(pId, exc);
+-  }
+-
+-  // Build player objects with eligibility
+-  const players = allPlayers.map(p => {
+-    const sel = selectionMap.get(p.id);
+-    const exc = exceptionMap.get(p.id);
+-    const availabilityStatus = exc?.availabilityStatus || 'Available';
+-    const playerNotes = exc?.note || '';
+-
+-    // Compute eligibility
+-    const eligibility = evaluatePlayerEligibility(
+-      p,
+-      match,
+-      teamRankMap,
+-      matchSelections,
+-      [] // conflicts not implemented
+-    );
+-
+-    // Determine eligibilityStatus
+-    let eligibilityStatus = 'eligible';
+-    if (eligibility.blocks.length > 0) eligibilityStatus = 'blocked';
+-    else if (eligibility.warnings.length > 0) eligibilityStatus = 'warning';
+-
+-    // Compute play-up count (placeholder)
+-    const playUpCount = 0; // would require history
+-
+-    return {
+-      id: p.id,
+-      preferredName: p.preferredName || p.givenNames || '',
+-      registeredTeam: p.registeredTeam || '',
+-      playingPosition: p.playingPosition || '',
+-      playingAbility: p.playingAbility || '',
+-      availabilityStatus,
+-      playerNotes,
+-      playUpCount,
+-      eligibilityStatus,
+-      blocks: eligibility.blocks,
+-      warnings: eligibility.warnings,
+-      conflicts: eligibility.conflicts,
+-      selectionStatus: sel?.selectionStatus || '',
+-      selectionId: sel?.id || '',
+-    };
+-  });
+-
+-  // Sort: selected first, then eligible, then blocked
+-  players.sort((a, b) => {
+-    if (a.selectionStatus && !b.selectionStatus) return -1;
+-    if (!a.selectionStatus && b.selectionStatus) return 1;
+-    if (a.eligibilityStatus === 'blocked' && b.eligibilityStatus !== 'blocked') return 1;
+-    if (a.eligibilityStatus !== 'blocked' && b.eligibilityStatus === 'blocked') return -1;
+-    return 0;
+-  });
++export interface MatchPlayer {
++  id: string;
++  preferredName: string;
++  registeredTeam: string;
++  playingPosition: string;
++  playingAbility: string;
++  availabilityStatus: string;
++  playerNotes: string;
++  playUpCount: number;
++  eligibilityStatus: 'eligible' | 'warning' | 'blocked';
++  blocks: EligibilityIssue[];
++  warnings: EligibilityIssue[];
++  conflicts: { type: string; team: string; matchId: string }[];
++  selectionStatus: string;
++  selectionId: string;
++}
+ 
+-  const matchInfo = {
+-    date: match.matchDate || '',
+-    homeTeam: match.homeTeam || '',
+-    awayTeam: match.awayTeam || '',
+-    division: match.division || '',
+-    venue: match.venue || '',
+-    targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
+-    selectedCount: matchSelections.filter(s => s.selectionStatus === 'Selected').length,
+-    reserveCount: matchSelections.filter(s => s.selectionStatus === 'Reserve').length,
+-  };
++export interface MatchInfo {
++  date: string;
++  homeTeam: string;
++  awayTeam: string;
++  division: string;
++  venue: string;
++  targetSquadSize: number;
++  selectedCount: number;
++  reserveCount: number;
++}
+ 
+-  return { match: matchInfo, players };
++export interface GetPlayersForMatchOutput {
++  match: MatchInfo;
++  players: MatchPlayer[];
+ }
+ 
+-export type GetPlayersForMatchOutput = Awaited<ReturnType<typeof getPlayersForMatch>>;
+\ No newline at end of file
++/**
++ * The eligibility engine (player list + block/warning reasons) now runs
++ * in the Worker (GET /api/match/:matchId/players) instead of in the
++ * browser, so it can trust its own read of Airtable rather than data a
++ * client could tamper with in devtools.
++ */
++export async function getPlayersForMatch(matchId: string): Promise<GetPlayersForMatchOutput> {
++  return apiGet<GetPlayersForMatchOutput>(`/api/match/${encodeURIComponent(matchId)}/players`);
++}
+diff --git a/src/api/getUpcomingFixtures.ts b/src/api/getUpcomingFixtures.ts
+index ae621f5..d0185fb 100644
+--- a/src/api/getUpcomingFixtures.ts
++++ b/src/api/getUpcomingFixtures.ts
+@@ -1,6 +1,5 @@
+-import { matchesRepository, selectionsRepository, availabilityRepository } from '@/repositories';
+-import { getCurrentPeople } from '@/lib/auth';
+-import { getClubReferenceData } from './getClubReferenceData';
++import { apiGet } from '@/lib/apiClient';
++import { getCurrentSupabaseUser } from '@/lib/auth';
+ 
+ export interface UpcomingFixture {
+   id: string;
+@@ -19,99 +18,16 @@ export interface UpcomingFixture {
+   maybeCount: number;
+   unavailableCount: number;
+ }
+-export type GetUpcomingFixturesOutput = Awaited<ReturnType<typeof getUpcomingFixtures>>;
+ 
+-export async function getUpcomingFixtures(teamFilter?: string): Promise<{ fixtures: UpcomingFixture[] }> {
+-  const user = await getCurrentPeople();
+-  const ref = await getClubReferenceData();
+-  const teamsByName = new Map(ref.teams.map(t => [t.teamName, t]));
+-
+-  // Find user's coached teams
+-  const userId = user.id;
+-  const coachedTeams = ref.teams.filter(t =>
+-    t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
+-  );
+-  const coachedTeamNames = new Set(coachedTeams.map(t => t.teamName));
+-
+-  // Fetch scheduled matches
+-  const allMatches = await matchesRepository.findAll({
+-    filterByFormula: '{Match Status}="Scheduled"'
+-  });
+-  const now = new Date().toISOString();
+-  const upcoming = allMatches
+-    .filter(m => m.matchDate && m.matchDate >= now)
+-    .sort((a, b) => (a.matchDate || '').localeCompare(b.matchDate || ''));
+-
+-  const relevant = upcoming.filter(m => {
+-    const home = m.homeTeam || '';
+-    const away = m.awayTeam || '';
+-    if (teamFilter) {
+-      return home === teamFilter || away === teamFilter;
+-    }
+-    return coachedTeamNames.has(home) || coachedTeamNames.has(away);
+-  });
+-
+-  if (relevant.length === 0) {
+-    return { fixtures: [] };
+-  }
+-
+-  // Fetch all selections and exceptions for these matches
+-  const matchIds = relevant.map(m => m.id);
+-  const allSelections = await selectionsRepository.findAll({});
+-  const allExceptions = await availabilityRepository.findAll({});
+-
+-  const selectionsByMatch = new Map<string, any[]>();
+-  for (const sel of allSelections) {
+-    const mId = Array.isArray(sel.match) ? sel.match[0] : sel.match;
+-    if (!mId || !matchIds.includes(mId)) continue;
+-    const existing = selectionsByMatch.get(mId) || [];
+-    existing.push(sel);
+-    selectionsByMatch.set(mId, existing);
+-  }
+-
+-  const exceptionsByMatch = new Map<string, any[]>();
+-  for (const exc of allExceptions) {
+-    const mId = Array.isArray(exc.match) ? exc.match[0] : exc.match;
+-    if (!mId || !matchIds.includes(mId)) continue;
+-    const existing = exceptionsByMatch.get(mId) || [];
+-    existing.push(exc);
+-    exceptionsByMatch.set(mId, existing);
+-  }
+-
+-  const fixtures = relevant.map(m => {
+-    const home = m.homeTeam || '';
+-    const away = m.awayTeam || '';
+-    const isHome = coachedTeamNames.has(home) || (teamFilter ? home === teamFilter : false);
+-    const hkfcTeam = isHome ? home : away;
+-    const opponent = isHome ? away : home;
+-    const team = teamsByName.get(hkfcTeam);
+-
+-    const matchSelections = selectionsByMatch.get(m.id) || [];
+-    const selectedCount = matchSelections.filter(s => s.selectionStatus === 'Selected').length;
+-    const reserveCount = matchSelections.filter(s => s.selectionStatus === 'Reserve').length;
++export interface GetUpcomingFixturesOutput {
++  fixtures: UpcomingFixture[];
++}
+ 
+-    const matchExceptions = exceptionsByMatch.get(m.id) || [];
+-    const unavailableCount = matchExceptions.filter(e => e.availabilityStatus === 'Unavailable').length;
+-    const maybeCount = matchExceptions.filter(e => e.availabilityStatus === 'Maybe').length;
++export async function getUpcomingFixtures(teamFilter?: string): Promise<GetUpcomingFixturesOutput> {
++  const user = await getCurrentSupabaseUser();
+ 
+-    return {
+-      id: m.id,
+-      date: m.matchDate || '',
+-      homeTeam: home,
+-      awayTeam: away,
+-      hkfcTeam,
+-      opponent,
+-      isHome,
+-      division: m.division || '',
+-      venue: m.venue || '',
+-      targetSquadSize: team?.targetSquadSize || 16,
+-      selectedCount,
+-      reserveCount,
+-      availableCount: 0,
+-      maybeCount,
+-      unavailableCount,
+-    };
++  return apiGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', {
++    email: user?.email,
++    team: teamFilter,
+   });
+-
+-  return { fixtures };
+-}
+\ No newline at end of file
++}
+diff --git a/src/api/playersApi.ts b/src/api/playersApi.ts
+deleted file mode 100644
+index 867365e..0000000
+--- a/src/api/playersApi.ts
++++ /dev/null
+@@ -1,13 +0,0 @@
+-const API_URL = import.meta.env.VITE_API_URL;
+-
+-export async function getActivePlayers() {
+-  const response = await fetch(
+-    `${API_URL}/api/players/active`
+-  );
+-
+-  if (!response.ok) {
+-    throw new Error("Failed to load players");
+-  }
+-
+-  return response.json();
+-}
+\ No newline at end of file
+diff --git a/src/api/removeSelection.ts b/src/api/removeSelection.ts
+index eab3cae..4b914f2 100644
+--- a/src/api/removeSelection.ts
++++ b/src/api/removeSelection.ts
+@@ -1,8 +1,5 @@
+-import { selectionsRepository } from '@/repositories';
++import { apiPost } from '@/lib/apiClient';
+ 
+ export async function removeSelection(selectionId: string) {
+-  const sel = await selectionsRepository.findById(selectionId);
+-  if (!sel) throw new Error('Selection not found');
+-  await selectionsRepository.delete(selectionId);
+-  return { success: true };
+-}
+\ No newline at end of file
++  return apiPost<{ success: boolean }>('/api/remove-selection', { selectionId });
++}
+diff --git a/src/api/selectPlayer.ts b/src/api/selectPlayer.ts
+index 29b948b..18d164d 100644
+--- a/src/api/selectPlayer.ts
++++ b/src/api/selectPlayer.ts
+@@ -1,59 +1,20 @@
+-import { peopleRepository, teamsRepository, matchesRepository, selectionsRepository, availabilityRepository } from '@/repositories';
+-import { getCurrentPeople } from '@/lib/auth';
+-import { getClubReferenceData } from './getClubReferenceData';
++import { apiPost } from '@/lib/apiClient';
++import { getCurrentSupabaseUser } from '@/lib/auth';
+ 
+-export async function selectPlayer(matchId: string, playerId: string, selectionStatus: 'Selected' | 'Reserve') {
+-  const user = await getCurrentPeople(); // acting coach
++export async function selectPlayer(
++  matchId: string,
++  playerId: string,
++  selectionStatus: 'Selected' | 'Reserve'
++) {
++  const user = await getCurrentSupabaseUser();
+ 
+-  // Revalidate player
+-  const player = await peopleRepository.findById(playerId);
+-  if (!player || !player.active) {
+-    throw new Error('Player not found or inactive');
+-  }
+-  if (!player.registeredTeam || !player.playingPosition || !player.playingAbility) {
+-    throw new Error('Player profile is incomplete');
+-  }
+-  if (player.isSuspended || (player.matchesToServe && player.matchesToServe > 0)) {
+-    throw new Error('Player is suspended');
+-  }
+-
+-  const match = await matchesRepository.findById(matchId);
+-  if (!match) throw new Error('Match not found');
+-
+-  // Team rank checks
+-  const ref = await getClubReferenceData();
+-  const teamRankMap = ref.teamRankMap;
+-  const home = match.homeTeam || '';
+-  const away = match.awayTeam || '';
+-  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
+-  const targetTeamRank = teamRankMap[hkfcTeam] || 99;
+-  const playerTeamRank = teamRankMap[player.registeredTeam || ''] || 99;
+-  if (playerTeamRank < targetTeamRank) {
+-    throw new Error('Higher-to-lower movement blocked (7.2a)');
+-  }
+-  if (player.isVisitingPlayer && player.registeredTeam !== hkfcTeam) {
+-    throw new Error('Visiting player fixed to registered team (6.4)');
+-  }
+-
+-  // Check duplicate
+-  const allSelections = await selectionsRepository.findAll({});
+-  const existing = allSelections.find(s => {
+-    const pId = Array.isArray(s.player) ? s.player[0] : s.player;
+-    const mId = Array.isArray(s.match) ? s.match[0] : s.match;
+-    return pId === playerId && mId === matchId;
+-  });
+-  if (existing) {
+-    throw new Error('Player already selected for this match');
+-  }
+-
+-  // Create selection
+-  const result = await selectionsRepository.create({
+-    match: matchId,
+-    player: playerId,
++  // The Worker re-validates every eligibility rule server-side before
++  // creating the Squad Selection record — the client can't bypass this
++  // by calling the endpoint directly with different arguments.
++  return apiPost<{ id: string; success: boolean }>('/api/select-player', {
++    matchId,
++    playerId,
+     selectionStatus,
+-    selectedBy: user.id,
+-    selectedAt: new Date().toISOString(),
++    actingEmail: user?.email,
+   });
+-
+-  return { id: result.id, success: true };
+-}
+\ No newline at end of file
++}
+diff --git a/src/api/setAvailability.ts b/src/api/setAvailability.ts
+index 3ff4570..6b38dcc 100644
+--- a/src/api/setAvailability.ts
++++ b/src/api/setAvailability.ts
+@@ -1,4 +1,4 @@
+-import { peopleRepository, availabilityRepository } from '@/repositories';
++import { apiPost } from '@/lib/apiClient';
+ 
+ export async function setAvailability(
+   playerId: string,
+@@ -6,48 +6,10 @@ export async function setAvailability(
+   status: 'Available' | 'Maybe' | 'Unavailable',
+   notes?: string
+ ) {
+-  const player = await peopleRepository.findById(playerId);
+-  if (!player || !player.active) {
+-    throw new Error('Player not found or inactive');
+-  }
+-
+-  const allExceptions = await availabilityRepository.findAll({});
+-  const playerExceptions = allExceptions.filter(e => {
+-    const pId = Array.isArray(e.player) ? e.player[0] : e.player;
+-    return pId === playerId;
++  return apiPost<{ success: boolean; updated: number }>('/api/set-availability', {
++    playerId,
++    matchIds,
++    status,
++    notes,
+   });
+-  const exceptionByMatch = new Map(playerExceptions.map(e => {
+-    const mId = Array.isArray(e.match) ? e.match[0] : e.match;
+-    return [mId || '', e];
+-  }));
+-
+-  let updated = 0;
+-
+-  for (const matchId of matchIds) {
+-    const existing = exceptionByMatch.get(matchId);
+-    if (status === 'Available') {
+-      if (existing) {
+-        await availabilityRepository.delete(existing.id);
+-        updated++;
+-      }
+-    } else if (existing) {
+-      await availabilityRepository.update(existing.id, {
+-        availabilityStatus: status,
+-        playerNotes: notes || '',
+-        updatedBy: playerId,
+-      });
+-      updated++;
+-    } else {
+-      await availabilityRepository.create({
+-        match: matchId,
+-        player: playerId,
+-        availabilityStatus: status,
+-        playerNotes: notes || '',
+-        updatedBy: playerId,
+-      });
+-      updated++;
+-    }
+-  }
+-
+-  return { success: true, updated };
+-}
+\ No newline at end of file
++}
+diff --git a/src/api/setMyAvailability.ts b/src/api/setMyAvailability.ts
+index de495e5..ef2bfcb 100644
+--- a/src/api/setMyAvailability.ts
++++ b/src/api/setMyAvailability.ts
+@@ -1,5 +1,5 @@
+-import { availabilityRepository } from '@/repositories';
+-import { getCurrentPeople } from '@/lib/auth';
++import { apiPost } from '@/lib/apiClient';
++import { getCurrentSupabaseUser } from '@/lib/auth';
+ 
+ export async function setMyAvailability(
+   matchId: string,
+@@ -7,27 +7,14 @@ export async function setMyAvailability(
+   notes?: string,
+   existingExceptionId?: string
+ ) {
+-  const user = await getCurrentPeople();
++  const user = await getCurrentSupabaseUser();
++  if (!user?.email) throw new Error('Not authenticated');
+ 
+-  if (status === 'Available') {
+-    if (existingExceptionId) {
+-      await availabilityRepository.delete(existingExceptionId);
+-    }
+-  } else if (existingExceptionId) {
+-    await availabilityRepository.update(existingExceptionId, {
+-      availabilityStatus: status,
+-      playerNotes: notes || '',
+-      updatedBy: user.id,
+-    });
+-  } else {
+-    await availabilityRepository.create({
+-      match: matchId,
+-      player: user.id,
+-      availabilityStatus: status,
+-      playerNotes: notes || '',
+-      updatedBy: user.id,
+-    });
+-  }
+-
+-  return { success: true };
+-}
+\ No newline at end of file
++  return apiPost<{ success: boolean }>('/api/set-my-availability', {
++    email: user.email,
++    matchId,
++    status,
++    notes,
++    existingExceptionId,
++  });
++}
+diff --git a/src/generated/fieldMaps.ts b/src/generated/fieldMaps.ts
+index 3f78ca7..4aa4235 100644
+--- a/src/generated/fieldMaps.ts
++++ b/src/generated/fieldMaps.ts
+@@ -51,6 +51,10 @@ export const AVAILABILITYEXCEPTIONS_FIELDS = {
+   match: "Match",
+   availabilityStatus: "Availability Status",
+   note: "Player Notes",
++  // Was missing before the Worker migration, even though setAvailability /
++  // setMyAvailability both wrote an `updatedBy` value — the write silently
++  // went nowhere because there was no matching Airtable column name here.
++  updatedBy: "Updated By",
+ } as const;
+ 
+ export const MATCHCARDS_FIELDS = {
+diff --git a/src/lib/apiClient.ts b/src/lib/apiClient.ts
+new file mode 100644
+index 0000000..9ccd4c2
+--- /dev/null
++++ b/src/lib/apiClient.ts
+@@ -0,0 +1,59 @@
++// Every network call the frontend makes for app data goes through here.
++// The browser never talks to Airtable directly and never sees an Airtable
++// token — it only ever calls this Worker.
++
++const API_URL = import.meta.env.VITE_API_URL;
++
++if (!API_URL) {
++  // Fails loudly at startup rather than producing confusing "Failed to
++  // fetch" errors scattered across the app.
++  throw new Error(
++    'Missing VITE_API_URL environment variable. Set it to your deployed ' +
++      'Worker URL, e.g. https://hkfc-api.squad-selections.workers.dev'
++  );
++}
++
++export class ApiError extends Error {
++  status: number;
++  constructor(message: string, status: number) {
++    super(message);
++    this.name = 'ApiError';
++    this.status = status;
++  }
++}
++
++async function parseResponse(response: Response) {
++  const text = await response.text();
++  const data = text ? JSON.parse(text) : null;
++
++  if (!response.ok) {
++    const message = (data && (data as { error?: string }).error) || `Request failed (${response.status})`;
++    throw new ApiError(message, response.status);
++  }
++
++  return data;
++}
++
++type QueryParams = Record<string, string | number | boolean | undefined>;
++
++function toSearchParams(params?: QueryParams): string {
++  if (!params) return '';
++  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '');
++  if (entries.length === 0) return '';
++  const search = new URLSearchParams(entries.map(([k, v]) => [k, String(v)]));
++  return `?${search.toString()}`;
++}
++
++export async function apiGet<T>(path: string, params?: QueryParams): Promise<T> {
++  const response = await fetch(`${API_URL}${path}${toSearchParams(params)}`);
++  return parseResponse(response) as Promise<T>;
++}
++
++export async function apiPost<T>(path: string, body: unknown): Promise<T> {
++  const response = await fetch(`${API_URL}${path}`, {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(body),
++  });
++  return parseResponse(response) as Promise<T>;
++}
+diff --git a/src/lib/auth.ts b/src/lib/auth.ts
+index a844e10..e71a126 100644
+--- a/src/lib/auth.ts
++++ b/src/lib/auth.ts
+@@ -1,5 +1,6 @@
+ import { supabase } from './supabase';
+-import { peopleRepository } from '@/repositories/peopleRepository';
++import { apiGet } from './apiClient';
++import type { Player } from '@/generated/domainTypes';
+ 
+ /**
+  * Get the current authenticated Supabase user.
+@@ -13,14 +14,15 @@ export async function getCurrentSupabaseUser() {
+ /**
+  * Get the People record linked to the current Supabase user via email.
+  * Throws if not found.
++ *
++ * Previously called peopleRepository.getByEmail() directly against
++ * Airtable from the browser. Now goes through the Worker's
++ * GET /api/player-by-email endpoint instead.
+  */
+-export async function getCurrentPeople() {
++export async function getCurrentPeople(): Promise<Player> {
+   const user = await getCurrentSupabaseUser();
+   if (!user) throw new Error('Not authenticated');
+   if (!user.email) throw new Error('User has no email address');
+ 
+-  const people = await peopleRepository.getByEmail(user.email);
+-  if (!people) throw new Error('Player record not found for this email');
+-
+-  return people;
+-}
+\ No newline at end of file
++  return apiGet<Player>('/api/player-by-email', { email: user.email });
++}
+diff --git a/src/repositories/availabilityRepository.ts b/src/repositories/availabilityRepository.ts
+deleted file mode 100644
+index d2fe9ad..0000000
+--- a/src/repositories/availabilityRepository.ts
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import {
+-  AirtableRepository
+-} from "./baseRepository";
+-
+-import {
+-  AvailabilityException
+-} from "../generated/domainTypes";
+-
+-import {
+-  TABLES
+-} from "../generated/tableNames";
+-
+-import {
+-  mapAvailability
+-} from "../mappers/availabilityMapper";
+-
+-class AvailabilityRepository
+-  extends AirtableRepository<AvailabilityException> {
+-
+-  constructor() {
+-    super(
+-      TABLES.availabilityException,
+-      mapAvailability
+-    );
+-  }
+-
+-  async getForMatch(
+-    matchId: string
+-  ) {
+-    return this.findAll({
+-      filterByFormula:
+-        `{Match}="${matchId}"`
+-    });
+-  }
+-}
+-
+-export const availabilityRepository =
+-  new AvailabilityRepository();
+\ No newline at end of file
+diff --git a/src/repositories/baseRepository.ts b/src/repositories/baseRepository.ts
+deleted file mode 100644
+index 0eedfda..0000000
+--- a/src/repositories/baseRepository.ts
++++ /dev/null
+@@ -1,47 +0,0 @@
+-import base from '@/services/airtable';
+-
+-export interface FindAllOptions {
+-  filterByFormula?: string;
+-  sort?: Array<{ field: string; direction?: 'asc' | 'desc' }>;
+-  maxRecords?: number;
+-  offset?: string;
+-}
+-
+-export class AirtableRepository<T> {
+-  protected table: any;
+-
+-  constructor(
+-    private tableName: string,
+-    private mapper: (record: any) => T
+-  ) {
+-    this.table = base(this.tableName);
+-  }
+-
+-  async findAll(options?: FindAllOptions): Promise<T[]> {
+-    const records = await this.table.select(options).all();
+-    return records.map(this.mapper);
+-  }
+-
+-  async findById(id: string): Promise<T | null> {
+-    try {
+-      const record = await this.table.find(id);
+-      return this.mapper(record);
+-    } catch {
+-      return null;
+-    }
+-  }
+-
+-  async create(fields: Record<string, any>): Promise<any> {
+-    const record = await this.table.create(fields);
+-    return record;
+-  }
+-
+-  async update(id: string, fields: Record<string, any>): Promise<any> {
+-    const record = await this.table.update(id, fields);
+-    return record;
+-  }
+-
+-  async delete(id: string): Promise<void> {
+-    await this.table.destroy(id);
+-  }
+-}
+\ No newline at end of file
+diff --git a/src/repositories/index.ts b/src/repositories/index.ts
+deleted file mode 100644
+index 1f40563..0000000
+--- a/src/repositories/index.ts
++++ /dev/null
+@@ -1,6 +0,0 @@
+-// src/repositories/index.ts
+-export { peopleRepository } from './peopleRepository';  // note: the file is named peopleRespository.ts (typo)
+-export { teamsRepository } from './teamsRepository';
+-export { matchesRepository } from './matchesRepository';
+-export { selectionsRepository } from './selectionsRepository';
+-export { availabilityRepository } from './availabilityRepository';
+\ No newline at end of file
+diff --git a/src/repositories/matchesRepository.ts b/src/repositories/matchesRepository.ts
+deleted file mode 100644
+index 705a32a..0000000
+--- a/src/repositories/matchesRepository.ts
++++ /dev/null
+@@ -1,36 +0,0 @@
+-import {
+-  AirtableRepository
+-} from "./baseRepository";
+-
+-import {
+-  Match
+-} from "../generated/domainTypes";
+-
+-import {
+-  TABLES
+-} from "../generated/tableNames";
+-
+-import {
+-  mapMatch
+-} from "../mappers/matchMapper";
+-
+-class MatchesRepository
+-  extends AirtableRepository<Match> {
+-
+-  constructor() {
+-    super(
+-      TABLES.match,
+-      mapMatch
+-    );
+-  }
+-
+-  async getUpcoming() {
+-    return this.findAll({
+-      filterByFormula:
+-        "IS_AFTER({Match Date},TODAY())"
+-    });
+-  }
+-}
+-
+-export const matchesRepository =
+-  new MatchesRepository();
+\ No newline at end of file
+diff --git a/src/repositories/peopleRepository.ts b/src/repositories/peopleRepository.ts
+deleted file mode 100644
+index 8c465ea..0000000
+--- a/src/repositories/peopleRepository.ts
++++ /dev/null
+@@ -1,60 +0,0 @@
+-import { AirtableRepository }
+-  from "./baseRepository";
+-
+-import { TABLES }
+-  from "../generated/tableNames";
+-
+-import { Player }
+-  from "../generated/domainTypes";
+-
+-import { mapPlayer }
+-  from "../mappers/playerMapper";
+-
+-class PeopleRepository
+-  extends AirtableRepository<Player> {
+-
+-  constructor() {
+-    super(
+-      TABLES.player,
+-      mapPlayer
+-    );
+-  }
+-
+-  async getActivePlayers() {
+-    return this.findAll({
+-      filterByFormula:
+-        "{Active}=TRUE()"
+-    });
+-  }
+-
+-  async getPlayersByTeam(
+-    teamName: string
+-  ) {
+-    return this.findAll({
+-      filterByFormula:
+-        `{Registered Team}="${teamName}"`
+-    });
+-  }
+-
+-  async getByEmail(
+-    email: string
+-  ) {
+-    const players =
+-      await this.findAll({
+-        filterByFormula:
+-          `{Email}="${email}"`
+-      });
+-
+-    return players[0] ?? null;
+-  }
+-
+-  async findBySupabaseUserId(supabaseUserId: string): Promise<Player | null> {
+-    const records = await this.findAll({
+-      filterByFormula: `{supabaseUserId}="${supabaseUserId}"`  // use the actual field name from Airtable
+-    });
+-    return records.length > 0 ? records[0] : null;
+-  }
+-}
+-
+-export const peopleRepository =
+-  new PeopleRepository();
+diff --git a/src/repositories/selectionsRepository.ts b/src/repositories/selectionsRepository.ts
+deleted file mode 100644
+index 25d1c10..0000000
+--- a/src/repositories/selectionsRepository.ts
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import {
+-  AirtableRepository
+-} from "./baseRepository";
+-
+-import {
+-  SquadSelection
+-} from "../generated/domainTypes";
+-
+-import {
+-  TABLES
+-} from "../generated/tableNames";
+-
+-import {
+-  mapSelection
+-} from "../mappers/selectionMapper";
+-
+-class SelectionsRepository
+-  extends AirtableRepository<SquadSelection> {
+-
+-  constructor() {
+-    super(
+-      TABLES.squadSelection,
+-      mapSelection
+-    );
+-  }
+-
+-  async getMatchSelections(
+-    matchId: string
+-  ) {
+-    return this.findAll({
+-      filterByFormula:
+-        `{Match}="${matchId}"`
+-    });
+-  }
+-}
+-
+-export const selectionsRepository =
+-  new SelectionsRepository();
+\ No newline at end of file
+diff --git a/src/repositories/teamsRepository.ts b/src/repositories/teamsRepository.ts
+deleted file mode 100644
+index 07c203a..0000000
+--- a/src/repositories/teamsRepository.ts
++++ /dev/null
+@@ -1,36 +0,0 @@
+-import {
+-  AirtableRepository
+-} from "./baseRepository";
+-
+-import {
+-  Team
+-} from "../generated/domainTypes";
+-
+-import {
+-  TABLES
+-} from "../generated/tableNames";
+-
+-import {
+-  mapTeam
+-} from "../mappers/teamMapper";
+-
+-class TeamsRepository
+-  extends AirtableRepository<Team> {
+-
+-  constructor() {
+-    super(
+-      TABLES.team,
+-      mapTeam
+-    );
+-  }
+-
+-  async getActiveTeams() {
+-    return this.findAll({
+-      filterByFormula:
+-        "{Active}=TRUE()"
+-    });
+-  }
+-}
+-
+-export const teamsRepository =
+-  new TeamsRepository();
+\ No newline at end of file
+diff --git a/src/services/airtable.ts b/src/services/airtable.ts
+deleted file mode 100644
+index 8b0f7f9..0000000
+--- a/src/services/airtable.ts
++++ /dev/null
+@@ -1,12 +0,0 @@
+-// src/services/airtable.ts
+-import Airtable from "airtable";
+-
+-const apiKey = import.meta.env.VITE_AIRTABLE_TOKEN;
+-const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID;
+-
+-if (!apiKey || !baseId) {
+-  console.warn("Using API backend");
+-}
+-
+-const base = new Airtable({ apiKey }).base(baseId);
+-export default base;
+\ No newline at end of file
+diff --git a/worker/.dev.vars.example b/worker/.dev.vars.example
+new file mode 100644
+index 0000000..48a683d
+--- /dev/null
++++ b/worker/.dev.vars.example
+@@ -0,0 +1,8 @@
++# Copy to worker/.dev.vars for local `wrangler dev` / `npm run dev --workspace worker`.
++# Real values must never be committed — this file only holds placeholders.
++
++AIRTABLE_TOKEN=patXXXXXXXXXXXXXX
++AIRTABLE_BASE_ID=appG6amyHthm3Nnde
++
++# Optional — restricts CORS to a single origin instead of "*".
++# ALLOWED_ORIGIN=http://localhost:5173
+diff --git a/worker/package.json b/worker/package.json
+index 1b3eeb0..d4942de 100644
+--- a/worker/package.json
++++ b/worker/package.json
+@@ -1,13 +1,20 @@
+ {
+   "name": "worker",
+   "version": "1.0.0",
+-  "description": "",
+-  "main": "index.js",
++  "description": "HKFC Squad Selection API — Cloudflare Worker that proxies Airtable so the Airtable token never reaches the browser.",
++  "main": "src/index.ts",
+   "scripts": {
+-    "test": "echo \"Error: no test specified\" && exit 1"
++    "dev": "wrangler dev --config wrangler.toml",
++    "deploy": "wrangler deploy --config wrangler.toml",
++    "typecheck": "tsc --noEmit -p tsconfig.json"
+   },
+   "keywords": [],
+   "author": "",
+   "license": "ISC",
+-  "type": "commonjs"
++  "type": "module",
++  "devDependencies": {
++    "@cloudflare/workers-types": "^4.20260701.0",
++    "typescript": "^5.9.3",
++    "wrangler": "^4.107.0"
++  }
+ }
+diff --git a/worker/src/airtable.ts b/worker/src/airtable.ts
+index 8cdf46a..93d6217 100644
+--- a/worker/src/airtable.ts
++++ b/worker/src/airtable.ts
+@@ -1,28 +1,142 @@
++// Low-level Airtable REST client for the Worker.
++//
++// This is the ONLY place in the whole project that is allowed to hold the
++// Airtable token / talk to api.airtable.com. Field name constants, table
++// names, domain types, and the record -> domain-object mappers are NOT
++// duplicated here — they are imported straight from the frontend's
++// src/generated/ and src/mappers/ (see reference.ts, fixtures.ts, squad.ts,
++// availability.ts). Those files are plain TypeScript with no browser APIs,
++// so Wrangler's esbuild bundler pulls them into the Worker bundle unmodified.
++
+ export interface Env {
+   AIRTABLE_TOKEN: string;
+   AIRTABLE_BASE_ID: string;
++  /** Optional: restrict CORS to a single origin instead of "*". */
++  ALLOWED_ORIGIN?: string;
+ }
+ 
+-export async function airtableRequest(
+-  env: Env,
+-  table: string,
+-  params?: URLSearchParams
+-) {
+-  const url =
+-    `https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`
+-    + (params ? `?${params}` : "");
++const AIRTABLE_API = "https://api.airtable.com/v0";
++
++export class AirtableError extends Error {
++  status: number;
++  constructor(message: string, status: number) {
++    super(message);
++    this.name = "AirtableError";
++    this.status = status;
++  }
++}
+ 
++function tableUrl(env: Env, table: string) {
++  return `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
++}
++
++async function airtableFetch(env: Env, url: string, init?: RequestInit) {
+   const response = await fetch(url, {
++    ...init,
+     headers: {
+-      Authorization: `Bearer ${env.AIRTABLE_TOKEN}`
+-    }
++      Authorization: `Bearer ${env.AIRTABLE_TOKEN}`,
++      "Content-Type": "application/json",
++      ...(init?.headers || {}),
++    },
+   });
+ 
+   if (!response.ok) {
+-    throw new Error(
+-      `Airtable error ${response.status}`
++    const body = await response.text().catch(() => "");
++    throw new AirtableError(
++      `Airtable ${init?.method ?? "GET"} ${url} failed (${response.status}): ${body}`,
++      response.status
+     );
+   }
+ 
++  if (response.status === 204) return null;
+   return response.json();
+-}
+\ No newline at end of file
++}
++
++/** Single page of records (max 100, or whatever `params.pageSize` says). */
++export async function airtableList(
++  env: Env,
++  table: string,
++  params?: Record<string, string>
++): Promise<{ records: any[]; offset?: string }> {
++  const search = new URLSearchParams(params);
++  return airtableFetch(env, `${tableUrl(env, table)}?${search.toString()}`);
++}
++
++/** Fetches every record matching an optional formula, following pagination. */
++export async function airtableFindAll(
++  env: Env,
++  table: string,
++  filterByFormula?: string
++): Promise<any[]> {
++  const records: any[] = [];
++  let offset: string | undefined;
++
++  do {
++    const params: Record<string, string> = { pageSize: "100" };
++    if (filterByFormula) params.filterByFormula = filterByFormula;
++    if (offset) params.offset = offset;
++
++    const page = await airtableList(env, table, params);
++    records.push(...(page.records ?? []));
++    offset = page.offset;
++  } while (offset);
++
++  return records;
++}
++
++export async function airtableFindById(
++  env: Env,
++  table: string,
++  id: string
++): Promise<any | null> {
++  try {
++    return await airtableFetch(env, `${tableUrl(env, table)}/${id}`);
++  } catch (err) {
++    if (err instanceof AirtableError && err.status === 404) return null;
++    throw err;
++  }
++}
++
++export async function airtableCreate(
++  env: Env,
++  table: string,
++  fields: Record<string, unknown>
++): Promise<any> {
++  return airtableFetch(env, tableUrl(env, table), {
++    method: "POST",
++    body: JSON.stringify({ fields }),
++  });
++}
++
++export async function airtableUpdate(
++  env: Env,
++  table: string,
++  id: string,
++  fields: Record<string, unknown>
++): Promise<any> {
++  return airtableFetch(env, `${tableUrl(env, table)}/${id}`, {
++    method: "PATCH",
++    body: JSON.stringify({ fields }),
++  });
++}
++
++export async function airtableDelete(
++  env: Env,
++  table: string,
++  id: string
++): Promise<void> {
++  await airtableFetch(env, `${tableUrl(env, table)}/${id}`, {
++    method: "DELETE",
++  });
++}
++
++/** Guards against breaking a filterByFormula string via embedded quotes. */
++export function escapeFormulaValue(value: string): string {
++  return value.replace(/"/g, '\\"');
++}
++
++/** Airtable link fields come back as (and must be written as) string arrays. */
++export function linkId(value: unknown): string | undefined {
++  if (Array.isArray(value)) return value[0];
++  return typeof value === "string" ? value : undefined;
++}
+diff --git a/worker/src/availability.ts b/worker/src/availability.ts
+new file mode 100644
+index 0000000..e34fdd7
+--- /dev/null
++++ b/worker/src/availability.ts
+@@ -0,0 +1,131 @@
++import {
++  Env,
++  airtableFindAll,
++  airtableFindById,
++  airtableCreate,
++  airtableUpdate,
++  airtableDelete,
++  linkId,
++} from "./airtable";
++import { getPlayerByEmail } from "./reference";
++import { HttpError } from "./http";
++import { TABLES } from "../../src/generated/tableNames";
++import { AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
++import { mapPlayer } from "../../src/mappers/playerMapper";
++import { mapAvailability } from "../../src/mappers/availabilityMapper";
++
++type ExceptionStatus = "Maybe" | "Unavailable";
++type AvailabilityStatus = "Available" | ExceptionStatus;
++
++function buildExceptionFields(opts: {
++  matchId: string;
++  playerId: string;
++  status: ExceptionStatus;
++  notes?: string;
++  updatedById: string;
++}): Record<string, unknown> {
++  return {
++    [AVAILABILITYEXCEPTIONS_FIELDS.match]: [opts.matchId],
++    [AVAILABILITYEXCEPTIONS_FIELDS.player]: [opts.playerId],
++    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: opts.status,
++    [AVAILABILITYEXCEPTIONS_FIELDS.note]: opts.notes || "",
++    [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [opts.updatedById],
++  };
++}
++
++export interface SetAvailabilityInput {
++  playerId: string;
++  matchIds: string[];
++  status: AvailabilityStatus;
++  notes?: string;
++}
++
++/** Ported from src/api/setAvailability.ts (coach-facing bulk update). */
++export async function setAvailability(env: Env, input: SetAvailabilityInput) {
++  if (!input.playerId || !Array.isArray(input.matchIds)) {
++    throw new HttpError("playerId and matchIds[] are required", 400);
++  }
++
++  const playerRecord = await airtableFindById(env, TABLES.player, input.playerId);
++  if (!playerRecord) throw new HttpError("Player not found or inactive", 404);
++  const player = mapPlayer(playerRecord);
++  if (!player.active) throw new HttpError("Player not found or inactive", 404);
++
++  const allExceptions = (await airtableFindAll(env, TABLES.availabilityException)).map(
++    mapAvailability
++  );
++  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === input.playerId);
++  const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
++
++  let updated = 0;
++
++  for (const matchId of input.matchIds) {
++    const existing = exceptionByMatch.get(matchId);
++
++    if (input.status === "Available") {
++      if (existing) {
++        await airtableDelete(env, TABLES.availabilityException, existing.id);
++        updated++;
++      }
++      continue;
++    }
++
++    const fields = buildExceptionFields({
++      matchId,
++      playerId: input.playerId,
++      status: input.status,
++      notes: input.notes,
++      updatedById: input.playerId,
++    });
++
++    if (existing) {
++      await airtableUpdate(env, TABLES.availabilityException, existing.id, fields);
++    } else {
++      await airtableCreate(env, TABLES.availabilityException, fields);
++    }
++    updated++;
++  }
++
++  return { success: true, updated };
++}
++
++export interface SetMyAvailabilityInput {
++  email: string;
++  matchId: string;
++  status: AvailabilityStatus;
++  notes?: string;
++  existingExceptionId?: string;
++}
++
++/** Ported from src/api/setMyAvailability.ts (unauthenticated, player-facing). */
++export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
++  if (!input.email || !input.matchId) {
++    throw new HttpError("email and matchId are required", 400);
++  }
++
++  const user = await getPlayerByEmail(env, input.email);
++  if (!user) throw new HttpError("Player record not found for this email", 404);
++
++  if (input.status === "Available") {
++    if (input.existingExceptionId) {
++      await airtableDelete(env, TABLES.availabilityException, input.existingExceptionId);
++    }
++    return { success: true };
++  }
++
++  const fields = buildExceptionFields({
++    matchId: input.matchId,
++    playerId: user.id,
++    status: input.status,
++    notes: input.notes,
++    updatedById: user.id,
++  });
++
++  if (input.existingExceptionId) {
++    await airtableUpdate(env, TABLES.availabilityException, input.existingExceptionId, fields);
++  } else {
++    await airtableCreate(env, TABLES.availabilityException, fields);
++  }
++
++  return { success: true };
++}
+diff --git a/worker/src/eligibility.ts b/worker/src/eligibility.ts
+new file mode 100644
+index 0000000..64789cf
+--- /dev/null
++++ b/worker/src/eligibility.ts
+@@ -0,0 +1,66 @@
++import { linkId } from "./airtable";
++import type { Match, Player, SquadSelection } from "../../src/generated/domainTypes";
++
++export interface EligibilityIssue {
++  rule: string;
++  reason: string;
++}
++
++export interface EligibilityResult {
++  blocks: EligibilityIssue[];
++  warnings: EligibilityIssue[];
++  conflicts: { type: string; team: string; matchId: string }[];
++}
++
++/**
++ * Ported as-is from the pre-migration src/api/getPlayersForMatch.ts. This is
++ * an early/partial implementation of the eligibility rules described in
++ * HKHA_Competition_Bye-Laws_Summary.md and Implementation_Roadmap_v2.md —
++ * play-up counts, GK exemptions, U21 overrides, cup rules, and same-day
++ * cross-team conflicts are Phase 3 work and were NOT implemented before this
++ * migration either. This refactor moves the data access layer only; it does
++ * not add or remove eligibility rules.
++ */
++export function evaluatePlayerEligibility(
++  player: Player,
++  match: Match,
++  teamRankMap: Record<string, number>,
++  existingSelections: SquadSelection[]
++): EligibilityResult {
++  const blocks: EligibilityIssue[] = [];
++  const warnings: EligibilityIssue[] = [];
++  const conflicts: { type: string; team: string; matchId: string }[] = [];
++
++  // Suspension
++  if (player.isSuspended || (player.matchesToServe && player.matchesToServe > 0)) {
++    blocks.push({ rule: "SUSPENDED", reason: "Player is suspended" });
++  }
++
++  // Higher-to-lower movement (7.2a)
++  const home = match.homeTeam || "";
++  const away = match.awayTeam || "";
++  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
++  const targetTeamRank = teamRankMap[hkfcTeam] ?? 99;
++  const playerTeamRank = teamRankMap[player.registeredTeam || ""] ?? 99;
++  if (playerTeamRank < targetTeamRank) {
++    blocks.push({ rule: "HIGHER_TO_LOWER", reason: "Higher-to-lower movement blocked (7.2a)" });
++  }
++
++  // Visiting player fixed team (6.4)
++  if (player.isVisitingPlayer && player.registeredTeam !== hkfcTeam) {
++    blocks.push({ rule: "VISITING_FIXED", reason: "Visiting player fixed to registered team (6.4)" });
++  }
++
++  // Duplicate selection guard for this match
++  const alreadySelected = existingSelections.some((s) => {
++    return linkId(s.player) === player.id && linkId(s.match) === match.id;
++  });
++  if (alreadySelected) {
++    blocks.push({ rule: "DUPLICATE", reason: "Already selected for this match" });
++  }
++
++  // Same-day cross-team conflicts and play-up counting are not implemented
++  // yet (see roadmap Phase 3) — carried over unchanged.
++
++  return { blocks, warnings, conflicts };
++}
+diff --git a/worker/src/fixtures.ts b/worker/src/fixtures.ts
+new file mode 100644
+index 0000000..9f11f8f
+--- /dev/null
++++ b/worker/src/fixtures.ts
+@@ -0,0 +1,260 @@
++import { Env, airtableFindAll, airtableFindById, linkId } from "./airtable";
++import { getReferenceData, getPlayerByEmail } from "./reference";
++import { HttpError } from "./http";
++import { TABLES } from "../../src/generated/tableNames";
++import { mapMatch } from "../../src/mappers/matchMapper";
++import { mapSelection } from "../../src/mappers/selectionMapper";
++import { mapAvailability } from "../../src/mappers/availabilityMapper";
++import { mapPlayer } from "../../src/mappers/playerMapper";
++
++async function getScheduledMatches(env: Env) {
++  const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
++  return records.map(mapMatch);
++}
++
++/** Ported from src/api/getMyFixtures.ts. */
++export async function getMyFixtures(env: Env, email: string) {
++  const user = await getPlayerByEmail(env, email);
++  if (!user) throw new HttpError("Player record not found for this email", 404);
++
++  const teamName = user.registeredTeam || "";
++  const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
++  const isCoach = roles.includes("Coach");
++
++  const base = {
++    playerName: user.preferredName || user.givenNames || "Player",
++    registeredTeam: teamName,
++    playingPosition: user.playingPosition || "",
++    shirtNoValue: user.shirtNoValue || "",
++    isCoach,
++  };
++
++  const ref = await getReferenceData(env);
++  const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
++  const teamNames = new Set(ref.teams.map((t) => t.teamName));
++
++  const allMatches = await getScheduledMatches(env);
++  const now = new Date().toISOString();
++  const upcoming = allMatches
++    .filter((m) => m.matchDate && m.matchDate >= now)
++    .filter((m) => (m.homeTeam || "") === teamName || (m.awayTeam || "") === teamName)
++    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
++
++  if (upcoming.length === 0) {
++    return { ...base, fixtures: [] };
++  }
++
++  const matchIds = upcoming.map((m) => m.id);
++
++  const [allExceptions, allSelections] = await Promise.all([
++    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
++    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
++  ]);
++
++  const playerExceptions = allExceptions.filter(
++    (e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || "")
++  );
++  const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
++
++  const allMatchSelections = allSelections.filter((s) => matchIds.includes(linkId(s.match) || ""));
++  const playerSelections = allMatchSelections.filter((s) => linkId(s.player) === user.id);
++  const selectionByMatch = new Map(playerSelections.map((s) => [linkId(s.match) || "", s]));
++
++  const selectedCountByMatch = new Map<string, number>();
++  for (const s of allMatchSelections) {
++    if (s.selectionStatus !== "Selected") continue;
++    const mId = linkId(s.match);
++    if (mId) selectedCountByMatch.set(mId, (selectedCountByMatch.get(mId) || 0) + 1);
++  }
++
++  const fixtures = upcoming.map((m) => {
++    const home = m.homeTeam || "";
++    const away = m.awayTeam || "";
++    const isHome = home === teamName;
++    const hkfcTeam = teamNames.has(home) ? home : away;
++    const opponent = hkfcTeam === home ? away : home;
++    const team = teamsByName.get(hkfcTeam);
++    const exc = exceptionByMatch.get(m.id);
++    const sel = selectionByMatch.get(m.id);
++
++    return {
++      id: m.id,
++      date: m.matchDate || "",
++      homeTeam: home,
++      awayTeam: away,
++      hkfcTeam,
++      opponent,
++      isHome,
++      venue: m.venue || "",
++      division: m.division || "",
++      availabilityStatus: exc?.availabilityStatus || "Available",
++      playerNotes: exc?.note || "",
++      availabilityExceptionId: exc?.id || "",
++      selectionStatus: sel?.selectionStatus || "",
++      selectionNotes: sel?.selectionNotes || "",
++      selectedCount: selectedCountByMatch.get(m.id) || 0,
++      targetSquadSize: team?.targetSquadSize || 16,
++    };
++  });
++
++  return { ...base, fixtures };
++}
++
++/** Ported from src/api/getPlayerFixtures.ts (unauthenticated, player-facing). */
++export async function getPlayerFixtures(env: Env, playerId: string) {
++  const record = await airtableFindById(env, TABLES.player, playerId);
++  if (!record) throw new HttpError("Player not found or inactive", 404);
++  const player = mapPlayer(record);
++  if (!player.active) throw new HttpError("Player not found or inactive", 404);
++
++  const teamName = player.registeredTeam || "";
++
++  const allMatches = await getScheduledMatches(env);
++  const now = new Date().toISOString();
++  const upcoming = allMatches
++    .filter((m) => m.matchDate && m.matchDate >= now)
++    .filter((m) => (m.homeTeam || "") === teamName || (m.awayTeam || "") === teamName)
++    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
++
++  const matchIds = upcoming.map((m) => m.id);
++
++  const [allExceptions, allSelections] = await Promise.all([
++    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
++    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
++  ]);
++
++  const playerExceptions = allExceptions.filter(
++    (e) => linkId(e.player) === playerId && matchIds.includes(linkId(e.match) || "")
++  );
++  const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
++
++  const playerSelections = allSelections.filter(
++    (s) => linkId(s.player) === playerId && matchIds.includes(linkId(s.match) || "")
++  );
++  const selectionByMatch = new Map(playerSelections.map((s) => [linkId(s.match) || "", s]));
++
++  const fixtures = upcoming.map((m) => {
++    const exc = exceptionByMatch.get(m.id);
++    const sel = selectionByMatch.get(m.id);
++    return {
++      id: m.id,
++      date: m.matchDate || "",
++      homeTeam: m.homeTeam || "",
++      awayTeam: m.awayTeam || "",
++      venue: m.venue || "",
++      division: m.division || "",
++      availabilityStatus: exc?.availabilityStatus || "Available",
++      playerNotes: exc?.note || "",
++      availabilityExceptionId: exc?.id || "",
++      selectionStatus: sel?.selectionStatus || "",
++    };
++  });
++
++  return {
++    playerName: player.preferredName || player.givenNames || "Player",
++    registeredTeam: teamName,
++    fixtures,
++  };
++}
++
++/** Ported from src/api/getUpcomingFixtures.ts (coach-facing fixture list). */
++export async function getUpcomingFixtures(
++  env: Env,
++  opts: { email?: string; team?: string }
++) {
++  const ref = await getReferenceData(env);
++  const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
++
++  let coachedTeamNames = new Set<string>();
++  if (opts.email) {
++    const user = await getPlayerByEmail(env, opts.email);
++    if (user) {
++      coachedTeamNames = new Set(
++        ref.teams
++          .filter(
++            (t) =>
++              (t.coach || []).includes(user.id) ||
++              (t.teamCaptain || []).includes(user.id) ||
++              (t.sectionCaptain || []).includes(user.id)
++          )
++          .map((t) => t.teamName || "")
++      );
++    }
++  }
++
++  const allMatches = await getScheduledMatches(env);
++  const now = new Date().toISOString();
++  const upcoming = allMatches
++    .filter((m) => m.matchDate && m.matchDate >= now)
++    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
++
++  const relevant = upcoming.filter((m) => {
++    const home = m.homeTeam || "";
++    const away = m.awayTeam || "";
++    if (opts.team) return home === opts.team || away === opts.team;
++    return coachedTeamNames.has(home) || coachedTeamNames.has(away);
++  });
++
++  if (relevant.length === 0) return { fixtures: [] };
++
++  const matchIds = relevant.map((m) => m.id);
++  const [allSelections, allExceptions] = await Promise.all([
++    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
++    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
++  ]);
++
++  const selectionsByMatch = new Map<string, any[]>();
++  for (const sel of allSelections) {
++    const mId = linkId(sel.match);
++    if (!mId || !matchIds.includes(mId)) continue;
++    const existing = selectionsByMatch.get(mId) || [];
++    existing.push(sel);
++    selectionsByMatch.set(mId, existing);
++  }
++
++  const exceptionsByMatch = new Map<string, any[]>();
++  for (const exc of allExceptions) {
++    const mId = linkId(exc.match);
++    if (!mId || !matchIds.includes(mId)) continue;
++    const existing = exceptionsByMatch.get(mId) || [];
++    existing.push(exc);
++    exceptionsByMatch.set(mId, existing);
++  }
++
++  const fixtures = relevant.map((m) => {
++    const home = m.homeTeam || "";
++    const away = m.awayTeam || "";
++    const isHome = coachedTeamNames.has(home) || (opts.team ? home === opts.team : false);
++    const hkfcTeam = isHome ? home : away;
++    const opponent = isHome ? away : home;
++    const team = teamsByName.get(hkfcTeam);
++
++    const matchSelections = selectionsByMatch.get(m.id) || [];
++    const selectedCount = matchSelections.filter((s) => s.selectionStatus === "Selected").length;
++    const reserveCount = matchSelections.filter((s) => s.selectionStatus === "Reserve").length;
++
++    const matchExceptions = exceptionsByMatch.get(m.id) || [];
++    const unavailableCount = matchExceptions.filter((e) => e.availabilityStatus === "Unavailable").length;
++    const maybeCount = matchExceptions.filter((e) => e.availabilityStatus === "Maybe").length;
++
++    return {
++      id: m.id,
++      date: m.matchDate || "",
++      homeTeam: home,
++      awayTeam: away,
++      hkfcTeam,
++      opponent,
++      isHome,
++      division: m.division || "",
++      venue: m.venue || "",
++      targetSquadSize: team?.targetSquadSize || 16,
++      selectedCount,
++      reserveCount,
++      availableCount: 0,
++      maybeCount,
++      unavailableCount,
++    };
++  });
++
++  return { fixtures };
++}
+diff --git a/worker/src/http.ts b/worker/src/http.ts
+new file mode 100644
+index 0000000..ff5808b
+--- /dev/null
++++ b/worker/src/http.ts
+@@ -0,0 +1,44 @@
++// Shared response/CORS/error helpers so every route returns JSON
++// consistently instead of ad-hoc Response objects.
++
++export class HttpError extends Error {
++  status: number;
++  constructor(message: string, status = 400) {
++    super(message);
++    this.name = "HttpError";
++    this.status = status;
++  }
++}
++
++export function corsHeaders(origin?: string): Record<string, string> {
++  return {
++    "Access-Control-Allow-Origin": origin || "*",
++    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
++    "Access-Control-Allow-Headers": "Content-Type",
++    "Access-Control-Max-Age": "86400",
++    Vary: "Origin",
++  };
++}
++
++export function json(data: unknown, status = 200, origin?: string): Response {
++  return new Response(JSON.stringify(data), {
++    status,
++    headers: {
++      "Content-Type": "application/json",
++      ...corsHeaders(origin),
++    },
++  });
++}
++
++export function errorJson(message: string, status = 500, origin?: string): Response {
++  return json({ error: message }, status, origin);
++}
++
++export function handleOptions(origin?: string): Response {
++  return new Response(null, { status: 204, headers: corsHeaders(origin) });
++}
++
++export function requireParam(value: string | null, name: string): string {
++  if (!value) throw new HttpError(`Missing required query param: ${name}`, 400);
++  return value;
++}
+diff --git a/worker/src/index.ts b/worker/src/index.ts
+index 8205c02..1e3a98c 100644
+--- a/worker/src/index.ts
++++ b/worker/src/index.ts
+@@ -1,31 +1,103 @@
+-import { getActivePlayers } from "./players";
++import { Env } from "./airtable";
++import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
++import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
++import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
++import { getPlayersForMatch, selectPlayer, removeSelection } from "./squad";
++import { setAvailability, setMyAvailability } from "./availability";
+ 
+-export interface Env {
+-  AIRTABLE_TOKEN: string;
+-  AIRTABLE_BASE_ID: string;
++export type { Env };
++
++async function readJsonBody(request: Request): Promise<any> {
++  try {
++    return await request.json();
++  } catch {
++    throw new HttpError("Request body must be valid JSON", 400);
++  }
+ }
+ 
+ export default {
+-  async fetch(
+-    request: Request,
+-    env: Env
+-  ): Promise<Response> {
+-
++  async fetch(request: Request, env: Env): Promise<Response> {
++    const origin = env.ALLOWED_ORIGIN;
+     const url = new URL(request.url);
++    const { pathname } = url;
++    const method = request.method;
+ 
+-    if (
+-      request.method === "GET" &&
+-      url.pathname === "/api/players/active"
+-    ) {
+-      const players =
+-        await getActivePlayers(env);
+-
+-      return Response.json(players);
++    if (method === "OPTIONS") {
++      return handleOptions(origin);
+     }
+ 
+-    return new Response(
+-      "Not Found",
+-      { status: 404 }
+-    );
+-  }
+-};
+\ No newline at end of file
++    try {
++      // ---------------------------------------------------------------
++      // Read endpoints
++      // ---------------------------------------------------------------
++
++      if (method === "GET" && pathname === "/api/players/active") {
++        return json(await getActivePlayers(env), 200, origin);
++      }
++
++      if (method === "GET" && pathname === "/api/reference-data") {
++        return json(await getReferenceData(env), 200, origin);
++      }
++
++      if (method === "GET" && pathname === "/api/player-by-email") {
++        const email = requireParam(url.searchParams.get("email"), "email");
++        const player = await getPlayerByEmail(env, email);
++        if (!player) throw new HttpError("Player record not found for this email", 404);
++        return json(player, 200, origin);
++      }
++
++      if (method === "GET" && pathname === "/api/my-fixtures") {
++        const email = requireParam(url.searchParams.get("email"), "email");
++        return json(await getMyFixtures(env, email), 200, origin);
++      }
++
++      const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
++      if (method === "GET" && playerFixturesMatch) {
++        return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
++      }
++
++      if (method === "GET" && pathname === "/api/upcoming-fixtures") {
++        const email = url.searchParams.get("email") ?? undefined;
++        const team = url.searchParams.get("team") ?? undefined;
++        return json(await getUpcomingFixtures(env, { email, team }), 200, origin);
++      }
++
++      const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
++      if (method === "GET" && matchPlayersMatch) {
++        return json(await getPlayersForMatch(env, matchPlayersMatch[1]), 200, origin);
++      }
++
++      // ---------------------------------------------------------------
++      // Write endpoints
++      // ---------------------------------------------------------------
++
++      if (method === "POST" && pathname === "/api/select-player") {
++        const body = await readJsonBody(request);
++        return json(await selectPlayer(env, body), 200, origin);
++      }
++
++      if (method === "POST" && pathname === "/api/remove-selection") {
++        const body = await readJsonBody(request);
++        return json(await removeSelection(env, body.selectionId), 200, origin);
++      }
++
++      if (method === "POST" && pathname === "/api/set-availability") {
++        const body = await readJsonBody(request);
++        return json(await setAvailability(env, body), 200, origin);
++      }
++
++      if (method === "POST" && pathname === "/api/set-my-availability") {
++        const body = await readJsonBody(request);
++        return json(await setMyAvailability(env, body), 200, origin);
++      }
++
++      return errorJson("Not Found", 404, origin);
++    } catch (err) {
++      if (err instanceof HttpError) {
++        return errorJson(err.message, err.status, origin);
++      }
++      console.error("Unhandled worker error:", err);
++      return errorJson("Internal Server Error", 500, origin);
++    }
++  },
++};
+diff --git a/worker/src/players.ts b/worker/src/players.ts
+deleted file mode 100644
+index a6675ec..0000000
+--- a/worker/src/players.ts
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import { airtableRequest, Env } from "./airtable";
+-
+-export async function getActivePlayers(
+-  env: Env
+-) {
+-  const params = new URLSearchParams({
+-    filterByFormula: "{Active}=TRUE()"
+-  });
+-
+-  const data = await airtableRequest(
+-    env,
+-    "People",
+-    params
+-  );
+-
+-  return data.records.map((record: any) => ({
+-    id: record.id,
+-    ...record.fields
+-  }));
+-}
+\ No newline at end of file
+diff --git a/worker/src/reference.ts b/worker/src/reference.ts
+new file mode 100644
+index 0000000..0fd8912
+--- /dev/null
++++ b/worker/src/reference.ts
+@@ -0,0 +1,61 @@
++import { Env, airtableFindAll, escapeFormulaValue } from "./airtable";
++import { getCached } from "../../src/lib/cache";
++import { TABLES } from "../../src/generated/tableNames";
++import { PEOPLE_FIELDS } from "../../src/generated/fieldMaps";
++import { mapPlayer } from "../../src/mappers/playerMapper";
++import { mapTeam } from "../../src/mappers/teamMapper";
++import type { Player, Team } from "../../src/generated/domainTypes";
++
++export interface ReferenceData {
++  players: Player[];
++  teams: Team[];
++  teamRankMap: Record<string, number>;
++  teamNames: string[];
++}
++
++/**
++ * Mirrors the join that src/api/getClubReferenceData.ts used to do in the
++ * browser: active Teams + active People, plus a name -> rank lookup table.
++ * Cached in-isolate for 10 minutes (same TTL the frontend used to use)
++ * since this data rarely changes and is read on almost every request.
++ */
++export async function getReferenceData(env: Env): Promise<ReferenceData> {
++  const { data } = await getCached<ReferenceData>("club-reference", async () => {
++    const [teamRecords, playerRecords] = await Promise.all([
++      airtableFindAll(env, TABLES.team, "{Active}=TRUE()"),
++      airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
++    ]);
++
++    const teams = teamRecords.map(mapTeam);
++    const players = playerRecords.map(mapPlayer);
++
++    const teamRankMap: Record<string, number> = {};
++    for (const t of teams) {
++      if (t.teamName) teamRankMap[t.teamName] = t.teamRank ?? 99;
++    }
++
++    return {
++      players,
++      teams,
++      teamRankMap,
++      teamNames: teams.map((t) => t.teamName || ""),
++    };
++  });
++
++  return data;
++}
++
++/** All active players — kept for backwards compatibility with GET /api/players/active. */
++export async function getActivePlayers(env: Env): Promise<Player[]> {
++  const records = await airtableFindAll(env, TABLES.player, "{Active}=TRUE()");
++  return records.map(mapPlayer);
++}
++
++export async function getPlayerByEmail(env: Env, email: string): Promise<Player | null> {
++  const records = await airtableFindAll(
++    env,
++    TABLES.player,
++    `{${PEOPLE_FIELDS.email}}="${escapeFormulaValue(email)}"`
++  );
++  return records[0] ? mapPlayer(records[0]) : null;
++}
+diff --git a/worker/src/squad.ts b/worker/src/squad.ts
+new file mode 100644
+index 0000000..b731ac0
+--- /dev/null
++++ b/worker/src/squad.ts
+@@ -0,0 +1,189 @@
++import {
++  Env,
++  airtableFindAll,
++  airtableFindById,
++  airtableCreate,
++  airtableDelete,
++  linkId,
++} from "./airtable";
++import { getReferenceData, getPlayerByEmail } from "./reference";
++import { evaluatePlayerEligibility } from "./eligibility";
++import { HttpError } from "./http";
++import { TABLES } from "../../src/generated/tableNames";
++import { SQUADSELECTIONS_FIELDS } from "../../src/generated/fieldMaps";
++import { mapMatch } from "../../src/mappers/matchMapper";
++import { mapPlayer } from "../../src/mappers/playerMapper";
++import { mapSelection } from "../../src/mappers/selectionMapper";
++import { mapAvailability } from "../../src/mappers/availabilityMapper";
++
++/** Ported from src/api/getPlayersForMatch.ts. */
++export async function getPlayersForMatch(env: Env, matchId: string) {
++  const ref = await getReferenceData(env);
++  const teamRankMap = ref.teamRankMap;
++  const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
++
++  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
++  if (!matchRecord) throw new HttpError("Match not found", 404);
++  const match = mapMatch(matchRecord);
++
++  const home = match.homeTeam || "";
++  const away = match.awayTeam || "";
++  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
++  if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
++
++  const [playerRecords, allSelections, allExceptions] = await Promise.all([
++    airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
++    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
++    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
++  ]);
++  const allPlayers = playerRecords.map(mapPlayer);
++
++  const matchSelections = allSelections.filter((s) => linkId(s.match) === matchId);
++  const selectionMap = new Map<string, (typeof matchSelections)[number]>();
++  for (const sel of matchSelections) {
++    const pId = linkId(sel.player);
++    if (pId) selectionMap.set(pId, sel);
++  }
++
++  const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
++  const exceptionMap = new Map<string, (typeof matchExceptions)[number]>();
++  for (const exc of matchExceptions) {
++    const pId = linkId(exc.player);
++    if (pId) exceptionMap.set(pId, exc);
++  }
++
++  const players = allPlayers.map((p) => {
++    const sel = selectionMap.get(p.id);
++    const exc = exceptionMap.get(p.id);
++    const availabilityStatus = exc?.availabilityStatus || "Available";
++    const playerNotes = exc?.note || "";
++
++    const eligibility = evaluatePlayerEligibility(p, match, teamRankMap, matchSelections);
++
++    let eligibilityStatus: "eligible" | "warning" | "blocked" = "eligible";
++    if (eligibility.blocks.length > 0) eligibilityStatus = "blocked";
++    else if (eligibility.warnings.length > 0) eligibilityStatus = "warning";
++
++    return {
++      id: p.id,
++      preferredName: p.preferredName || p.givenNames || "",
++      registeredTeam: p.registeredTeam || "",
++      playingPosition: p.playingPosition || "",
++      playingAbility: p.playingAbility || "",
++      availabilityStatus,
++      playerNotes,
++      // Play-up counting requires reading Match Cards for the current
++      // season and is Phase 3 work (see Implementation_Roadmap_v2.md) —
++      // left as-is (0) exactly as it was before this migration.
++      playUpCount: 0,
++      eligibilityStatus,
++      blocks: eligibility.blocks,
++      warnings: eligibility.warnings,
++      conflicts: eligibility.conflicts,
++      selectionStatus: sel?.selectionStatus || "",
++      selectionId: sel?.id || "",
++    };
++  });
++
++  players.sort((a, b) => {
++    if (a.selectionStatus && !b.selectionStatus) return -1;
++    if (!a.selectionStatus && b.selectionStatus) return 1;
++    if (a.eligibilityStatus === "blocked" && b.eligibilityStatus !== "blocked") return 1;
++    if (a.eligibilityStatus !== "blocked" && b.eligibilityStatus === "blocked") return -1;
++    return 0;
++  });
++
++  const matchInfo = {
++    date: match.matchDate || "",
++    homeTeam: match.homeTeam || "",
++    awayTeam: match.awayTeam || "",
++    division: match.division || "",
++    venue: match.venue || "",
++    targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
++    selectedCount: matchSelections.filter((s) => s.selectionStatus === "Selected").length,
++    reserveCount: matchSelections.filter((s) => s.selectionStatus === "Reserve").length,
++  };
++
++  return { match: matchInfo, players };
++}
++
++export interface SelectPlayerInput {
++  matchId: string;
++  playerId: string;
++  selectionStatus: "Selected" | "Reserve";
++  /** Email of the logged-in coach making the selection (used for "Selected By"). */
++  actingEmail?: string;
++}
++
++/** Ported from src/api/selectPlayer.ts, re-running the same eligibility checks server-side. */
++export async function selectPlayer(env: Env, input: SelectPlayerInput) {
++  const { matchId, playerId, selectionStatus } = input;
++  if (!matchId || !playerId || !selectionStatus) {
++    throw new HttpError("matchId, playerId and selectionStatus are required", 400);
++  }
++
++  const playerRecord = await airtableFindById(env, TABLES.player, playerId);
++  if (!playerRecord) throw new HttpError("Player not found or inactive", 404);
++  const player = mapPlayer(playerRecord);
++  if (!player.active) throw new HttpError("Player not found or inactive", 404);
++  if (!player.registeredTeam || !player.playingPosition || !player.playingAbility) {
++    throw new HttpError("Player profile is incomplete", 422);
++  }
++  if (player.isSuspended || (player.matchesToServe && player.matchesToServe > 0)) {
++    throw new HttpError("Player is suspended", 422);
++  }
++
++  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
++  if (!matchRecord) throw new HttpError("Match not found", 404);
++  const match = mapMatch(matchRecord);
++
++  const ref = await getReferenceData(env);
++  const teamRankMap = ref.teamRankMap;
++  const home = match.homeTeam || "";
++  const away = match.awayTeam || "";
++  const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
++  const targetTeamRank = teamRankMap[hkfcTeam] ?? 99;
++  const playerTeamRank = teamRankMap[player.registeredTeam || ""] ?? 99;
++  if (playerTeamRank < targetTeamRank) {
++    throw new HttpError("Higher-to-lower movement blocked (7.2a)", 422);
++  }
++  if (player.isVisitingPlayer && player.registeredTeam !== hkfcTeam) {
++    throw new HttpError("Visiting player fixed to registered team (6.4)", 422);
++  }
++
++  const allSelections = (await airtableFindAll(env, TABLES.squadSelection)).map(mapSelection);
++  const duplicate = allSelections.find(
++    (s) => linkId(s.player) === playerId && linkId(s.match) === matchId
++  );
++  if (duplicate) throw new HttpError("Player already selected for this match", 409);
++
++  let selectedByIds: string[] = [];
++  if (input.actingEmail) {
++    // Best-effort: an unknown/blank acting email shouldn't block the selection.
++    const acting = await getPlayerByEmail(env, input.actingEmail).catch(() => null);
++    if (acting) selectedByIds = [acting.id];
++  }
++
++  const fields: Record<string, unknown> = {
++    [SQUADSELECTIONS_FIELDS.match]: [matchId],
++    [SQUADSELECTIONS_FIELDS.player]: [playerId],
++    [SQUADSELECTIONS_FIELDS.selectionStatus]: selectionStatus,
++  };
++  if (selectedByIds.length) {
++    fields[SQUADSELECTIONS_FIELDS.selectedBy] = selectedByIds;
++  }
++  // NOTE: "Selected At" is a createdTime formula field in Airtable — it is
++  // set automatically and must NOT be included in the write payload.
++
++  const record = await airtableCreate(env, TABLES.squadSelection, fields);
++  return { id: record.id, success: true };
++}
++
++/** Ported from src/api/removeSelection.ts. */
++export async function removeSelection(env: Env, selectionId: string) {
++  if (!selectionId) throw new HttpError("selectionId is required", 400);
++  const record = await airtableFindById(env, TABLES.squadSelection, selectionId);
++  if (!record) throw new HttpError("Selection not found", 404);
++  await airtableDelete(env, TABLES.squadSelection, selectionId);
++  return { success: true };
++}
+diff --git a/worker/tsconfig.json b/worker/tsconfig.json
+new file mode 100644
+index 0000000..becad5a
+--- /dev/null
++++ b/worker/tsconfig.json
+@@ -0,0 +1,15 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["ES2022"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "types": ["@cloudflare/workers-types"],
++    "strict": true,
++    "skipLibCheck": true,
++    "noEmit": true,
++    "isolatedModules": true,
++    "resolveJsonModule": true
++  },
++  "include": ["src/**/*.ts", "../src/generated/**/*.ts", "../src/mappers/**/*.ts", "../src/lib/cache.ts"]
++}
+diff --git a/worker/wrangler.toml b/worker/wrangler.toml
+index 82e41ef..bdd0f01 100644
+--- a/worker/wrangler.toml
++++ b/worker/wrangler.toml
+@@ -1,3 +1,17 @@
+ name = "hkfc-api"
+ main = "src/index.ts"
+-compatibility_date = "2026-07-04"
+\ No newline at end of file
++compatibility_date = "2026-07-04"
++
++# Non-secret config. AIRTABLE_BASE_ID is not sensitive on its own (it's
++# useless without AIRTABLE_TOKEN) so it's fine to commit here.
++[vars]
++AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
++# Uncomment and set to your deployed frontend origin to lock down CORS.
++# Defaults to "*" (any origin) if left unset.
++# ALLOWED_ORIGIN = "https://squad-selection.pages.dev"
++
++# AIRTABLE_TOKEN is a real credential and must NEVER be committed.
++# Set it with:
++#   wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml
++# For local `wrangler dev`, put it in worker/.dev.vars instead (gitignored) —
++# see worker/.dev.vars.example.

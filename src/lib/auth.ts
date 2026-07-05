@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { peopleRepository } from '@/repositories/peopleRepository';
+import { apiGet } from './apiClient';
+import type { Player } from '@/generated/domainTypes';
 
 /**
  * Get the current authenticated Supabase user.
@@ -13,14 +14,15 @@ export async function getCurrentSupabaseUser() {
 /**
  * Get the People record linked to the current Supabase user via email.
  * Throws if not found.
+ *
+ * Previously called peopleRepository.getByEmail() directly against
+ * Airtable from the browser. Now goes through the Worker's
+ * GET /api/player-by-email endpoint instead.
  */
-export async function getCurrentPeople() {
+export async function getCurrentPeople(): Promise<Player> {
   const user = await getCurrentSupabaseUser();
   if (!user) throw new Error('Not authenticated');
   if (!user.email) throw new Error('User has no email address');
 
-  const people = await peopleRepository.getByEmail(user.email);
-  if (!people) throw new Error('Player record not found for this email');
-
-  return people;
+  return apiGet<Player>('/api/player-by-email', { email: user.email });
 }

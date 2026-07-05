@@ -1,5 +1,5 @@
-import { availabilityRepository } from '@/repositories';
-import { getCurrentPeople } from '@/lib/auth';
+import { apiPost } from '@/lib/apiClient';
+import { getCurrentSupabaseUser } from '@/lib/auth';
 
 export async function setMyAvailability(
   matchId: string,
@@ -7,27 +7,14 @@ export async function setMyAvailability(
   notes?: string,
   existingExceptionId?: string
 ) {
-  const user = await getCurrentPeople();
+  const user = await getCurrentSupabaseUser();
+  if (!user?.email) throw new Error('Not authenticated');
 
-  if (status === 'Available') {
-    if (existingExceptionId) {
-      await availabilityRepository.delete(existingExceptionId);
-    }
-  } else if (existingExceptionId) {
-    await availabilityRepository.update(existingExceptionId, {
-      availabilityStatus: status,
-      playerNotes: notes || '',
-      updatedBy: user.id,
-    });
-  } else {
-    await availabilityRepository.create({
-      match: matchId,
-      player: user.id,
-      availabilityStatus: status,
-      playerNotes: notes || '',
-      updatedBy: user.id,
-    });
-  }
-
-  return { success: true };
+  return apiPost<{ success: boolean }>('/api/set-my-availability', {
+    email: user.email,
+    matchId,
+    status,
+    notes,
+    existingExceptionId,
+  });
 }

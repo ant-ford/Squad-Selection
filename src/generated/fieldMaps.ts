@@ -51,6 +51,10 @@ export const AVAILABILITYEXCEPTIONS_FIELDS = {
   match: "Match",
   availabilityStatus: "Availability Status",
   note: "Player Notes",
+  // Was missing before the Worker migration, even though setAvailability /
+  // setMyAvailability both wrote an `updatedBy` value — the write silently
+  // went nowhere because there was no matching Airtable column name here.
+  updatedBy: "Updated By",
 } as const;
 
 export const MATCHCARDS_FIELDS = {

@@ -22,8 +22,11 @@ export async function getMyProfile(): Promise<ProfileData> {
   const ref = await getClubReferenceData();
   const userId = user.id;
 
-  const coachedTeams = ref.teams.filter(t =>
-    t.coach.includes(userId) || t.teamCaptain.includes(userId) || t.sectionCaptain.includes(userId)
+  const coachedTeams = ref.teams.filter(
+    (t) =>
+      (t.coach || []).includes(userId) ||
+      (t.teamCaptain || []).includes(userId) ||
+      (t.sectionCaptain || []).includes(userId)
   );
 
   return {
@@ -32,11 +35,11 @@ export async function getMyProfile(): Promise<ProfileData> {
     isCoach,
     isAdmin: isCoach,
     coachedTeams: coachedTeams
-      .map(t => ({
+      .map((t) => ({
         id: t.id,
-        teamName: t.teamName,
-        teamRank: t.teamRank,
-        targetSquadSize: t.targetSquadSize,
+        teamName: t.teamName || '',
+        teamRank: t.teamRank ?? 99,
+        targetSquadSize: t.targetSquadSize || 16,
       }))
       .sort((a, b) => a.teamRank - b.teamRank),
   };

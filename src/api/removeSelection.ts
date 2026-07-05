@@ -1,8 +1,5 @@
-import { selectionsRepository } from '@/repositories';
+import { apiPost } from '@/lib/apiClient';
 
 export async function removeSelection(selectionId: string) {
-  const sel = await selectionsRepository.findById(selectionId);
-  if (!sel) throw new Error('Selection not found');
-  await selectionsRepository.delete(selectionId);
-  return { success: true };
+  return apiPost<{ success: boolean }>('/api/remove-selection', { selectionId });
 }
