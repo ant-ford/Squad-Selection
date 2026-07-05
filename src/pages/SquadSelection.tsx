@@ -21,6 +21,7 @@ export default function SquadSelection() {
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filter, setFilter] = useState('all');
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
 
   // Merge Server State + Polling State + Local Optimistic State
   const mergedPlayers = useMemo(() => {
@@ -164,14 +165,14 @@ export default function SquadSelection() {
       </div>
 
       <MatchHeader match={optimisticMatch} />
-      <PlayerFilters active={filter} onFilter={setFilter} />
+      <PlayerFilters active={filter} onFilter={setFilter} bulkSelectMode={bulkSelectMode} onToggleBulk={() => { setBulkSelectMode(!bulkSelectMode); setCheckedIds(new Set()); }} />
 
       <div className="container mx-auto px-4">
         {filteredPlayers.map(p => (
           <PlayerRow
             key={p.id}
             player={p}
-            checked={checkedIds.has(p.id)}
+            checked={checkedIds.has(p.id)} bulkSelectMode={bulkSelectMode}
             onToggleCheck={() => handleToggleCheck(p.id)}
             onToggleSelection={() => handleToggleSelection(p.id)}
           />

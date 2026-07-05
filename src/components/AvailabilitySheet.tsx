@@ -81,8 +81,8 @@ export default function AvailabilitySheet({
           ))}
         </div>
 
-        <div className="py-2">
-          <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
+        <div className="py-2 flex flex-col">
+          <label className="text-xs font-medium text-muted-foreground mb-1">Note (optional)</label>
           <Textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}

@@ -8,10 +8,17 @@ const FILTERS = [
   { key: 'GK', label: 'GK' },
 ];
 
-export default function PlayerFilters({ active, onFilter }: { active: string; onFilter: (f: string) => void }) {
+export default function PlayerFilters({
+  active, onFilter, bulkSelectMode, onToggleBulk,
+}: {
+  active: string;
+  onFilter: (f: string) => void;
+  bulkSelectMode?: boolean;
+  onToggleBulk?: () => void;
+}) {
   return (
     <div className="border-b border-border overflow-x-auto">
-      <div className="container mx-auto px-4 py-2 flex gap-2">
+      <div className="container mx-auto px-4 py-2 flex gap-2 items-center">
         {FILTERS.map(f => (
           <button
             key={f.key}
@@ -25,6 +32,18 @@ export default function PlayerFilters({ active, onFilter }: { active: string; on
             {f.label}
           </button>
         ))}
+        {onToggleBulk && (
+          <button
+            onClick={onToggleBulk}
+            className={`text-xs px-3 py-1 rounded-full whitespace-nowrap shrink-0 ml-auto transition-colors ${
+              bulkSelectMode
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-muted text-muted-foreground'
+            }`}
+          >
+            Bulk Select
+          </button>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
+import { SectionHeader } from '@/components/shared';
 
 type Fixture = GetMyFixturesOutput['fixtures'][0];
 
@@ -48,7 +49,7 @@ export default function PlayerDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
-              <p className="text-sm text-muted-foreground">Squad Selection</p>
+              <p className="text-sm text-muted-foreground">Team: Squad Selection</p>
             </div>
             <div className="flex items-center gap-2">
               {data.isCoach && (
@@ -82,7 +83,7 @@ export default function PlayerDashboard() {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">Team: 
                 {data.registeredTeam || 'No team'}{data.playingPosition ? ` · ${data.playingPosition}` : ''}{data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
               </p>
             </div>
@@ -99,9 +100,7 @@ export default function PlayerDashboard() {
 
       {/* Fixtures List */}
       <div className="container mx-auto px-4 pb-8">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-          Upcoming Fixtures ({data.fixtures.length})
-        </h2>
+        <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
 
         {data.fixtures.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-border rounded-xl">
