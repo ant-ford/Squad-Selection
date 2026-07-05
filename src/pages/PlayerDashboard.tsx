@@ -49,7 +49,7 @@ export default function PlayerDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
-              <p className="text-sm text-muted-foreground">Team: Squad Selection</p>
+              <p className="text-sm text-muted-foreground">Squad Selection</p>
             </div>
             <div className="flex items-center gap-2">
               {data.isCoach && (
@@ -83,7 +83,7 @@ export default function PlayerDashboard() {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
-              <p className="text-sm text-muted-foreground">Team: 
+              <p className="text-sm text-muted-foreground"> 
                 {data.registeredTeam || 'No team'}{data.playingPosition ? ` · ${data.playingPosition}` : ''}{data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
               </p>
             </div>
