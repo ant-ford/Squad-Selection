@@ -1,8 +1,4 @@
-import { useState } from 'react';
-import { CheckCircle2, Circle, Ban, AlertTriangle, Loader2 } from 'lucide-react';
-import {  selectPlayer } from '@/api/selectPlayer';
-import { removeSelection } from '@/api/removeSelection';
-import { toast } from 'sonner';
+import { CheckCircle2, Circle, Ban } from 'lucide-react';
 
 type Player = {
   id: string;
@@ -26,35 +22,17 @@ const POS_SHORT: Record<string, string> = {
 };
 
 export default function PlayerRow({
-  player, matchId, checked, onToggleCheck, onRefresh,
+  player, checked, onToggleCheck, onToggleSelection,
 }: {
-  player: Player; matchId: string; checked: boolean;
-  onToggleCheck: () => void; onRefresh: () => void;
+  player: Player; 
+  checked: boolean;
+  onToggleCheck: () => void; 
+  onToggleSelection: () => void;
 }) {
-  const [acting, setActing] = useState(false);
   const isBlocked = player.eligibilityStatus === 'blocked';
   const isSelected = !!player.selectionStatus;
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const dimmed = isBlocked || isUnavailable;
-
-  const handleTap = async () => {
-    if (isBlocked || acting) return;
-    setActing(true);
-    try {
-      if (isSelected) {
-        await removeSelection(player.selectionId);
-        toast.success(`${player.preferredName} removed`);
-      } else {
-        await selectPlayer(matchId, player.id, 'Selected');
-        toast.success(`${player.preferredName} selected`);
-      }
-      onRefresh();
-    } catch (e: any) {
-      toast.error(e?.message || 'Action failed');
-    } finally {
-      setActing(false);
-    }
-  };
 
   return (
     <div className={`flex items-center gap-3 py-3 border-b border-border ${dimmed ? 'opacity-50' : ''}`}>
@@ -68,15 +46,14 @@ export default function PlayerRow({
       />
 
       {/* Status icon */}
-      <button onClick={handleTap} disabled={isBlocked || acting} className="shrink-0">
-        {acting ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> :
-         isSelected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
+      <button onClick={onToggleSelection} disabled={isBlocked} className="shrink-0">
+        {isSelected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
          isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
          <Circle className="h-5 w-5 text-muted-foreground" />}
       </button>
 
       {/* Player info */}
-      <div className="flex-1 min-w-0" onClick={handleTap}>
+      <div className="flex-1 min-w-0" onClick={onToggleSelection}>
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           <span className="text-xs text-muted-foreground shrink-0">

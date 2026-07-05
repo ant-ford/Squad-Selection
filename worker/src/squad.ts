@@ -4,19 +4,22 @@ import {
   airtableFindById,
   airtableCreate,
   airtableDelete,
+  airtableBatchCreate,
+  airtableBatchUpdate,
+  airtableBatchDelete,
   linkId,
 } from "./airtable";
+import { getCached, invalidateCache } from "../../src/lib/cache";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { evaluatePlayerEligibility } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
-import { SQUADSELECTIONS_FIELDS } from "../../src/generated/fieldMaps";
+import { SQUADSELECTIONS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapSelection } from "../../src/mappers/selectionMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
 
-/** Ported from src/api/getPlayersForMatch.ts. */
 export async function getPlayersForMatch(env: Env, matchId: string) {
   const ref = await getReferenceData(env);
   const teamRankMap = ref.teamRankMap;
@@ -31,26 +34,22 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
   const hkfcTeam = teamRankMap[home] !== undefined ? home : away;
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
-  const [playerRecords, allSelections, allExceptions] = await Promise.all([
-    airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
-    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
-    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
-  ]);
-  const allPlayers = playerRecords.map(mapPlayer);
+  // Cached heavy fetch
+  const { data: heavyData } = await getCached(`players-for-match:${matchId}`, async () => {
+    const [playerRecords, allSelections, allExceptions] = await Promise.all([
+      airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
+      airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
+      airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
+    ]);
+    return { playerRecords, allSelections, allExceptions };
+  }, 5 * 60 * 1000); // 5 min TTL
 
-  const matchSelections = allSelections.filter((s) => linkId(s.match) === matchId);
-  const selectionMap = new Map<string, (typeof matchSelections)[number]>();
-  for (const sel of matchSelections) {
-    const pId = linkId(sel.player);
-    if (pId) selectionMap.set(pId, sel);
-  }
+  const allPlayers = heavyData.playerRecords.map(mapPlayer);
+  const matchSelections = heavyData.allSelections.filter((s) => linkId(s.match) === matchId);
+  const matchExceptions = heavyData.allExceptions.filter((e) => linkId(e.match) === matchId);
 
-  const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
-  const exceptionMap = new Map<string, (typeof matchExceptions)[number]>();
-  for (const exc of matchExceptions) {
-    const pId = linkId(exc.player);
-    if (pId) exceptionMap.set(pId, exc);
-  }
+  const selectionMap = new Map(matchSelections.map((s) => [linkId(s.player)!, s]));
+  const exceptionMap = new Map(matchExceptions.map((e) => [linkId(e.player)!, e]));
 
   const players = allPlayers.map((p) => {
     const sel = selectionMap.get(p.id);
@@ -72,10 +71,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
       playingAbility: p.playingAbility || "",
       availabilityStatus,
       playerNotes,
-      // Play-up counting requires reading Match Cards for the current
-      // season and is Phase 3 work (see Implementation_Roadmap_v2.md) —
-      // left as-is (0) exactly as it was before this migration.
-      playUpCount: 0,
+      playUpCount: 0, // Phase 3
       eligibilityStatus,
       blocks: eligibility.blocks,
       warnings: eligibility.warnings,
@@ -159,7 +155,6 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
 
   let selectedByIds: string[] = [];
   if (input.actingEmail) {
-    // Best-effort: an unknown/blank acting email shouldn't block the selection.
     const acting = await getPlayerByEmail(env, input.actingEmail).catch(() => null);
     if (acting) selectedByIds = [acting.id];
   }
@@ -172,10 +167,12 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
   if (selectedByIds.length) {
     fields[SQUADSELECTIONS_FIELDS.selectedBy] = selectedByIds;
   }
-  // NOTE: "Selected At" is a createdTime formula field in Airtable — it is
-  // set automatically and must NOT be included in the write payload.
 
   const record = await airtableCreate(env, TABLES.squadSelection, fields);
+
+  invalidateCache(`players-for-match:${matchId}`);
+  invalidateCache("upcoming-fixtures");
+
   return { id: record.id, success: true };
 }
 
@@ -185,5 +182,135 @@ export async function removeSelection(env: Env, selectionId: string) {
   const record = await airtableFindById(env, TABLES.squadSelection, selectionId);
   if (!record) throw new HttpError("Selection not found", 404);
   await airtableDelete(env, TABLES.squadSelection, selectionId);
+  invalidateCache("upcoming-fixtures");
   return { success: true };
+}
+
+// ---------------------------------------------------------------
+// NEW ENDPOINTS BELOW
+// ---------------------------------------------------------------
+
+/** 
+ * Lightweight polling endpoint. Returns ONLY availability exceptions 
+ * for a specific match (1 Airtable call instead of 5).
+ */
+export async function getAvailabilityForMatch(env: Env, matchId: string) {
+  const exceptions = await airtableFindAll(
+    env, 
+    TABLES.availabilityException, 
+    `{Match}="${matchId}"`
+  );
+
+  return {
+    exceptions: exceptions.map(e => ({
+      playerId: e.fields[AVAILABILITYEXCEPTIONS_FIELDS.player]?.[0],
+      status: e.fields[AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus] || "Available",
+      notes: e.fields[AVAILABILITYEXCEPTIONS_FIELDS.note] || "",
+    }))
+  };
+}
+
+/** 
+ * Batch update endpoint. Receives all pending deltas at once, 
+ * runs eligibility on new selections, and writes to Airtable 
+ * using batch operations (max 10 records per Airtable call).
+ */
+export async function batchUpdateSquad(env: Env, matchId: string, deltas: any[], actingEmail?: string) {
+  const currentSelections = await airtableFindAll(
+    env, 
+    TABLES.squadSelection, 
+    `{Match}="${matchId}"`
+  );
+  const currentMap = new Map(currentSelections.map(s => [linkId(s.fields[SQUADSELECTIONS_FIELDS.player]), s]));
+
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+  const match = mapMatch(matchRecord);
+
+  const ref = await getReferenceData(env);
+  const teamRankMap = ref.teamRankMap;
+
+  const toCreate: Record<string, unknown>[] = [];
+  const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
+  const toDelete: string[] = [];
+  const errors: { playerId: string; reason: string }[] = [];
+
+  let selectedByIds: string[] = [];
+  if (actingEmail) {
+    const acting = await getPlayerByEmail(env, actingEmail).catch(() => null);
+    if (acting) selectedByIds = [acting.id];
+  }
+
+  for (const delta of deltas) {
+    const existing = currentMap.get(delta.playerId);
+
+    if (delta.action === 'remove') {
+      if (existing) toDelete.push(existing.id);
+    } else {
+      const newStatus = delta.action === 'select' ? 'Selected' : 'Reserve';
+
+      if (existing) {
+        if (existing.fields[SQUADSELECTIONS_FIELDS.selectionStatus] !== newStatus) {
+          toUpdate.push({ 
+            id: existing.id, 
+            fields: { [SQUADSELECTIONS_FIELDS.selectionStatus]: newStatus } 
+          });
+        }
+      } else {
+        // Run eligibility check before creating
+        const playerRecord = await airtableFindById(env, TABLES.player, delta.playerId);
+        if (!playerRecord) {
+          errors.push({ playerId: delta.playerId, reason: "Player not found" });
+          continue;
+        }
+        const player = mapPlayer(playerRecord);
+        
+        if (!player.active) {
+          errors.push({ playerId: delta.playerId, reason: "Player inactive" });
+          continue;
+        }
+
+        const eligibility = evaluatePlayerEligibility(player, match, teamRankMap, currentSelections);
+        if (eligibility.blocks.length > 0) {
+          errors.push({ playerId: delta.playerId, reason: eligibility.blocks[0].reason });
+          continue;
+        }
+
+        const fields: Record<string, unknown> = {
+          [SQUADSELECTIONS_FIELDS.match]: [matchId],
+          [SQUADSELECTIONS_FIELDS.player]: [delta.playerId],
+          [SQUADSELECTIONS_FIELDS.selectionStatus]: newStatus,
+        };
+        
+        if (selectedByIds.length) {
+          fields[SQUADSELECTIONS_FIELDS.selectedBy] = selectedByIds;
+        }
+
+        toCreate.push(fields);
+      }
+    }
+  }
+
+  // Execute batched operations (Airtable allows max 10 per request)
+  for (let i = 0; i < toCreate.length; i += 10) {
+    await airtableBatchCreate(env, TABLES.squadSelection, toCreate.slice(i, i + 10));
+  }
+  for (let i = 0; i < toUpdate.length; i += 10) {
+    await airtableBatchUpdate(env, TABLES.squadSelection, toUpdate.slice(i, i + 10));
+  }
+  for (let i = 0; i < toDelete.length; i += 10) {
+    await airtableBatchDelete(env, TABLES.squadSelection, toDelete.slice(i, i + 10));
+  }
+
+  // Invalidate caches
+  invalidateCache(`players-for-match:${matchId}`);
+  invalidateCache("upcoming-fixtures");
+
+  return {
+    success: errors.length === 0,
+    created: toCreate.length,
+    updated: toUpdate.length,
+    deleted: toDelete.length,
+    errors: errors.length > 0 ? errors : undefined
+  };
 }

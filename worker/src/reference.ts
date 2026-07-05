@@ -1,5 +1,5 @@
 import { Env, airtableFindAll, escapeFormulaValue } from "./airtable";
-import { getCached } from "../../src/lib/cache";
+import { getCached, invalidateCache } from "../../src/lib/cache";
 import { TABLES } from "../../src/generated/tableNames";
 import { PEOPLE_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
@@ -13,12 +13,6 @@ export interface ReferenceData {
   teamNames: string[];
 }
 
-/**
- * Mirrors the join that src/api/getClubReferenceData.ts used to do in the
- * browser: active Teams + active People, plus a name -> rank lookup table.
- * Cached in-isolate for 10 minutes (same TTL the frontend used to use)
- * since this data rarely changes and is read on almost every request.
- */
 export async function getReferenceData(env: Env): Promise<ReferenceData> {
   const { data } = await getCached<ReferenceData>("club-reference", async () => {
     const [teamRecords, playerRecords] = await Promise.all([
@@ -40,12 +34,11 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
       teamRankMap,
       teamNames: teams.map((t) => t.teamName || ""),
     };
-  });
+  }, 10 * 60 * 1000); // 10 minutes
 
   return data;
 }
 
-/** All active players — kept for backwards compatibility with GET /api/players/active. */
 export async function getActivePlayers(env: Env): Promise<Player[]> {
   const records = await airtableFindAll(env, TABLES.player, "{Active}=TRUE()");
   return records.map(mapPlayer);
@@ -59,3 +52,6 @@ export async function getPlayerByEmail(env: Env, email: string): Promise<Player 
   );
   return records[0] ? mapPlayer(records[0]) : null;
 }
+
+// Export invalidate for use in other files
+export { invalidateCache };

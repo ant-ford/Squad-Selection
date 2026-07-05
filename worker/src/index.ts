@@ -3,7 +3,7 @@ import { json, errorJson, handleOptions, requireParam, HttpError } from "./http"
 import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
-import { getPlayersForMatch, selectPlayer, removeSelection } from "./squad";
+import { getPlayersForMatch, selectPlayer, removeSelection, getAvailabilityForMatch, batchUpdateSquad } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 
 export type { Env };
@@ -81,6 +81,21 @@ export default {
       const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
       if (method === "GET" && matchPlayersMatch) {
         return json(await getPlayersForMatch(env, matchPlayersMatch[1]), 200, origin);
+      }
+
+      // ---------------------------------------------------------------
+      // NEW: Polling & Batch endpoints
+      // ---------------------------------------------------------------
+
+      const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
+      if (method === "GET" && matchAvailabilityMatch) {
+        return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
+      }
+
+      const matchBatchMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad\/batch$/);
+      if (method === "POST" && matchBatchMatch) {
+        const body = await readJsonBody(request);
+        return json(await batchUpdateSquad(env, matchBatchMatch[1], body.deltas, body.actingEmail), 200, origin);
       }
 
       // ---------------------------------------------------------------

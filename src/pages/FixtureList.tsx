@@ -1,44 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
-import { getUpcomingFixtures, GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
+import { useUpcomingFixtures } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
-
-type Fixture = GetUpcomingFixturesOutput['fixtures'][0];
+import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
-  const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
 
-  useEffect(() => {
-    const filter = activeTab === 'all' ? undefined : activeTab;
-    setLoading(true);
-    getUpcomingFixtures(filter)
-      .then(data => setFixtures(data.fixtures))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [activeTab]);
+  const filter = activeTab === 'all' ? undefined : activeTab;
+  const { data, isLoading } = useUpcomingFixtures(filter);
+
+  const fixtures = data?.fixtures || [];
 
   const tabs = [
     { key: 'all', label: 'All' },
     ...profile.coachTeams.map(t => ({ key: t.teamName, label: t.teamName })),
   ];
 
-  // Group fixtures by date
-  const grouped = fixtures.reduce<Record<string, Fixture[]>>((acc, f) => {
-    const dateKey = format(parseISO(f.date), 'yyyy-MM-dd');
-    (acc[dateKey] ||= []).push(f);
-    return acc;
-  }, {});
+  const grouped = useMemo(() => {
+    return fixtures.reduce<Record<string, UpcomingFixture[]>>((acc, f) => {
+      const dateKey = format(parseISO(f.date), 'yyyy-MM-dd');
+      (acc[dateKey] ||= []).push(f);
+      return acc;
+    }, {});
+  }, [fixtures]);
+
   const sortedDates = Object.keys(grouped).sort();
 
   return (
     <div className="container mx-auto px-4 pb-8">
-      {/* Team filter tabs */}
       {tabs.length > 2 && (
         <div className="flex gap-4 border-b border-border py-2 overflow-x-auto">
           {tabs.map(t => (
@@ -57,7 +51,7 @@ export default function FixtureList() {
         </div>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <div className="space-y-3 pt-4">
           {[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full rounded-lg" />)}
         </div>
