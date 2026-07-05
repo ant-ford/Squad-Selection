@@ -25,7 +25,12 @@ export interface GetMyFixturesOutput {
   registeredTeam: string;
   playingPosition: string;
   shirtNoValue: string;
+
   isCoach: boolean;
+  coachTeams: string[];
+  captainTeams: string[];
+  isSectionCaptain: boolean;
+
   fixtures: MyFixture[];
 }
 

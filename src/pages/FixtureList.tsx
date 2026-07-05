@@ -25,7 +25,7 @@ export default function FixtureList() {
 
   const tabs = [
     { key: 'all', label: 'All' },
-    ...profile.coachedTeams.map(t => ({ key: t.teamName, label: t.teamName })),
+    ...profile.coachTeams.map(t => ({ key: t.teamName, label: t.teamName })),
   ];
 
   // Group fixtures by date

@@ -30,7 +30,7 @@ function tableUrl(env: Env, table: string) {
   return `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
 }
 
-async function airtableFetch(env: Env, url: string, init?: RequestInit) {
+async function airtableFetch<T>( env: Env, url: string, init?: RequestInit ): Promise<T | null> {
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -49,17 +49,15 @@ async function airtableFetch(env: Env, url: string, init?: RequestInit) {
   }
 
   if (response.status === 204) return null;
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 /** Single page of records (max 100, or whatever `params.pageSize` says). */
-export async function airtableList(
-  env: Env,
-  table: string,
-  params?: Record<string, string>
-): Promise<{ records: any[]; offset?: string }> {
+export async function airtableList( env: Env, table: string, params?: Record<string, string> ): Promise<{ records: any[]; offset?: string }> {
   const search = new URLSearchParams(params);
-  return airtableFetch(env, `${tableUrl(env, table)}?${search.toString()}`);
+  const result = await airtableFetch<{ records: any[]; offset?: string }>( env, `${tableUrl(env, table)}?${search.toString()}` );
+  if (!result) { throw new Error("Unexpected null Airtable response"); }
+  return result;
 }
 
 /** Fetches every record matching an optional formula, following pagination. */

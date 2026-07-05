@@ -1,6 +1,7 @@
 import { Env } from "./airtable";
 import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
 import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
+import { getMyProfile } from "./profile";
 import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
 import { getPlayersForMatch, selectPlayer, removeSelection } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
@@ -44,6 +45,21 @@ export default {
         const player = await getPlayerByEmail(env, email);
         if (!player) throw new HttpError("Player record not found for this email", 404);
         return json(player, 200, origin);
+      }
+
+      if (pathname === "/api/my-profile" && request.method === "GET") {
+        const email = url.searchParams.get("email");
+
+        if (!email) {
+          return json(
+            { error: "email is required" },
+            400
+          );
+        }
+
+        return json(
+          await getMyProfile(env, email)
+        );
       }
 
       if (method === "GET" && pathname === "/api/my-fixtures") {

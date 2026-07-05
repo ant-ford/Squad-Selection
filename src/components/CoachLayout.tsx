@@ -24,6 +24,7 @@ export default function CoachLayout() {
   if (profileLoading) {
     return <LoadingSkeleton />;
   }
+  console.log("PROFILE", profile);
   if (!profile?.isCoach) {
     return <NotCoach />;
   }

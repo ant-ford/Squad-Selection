@@ -1,8 +1,0 @@
-# Copy to worker/.dev.vars for local `wrangler dev` / `npm run dev --workspace worker`.
-# Real values must never be committed — this file only holds placeholders.
-
-AIRTABLE_TOKEN=patXXXXXXXXXXXXXX
-AIRTABLE_BASE_ID=appG6amyHthm3Nnde
-
-# Optional — restricts CORS to a single origin instead of "*".
-# ALLOWED_ORIGIN=http://localhost:5173

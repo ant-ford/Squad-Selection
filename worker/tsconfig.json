@@ -9,7 +9,17 @@
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
-  "include": ["src/**/*.ts", "../src/generated/**/*.ts", "../src/mappers/**/*.ts", "../src/lib/cache.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../src/generated/**/*.ts",
+    "../src/mappers/**/*.ts",
+    "../src/lib/cache.ts"
+  ]
 }

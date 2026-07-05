@@ -10,7 +10,7 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
     navigate('/');
   };
   const navigate = useNavigate();
-  const teamNames = profile.coachedTeams.map(t => t.teamName).join(', ');
+  const teamNames = profile.coachTeams.map(t => t.teamName).join(', ');
 
   return (
     <header className="w-full border-b border-border bg-card">

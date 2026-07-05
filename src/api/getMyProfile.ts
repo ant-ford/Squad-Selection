@@ -1,12 +1,15 @@
-import { getCurrentPeople } from '@/lib/auth';
-import { getClubReferenceData } from './getClubReferenceData';
+import { apiGet } from '@/lib/apiClient';
+import { getCurrentSupabaseUser } from '@/lib/auth';
 
 export interface ProfileData {
   preferredName: string;
   roles: string[];
   isCoach: boolean;
   isAdmin: boolean;
-  coachedTeams: {
+  isSectionCaptain: boolean;
+  captainTeams: string[];
+
+  coachTeams: {
     id: string;
     teamName: string;
     teamRank: number;
@@ -15,32 +18,14 @@ export interface ProfileData {
 }
 
 export async function getMyProfile(): Promise<ProfileData> {
-  const user = await getCurrentPeople();
-  const roles = Array.isArray(user.playerCoach) ? user.playerCoach : [];
-  const isCoach = roles.includes('Coach');
+  const user = await getCurrentSupabaseUser();
 
-  const ref = await getClubReferenceData();
-  const userId = user.id;
+  if (!user?.email) {
+    throw new Error('Not authenticated');
+  }
 
-  const coachedTeams = ref.teams.filter(
-    (t) =>
-      (t.coach || []).includes(userId) ||
-      (t.teamCaptain || []).includes(userId) ||
-      (t.sectionCaptain || []).includes(userId)
+  return apiGet<ProfileData>(
+    '/api/my-profile',
+    { email: user.email }
   );
-
-  return {
-    preferredName: user.preferredName || user.givenNames || 'Coach',
-    roles,
-    isCoach,
-    isAdmin: isCoach,
-    coachedTeams: coachedTeams
-      .map((t) => ({
-        id: t.id,
-        teamName: t.teamName || '',
-        teamRank: t.teamRank ?? 99,
-        targetSquadSize: t.targetSquadSize || 16,
-      }))
-      .sort((a, b) => a.teamRank - b.teamRank),
-  };
 }
