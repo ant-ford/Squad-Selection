@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "^26.1.0",
     "@types/react": "^19",

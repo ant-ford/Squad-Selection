@@ -12,6 +12,7 @@ export const PEOPLE_FIELDS = {
   isSuspended: "Is Suspended",
   matchesToServe: "Matches To Serve",
   everRegisteredToPremier: "Ever Registered To Premier",
+  u21Eligible: "U21 Eligible",
   playerCoach: "Player/Coach",
 } as const;
 
@@ -28,13 +29,16 @@ export const TEAMS_FIELDS = {
 
 export const MATCHES_FIELDS = {
   matchDate: "Date",
+  season: "Season",
   division: "Division",
+  competitionType: "Competition Type",
   homeTeam: "Home Team",
   homeTeamScore: "Home Score",
   awayTeam: "Away Team",
   awayTeamScore: "Away Score",
   matchStatus: "Match Status",
   venue: "Venue",
+  fixtureId: "Fixture Id",
 } as const;
 
 export const SQUADSELECTIONS_FIELDS = {
@@ -60,6 +64,17 @@ export const AVAILABILITYEXCEPTIONS_FIELDS = {
 export const MATCHCARDS_FIELDS = {
   player: "Player",
   match: "Match",
+  team: "Team",
+  playerTeam: "Player Team",
+  playUp: "Play Up?",
+  goalkeeper: "Goalkeeper",
+  jersey: "Jersey Number",
   goals: "Goals Scored",
   cards: "Cards",
+  u21: "U21",
+  vp: "VP",
+  captain: "Captain",
+  season: "Season",
+  fixtureId: "Fixture Id",
+  rawPlayerName: "RawPlayerName",
 } as const;
