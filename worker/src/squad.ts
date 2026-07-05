@@ -4,9 +4,13 @@ import {
   airtableFindById,
   airtableCreate,
   airtableDelete,
+  airtableBatchCreate,
+  airtableBatchUpdate,
+  airtableBatchDelete,
   linkId,
   escapeFormulaValue,
 } from "./airtable";
+import { getCached, invalidateCache } from "../../src/lib/cache";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import {
   evaluatePlayerEligibility,
@@ -14,7 +18,11 @@ import {
 } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
-import { SQUADSELECTIONS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
+import {
+  SQUADSELECTIONS_FIELDS,
+  AVAILABILITYEXCEPTIONS_FIELDS,
+  MATCHES_FIELDS,
+} from "../../src/generated/fieldMaps";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapSelection } from "../../src/mappers/selectionMapper";
@@ -61,10 +69,59 @@ async function loadMatchCardsForSeason(
 
 /** Build same-day matches list from all matches. */
 function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
-  // Normalize dates for comparison (strip time if present)
   const norm = (d: string) => d.split("T")[0];
   const target = norm(targetDate);
   return allMatches.filter((m) => norm(m.matchDate) === target);
+}
+
+/**
+ * Build a full EvaluationContext for the eligibility engine.
+ * This is the heavy path; callers should wrap in getCached where appropriate.
+ */
+async function buildEvaluationContext(
+  env: Env,
+  match: Match,
+  teamRankMap: Record<string, number>,
+  teamMap: Map<string, Team>,
+): Promise<EvaluationContext> {
+  const currentSeason = match.season || "";
+  const matchDate = match.matchDate || "";
+
+  const [playerRecords, allSelectionsRaw, allExceptionsRaw, matchCardsRaw, allMatchesRaw] =
+    await Promise.all([
+      airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
+      airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
+      airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
+      loadMatchCardsForSeason(env, currentSeason),
+      airtableFindAll(env, TABLES.match).then((r) => r.map(mapMatch)),
+    ]);
+
+  const allPlayers = playerRecords.map(mapPlayer);
+  const allSelections = allSelectionsRaw as SquadSelection[];
+  const matchCards = matchCardsRaw as MatchCard[];
+  const allMatches = allMatchesRaw as Match[];
+
+  const playersById = new Map<string, Player>();
+  for (const p of allPlayers) playersById.set(p.id, p);
+
+  const exceptionIndex = (allExceptionsRaw as any[]).map((e) => ({
+    playerId: linkId(e.player) || "",
+    matchId: linkId(e.match) || "",
+    status: e.availabilityStatus || "Available",
+  }));
+
+  const sameDayMatches = getSameDayMatches(allMatches, matchDate);
+
+  return {
+    teamMap,
+    rankMap: teamRankMap,
+    sameDayMatches,
+    allSelections,
+    allExceptions: exceptionIndex,
+    matchCards,
+    currentSeason,
+    playersById,
+  };
 }
 
 // ── getPlayersForMatch ──────────────────────────────────────────────────
@@ -82,72 +139,46 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
   const hkfcTeam = hkfcTeamName(match, teamRankMap);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
-  const currentSeason = match.season || "";
-  const matchDate = match.matchDate || "";
+  // Cached heavy fetch: includes all data needed for eligibility evaluation
+  const { data: heavyData } = await getCached(
+    `players-for-match:${matchId}`,
+    async () => {
+      const ctx = await buildEvaluationContext(env, match, teamRankMap, teamMap);
 
-  // ── Load all data in parallel ──
-  const [
-    playerRecords,
-    allSelectionsRaw,
-    allExceptionsRaw,
-    matchCardsRaw,
-    // Load all matches for same-day conflict detection
-    allMatchesRaw,
-  ] = await Promise.all([
-    airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
-    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
-    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
-    loadMatchCardsForSeason(env, currentSeason),
-    airtableFindAll(env, TABLES.match).then((r) => r.map(mapMatch)),
-  ]);
+      const [playerRecords, allExceptionsRaw] = await Promise.all([
+        airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
+        airtableFindAll(env, TABLES.availabilityException).then((r) =>
+          r.map(mapAvailability)
+        ),
+      ]);
 
-  const allPlayers = playerRecords.map(mapPlayer);
-  const allSelections = allSelectionsRaw as SquadSelection[];
-  const allExceptions = allExceptionsRaw as any[];
-  const matchCards = matchCardsRaw as MatchCard[];
-  const allMatches = allMatchesRaw as Match[];
+      const allPlayers = playerRecords.map(mapPlayer);
 
-  // ── Index selections for this match ──
-  const matchSelections = allSelections.filter((s) => linkId(s.match) === matchId);
+      return { ctx, allPlayers, allExceptions: allExceptionsRaw as any[] };
+    },
+    5 * 60 * 1000, // 5 min TTL
+  );
+
+  const { ctx, allPlayers, allExceptions } = heavyData;
+
+  // ── Index selections and exceptions for THIS match ──
+  const matchSelections = ctx.allSelections.filter(
+    (s) => linkId(s.match) === matchId,
+  );
   const selectionMap = new Map<string, SquadSelection>();
   for (const sel of matchSelections) {
     const pId = linkId(sel.player);
     if (pId) selectionMap.set(pId, sel);
   }
 
-  // ── Index exceptions for this match ──
-  const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
+  const matchExceptions = allExceptions.filter(
+    (e) => linkId(e.match) === matchId,
+  );
   const exceptionMap = new Map<string, any>();
   for (const exc of matchExceptions) {
     const pId = linkId(exc.player);
     if (pId) exceptionMap.set(pId, exc);
   }
-
-  // ── Build players-by-id map ──
-  const playersById = new Map<string, Player>();
-  for (const p of allPlayers) playersById.set(p.id, p);
-
-  // ── Build exception index for same-day checks ──
-  const exceptionIndex = allExceptions.map((e) => ({
-    playerId: linkId(e.player) || "",
-    matchId: linkId(e.match) || "",
-    status: e.availabilityStatus || "Available",
-  }));
-
-  // ── Same-day matches ──
-  const sameDayMatches = getSameDayMatches(allMatches, matchDate);
-
-  // ── Build evaluation context ──
-  const ctx: EvaluationContext = {
-    teamMap,
-    rankMap: teamRankMap,
-    sameDayMatches,
-    allSelections,
-    allExceptions: exceptionIndex,
-    matchCards,
-    currentSeason,
-    playersById,
-  };
 
   // ── Evaluate every active player ──
   const players = allPlayers.map((p) => {
@@ -169,7 +200,9 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
       playUpCount: eligibility.playUpCount,
       eligibilityStatus: eligibility.status,
       reason: eligibility.reason,
+      reasonTag: eligibility.reasonTag,
       warnings: eligibility.warnings,
+      warningTags: eligibility.warningTags,
       selectedByTeam: eligibility.selectedByTeam,
       sameDayHigherTeam: eligibility.sameDayHigherTeam,
       isU21: p.u21Eligible || false,
@@ -185,7 +218,9 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
     if (a.selectionStatus && !b.selectionStatus) return -1;
     if (!a.selectionStatus && b.selectionStatus) return 1;
     const order = { eligible: 0, warning: 1, blocked: 2 } as const;
-    return (order[a.eligibilityStatus] ?? 0) - (order[b.eligibilityStatus] ?? 0);
+    return (
+      (order[a.eligibilityStatus] ?? 0) - (order[b.eligibilityStatus] ?? 0)
+    );
   });
 
   const teamsByName = new Map(teams.map((t) => [t.teamName || "", t]));
@@ -197,8 +232,12 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
     competitionType: match.competitionType || "",
     venue: match.venue || "",
     targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
-    selectedCount: matchSelections.filter((s) => s.selectionStatus === "Selected").length,
-    reserveCount: matchSelections.filter((s) => s.selectionStatus === "Reserve").length,
+    selectedCount: matchSelections.filter(
+      (s) => s.selectionStatus === "Selected",
+    ).length,
+    reserveCount: matchSelections.filter(
+      (s) => s.selectionStatus === "Reserve",
+    ).length,
   };
 
   return { match: matchInfo, players };
@@ -217,7 +256,10 @@ export interface SelectPlayerInput {
 export async function selectPlayer(env: Env, input: SelectPlayerInput) {
   const { matchId, playerId, selectionStatus } = input;
   if (!matchId || !playerId || !selectionStatus) {
-    throw new HttpError("matchId, playerId and selectionStatus are required", 400);
+    throw new HttpError(
+      "matchId, playerId and selectionStatus are required",
+      400,
+    );
   }
 
   // ── Load player ──
@@ -237,68 +279,41 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
   const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
   const hkfcTeam = hkfcTeamName(match, teamRankMap);
 
-  const currentSeason = match.season || "";
-
-  // ── Load selections and match cards for full eligibility revalidation ──
-  const [allSelectionsRaw, allExceptionsRaw, matchCardsRaw, allMatchesRaw] = await Promise.all([
-    airtableFindAll(env, TABLES.squadSelection).then((r) => r.map(mapSelection)),
-    airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability)),
-    loadMatchCardsForSeason(env, currentSeason),
-    airtableFindAll(env, TABLES.match).then((r) => r.map(mapMatch)),
-  ]);
-
-  const allSelections = allSelectionsRaw as SquadSelection[];
-  const allExceptions = allExceptionsRaw as any[];
-  const matchCards = matchCardsRaw as MatchCard[];
-  const allMatches = allMatchesRaw as Match[];
-
-  // Build players-by-id map (single player for validation)
-  const playersById = new Map<string, Player>();
-  playersById.set(player.id, player);
-
-  const exceptionIndex = allExceptions.map((e) => ({
-    playerId: linkId(e.player) || "",
-    matchId: linkId(e.match) || "",
-    status: e.availabilityStatus || "Available",
-  }));
-
-  const sameDayMatches = getSameDayMatches(allMatches, match.matchDate || "");
-
-  const ctx: EvaluationContext = {
-    teamMap,
-    rankMap: teamRankMap,
-    sameDayMatches,
-    allSelections,
-    allExceptions: exceptionIndex,
-    matchCards,
-    currentSeason,
-    playersById,
-  };
+  // ── Build full evaluation context for server-side revalidation ──
+  const ctx = await buildEvaluationContext(env, match, teamRankMap, teamMap);
 
   // ── Full server-side eligibility revalidation (§17) ──
   const eligibility = evaluatePlayerEligibility(player, match, ctx);
 
   if (eligibility.status === "blocked") {
-    throw new HttpError(eligibility.reason || "Player is not eligible for this match", 422);
+    throw new HttpError(
+      eligibility.reason || "Player is not eligible for this match",
+      422,
+    );
   }
 
   // ── Duplicate check ──
-  const duplicate = allSelections.find(
-    (s) => linkId(s.player) === playerId && linkId(s.match) === matchId
+  const duplicate = ctx.allSelections.find(
+    (s) => linkId(s.player) === playerId && linkId(s.match) === matchId,
   );
-  if (duplicate) throw new HttpError("Player already selected for this match", 409);
+  if (duplicate)
+    throw new HttpError("Player already selected for this match", 409);
 
   // ── Higher-team priority: auto-remove lower-team same-day selections (§7.3) ──
   const targetRank = teamRankMap[hkfcTeam] ?? 99;
-  let autoRemovedInfo: { team: string; previousSelection: string; reason: string } | null = null;
+  let autoRemovedInfo: {
+    team: string;
+    previousSelection: string;
+    reason: string;
+  } | null = null;
 
-  for (const sel of allSelections) {
+  for (const sel of ctx.allSelections) {
     const selPlayerId = linkId(sel.player);
     const selMatchId = linkId(sel.match);
     if (selPlayerId !== playerId) continue;
     if (!selMatchId) continue;
 
-    const selMatch = allMatches.find((m) => m.id === selMatchId);
+    const selMatch = ctx.sameDayMatches.find((m) => m.id === selMatchId);
     if (!selMatch) continue;
     const selHkfcTeam = hkfcTeamName(selMatch, teamRankMap);
     const selRank = teamRankMap[selHkfcTeam] ?? 99;
@@ -317,7 +332,9 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
   // ── Resolve acting coach ──
   let selectedByIds: string[] = [];
   if (input.actingEmail) {
-    const acting = await getPlayerByEmail(env, input.actingEmail).catch(() => null);
+    const acting = await getPlayerByEmail(env, input.actingEmail).catch(
+      () => null,
+    );
     if (acting) selectedByIds = [acting.id];
   }
 
@@ -333,6 +350,9 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
 
   const record = await airtableCreate(env, TABLES.squadSelection, fields);
 
+  invalidateCache(`players-for-match:${matchId}`);
+  invalidateCache("upcoming-fixtures");
+
   return {
     id: record.id,
     success: true,
@@ -344,8 +364,192 @@ export async function selectPlayer(env: Env, input: SelectPlayerInput) {
 
 export async function removeSelection(env: Env, selectionId: string) {
   if (!selectionId) throw new HttpError("selectionId is required", 400);
-  const record = await airtableFindById(env, TABLES.squadSelection, selectionId);
+  const record = await airtableFindById(
+    env,
+    TABLES.squadSelection,
+    selectionId,
+  );
   if (!record) throw new HttpError("Selection not found", 404);
   await airtableDelete(env, TABLES.squadSelection, selectionId);
+  invalidateCache("upcoming-fixtures");
   return { success: true };
+}
+
+// ── Polling & Batch endpoints (from main/cache commit) ──────────────────
+
+/**
+ * Lightweight polling endpoint. Returns ONLY availability exceptions
+ * for a specific match (1 Airtable call instead of 5).
+ */
+export async function getAvailabilityForMatch(env: Env, matchId: string) {
+  const exceptions = await airtableFindAll(
+    env,
+    TABLES.availabilityException,
+    `{Match}="${matchId}"`,
+  );
+
+  return {
+    exceptions: exceptions.map((e) => ({
+      playerId:
+        e.fields[AVAILABILITYEXCEPTIONS_FIELDS.player]?.[0],
+      status:
+        e.fields[AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus] ||
+        "Available",
+      notes: e.fields[AVAILABILITYEXCEPTIONS_FIELDS.note] || "",
+    })),
+  };
+}
+
+/**
+ * Batch update endpoint. Receives all pending deltas at once,
+ * runs eligibility on new selections, and writes to Airtable
+ * using batch operations (max 10 records per Airtable call).
+ */
+export async function batchUpdateSquad(
+  env: Env,
+  matchId: string,
+  deltas: any[],
+  actingEmail?: string,
+) {
+  const currentSelections = await airtableFindAll(
+    env,
+    TABLES.squadSelection,
+    `{Match}="${matchId}"`,
+  );
+  const currentMap = new Map(
+    currentSelections.map((s) => [
+      linkId(s.fields[SQUADSELECTIONS_FIELDS.player]),
+      s,
+    ]),
+  );
+
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+  const match = mapMatch(matchRecord);
+
+  const ref = await getReferenceData(env);
+  const { teamRankMap, teams } = ref;
+  const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
+
+  const toCreate: Record<string, unknown>[] = [];
+  const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
+  const toDelete: string[] = [];
+  const errors: { playerId: string; reason: string }[] = [];
+
+  let selectedByIds: string[] = [];
+  if (actingEmail) {
+    const acting = await getPlayerByEmail(env, actingEmail).catch(() => null);
+    if (acting) selectedByIds = [acting.id];
+  }
+
+  for (const delta of deltas) {
+    const existing = currentMap.get(delta.playerId);
+
+    if (delta.action === "remove") {
+      if (existing) toDelete.push(existing.id);
+    } else {
+      const newStatus =
+        delta.action === "select" ? "Selected" : "Reserve";
+
+      if (existing) {
+        if (
+          existing.fields[SQUADSELECTIONS_FIELDS.selectionStatus] !==
+          newStatus
+        ) {
+          toUpdate.push({
+            id: existing.id,
+            fields: {
+              [SQUADSELECTIONS_FIELDS.selectionStatus]: newStatus,
+            },
+          });
+        }
+      } else {
+        // Run eligibility check before creating
+        const playerRecord = await airtableFindById(
+          env,
+          TABLES.player,
+          delta.playerId,
+        );
+        if (!playerRecord) {
+          errors.push({
+            playerId: delta.playerId,
+            reason: "Player not found",
+          });
+          continue;
+        }
+        const player = mapPlayer(playerRecord);
+
+        if (!player.active) {
+          errors.push({ playerId: delta.playerId, reason: "Player inactive" });
+          continue;
+        }
+
+        const eligibility = evaluatePlayerEligibility(player, match, {
+          teamMap,
+          rankMap: teamRankMap,
+          sameDayMatches: [],
+          allSelections: currentSelections as SquadSelection[],
+          allExceptions: [],
+          matchCards: [],
+          currentSeason: match.season || "",
+          playersById: new Map([[player.id, player]]),
+        });
+
+        if (eligibility.status === "blocked") {
+          errors.push({
+            playerId: delta.playerId,
+            reason: eligibility.reason || "Eligibility blocked",
+          });
+          continue;
+        }
+
+        const fields: Record<string, unknown> = {
+          [SQUADSELECTIONS_FIELDS.match]: [matchId],
+          [SQUADSELECTIONS_FIELDS.player]: [delta.playerId],
+          [SQUADSELECTIONS_FIELDS.selectionStatus]: newStatus,
+        };
+
+        if (selectedByIds.length) {
+          fields[SQUADSELECTIONS_FIELDS.selectedBy] = selectedByIds;
+        }
+
+        toCreate.push(fields);
+      }
+    }
+  }
+
+  // Execute batched operations (Airtable allows max 10 per request)
+  for (let i = 0; i < toCreate.length; i += 10) {
+    await airtableBatchCreate(
+      env,
+      TABLES.squadSelection,
+      toCreate.slice(i, i + 10),
+    );
+  }
+  for (let i = 0; i < toUpdate.length; i += 10) {
+    await airtableBatchUpdate(
+      env,
+      TABLES.squadSelection,
+      toUpdate.slice(i, i + 10),
+    );
+  }
+  for (let i = 0; i < toDelete.length; i += 10) {
+    await airtableBatchDelete(
+      env,
+      TABLES.squadSelection,
+      toDelete.slice(i, i + 10),
+    );
+  }
+
+  // Invalidate caches
+  invalidateCache(`players-for-match:${matchId}`);
+  invalidateCache("upcoming-fixtures");
+
+  return {
+    success: errors.length === 0,
+    created: toCreate.length,
+    updated: toUpdate.length,
+    deleted: toDelete.length,
+    errors: errors.length > 0 ? errors : undefined,
+  };
 }

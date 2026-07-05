@@ -1,31 +1,21 @@
-import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
-import { getMyProfile, ProfileData } from '@/api/getMyProfile';
+import { useMyProfile } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppHeader from '@/components/AppHeader';
 
 export default function CoachLayout() {
   const { user, isLoading } = useAuth();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-
-  useEffect(() => {
-    if (!user) return;
-    getMyProfile().then(data => {
-      setProfile(data);
-      setProfileLoading(false);
-    }).catch(() => setProfileLoading(false));
-  }, [user]);
+  const { data: profile, isLoading: profileLoading } = useMyProfile();
 
   if (isLoading || !user) {
     return <LoadingSkeleton />;
   }
-  if (profileLoading) {
+  if (profileLoading || !profile) {
     return <LoadingSkeleton />;
   }
-  console.log("PROFILE", profile);
-  if (!profile?.isCoach) {
+
+  if (!profile.isCoach) {
     return <NotCoach />;
   }
 

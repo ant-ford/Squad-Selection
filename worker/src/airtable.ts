@@ -128,6 +128,42 @@ export async function airtableDelete(
   });
 }
 
+/** Batch create up to 10 records in a single request. */
+export async function airtableBatchCreate(
+  env: Env,
+  table: string,
+  records: Record<string, unknown>[]
+): Promise<any> {
+  return airtableFetch(env, tableUrl(env, table), {
+    method: "POST",
+    body: JSON.stringify({ records: records.map(fields => ({ fields })) }),
+  });
+}
+
+/** Batch update up to 10 records in a single request. */
+export async function airtableBatchUpdate(
+  env: Env,
+  table: string,
+  records: { id: string; fields: Record<string, unknown> }[]
+): Promise<any> {
+  return airtableFetch(env, tableUrl(env, table), {
+    method: "PATCH",
+    body: JSON.stringify({ records }),
+  });
+}
+
+/** Batch delete up to 10 records in a single request. */
+export async function airtableBatchDelete(
+  env: Env,
+  table: string,
+  ids: string[]
+): Promise<any> {
+  return airtableFetch(env, tableUrl(env, table), {
+    method: "DELETE",
+    body: JSON.stringify({ records: ids.map(id => ({ id })) }),
+  });
+}
+
 /** Guards against breaking a filterByFormula string via embedded quotes. */
 export function escapeFormulaValue(value: string): string {
   return value.replace(/"/g, '\\"');

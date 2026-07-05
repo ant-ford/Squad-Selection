@@ -11,3 +11,4 @@ worker/.wrangler/
 !.dev.vars.example
 !.env.example
 
+docs/Project_Code_*
