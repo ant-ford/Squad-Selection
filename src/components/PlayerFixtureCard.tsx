@@ -32,10 +32,10 @@ export default function PlayerFixtureCard({ fixture, onTap }: { fixture: Fixture
       className={`w-full border rounded-xl p-4 text-left transition-all hover:shadow-sm ${
         isSelected
           ? 'border-primary bg-primary/5'
-          : isReserve
-          ? 'border-accent bg-accent/30'
           : isUnavailable
           ? 'border-border bg-muted/30 opacity-60'
+          : isMaybe
+          ? 'border-amber-200 bg-amber-50/30'
           : 'border-border bg-card'
       }`}
     >
@@ -94,13 +94,6 @@ function SelectionBadge({ status }: { status: string }) {
     return (
       <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground shrink-0">
         <CheckCircle2 className="h-3 w-3" /> Selected
-      </span>
-    );
-  }
-  if (status === 'Reserve') {
-    return (
-      <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground shrink-0">
-        Reserve
       </span>
     );
   }

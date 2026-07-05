@@ -8,13 +8,13 @@ import PlayerFilters from '@/components/PlayerFilters';
 import PlayerRow from '@/components/PlayerRow';
 import BulkActionBar from '@/components/BulkActionBar';
 
-type Delta = { playerId: string; action: 'select' | 'reserve' | 'remove' };
+type Delta = { playerId: string; action: 'select' | 'remove' };
 
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading } = usePlayersForMatch(matchId!);
+  const { data, isLoading, error } = usePlayersForMatch(matchId!);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
   const batchMutation = useBatchUpdateSquad(matchId!);
 
@@ -47,7 +47,7 @@ export default function SquadSelection() {
           p.selectionStatus = '';
           p.selectionId = '';
         } else {
-          p.selectionStatus = delta.action === 'select' ? 'Selected' : 'Reserve';
+          p.selectionStatus = 'Selected';
           p.selectionId = 'pending';
         }
       }
@@ -184,7 +184,7 @@ export default function SquadSelection() {
           playerIds={Array.from(checkedIds)}
           matchId={matchId!}
           onDone={() => setCheckedIds(new Set())}
-          onBulkReserve={handleBulkReserve}
+          
         />
       )}
 

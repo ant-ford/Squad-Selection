@@ -53,7 +53,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
         <span>{fixture.maybeCount} maybe</span>
         <span>{fixture.unavailableCount} unavail</span>
-        {fixture.reserveCount > 0 && <span>{fixture.reserveCount} reserve</span>}
+
       </div>
     </button>
   );

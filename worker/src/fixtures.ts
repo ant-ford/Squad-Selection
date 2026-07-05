@@ -243,7 +243,7 @@ export async function getUpcomingFixtures(
 
     const matchSelections = selectionsByMatch.get(m.id) || [];
     const selectedCount = matchSelections.filter((s) => s.selectionStatus === "Selected").length;
-    const reserveCount = matchSelections.filter((s) => s.selectionStatus === "Reserve").length;
+
 
     const matchExceptions = exceptionsByMatch.get(m.id) || [];
     const unavailableCount = matchExceptions.filter((e) => e.availabilityStatus === "Unavailable").length;
@@ -261,7 +261,6 @@ export async function getUpcomingFixtures(
       venue: m.venue || "",
       targetSquadSize: team?.targetSquadSize || 16,
       selectedCount,
-      reserveCount,
       availableCount: 0,
       maybeCount,
       unavailableCount,

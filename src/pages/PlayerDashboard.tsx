@@ -89,9 +89,9 @@ export default function PlayerDashboard() {
           </div>
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="grid grid-cols-2 gap-3 mt-4">
             <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
-            <StatBox label="Reserve" value={reserveCount} color="bg-accent text-accent-foreground" />
+
             <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
           </div>
         </div>

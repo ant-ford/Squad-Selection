@@ -13,7 +13,6 @@ export interface UpcomingFixture {
   venue: string;
   targetSquadSize: number;
   selectedCount: number;
-  reserveCount: number;
   availableCount: number;
   maybeCount: number;
   unavailableCount: number;

@@ -4,7 +4,7 @@ import { getCurrentSupabaseUser } from '@/lib/auth';
 export async function selectPlayer(
   matchId: string,
   playerId: string,
-  selectionStatus: 'Selected' | 'Reserve'
+  selectionStatus: 'Selected'
 ) {
   const user = await getCurrentSupabaseUser();
 

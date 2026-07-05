@@ -248,7 +248,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
 export interface SelectPlayerInput {
   matchId: string;
   playerId: string;
-  selectionStatus: "Selected" | "Reserve";
+  selectionStatus: "Selected";
   /** Email of the logged-in coach making the selection (used for "Selected By"). */
   actingEmail?: string;
 }

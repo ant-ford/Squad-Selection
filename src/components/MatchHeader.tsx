@@ -15,7 +15,6 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
   const d = parseISO(match.date);
   const stats = [
     { label: 'Selected', value: match.selectedCount },
-    { label: 'Reserves', value: match.reserveCount },
     { label: 'Target', value: match.targetSquadSize },
   ];
 
@@ -29,7 +28,7 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
           {format(d, 'EEE d MMM')} · {format(d, 'HH:mm')} · {match.venue} · {match.division}
         </p>
       </div>
-      <div className="container mx-auto px-4 pb-3 grid grid-cols-3 gap-2 text-center">
+      <div className="container mx-auto px-4 pb-3 grid grid-cols-2 gap-2 text-center">
         {stats.map(s => (
           <div key={s.label} className="bg-muted rounded-md py-2">
             <p className="text-lg font-bold text-foreground">{s.value}</p>
