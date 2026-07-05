@@ -37,6 +37,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5",
     "vite": "^7",
+    "vitest": "^4.1.9",
     "wrangler": "^4.107.0"
   }
 }

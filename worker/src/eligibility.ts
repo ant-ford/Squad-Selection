@@ -345,19 +345,7 @@ function checkSameDayMovement(
     // Only consider HIGHER-ranked teams (lower numeric rank)
     if (sdmRank >= targetRank) continue;
 
-    // If player has an Unavailable exception for this higher team, skip blocking
-    const hasException = allExceptions.some(
-      (e) =>
-        e.playerId === player.id &&
-        e.matchId === sdm.id &&
-        e.status === "Unavailable",
-    );
-    if (hasException) {
-      sameDayHigherTeam = sdmTeam;
-      continue;
-    }
-
-    // If player is already selected by the higher team, block
+    // If player is already selected by the higher team, block (even if unavailable)
     const higherSel = allSelections.find(
       (s) => safeLinkId(s.player) === player.id && safeLinkId(s.match) === sdm.id,
     );
@@ -369,7 +357,19 @@ function checkSameDayMovement(
       };
     }
 
-    // Player is available for the higher team and not excepted → block
+    // If player has an Unavailable exception, they're not "available" → skip
+    const hasException = allExceptions.some(
+      (e) =>
+        e.playerId === player.id &&
+        e.matchId === sdm.id &&
+        e.status === "Unavailable",
+    );
+    if (hasException) {
+      sameDayHigherTeam = sdmTeam;
+      continue;
+    }
+
+    // Player is available for the higher team and not selected elsewhere → block
     return {
       blockReason: `Available for ${sdmTeam} on same day`,
       selectedByTeam,
@@ -718,7 +718,7 @@ export function evaluatePlayerEligibility(
   const effectiveRankMap = Object.keys(ctx.rankMap).length > 0 ? ctx.rankMap : rankMap;
 
   const targetHkfcTeam = hkfcTeamNameSafe(match, effectiveRankMap);
-  if (!targetHkfcTeam) {
+  if (!targetHkfcTeam || effectiveRankMap[targetHkfcTeam] === undefined) {
     return blockedResult("Admin data incomplete");
   }
 
