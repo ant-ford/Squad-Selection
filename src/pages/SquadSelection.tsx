@@ -21,9 +21,14 @@ export default function SquadSelection() {
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
-  const [filter, setFilter] = useState('all');
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [bulkSelectMode, setBulkSelectMode] = useState(false);`r`n`r`n  const handleFilterChange = useCallback((f: FilterState) => {`r`n    setFilters(f);`r`n    const params = filtersToParams(f);`r`n    setSearchParams(params ? params : {}, { replace: true });`r`n  }, [setSearchParams]);
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+
+  const handleFilterChange = useCallback((f: FilterState) => {
+    setFilters(f);
+    const params = filtersToParams(f);
+    setSearchParams(params ? params : {}, { replace: true });
+  }, [setSearchParams]);
 
   // Merge Server State + Polling State + Local Optimistic State
   const mergedPlayers = useMemo(() => {
