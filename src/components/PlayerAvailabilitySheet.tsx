@@ -135,14 +135,13 @@ export default function PlayerAvailabilitySheet({
             <div className="space-y-1">
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-1/2" />
             </div>
           ) : squad.length === 0 ? (
             <p className="text-xs text-muted-foreground italic">Squad not yet announced</p>
           ) : (
             <>
               <div className="space-y-1">
-                {displaySquad.map((m, i) => (
+                {(displaySquad ?? []).map((m, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
                     <span className="flex-1 text-foreground truncate">{m.name}</span>

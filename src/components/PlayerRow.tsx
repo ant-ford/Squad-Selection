@@ -77,22 +77,22 @@ export default function PlayerRow({
         )}
 
         {/* Conflicts */}
-        {player.conflicts.map((c, i) => (
-          <span key={i} className="text-xs bg-accent text-accent-foreground rounded px-1 py-0.5 inline-block mt-1 mr-1">
+        {(player.conflicts ?? []).map((c, i) => (
+          <span key={i} className="...">
             {c.type === 'reserve' ? 'Reserve' : 'Selected'}: {c.team}
           </span>
         ))}
 
         {/* Warnings */}
-        {player.warnings.map((w, i) => (
-          <span key={i} className="text-xs bg-secondary text-secondary-foreground rounded px-1 py-0.5 inline-block mt-1 mr-1">
+        {(player.warnings ?? []).map((w, i) => (
+          <span key={i} className="...">
             ⚠ {w.reason}
           </span>
         ))}
 
         {/* Blocks */}
-        {player.blocks.map((b, i) => (
-          <span key={i} className="text-xs bg-destructive text-destructive-foreground rounded px-1 py-0.5 inline-block mt-1 mr-1">
+        {(player.blocks ?? []).map((b, i) => (
+          <span key={i} className="...">
             {b.reason}
           </span>
         ))}
