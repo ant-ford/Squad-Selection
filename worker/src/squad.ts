@@ -553,3 +553,71 @@ export async function batchUpdateSquad(
     errors: errors.length > 0 ? errors : undefined,
   };
 }
+
+// -- Selected Squad (read-only for players, Issue 11) -------------------
+
+const POSITION_ORDER: Record<string, number> = {
+  Goalkeeper: 0,
+  Defender: 1,
+  Midfielder: 2,
+  Forward: 3,
+};
+
+const ABILITY_RANK: Record<string, number> = {
+  "A+": 24, "A": 23, "A-": 22,
+  "B+": 21, "B": 20, "B-": 19,
+  "C+": 18, "C": 17, "C-": 16,
+  "D+": 15, "D": 14, "D-": 13,
+  "E+": 12, "E": 11, "E-": 10,
+  "F+": 9,  "F": 8,  "F-": 7,
+  "G+": 6,  "G": 5,  "G-": 4,
+  "H+": 3,  "H": 2,  "H-": 1,
+};
+
+export async function getSquadForMatch(env: Env, matchId: string) {
+  if (!matchId) throw new HttpError("matchId is required", 400);
+
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+
+  const selections = await airtableFindAll(
+    env,
+    TABLES.squadSelection,
+    `AND({${escapeFormulaValue(SQUADSELECTIONS_FIELDS.match)}}="${escapeFormulaValue(matchId)}",{${escapeFormulaValue(SQUADSELECTIONS_FIELDS.selectionStatus)}}="Selected")`
+  );
+
+  const players: Array<{
+    id: string;
+    preferredName: string;
+    position: string;
+    ability: string;
+  }> = [];
+
+  for (const sel of selections) {
+    const playerId = linkId(sel.fields[SQUADSELECTIONS_FIELDS.player]);
+    if (!playerId) continue;
+
+    const playerRecord = await airtableFindById(env, TABLES.player, playerId);
+    if (!playerRecord) continue;
+    const player = mapPlayer(playerRecord);
+
+    players.push({
+      id: player.id,
+      preferredName: player.preferredName || player.givenNames || "Unknown",
+      position: player.playingPosition || "",
+      ability: player.playingAbility || "",
+    });
+  }
+
+  players.sort((a, b) => {
+    const posA = POSITION_ORDER[a.position] ?? 99;
+    const posB = POSITION_ORDER[b.position] ?? 99;
+    if (posA !== posB) return posA - posB;
+    const abA = ABILITY_RANK[a.ability] ?? 0;
+    const abB = ABILITY_RANK[b.ability] ?? 0;
+    return abB - abA;
+  });
+
+  return { matchId, players };
+}
+
