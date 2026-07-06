@@ -22,10 +22,11 @@ const POS_SHORT: Record<string, string> = {
 };
 
 export default function PlayerRow({
-  player, checked, onToggleCheck, onToggleSelection,
+  player, checked, bulkSelectMode, onToggleCheck, onToggleSelection,
 }: {
   player: Player; 
   checked: boolean;
+  bulkSelectMode: boolean;
   onToggleCheck: () => void; 
   onToggleSelection: () => void;
 }) {
@@ -36,24 +37,30 @@ export default function PlayerRow({
 
   return (
     <div className={`flex items-center gap-3 py-3 border-b border-border ${dimmed ? 'opacity-50' : ''}`}>
-      {/* Checkbox for bulk */}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggleCheck}
-        className="h-4 w-4 shrink-0 accent-primary"
-        disabled={isBlocked}
-      />
+      {/* Checkbox for bulk (Only shows when in bulk mode) */}
+      {bulkSelectMode && (
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggleCheck}
+          className="h-4 w-4 shrink-0 accent-primary"
+          disabled={isBlocked}
+        />
+      )}
 
-      {/* Status icon */}
-      <button onClick={onToggleSelection} disabled={isBlocked} className="shrink-0">
+      {/* Status icon (Only works if NOT in bulk select mode) */}
+      <button 
+        onClick={onToggleSelection} 
+        disabled={isBlocked || bulkSelectMode} 
+        className={`shrink-0 ${bulkSelectMode ? 'opacity-50 cursor-not-allowed' : ''}`}
+      >
         {isSelected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
          isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
          <Circle className="h-5 w-5 text-muted-foreground" />}
       </button>
 
       {/* Player info */}
-      <div className="flex-1 min-w-0" onClick={onToggleSelection}>
+      <div className="flex-1 min-w-0" onClick={bulkSelectMode ? onToggleCheck : onToggleSelection}>
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           <span className="text-xs text-muted-foreground shrink-0">
@@ -93,11 +100,7 @@ export default function PlayerRow({
 
       {/* Selection badge */}
       {isSelected && (
-        <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${
-          player.selectionStatus === 'Reserve'
-            ? 'bg-muted text-muted-foreground'
-            : 'bg-primary text-primary-foreground'
-        }`}>
+        <span className="text-xs px-2 py-0.5 rounded shrink-0 bg-primary text-primary-foreground">
           {player.selectionStatus}
         </span>
       )}

@@ -13,7 +13,6 @@ type Fixture = {
   venue: string;
   targetSquadSize: number;
   selectedCount: number;
-  reserveCount: number;
   maybeCount: number;
   unavailableCount: number;
 };
@@ -53,7 +52,6 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
         <span>{fixture.maybeCount} maybe</span>
         <span>{fixture.unavailableCount} unavail</span>
-
       </div>
     </button>
   );

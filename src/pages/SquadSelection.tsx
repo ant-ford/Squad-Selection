@@ -10,11 +10,15 @@ import BulkActionBar from '@/components/BulkActionBar';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
+const POS_SHORT: Record<string, string> = {
+  Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
+};
+
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading, error } = usePlayersForMatch(matchId!);
+  const { data, isLoading } = usePlayersForMatch(matchId!);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
   const batchMutation = useBatchUpdateSquad(matchId!);
 
@@ -70,20 +74,16 @@ export default function SquadSelection() {
     const m = { ...data.match };
     
     let selected = m.selectedCount;
-    let reserve = m.reserveCount;
     
     for (const delta of pendingDeltas) {
       const serverPlayer = data.players.find(p => p.id === delta.playerId);
       const prevStatus = serverPlayer?.selectionStatus || '';
       
       if (prevStatus === 'Selected') selected--;
-      if (prevStatus === 'Reserve') reserve--;
-      
       if (delta.action === 'select') selected++;
-      if (delta.action === 'reserve') reserve++;
     }
     
-    return { ...m, selectedCount: selected, reserveCount: reserve };
+    return { ...m, selectedCount: selected };
   }, [data?.match, pendingDeltas, data?.players]);
 
   const hasChanges = pendingDeltas.length > 0;
@@ -95,11 +95,7 @@ export default function SquadSelection() {
       if (!current || current.eligibilityStatus === 'blocked') return prev;
 
       const effectiveStatus = current.selectionStatus;
-      let nextAction: Delta['action'];
-
-      if (!effectiveStatus) nextAction = 'select';
-      else if (effectiveStatus === 'Selected') nextAction = 'reserve';
-      else nextAction = 'remove';
+      const nextAction: Delta['action'] = effectiveStatus === 'Selected' ? 'remove' : 'select';
 
       // Remove existing delta for this player to prevent duplicates
       const filtered = prev.filter(d => d.playerId !== playerId);
@@ -118,9 +114,10 @@ export default function SquadSelection() {
     if (!hasChanges) return;
     
     try {
-      const result = await batchMutation.mutateAsync(pendingDeltas);
+      // Cast the result to any to safely check for custom errors array returned by worker
+      const result = await batchMutation.mutateAsync(pendingDeltas) as any;
       
-      if (result.errors && result.errors.length > 0) {
+      if (result?.errors && result.errors.length > 0) {
         toast.error(`${result.errors.length} selection(s) rejected: ${result.errors[0].reason}`);
       } else {
         toast.success('Squad saved successfully');
@@ -134,11 +131,12 @@ export default function SquadSelection() {
   const handleDiscard = () => setPendingDeltas([]);
 
   // Bulk actions update local state
-  const handleBulkReserve = () => {
-    const newDeltas: Delta[] = Array.from(checkedIds).map(id => ({ playerId: id, action: 'reserve' as const }));
+  const handleBulkSelect = () => {
+    const newDeltas: Delta[] = Array.from(checkedIds).map(id => ({ playerId: id, action: 'select' as const }));
     setPendingDeltas(prev => [...prev.filter(d => !checkedIds.has(d.playerId)), ...newDeltas]);
     setCheckedIds(new Set());
-    toast.info(`${checkedIds.size} players marked as reserve (pending save)`);
+    setBulkSelectMode(false);
+    toast.info(`${checkedIds.size} players selected (pending save)`);
   };
 
   const handleToggleCheck = (playerId: string) => {
@@ -150,14 +148,21 @@ export default function SquadSelection() {
     });
   };
 
-  // Filtering logic
+  // Filtering logic (AND across categories, OR within a category)
   const filteredPlayers = useMemo(() => {
-    if (filter === 'all') return mergedPlayers;
-    if (filter === 'eligible') return mergedPlayers.filter(p => p.eligibilityStatus !== 'blocked');
-    if (filter === 'selected') return mergedPlayers.filter(p => !!p.selectionStatus);
-    const posMap: Record<string, string> = { DEF: 'Defender', MID: 'Midfielder', FWD: 'Forward', GK: 'Goalkeeper' };
-    return mergedPlayers.filter(p => p.playingPosition === posMap[filter]);
-  }, [mergedPlayers, filter]);
+    return mergedPlayers.filter(p => {
+      if (filters.position.size > 0 && !filters.position.has(POS_SHORT[p.playingPosition] || p.playingPosition)) return false;
+      if (filters.eligibility.size > 0 && !filters.eligibility.has(p.eligibilityStatus)) return false;
+      if (filters.availability.size > 0 && !filters.availability.has(p.availabilityStatus)) return false;
+      
+      if (filters.selection.size > 0) {
+        const selKey = p.selectionStatus ? 'selected' : 'none';
+        if (!filters.selection.has(selKey)) return false;
+      }
+      
+      return true;
+    });
+  }, [mergedPlayers, filters]);
 
   if (isLoading || !data || !optimisticMatch) {
     return <div className="p-6">Loading squad...</div>;
@@ -172,14 +177,21 @@ export default function SquadSelection() {
       </div>
 
       <MatchHeader match={optimisticMatch} />
-      <PlayerFilters active={filter} onFilter={setFilter} bulkSelectMode={bulkSelectMode} onToggleBulk={() => { setBulkSelectMode(!bulkSelectMode); setCheckedIds(new Set()); }} />
+      
+      <PlayerFilters 
+        filters={filters} 
+        onChange={handleFilterChange} 
+        bulkSelectMode={bulkSelectMode} 
+        onToggleBulk={() => { setBulkSelectMode(!bulkSelectMode); setCheckedIds(new Set()); }} 
+      />
 
       <div className="container mx-auto px-4">
         {filteredPlayers.map(p => (
           <PlayerRow
             key={p.id}
             player={p}
-            checked={checkedIds.has(p.id)} bulkSelectMode={bulkSelectMode}
+            checked={checkedIds.has(p.id)} 
+            bulkSelectMode={bulkSelectMode}
             onToggleCheck={() => handleToggleCheck(p.id)}
             onToggleSelection={() => handleToggleSelection(p.id)}
           />
@@ -189,10 +201,8 @@ export default function SquadSelection() {
       {checkedIds.size > 0 && (
         <BulkActionBar
           count={checkedIds.size}
-          playerIds={Array.from(checkedIds)}
-          matchId={matchId!}
           onDone={() => setCheckedIds(new Set())}
-          
+          onBulkSelect={handleBulkSelect}
         />
       )}
 

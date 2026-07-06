@@ -3,13 +3,11 @@ import { Button } from '@/components/ui/button';
 export default function BulkActionBar({
   count,
   onDone,
-  onBulkReserve,
+  onBulkSelect,
 }: {
   count: number;
-  playerIds: string[];
-  matchId: string;
   onDone: () => void;
-  onBulkReserve?: () => void;
+  onBulkSelect?: () => void;
 }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-card z-50">
@@ -19,9 +17,9 @@ export default function BulkActionBar({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => { onBulkReserve?.(); onDone(); }}
+            onClick={() => { onBulkSelect?.(); onDone(); }}
           >
-            Mark Reserve
+            Select
           </Button>
           <Button variant="destructive" size="sm" onClick={onDone}>
             Cancel

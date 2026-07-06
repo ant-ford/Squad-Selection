@@ -29,7 +29,7 @@ type SquadMember = {
 
 const OPTIONS = [
   { value: 'Available', label: 'Available', desc: 'I can play', Icon: CheckCircle2 },
-  { value: 'Maybe', label: 'Maybe', desc: 'Uncertain — coach will see this', Icon: HelpCircle },
+  { value: 'Maybe', label: 'Maybe', desc: 'Uncertain â€” coach will see this', Icon: HelpCircle },
   { value: 'Unavailable', label: 'Unavailable', desc: 'Cannot play this match', Icon: XCircle },
 ] as const;
 
@@ -77,7 +77,9 @@ export default function PlayerAvailabilitySheet({
   };
 
   const d = parseISO(fixture.date);
-  const displaySquad = squadExpanded ? squad : (squad ?? []).slice(0, 12);
+  
+  // FIX: Guarantee an array is returned even if squad is null
+  const displaySquad = squadExpanded ? (squad ?? []) : (squad ?? []).slice(0, 12);
 
   return (
     <Sheet open onOpenChange={() => onClose()}>
@@ -88,7 +90,7 @@ export default function PlayerAvailabilitySheet({
         <div className="py-2">
           <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
           <p className="text-xs text-muted-foreground">
-            {format(d, 'EEE d MMM')} • {format(d, 'HH:mm')} • {fixture.venue}
+            {format(d, 'EEE d MMM')} â€¢ {format(d, 'HH:mm')} â€¢ {fixture.venue}
           </p>
           {fixture.selectionStatus && (
             <p className="text-xs font-medium text-primary mt-1">

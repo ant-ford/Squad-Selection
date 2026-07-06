@@ -8,7 +8,6 @@ type MatchInfo = {
   venue: string;
   targetSquadSize: number;
   selectedCount: number;
-  reserveCount: number;
 };
 
 export default function MatchHeader({ match }: { match: MatchInfo }) {
