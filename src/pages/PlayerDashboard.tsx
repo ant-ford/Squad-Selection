@@ -2,11 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
 import { getMyFixtures, GetMyFixturesOutput } from '@/api/getMyFixtures';
+import { setMyAvailability } from '@/api/setMyAvailability';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
+import { toast } from 'sonner';
 
 type Fixture = GetMyFixturesOutput['fixtures'][0];
 
@@ -26,7 +28,24 @@ export default function PlayerDashboard() {
       .finally(() => setLoading(false));
   }, [user]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Quick availability update – called from the card buttons
+  const handleQuickAvailability = async (
+    fixtureId: string,
+    status: 'Available' | 'Maybe' | 'Unavailable',
+    exceptionId?: string
+  ) => {
+    try {
+      await setMyAvailability(fixtureId, status, undefined, exceptionId);
+      toast.success('Availability updated');
+      loadData(); // refresh the list
+    } catch (err) {
+      toast.error('Failed to update availability');
+    }
+  };
 
   if (isLoading || !user) {
     return <DashboardSkeleton />;
@@ -83,8 +102,10 @@ export default function PlayerDashboard() {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
-              <p className="text-sm text-muted-foreground"> 
-                {data.registeredTeam || 'No team'}{data.playingPosition ? ` · ${data.playingPosition}` : ''}{data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
+              <p className="text-sm text-muted-foreground">
+                {data.registeredTeam || 'No team'}
+                {data.playingPosition ? ` · ${data.playingPosition}` : ''}
+                {data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
               </p>
             </div>
           </div>
@@ -92,7 +113,6 @@ export default function PlayerDashboard() {
           {/* Quick Stats */}
           <div className="grid grid-cols-2 gap-3 mt-4">
             <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
-
             <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
           </div>
         </div>
@@ -113,6 +133,9 @@ export default function PlayerDashboard() {
                 key={f.id}
                 fixture={f}
                 onTap={() => setSelectedFixture(f)}
+                onAvailabilityChange={(status, exceptionId) =>
+                  handleQuickAvailability(f.id, status, exceptionId)
+                }
               />
             ))}
           </div>
@@ -123,7 +146,10 @@ export default function PlayerDashboard() {
         <PlayerAvailabilitySheet
           fixture={selectedFixture}
           onClose={() => setSelectedFixture(null)}
-          onSaved={() => { setSelectedFixture(null); loadData(); }}
+          onSaved={() => {
+            setSelectedFixture(null);
+            loadData();
+          }}
         />
       )}
     </div>

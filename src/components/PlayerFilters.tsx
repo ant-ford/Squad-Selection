@@ -1,12 +1,13 @@
 import { X } from 'lucide-react';
 
-type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability';
+type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability' | 'ability';
 
 export interface FilterState {
   position: Set<string>;
   eligibility: Set<string>;
   selection: Set<string>;
   availability: Set<string>;
+  ability: Set<string>;
 }
 
 export const EMPTY_FILTERS: FilterState = {
@@ -14,12 +15,13 @@ export const EMPTY_FILTERS: FilterState = {
   eligibility: new Set(),
   selection: new Set(),
   availability: new Set(),
+  ability: new Set(),
 };
 
 /** Serialize FilterState to URL query string (compact format). */
 export function filtersToParams(f: FilterState): string {
   const parts: string[] = [];
-  for (const cat of ['position','eligibility','selection','availability'] as FilterCategory[]) {
+  for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
     const vals = [...f[cat]];
     if (vals.length) parts.push(`${cat}=${vals.sort().join(',')}`);
   }
@@ -29,8 +31,8 @@ export function filtersToParams(f: FilterState): string {
 /** Deserialize FilterState from URL query string. */
 export function paramsToFilters(search: string): FilterState {
   const params = new URLSearchParams(search);
-  const f: FilterState = { position: new Set(), eligibility: new Set(), selection: new Set(), availability: new Set() };
-  for (const cat of ['position','eligibility','selection','availability'] as FilterCategory[]) {
+  const f: FilterState = { position: new Set(), eligibility: new Set(), selection: new Set(), availability: new Set(), ability: new Set() };
+  for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
     const raw = params.get(cat);
     if (raw) f[cat] = new Set(raw.split(',').filter(Boolean));
   }
@@ -58,6 +60,7 @@ const GROUPS: ChipGroup[] = [
       { key: 'DEF', label: 'DEF' },
       { key: 'MID', label: 'MID' },
       { key: 'FWD', label: 'FWD' },
+      { key: 'FLEX', label: 'FLEX' },
     ],
   },
   {
@@ -83,7 +86,37 @@ const GROUPS: ChipGroup[] = [
     options: [
       { key: 'Available', label: 'Available' },
       { key: 'Maybe', label: 'Maybe' },
-      { key: 'Unavailable', label: 'Unavail.' },
+      { key: 'Unavailable', label: 'Unavailable' },
+    ],
+  },
+  {
+    category: 'ability',
+    label: 'Ability',
+    options: [
+      { key: 'A+', label: 'A+' },
+      { key: 'A', label: 'A' },
+      { key: 'A-', label: 'A-' },
+      { key: 'B+', label: 'B+' },
+      { key: 'B', label: 'B' },
+      { key: 'B-', label: 'B-' },     
+      { key: 'C+', label: 'C+' },
+      { key: 'C', label: 'C' },
+      { key: 'C-', label: 'C-' },
+      { key: 'D+', label: 'D+' },
+      { key: 'D', label: 'D' },
+      { key: 'D-', label: 'D-' },
+      { key: 'E+', label: 'E+' },
+      { key: 'E', label: 'E' },
+      { key: 'E-', label: 'E-' },
+      { key: 'F+', label: 'F+' },
+      { key: 'F', label: 'F' },
+      { key: 'F-', label: 'F-' },
+      { key: 'G+', label: 'G+' },
+      { key: 'G', label: 'G' },
+      { key: 'G-', label: 'G-' },
+      { key: 'H+', label: 'H+' },   
+      { key: 'H', label: 'H' },
+      { key: 'H-', label: 'H-' },
     ],
   },
 ];

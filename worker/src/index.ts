@@ -9,7 +9,7 @@ import {
   selectPlayer,
   removeSelection,
   getAvailabilityForMatch,
-  batchUpdateSquad
+  syncSquad
 } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 
@@ -52,16 +52,6 @@ export default {
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
       if (method === "GET" && matchAvailabilityMatch) {
         return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
-      }
-
-      const matchBatchMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad\/batch$/);
-      if (method === "POST" && matchBatchMatch) {
-        const body = await readJsonBody(request);
-        return json(
-          await batchUpdateSquad(env, matchBatchMatch[1], body.deltas, body.actingEmail),
-          200,
-          origin
-        );
       }
 
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
@@ -115,8 +105,8 @@ export default {
       }
 
       if (method === "POST" && pathname === "/api/remove-selection") {
-        const body = await readJsonBody(request);
-        return json(await removeSelection(env, body.selectionId), 200, origin);
+        const body = await readJsonBody(request) as { matchId: string; playerId: string };
+        return json(await removeSelection(env, body), 200, origin);
       }
 
       if (method === "POST" && pathname === "/api/set-availability") {
@@ -129,6 +119,12 @@ export default {
         return json(await setMyAvailability(env, body), 200, origin);
       }
 
+      if (method === "POST" && pathname === "/squad/sync") {
+        const body = await readJsonBody(request) as { matchId: string; selectedIds: string[]; actingEmail?: string };
+        await syncSquad(env, body.matchId, body.selectedIds, body.actingEmail);
+        return json({ success: true }, 200, origin);
+      }
+
       // ---------------------------------------------------------------
       // Fallback
       // ---------------------------------------------------------------
@@ -139,7 +135,7 @@ export default {
       if (err instanceof HttpError) {
         return errorJson(err.message, err.status, origin);
       }
-      console.error("Unhandled worker error:", err);
+      console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
       return errorJson("Internal Server Error", 500, origin);
     }
   },

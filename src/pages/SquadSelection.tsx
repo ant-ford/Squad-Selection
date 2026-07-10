@@ -1,12 +1,14 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { usePlayersForMatch, useAvailabilityPoll, useBatchUpdateSquad } from '@/lib/queries';
+import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, X } from 'lucide-react';
+import { ArrowLeft, Save, X, CheckSquare, Square } from 'lucide-react';
+import { apiPost } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
-import PlayerFilters, { EMPTY_FILTERS, filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
+import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import PlayerRow from '@/components/PlayerRow';
-import BulkActionBar from '@/components/BulkActionBar';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/useAuth';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
@@ -20,13 +22,20 @@ export default function SquadSelection() {
 
   const { data, isLoading } = usePlayersForMatch(matchId!);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-  const batchMutation = useBatchUpdateSquad(matchId!);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // ✅ Hooks called at top level
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    setHasChanges(pendingDeltas.length > 0);
+  }, [pendingDeltas]);
 
   const handleFilterChange = useCallback((f: FilterState) => {
     setFilters(f);
@@ -34,139 +43,138 @@ export default function SquadSelection() {
     setSearchParams(params ? params : {}, { replace: true });
   }, [setSearchParams]);
 
-  // Merge Server State + Polling State + Local Optimistic State
   const mergedPlayers = useMemo(() => {
     if (!data?.players) return [];
-    
     const map = new Map(data.players.map(p => [p.id, { ...p }]));
-
-    // 1. Apply live availability polling updates
+    
     if (pollData?.exceptions) {
       for (const exc of pollData.exceptions) {
         const p = map.get(exc.playerId);
-        if (p) {
-          p.availabilityStatus = exc.status;
-          p.playerNotes = exc.notes || '';
-        }
+        if (p) { p.availabilityStatus = exc.status; p.playerNotes = exc.notes || ''; }
       }
     }
-
-    // 2. Apply pending local selection deltas
+    
     for (const delta of pendingDeltas) {
       const p = map.get(delta.playerId);
       if (p) {
-        if (delta.action === 'remove') {
-          p.selectionStatus = '';
-          p.selectionId = '';
-        } else {
-          p.selectionStatus = 'Selected';
-          p.selectionId = 'pending';
-        }
+        p.selectionStatus = delta.action === 'select' ? 'Selected' : '';
       }
     }
-
     return Array.from(map.values());
   }, [data, pollData, pendingDeltas]);
 
-  // Calculate optimistic match header stats
-  const optimisticMatch = useMemo(() => {
-    if (!data?.match) return null;
-    const m = { ...data.match };
-    
-    let selected = m.selectedCount;
-    
-    for (const delta of pendingDeltas) {
-      const serverPlayer = data.players.find(p => p.id === delta.playerId);
-      const prevStatus = serverPlayer?.selectionStatus || '';
-      
-      if (prevStatus === 'Selected') selected--;
-      if (delta.action === 'select') selected++;
-    }
-    
-    return { ...m, selectedCount: selected };
-  }, [data?.match, pendingDeltas, data?.players]);
-
-  const hasChanges = pendingDeltas.length > 0;
-
-  // Handle individual player taps (100% local, 0 API calls)
-  const handleToggleSelection = (playerId: string) => {
-    setPendingDeltas(prev => {
-      const current = mergedPlayers.find(p => p.id === playerId);
-      if (!current || current.eligibilityStatus === 'blocked') return prev;
-
-      const effectiveStatus = current.selectionStatus;
-      const nextAction: Delta['action'] = effectiveStatus === 'Selected' ? 'remove' : 'select';
-
-      // Remove existing delta for this player to prevent duplicates
-      const filtered = prev.filter(d => d.playerId !== playerId);
-      
-      // If removing, and they weren't selected on the server, just drop it
-      if (nextAction === 'remove' && !data?.players.find(p => p.id === playerId)?.selectionStatus) {
-        return filtered;
-      }
-
-      return [...filtered, { playerId, action: nextAction }];
-    });
-  };
-
-  // Handle Save Button
-  const handleSave = async () => {
-    if (!hasChanges) return;
-    
-    try {
-      // Cast the result to any to safely check for custom errors array returned by worker
-      const result = await batchMutation.mutateAsync(pendingDeltas) as any;
-      
-      if (result?.errors && result.errors.length > 0) {
-        toast.error(`${result.errors.length} selection(s) rejected: ${result.errors[0].reason}`);
-      } else {
-        toast.success('Squad saved successfully');
-        setPendingDeltas([]);
-      }
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to save squad');
-    }
-  };
-
-  const handleDiscard = () => setPendingDeltas([]);
-
-  // Bulk actions update local state
-  const handleBulkSelect = () => {
-    const newDeltas: Delta[] = Array.from(checkedIds).map(id => ({ playerId: id, action: 'select' as const }));
-    setPendingDeltas(prev => [...prev.filter(d => !checkedIds.has(d.playerId)), ...newDeltas]);
-    setCheckedIds(new Set());
-    setBulkSelectMode(false);
-    toast.info(`${checkedIds.size} players selected (pending save)`);
-  };
-
-  const handleToggleCheck = (playerId: string) => {
-    setCheckedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(playerId)) next.delete(playerId);
-      else next.add(playerId);
-      return next;
-    });
-  };
-
-  // Filtering logic (AND across categories, OR within a category)
   const filteredPlayers = useMemo(() => {
     return mergedPlayers.filter(p => {
       if (filters.position.size > 0 && !filters.position.has(POS_SHORT[p.playingPosition] || p.playingPosition)) return false;
+      if (filters.ability.size > 0 && !filters.ability.has(p.playingAbility)) return false;
       if (filters.eligibility.size > 0 && !filters.eligibility.has(p.eligibilityStatus)) return false;
       if (filters.availability.size > 0 && !filters.availability.has(p.availabilityStatus)) return false;
-      
       if (filters.selection.size > 0) {
-        const selKey = p.selectionStatus ? 'selected' : 'none';
+        const selKey = p.selectionStatus === 'Selected' ? 'selected' : 'none';
         if (!filters.selection.has(selKey)) return false;
       }
-      
       return true;
     });
   }, [mergedPlayers, filters]);
 
-  if (isLoading || !data || !optimisticMatch) {
-    return <div className="p-6">Loading squad...</div>;
-  }
+  const optimisticMatch = useMemo(() => {
+    if (!data?.match) return null;
+    let selectedCount = mergedPlayers.filter(p => p.selectionStatus === 'Selected').length;
+    return { ...data.match, selectedCount };
+  }, [data?.match, mergedPlayers]);
+
+  const updateDeltas = (newDeltas: Delta[]) => {
+    setPendingDeltas(prev => {
+      const playerIdsToUpdate = new Set(newDeltas.map(d => d.playerId));
+      return [...prev.filter(d => !playerIdsToUpdate.has(d.playerId)), ...newDeltas];
+    });
+  };
+
+  const handleToggleSelection = (playerId: string) => {
+    const player = mergedPlayers.find(p => p.id === playerId);
+    if (!player || player.eligibilityStatus === 'blocked') return;
+
+    const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
+    const isCurrentlySelected = player.selectionStatus === 'Selected';
+    const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
+
+    const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
+
+    if (serverMatchesIntended) {
+      setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
+    } else {
+      updateDeltas([{ playerId, action: nextAction }]);
+    }
+  };
+
+  const handleToggleAllVisible = () => {
+    const eligiblePlayers = filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked');
+    const allSelected = eligiblePlayers.every(p => p.selectionStatus === 'Selected');
+    const action: Delta['action'] = allSelected ? 'remove' : 'select';
+
+    const newDeltas: Delta[] = filteredPlayers
+      .filter(p => p.eligibilityStatus !== 'blocked')
+      .map(p => ({ 
+        playerId: p.id, 
+        action 
+      }));
+
+    updateDeltas(newDeltas);
+  };
+
+  const handleSave = async () => {
+      if (!hasChanges) return;
+      setSaving(true);
+      try {
+        const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
+        
+        // 1. Send the save request to the backend
+        await apiPost('/squad/sync', { 
+          matchId, 
+          selectedIds,
+          actingEmail: user?.email 
+        });
+
+        // 2. Optimistically update the React Query cache so the UI doesn't "snap back"
+        queryClient.setQueryData(['playersForMatch', matchId], (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            match: { ...old.match, selectedCount: selectedIds.length },
+            players: old.players.map((p: any) => ({
+              ...p,
+              selectionStatus: selectedIds.includes(p.id) ? 'Selected' : ''
+            }))
+          };
+        });
+
+        toast.success('Squad synced successfully');
+        
+        // 3. Clear local pending changes (the UI now relies on the instantly updated cache)
+        setPendingDeltas([]);
+        setHasChanges(false);
+        
+        // 4. Trigger a background refetch to ensure perfect sync across the app
+        queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId] });
+        queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
+        
+      } catch (e: any) {
+        toast.error(e?.message || 'Failed to sync squad');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+  const actualChanges = useMemo(() => {
+    return pendingDeltas.filter(delta => {
+      const serverPlayer = data?.players.find(p => p.id === delta.playerId);
+      const serverIsSelected = serverPlayer?.selectionStatus === 'Selected';
+      const pendingIsSelected = delta.action === 'select';
+      return serverIsSelected !== pendingIsSelected;
+    });
+  }, [pendingDeltas, data?.players]);
+
+  if (isLoading || !data || !optimisticMatch) return <div className="p-6">Loading squad...</div>;
 
   return (
     <div className="pb-24">
@@ -178,46 +186,42 @@ export default function SquadSelection() {
 
       <MatchHeader match={optimisticMatch} />
       
-      <PlayerFilters 
-        filters={filters} 
-        onChange={handleFilterChange} 
-        bulkSelectMode={bulkSelectMode} 
-        onToggleBulk={() => { setBulkSelectMode(!bulkSelectMode); setCheckedIds(new Set()); }} 
-      />
+      <PlayerFilters filters={filters} onChange={handleFilterChange} />
+
+      <div className="container mx-auto py-2 px-4.5 mb-1 flex items-center gap-3">
+        <input
+          type="checkbox"
+          id="toggle-all"
+          className="h-4 w-4 accent-primary"
+          checked={
+            filteredPlayers.length > 0 && 
+            filteredPlayers
+              .filter(p => p.eligibilityStatus !== 'blocked')
+              .every(p => p.selectionStatus === 'Selected')
+          }
+          onChange={handleToggleAllVisible}
+        />
+        <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">
+          Select All
+        </label>
+      </div>
 
       <div className="container mx-auto px-4">
         {filteredPlayers.map(p => (
           <PlayerRow
             key={p.id}
             player={p}
-            checked={checkedIds.has(p.id)} 
-            bulkSelectMode={bulkSelectMode}
-            onToggleCheck={() => handleToggleCheck(p.id)}
+            selected={p.selectionStatus === 'Selected'}
             onToggleSelection={() => handleToggleSelection(p.id)}
           />
         ))}
       </div>
 
-      {checkedIds.size > 0 && (
-        <BulkActionBar
-          count={checkedIds.size}
-          onDone={() => setCheckedIds(new Set())}
-          onBulkSelect={handleBulkSelect}
-        />
-      )}
-
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50">
-          <button onClick={handleDiscard} className="flex-1 py-3 border rounded flex items-center justify-center gap-2">
-            <X className="h-4 w-4" /> Discard
-          </button>
-          <button 
-            onClick={handleSave} 
-            disabled={batchMutation.isPending}
-            className="flex-1 py-3 bg-primary text-primary-foreground rounded flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" /> 
-            {batchMutation.isPending ? 'Saving...' : `Save (${pendingDeltas.length})`}
+          <button onClick={() => setPendingDeltas([])} className="flex-1 py-3 border rounded">Discard</button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-primary text-white rounded">
+            {saving ? 'Saving...' : `Save (${actualChanges.length} changes)`}
           </button>
         </div>
       )}

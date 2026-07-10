@@ -35,7 +35,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
             {fixture.homeTeam} vs {fixture.awayTeam}
           </p>
           <p className="text-sm text-muted-foreground">
-            {fixture.division} · {fixture.venue} · {time}
+            Division: {fixture.division} · {fixture.venue} · {time}
           </p>
         </div>
         <div className="text-right shrink-0 ml-3">

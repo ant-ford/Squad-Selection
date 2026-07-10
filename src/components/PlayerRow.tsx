@@ -15,93 +15,81 @@ type Player = {
   conflicts: { type: string; team: string; matchId: string }[];
   selectionStatus: string;
   selectionId: string;
+  isU21?: boolean;
+  isVisitingPlayer?: boolean;
 };
 
 const POS_SHORT: Record<string, string> = {
   Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
 };
 
-export default function PlayerRow({
-  player, checked, bulkSelectMode, onToggleCheck, onToggleSelection,
-}: {
-  player: Player; 
-  checked: boolean;
-  bulkSelectMode: boolean;
-  onToggleCheck: () => void; 
+interface PlayerRowProps {
+  player: Player;
+  selected: boolean;
   onToggleSelection: () => void;
-}) {
+}
+
+export default function PlayerRow({ player, selected, onToggleSelection }: PlayerRowProps) {
   const isBlocked = player.eligibilityStatus === 'blocked';
-  const isSelected = !!player.selectionStatus;
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const dimmed = isBlocked || isUnavailable;
 
   return (
-    <div className={`flex items-center gap-3 py-3 border-b border-border ${dimmed ? 'opacity-50' : ''}`}>
-      {/* Checkbox for bulk (Only shows when in bulk mode) */}
-      {bulkSelectMode && (
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggleCheck}
-          className="h-4 w-4 shrink-0 accent-primary"
-          disabled={isBlocked}
-        />
-      )}
-
-      {/* Status icon (Only works if NOT in bulk select mode) */}
-      <button 
-        onClick={onToggleSelection} 
-        disabled={isBlocked || bulkSelectMode} 
-        className={`shrink-0 ${bulkSelectMode ? 'opacity-50 cursor-not-allowed' : ''}`}
-      >
-        {isSelected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
-         isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
-         <Circle className="h-5 w-5 text-muted-foreground" />}
-      </button>
+    <div 
+      className={`flex items-center gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-50' : ''} cursor-pointer hover:bg-muted/50`}
+      onClick={!isBlocked ? onToggleSelection : undefined}
+    >
+      {/* Selection Status Icon */}
+      <div className="shrink-0">
+        {selected ? (
+          <CheckCircle2 className="h-5 w-5 text-primary" />
+        ) : isBlocked ? (
+          <Ban className="h-5 w-5 text-muted-foreground" />
+        ) : (
+          <Circle className="h-5 w-5 text-muted-foreground" />
+        )}
+      </div>
 
       {/* Player info */}
-      <div className="flex-1 min-w-0" onClick={bulkSelectMode ? onToggleCheck : onToggleSelection}>
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
+
+          {player.isU21 && (
+            <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm shrink-0">U21</span>
+          )}
+          {player.isVisitingPlayer && (
+            <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-sm shrink-0">VP</span>
+          )}
+
           <span className="text-xs text-muted-foreground shrink-0">
-            {POS_SHORT[player.playingPosition] || '—'} · {player.playingAbility || '—'}
+            {POS_SHORT[player.playingPosition] || '—'} · Ability {player.playingAbility || '—'}
           </span>
         </div>
+        
         <p className="text-xs text-muted-foreground">
           {player.registeredTeam || '—'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>
 
-        {/* Player notes */}
         {player.playerNotes && (
           <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{player.playerNotes}"</p>
         )}
 
-        {/* Conflicts */}
-        {(player.conflicts ?? []).map((c, i) => (
-          <span key={i} className="...">
-            {c.type === 'reserve' ? 'Reserve' : 'Selected'}: {c.team}
-          </span>
-        ))}
-
-        {/* Warnings */}
-        {(player.warnings ?? []).map((w, i) => (
-          <span key={i} className="...">
-            ⚠ {w.reason}
-          </span>
-        ))}
-
-        {/* Blocks */}
-        {(player.blocks ?? []).map((b, i) => (
-          <span key={i} className="...">
-            {b.reason}
-          </span>
-        ))}
+        {/* Inline Feedback: Warnings/Blocks */}
+        <div className="mt-1 flex flex-wrap gap-2">
+          {(player.warnings ?? []).map((w, i) => (
+            <span key={i} className="text-[10px] text-amber-600 bg-amber-50 px-1 py-0.5 rounded">⚠ {w.reason}</span>
+          ))}
+          {(player.blocks ?? []).map((b, i) => (
+            <span key={i} className="text-[10px] text-red-600 bg-red-50 px-1 py-0.5 rounded">{b.reason}</span>
+          ))}
+        </div>
       </div>
 
       {/* Selection badge */}
-      {isSelected && (
+      {selected && (
         <span className="text-xs px-2 py-0.5 rounded shrink-0 bg-primary text-primary-foreground">
-          {player.selectionStatus}
+          Selected
         </span>
       )}
     </div>

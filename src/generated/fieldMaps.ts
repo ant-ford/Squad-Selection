@@ -39,15 +39,7 @@ export const MATCHES_FIELDS = {
   matchStatus: "Match Status",
   venue: "Venue",
   fixtureId: "Fixture Id",
-} as const;
-
-export const SQUADSELECTIONS_FIELDS = {
-  player: "Player",
-  match: "Match",
-  selectedBy: "Selected By",
-  selectedAt: "Selected At",
-  selectionStatus: "Selection Status",
-  selectionNotes: "Selection Notes",
+  selectedPlayers: "Selected Players",
 } as const;
 
 export const AVAILABILITYEXCEPTIONS_FIELDS = {

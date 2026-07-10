@@ -1,5 +1,5 @@
 import { linkId } from "./airtable";
-import type { Match, MatchCard, Player, SquadSelection, Team } from "../../src/generated/domainTypes";
+import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
 
 // ── Public types ────────────────────────────────────────────────────────
 
@@ -33,6 +33,11 @@ export interface EligibilityResult {
   reasonTag: EligibilityReasonTag | null;
   /** Source references for each warning. */
   warningTags: EligibilityReasonTag[];
+}
+
+export interface VirtualSelection {
+  player: string[];
+  match: string[];
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────
@@ -319,7 +324,7 @@ function checkSameDayMovement(
   match: Match,
   rankMap: RankMap,
   sameDayMatches: Match[],
-  allSelections: SquadSelection[],
+  allSelections: VirtualSelection[],
   allExceptions: Exception[],
 ): {
   blockReason: string | null;
@@ -515,7 +520,7 @@ function checkCupEligibility(
 function checkU21DoubleGame(
   player: Player,
   targetHkfcTeam: string,
-  allSelections: SquadSelection[],
+  allSelections: VirtualSelection[],
   sameDayMatches: Match[],
   playersById: Map<string, Player>,
   rankMap: RankMap,
@@ -613,7 +618,7 @@ function generateWarnings(
 
 function countU21DoubleGames(
   targetHkfcTeam: string,
-  allSelections: SquadSelection[],
+  allSelections: VirtualSelection[],
   sameDayMatches: Match[],
   playersById: Map<string, Player>,
   rankMap: RankMap,
@@ -695,7 +700,7 @@ export interface EvaluationContext {
   /** Computed once from teamMap; passed to all helpers. */
   rankMap: RankMap;
   sameDayMatches: Match[];
-  allSelections: SquadSelection[];
+  allSelections: VirtualSelection[];
   allExceptions: Exception[];
   matchCards: MatchCard[];
   currentSeason: string;

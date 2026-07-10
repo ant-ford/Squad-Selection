@@ -22,14 +22,19 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
-            <User className="h-4 w-4 mr-1" />
-            <span className="hidden sm:inline">Player</span>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => logout()}>
-            <LogOut className="h-4 w-4 mr-1" />
-            <span className="hidden sm:inline">Logout</span>
-          </Button>
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground"
+          >
+            <User className="h-3.5 w-3.5" />
+            Player View
+          </button>
+          <button
+            onClick={() => logout()}
+            className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </header>

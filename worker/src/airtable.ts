@@ -158,9 +158,11 @@ export async function airtableBatchDelete(
   table: string,
   ids: string[]
 ): Promise<any> {
+  const body = JSON.stringify({ records: ids });
+  console.log(`Batch delete body: ${body}`);
   return airtableFetch(env, tableUrl(env, table), {
     method: "DELETE",
-    body: JSON.stringify({ records: ids.map(id => ({ id })) }),
+    body,
   });
 }
 

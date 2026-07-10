@@ -44,16 +44,7 @@ export interface Match {
   matchStatus: string;
   venue?: string;
   fixtureId?: string;
-}
-
-export interface SquadSelection {
-  id: string;
-  player?: string[];
-  match?: string[];
-  selectedBy?: string[];
-  selectedAt?: string;
-  selectionStatus?: string;
-  selectionNotes?: string;
+  selectedPlayers?: string[];
 }
 
 export interface AvailabilityException {

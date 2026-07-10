@@ -13,6 +13,7 @@ import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
+import { invalidateCache } from "../../src/lib/cache";
 
 type ExceptionStatus = "Maybe" | "Unavailable";
 type AvailabilityStatus = "Available" | ExceptionStatus;
@@ -65,9 +66,12 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     if (input.status === "Available") {
       if (existing) {
         await airtableDelete(env, TABLES.availabilityException, existing.id);
+        invalidateCache(`players-for-match:${matchId}`);
         updated++;
       }
-      continue;
+      invalidateCache('upcomingFixtures'); 
+
+      return { success: true, updated };
     }
 
     const fields = buildExceptionFields({
@@ -126,6 +130,8 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
   } else {
     await airtableCreate(env, TABLES.availabilityException, fields);
   }
+
+  invalidateCache(`players-for-match:${input.matchId}`);
 
   return { success: true };
 }

@@ -14,7 +14,7 @@ export function useMyProfile() {
   return useQuery({
     queryKey: ['myProfile'],
     queryFn: () => authGet<ProfileData>('/api/my-profile'),
-    staleTime: Infinity, // profile doesn't change during a session
+    staleTime: Infinity,
   });
 }
 
@@ -34,7 +34,6 @@ export function usePlayersForMatch(matchId: string) {
   });
 }
 
-// 30-second polling for availability exceptions ONLY (1 Airtable call instead of 5)
 export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
   return useQuery({
     queryKey: ['availabilityPoll', matchId],
@@ -50,12 +49,36 @@ export function useBatchUpdateSquad(matchId: string) {
   return useMutation({
     mutationFn: async (deltas: any[]) => {
       const user = await getCurrentSupabaseUser();
-      return apiPost('/api/match/' + matchId + '/squad/batch', { 
+      return apiPost(`/api/match/${matchId}/squad/batch`, { 
         deltas, 
         actingEmail: user?.email 
       });
     },
-    onSuccess: () => {
+
+    onMutate: async (newDeltas) => {
+      await queryClient.cancelQueries({ queryKey: ['playersForMatch', matchId] });
+      const previousData = queryClient.getQueryData<GetPlayersForMatchOutput>(['playersForMatch', matchId]);
+
+      queryClient.setQueryData(['playersForMatch', matchId], (old: GetPlayersForMatchOutput | undefined) => {
+      if (!old) return old;
+    
+      return {
+          ...old,
+          players: old.players.map((p) => {
+          const delta = newDeltas.find((d: any) => d.playerId === p.id);
+          if (!delta) return p;
+        
+          return {...p, selectionStatus: delta.action === 'select' ? 'Selected' : '' };
+          })
+        };
+    });
+
+      return { previousData };
+    },
+    onError: (err, newDeltas, context) => {
+      queryClient.setQueryData(['playersForMatch', matchId], context?.previousData);
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId] });
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
     }
