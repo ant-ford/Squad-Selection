@@ -35,17 +35,24 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
   const isUnavailable = fixture.availabilityStatus === 'Unavailable';
   const isMaybe = fixture.availabilityStatus === 'Maybe';
 
-  // Map status to colour for active state
+  // Pastel active colours
   const statusColorMap: Record<string, string> = {
-    Available: 'bg-green-600 border-green-600 text-white',
-    Maybe: 'bg-amber-500 border-amber-500 text-white',
-    Unavailable: 'bg-red-600 border-red-600 text-white',
+    Available: 'bg-green-200 text-green-800 border-green-300',
+    Maybe: 'bg-amber-200 text-amber-800 border-amber-300',
+    Unavailable: 'bg-red-200 text-red-800 border-red-300',
+  };
+
+  // Keyboard support for the card click
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onTap();
+    }
   };
 
   return (
-    <button
-      onClick={onTap}
-      className={`w-full border rounded-xl p-4 text-left transition-all hover:shadow-sm ${
+    <div
+      className={`w-full border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${
         isSelected
           ? 'border-primary bg-primary/5'
           : isUnavailable
@@ -54,6 +61,10 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
           ? 'border-amber-200 bg-amber-50/30'
           : 'border-border bg-card'
       }`}
+      role="button"
+      tabIndex={0}
+      onClick={onTap}
+      onKeyDown={handleKeyDown}
     >
       {/* Top row: title + StatusBadge */}
       <div className="flex items-start justify-between gap-2">
@@ -78,7 +89,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
           </span>
         </div>
 
-        {/* Segmented control – equal width, joined pill */}
+        {/* Segmented control – equal width, pastel active, now buttons inside a div */}
         <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
           {[
             { value: 'Available', label: 'Going' },
@@ -86,7 +97,6 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
             { value: 'Unavailable', label: 'No' },
           ].map(({ value, label }, idx) => {
             const active = fixture.availabilityStatus === value;
-            const activeColor = statusColorMap[value] || 'bg-primary';
             return (
               <button
                 key={value}
@@ -99,7 +109,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                   ${idx === 0 ? 'rounded-l-full' : ''}
                   ${idx === 2 ? 'rounded-r-full' : ''}
                   ${active
-                    ? `${activeColor} border-${value === 'Available' ? 'green' : value === 'Maybe' ? 'amber' : 'red'}-600`
+                    ? statusColorMap[value]
                     : 'bg-background text-muted-foreground hover:bg-muted/50'
                   }
                   ${idx > 0 ? 'border-l border-border' : ''}
@@ -112,7 +122,6 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
         </div>
       </div>
 
-      {/* Notes and coach notes */}
       {fixture.playerNotes && (
         <div className="mt-2.5 text-xs text-muted-foreground italic truncate">
           “{fixture.playerNotes}”
@@ -121,6 +130,6 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       {fixture.selectionNotes && (
         <p className="text-xs text-primary mt-1.5">Coach: {fixture.selectionNotes}</p>
       )}
-    </button>
+    </div>
   );
 }

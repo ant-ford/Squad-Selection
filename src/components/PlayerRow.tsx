@@ -32,11 +32,22 @@ interface PlayerRowProps {
 export default function PlayerRow({ player, selected, onToggleSelection }: PlayerRowProps) {
   const isBlocked = player.eligibilityStatus === 'blocked';
   const isUnavailable = player.availabilityStatus === 'Unavailable';
+  const isMaybe = player.availabilityStatus === 'Maybe';
+
+  // Background shading based on availability
+  let bgClass = '';
+  if (isMaybe) {
+    bgClass = 'bg-amber-50/70';
+  } else if (isUnavailable) {
+    bgClass = 'bg-red-50/70';
+  }
+
+  // Dimmed if blocked or unavailable (existing logic)
   const dimmed = isBlocked || isUnavailable;
 
   return (
-    <div 
-      className={`flex items-center gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-50' : ''} cursor-pointer hover:bg-muted/50`}
+    <div
+      className={`flex items-center gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-60' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
       onClick={!isBlocked ? onToggleSelection : undefined}
     >
       {/* Selection Status Icon */}
@@ -66,7 +77,7 @@ export default function PlayerRow({ player, selected, onToggleSelection }: Playe
             {POS_SHORT[player.playingPosition] || '—'} · Ability {player.playingAbility || '—'}
           </span>
         </div>
-        
+
         <p className="text-xs text-muted-foreground">
           {player.registeredTeam || '—'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>

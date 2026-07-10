@@ -41,7 +41,7 @@ export interface SetAvailabilityInput {
   notes?: string;
 }
 
-/** Ported from src/api/setAvailability.ts (coach-facing bulk update). */
+/** Coach-facing bulk update. */
 export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   if (!input.playerId || !Array.isArray(input.matchIds)) {
     throw new HttpError("playerId and matchIds[] are required", 400);
@@ -65,12 +65,18 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
 
     if (input.status === "Available") {
       if (existing) {
-        await airtableDelete(env, TABLES.availabilityException, existing.id);
-        invalidateCache(`players-for-match:${matchId}`);
+        // Instead of deleting, update to "Available"
+        await airtableUpdate(env, TABLES.availabilityException, existing.id, {
+          [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: "Available",
+          [AVAILABILITYEXCEPTIONS_FIELDS.note]: input.notes || "",
+          [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [input.playerId],
+        });
         updated++;
       }
-      invalidateCache('upcomingFixtures'); 
-
+      // Note: we do NOT invalidate per-match cache here because we want the updated status to reflect immediately.
+      // But we must ensure the cache is invalidated later.
+      invalidateCache(`players-for-match:${matchId}`);
+      invalidateCache('upcomingFixtures');
       return { success: true, updated };
     }
 
@@ -88,8 +94,10 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       await airtableCreate(env, TABLES.availabilityException, fields);
     }
     updated++;
+    invalidateCache(`players-for-match:${matchId}`);
   }
 
+  invalidateCache('upcomingFixtures');
   return { success: true, updated };
 }
 
@@ -101,7 +109,7 @@ export interface SetMyAvailabilityInput {
   existingExceptionId?: string;
 }
 
-/** Ported from src/api/setMyAvailability.ts (unauthenticated, player-facing). */
+/** Player-facing (unauthenticated) availability update. */
 export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
   if (!input.email || !input.matchId) {
     throw new HttpError("email and matchId are required", 400);
@@ -112,8 +120,14 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
 
   if (input.status === "Available") {
     if (input.existingExceptionId) {
-      await airtableDelete(env, TABLES.availabilityException, input.existingExceptionId);
+      // Update to "Available" instead of deleting
+      await airtableUpdate(env, TABLES.availabilityException, input.existingExceptionId, {
+        [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: "Available",
+        [AVAILABILITYEXCEPTIONS_FIELDS.note]: input.notes || "",
+        [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [user.id],
+      });
     }
+    invalidateCache(`players-for-match:${input.matchId}`);
     return { success: true };
   }
 
@@ -132,6 +146,5 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
   }
 
   invalidateCache(`players-for-match:${input.matchId}`);
-
   return { success: true };
 }

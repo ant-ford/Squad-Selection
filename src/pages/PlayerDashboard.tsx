@@ -32,17 +32,34 @@ export default function PlayerDashboard() {
     loadData();
   }, [loadData]);
 
-  // Quick availability update – called from the card buttons
+  // Optimistic update – no full re‑fetch
   const handleQuickAvailability = async (
     fixtureId: string,
     status: 'Available' | 'Maybe' | 'Unavailable',
     exceptionId?: string
   ) => {
+    // 1. Store previous state for rollback
+    const previousData = data;
+
+    // 2. Optimistically update the fixture in local state
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        fixtures: prev.fixtures.map((f) =>
+          f.id === fixtureId
+            ? { ...f, availabilityStatus: status, playerNotes: f.playerNotes || '' }
+            : f
+        ),
+      };
+    });
+
     try {
       await setMyAvailability(fixtureId, status, undefined, exceptionId);
       toast.success('Availability updated');
-      loadData(); // refresh the list
     } catch (err) {
+      // Rollback on error
+      if (previousData) setData(previousData);
       toast.error('Failed to update availability');
     }
   };
@@ -55,9 +72,7 @@ export default function PlayerDashboard() {
     return <DashboardSkeleton />;
   }
 
-  // Count stats
   const selectedCount = data.fixtures.filter(f => f.selectionStatus === 'Selected').length;
-  const reserveCount = data.fixtures.filter(f => f.selectionStatus === 'Reserve').length;
   const unavailableCount = data.fixtures.filter(f => f.availabilityStatus === 'Unavailable').length;
 
   return (
@@ -91,7 +106,7 @@ export default function PlayerDashboard() {
         </div>
       </header>
 
-      {/* Player Info Card */}
+      {/* Player Info */}
       <div className="container mx-auto px-4 py-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
@@ -109,8 +124,6 @@ export default function PlayerDashboard() {
               </p>
             </div>
           </div>
-
-          {/* Quick Stats */}
           <div className="grid grid-cols-2 gap-3 mt-4">
             <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
             <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
@@ -118,17 +131,16 @@ export default function PlayerDashboard() {
         </div>
       </div>
 
-      {/* Fixtures List */}
+      {/* Fixtures */}
       <div className="container mx-auto px-4 pb-8">
         <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
-
         {data.fixtures.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-border rounded-xl">
             <p className="text-muted-foreground">No upcoming fixtures for your team</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {data.fixtures.map(f => (
+            {data.fixtures.map((f) => (
               <PlayerFixtureCard
                 key={f.id}
                 fixture={f}
@@ -148,7 +160,7 @@ export default function PlayerDashboard() {
           onClose={() => setSelectedFixture(null)}
           onSaved={() => {
             setSelectedFixture(null);
-            loadData();
+            loadData(); // full refresh only after saving from sidebar
           }}
         />
       )}
