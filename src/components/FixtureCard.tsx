@@ -26,7 +26,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
 
   return (
     <button
-      onClick={() => navigate(`/coach/match/${fixture.id}`)}
+      onClick={() => navigate(`/coach/match/${fixture.id.replace(/-home$/,"").replace(/-away$/,"")}`)}
       className="w-full border border-border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors"
     >
       <div className="flex justify-between items-start">

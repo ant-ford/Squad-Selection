@@ -20,7 +20,7 @@ export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading } = usePlayersForMatch(matchId!);
+  const { data, isLoading, isError, error } = usePlayersForMatch(matchId!);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
@@ -174,7 +174,9 @@ export default function SquadSelection() {
     });
   }, [pendingDeltas, data?.players]);
 
-  if (isLoading || !data || !optimisticMatch) return <div className="p-6">Loading squad...</div>;
+  if (isLoading) return <div className="p-6">Loading squad...</div>;
+  if (isError) return <div className="p-6 text-destructive">Failed to load players: {(error as any)?.message || "Unknown error"}</div>;
+  if (!data || !optimisticMatch) return <div className="p-6 text-destructive">No match data available</div>;
 
   return (
     <div className="pb-24">
