@@ -18,6 +18,25 @@ function hkfcTeamName(match: Match, rankMap: Record<string, number>): string {
   return away;
 }
 
+function isHkfcHome(match: Match, rankMap: Record<string, number>): boolean {
+  const home = match.homeTeam || "";
+  return rankMap[home] !== undefined;
+}
+
+function getSelectedPlayerIds(match: Match, rankMap: Record<string, number>): string[] {
+  if (isHkfcHome(match, rankMap)) {
+    return match.selectedPlayersHome || [];
+  }
+  return match.selectedPlayersAway || [];
+}
+
+function getSelectionFieldName(match: Match, rankMap: Record<string, number>): string {
+  if (isHkfcHome(match, rankMap)) {
+    return MATCHES_FIELDS.selectedPlayersHome;
+  }
+  return MATCHES_FIELDS.selectedPlayersAway;
+}
+
 async function getAllMatches(env: Env): Promise<Match[]> {
   const { data } = await getCached<Match[]>(
     `all-matches`,
@@ -75,13 +94,17 @@ async function buildEvaluationContext(
 
   const sameDayMatches = getSameDayMatches(allMatches, matchDate);
 
-  // Construct Virtual Selections for the eligibility engine directly from the Matches table
-  const virtualSelections: VirtualSelection[] = allMatches.flatMap(m => 
-    (m.selectedPlayers || []).map(pId => ({
-      player: [pId],
-      match: [m.id],
-    }))
-  );
+  // Construct Virtual Selections from BOTH home and away selection fields
+  const virtualSelections: VirtualSelection[] = allMatches.flatMap(m => {
+    const selections: VirtualSelection[] = [];
+    for (const pId of m.selectedPlayersHome || []) {
+      selections.push({ player: [pId], match: [m.id] });
+    }
+    for (const pId of m.selectedPlayersAway || []) {
+      selections.push({ player: [pId], match: [m.id] });
+    }
+    return selections;
+  });
 
   return {
     teamMap,
@@ -126,7 +149,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
     if (pId) exceptionMap.set(pId, exc);
   }
 
-  const selectedPlayerIds = new Set(match.selectedPlayers || []);
+  const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap));
 
   const players = allPlayers.map((p) => {
     const isSelected = selectedPlayerIds.has(p.id);
@@ -157,7 +180,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
       isSuspended: p.isSuspended || false,
       isVisitingPlayer: p.isVisitingPlayer || false,
       selectionStatus: isSelected ? "Selected" : "",
-      selectionId: "", 
+      selectionId: "",
     };
   });
 
@@ -165,7 +188,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
     if (a.selectionStatus && !b.selectionStatus) return -1;
     if (!a.selectionStatus && b.selectionStatus) return 1;
     const order = { eligible: 0, warning: 1, blocked: 2 } as const;
-    return ((order[a.eligibilityStatus] ?? 0) - (order[b.eligibilityStatus] ?? 0));
+    return (order[a.eligibilityStatus] ?? 0) - (order[b.eligibilityStatus] ?? 0);
   });
 
   const teamsByName = new Map(teams.map((t) => [t.teamName || "", t]));
@@ -183,27 +206,34 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
   return { match: matchInfo, players };
 }
 
-// Replaces individual/batch creation & deletion with a single atomic array update!
 export async function syncSquad(env: Env, matchId: string, targetPlayerIds: string[], actingEmail?: string) {
-  // 1. Update the Match record with the new array of IDs
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+  const match = mapMatch(matchRecord);
+
+  const ref = await getReferenceData(env);
+  const fieldName = getSelectionFieldName(match, ref.teamRankMap);
+
+  // Update the correct field (home or away) based on which side HKFC is
   await airtableUpdate(env, TABLES.match, matchId, {
-    [MATCHES_FIELDS.selectedPlayers]: targetPlayerIds
+    [fieldName]: targetPlayerIds
   });
 
-  // 2. Invalidate all relevant caches
+  // Invalidate all relevant caches
   invalidateCache('all-matches');
   invalidateCache(`players-for-match:${matchId}`);
   invalidateCache('upcoming-fixtures');
 }
 
-// Maintained for backward compatibility if the UI still uses single selections
 export async function selectPlayer(env: Env, input: { matchId: string; playerId: string }) {
   const { matchId, playerId } = input;
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
-  
-  const currentSelected = match.selectedPlayers || [];
+
+  const ref = await getReferenceData(env);
+  const currentSelected = getSelectedPlayerIds(match, ref.teamRankMap);
+
   if (!currentSelected.includes(playerId)) {
     const newSelected = [...currentSelected, playerId];
     await syncSquad(env, matchId, newSelected);
@@ -211,14 +241,14 @@ export async function selectPlayer(env: Env, input: { matchId: string; playerId:
   return { success: true };
 }
 
-// Deprecated in frontend but safely maintained here
 export async function removeSelection(env: Env, input: { matchId: string; playerId: string }) {
   const { matchId, playerId } = input;
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
 
-  const currentSelected = match.selectedPlayers || [];
+  const ref = await getReferenceData(env);
+  const currentSelected = getSelectedPlayerIds(match, ref.teamRankMap);
   const newSelected = currentSelected.filter(id => id !== playerId);
   await syncSquad(env, matchId, newSelected);
   return { success: true };
@@ -236,16 +266,22 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
 }
 
 const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
-const ABILITY_RANK: Record<string, number> = { "A+": 24, "A": 23, "A-": 22, "B+": 21, "B": 20, "B-": 19, "C+": 18, "C": 17, "C-": 16, "D+": 15, "D": 14, "D-": 13, "E+": 12, "E": 11, "E-": 10, "F+": 9,  "F": 8,  "F-": 7, "G+": 6,  "G": 5,  "G-": 4, "H+": 3,  "H": 2,  "H-": 1 };
+const ABILITY_RANK: Record<string, number> = {
+  "A+": 24, "A": 23, "A-": 22, "B+": 21, "B": 20, "B-": 19,
+  "C+": 18, "C": 17, "C-": 16, "D+": 15, "D": 14, "D-": 13,
+  "E+": 12, "E": 11, "E-": 10, "F+": 9, "F": 8, "F-": 7,
+  "G+": 6, "G": 5, "G-": 4, "H+": 3, "H": 2, "H-": 1
+};
 
 export async function getSquadForMatch(env: Env, matchId: string) {
   if (!matchId) throw new HttpError("matchId is required", 400);
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
-  
+
   const match = mapMatch(matchRecord);
-  const selectedIds = match.selectedPlayers || [];
-  
+  const ref = await getReferenceData(env);
+  const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap);
+
   const players = [];
   for (const playerId of selectedIds) {
     const playerRecord = await airtableFindById(env, TABLES.player, playerId);

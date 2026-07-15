@@ -28,7 +28,7 @@ function buildExceptionFields(opts: {
   return {
     [AVAILABILITYEXCEPTIONS_FIELDS.match]: [opts.matchId],
     [AVAILABILITYEXCEPTIONS_FIELDS.player]: [opts.playerId],
-    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: opts.status,
+    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: [opts.status],
     [AVAILABILITYEXCEPTIONS_FIELDS.note]: opts.notes || "",
     [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [opts.updatedById],
   };
@@ -67,7 +67,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       if (existing) {
         // Instead of deleting, update to "Available"
         await airtableUpdate(env, TABLES.availabilityException, existing.id, {
-          [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: "Available",
+          [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: ["Available"],
           [AVAILABILITYEXCEPTIONS_FIELDS.note]: input.notes || "",
           [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [input.playerId],
         });
@@ -77,7 +77,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       // But we must ensure the cache is invalidated later.
       invalidateCache(`players-for-match:${matchId}`);
       invalidateCache('upcomingFixtures');
-      return { success: true, updated };
+      continue;
     }
 
     const fields = buildExceptionFields({
@@ -122,7 +122,7 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     if (input.existingExceptionId) {
       // Update to "Available" instead of deleting
       await airtableUpdate(env, TABLES.availabilityException, input.existingExceptionId, {
-        [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: "Available",
+        [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: ["Available"],
         [AVAILABILITYEXCEPTIONS_FIELDS.note]: input.notes || "",
         [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [user.id],
       });

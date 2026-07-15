@@ -44,7 +44,8 @@ export interface Match {
   matchStatus: string;
   venue?: string;
   fixtureId?: string;
-  selectedPlayers?: string[];
+  selectedPlayersHome?: string[];
+  selectedPlayersAway?: string[];
 }
 
 export interface AvailabilityException {
