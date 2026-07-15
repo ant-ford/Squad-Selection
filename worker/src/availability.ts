@@ -28,7 +28,7 @@ function buildExceptionFields(opts: {
   return {
     [AVAILABILITYEXCEPTIONS_FIELDS.match]: [opts.matchId],
     [AVAILABILITYEXCEPTIONS_FIELDS.player]: [opts.playerId],
-    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: [opts.status],
+    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: opts.status,
     [AVAILABILITYEXCEPTIONS_FIELDS.note]: opts.notes || "",
     [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [opts.updatedById],
   };
