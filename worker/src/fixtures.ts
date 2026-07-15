@@ -182,7 +182,7 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       const matchExceptions = exceptionsByMatch.get(m.id) || [];
       const unavailableCount = matchExceptions.filter(e => e.availabilityStatus === "Unavailable").length;
       const maybeCount = matchExceptions.filter(e => e.availabilityStatus === "Maybe").length;
-      const selectedCount = (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length;
+      const selectedCount = isHome ? (m.selectedPlayersHome || []).length : (m.selectedPlayersAway || []).length;
       return {
         id: m.id + (bothCoached ? (isHome ? "-home" : "-away") : ""),
         date: m.matchDate || "",
