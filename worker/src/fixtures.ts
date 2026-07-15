@@ -172,34 +172,50 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
     exceptionsByMatch.set(mId, existing);
   }
 
-  const fixtures = relevant.map((m) => {
+  const fixtures = relevant.flatMap((m) => {
     const home = m.homeTeam || "";
     const away = m.awayTeam || "";
-    const isHome = coachedTeamNames.has(home) || (opts.team ? home === opts.team : false);
-    const hkfcTeam = isHome ? home : away;
-    const opponent = isHome ? away : home;
-    const team = teamsByName.get(hkfcTeam);
+    const bothCoached = coachedTeamNames.has(home) && coachedTeamNames.has(away);
 
-    const matchExceptions = exceptionsByMatch.get(m.id) || [];
-    const unavailableCount = matchExceptions.filter((e) => e.availabilityStatus === "Unavailable").length;
-    const maybeCount = matchExceptions.filter((e) => e.availabilityStatus === "Maybe").length;
-
-    return {
-      id: m.id,
-      date: m.matchDate || "",
-      homeTeam: home,
-      awayTeam: away,
-      hkfcTeam,
-      opponent,
-      isHome,
-      division: m.division || "",
-      venue: m.venue || "",
-      targetSquadSize: team?.targetSquadSize || 16,
-      selectedCount: (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length,
-      availableCount: 0,
-      maybeCount,
-      unavailableCount,
+    const makeCard = (hkfcTeam: string, opponent: string, isHome: boolean) => {
+      const team = teamsByName.get(hkfcTeam);
+      const matchExceptions = exceptionsByMatch.get(m.id) || [];
+      const unavailableCount = matchExceptions.filter(e => e.availabilityStatus === "Unavailable").length;
+      const maybeCount = matchExceptions.filter(e => e.availabilityStatus === "Maybe").length;
+      const selectedCount = (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length;
+      return {
+        id: m.id + (bothCoached ? (isHome ? "-home" : "-away") : ""),
+        date: m.matchDate || "",
+        homeTeam: home,
+        awayTeam: away,
+        hkfcTeam,
+        opponent,
+        isHome,
+        division: m.division || "",
+        venue: m.venue || "",
+        targetSquadSize: team?.targetSquadSize || 16,
+        selectedCount,
+        availableCount: 0,
+        maybeCount,
+        unavailableCount,
+      };
     };
+
+    // Derby + coach both sides ? two cards
+    if (bothCoached && !opts.team) {
+      return [makeCard(home, away, true), makeCard(away, home, false)];
+    }
+
+    // Tab filter ? card from that tab's perspective
+    if (opts.team) {
+      if (home === opts.team) return [makeCard(home, away, true)];
+      if (away === opts.team) return [makeCard(away, home, false)];
+      return [];
+    }
+
+    // Coach only manages one side
+    if (coachedTeamNames.has(home)) return [makeCard(home, away, true)];
+    return [makeCard(away, home, false)];
   });
 
   return { fixtures };
