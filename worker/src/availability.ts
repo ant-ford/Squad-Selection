@@ -120,12 +120,7 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
 
   if (input.status === "Available") {
     if (input.existingExceptionId) {
-      // Update to "Available" instead of deleting
-      await airtableUpdate(env, TABLES.availabilityException, input.existingExceptionId, {
-        [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: ["Available"],
-        [AVAILABILITYEXCEPTIONS_FIELDS.note]: input.notes || "",
-        [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [user.id],
-      });
+    await airtableDelete(env, "Availability Exceptions", input.existingExceptionId);
     }
     invalidateCache(`players-for-match:${input.matchId}`);
     return { success: true };

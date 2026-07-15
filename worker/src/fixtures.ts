@@ -63,7 +63,7 @@ export async function getMyFixtures(env: Env, email: string) {
     const team = teamsByName.get(hkfcTeam);
     const exc = exceptionByMatch.get(m.id);
     
-    const isSelected = (m.selectedPlayers || []).includes(user.id);
+    const isSelected = (m.selectedPlayersHome || []).includes(user.id) || (m.selectedPlayersAway || []).includes(user.id);
 
     return {
       id: m.id,
@@ -80,7 +80,7 @@ export async function getMyFixtures(env: Env, email: string) {
       availabilityExceptionId: exc?.id || "",
       selectionStatus: isSelected ? "Selected" : "",
       selectionNotes: "", 
-      selectedCount: (m.selectedPlayers || []).length,
+      selectedCount: (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length,
       targetSquadSize: team?.targetSquadSize || 16,
     };
   });
@@ -110,7 +110,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
 
   const fixtures = upcoming.map((m) => {
     const exc = exceptionByMatch.get(m.id);
-    const isSelected = (m.selectedPlayers || []).includes(playerId);
+    const isSelected = (m.selectedPlayersHome || []).includes(playerId) || (m.selectedPlayersAway || []).includes(playerId);
     
     return {
       id: m.id,
@@ -195,7 +195,7 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       division: m.division || "",
       venue: m.venue || "",
       targetSquadSize: team?.targetSquadSize || 16,
-      selectedCount: (m.selectedPlayers || []).length,
+      selectedCount: (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length,
       availableCount: 0,
       maybeCount,
       unavailableCount,

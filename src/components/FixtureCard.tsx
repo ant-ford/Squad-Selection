@@ -32,7 +32,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
       <div className="flex justify-between items-start">
         <div className="min-w-0">
           <p className="font-medium text-foreground truncate">
-            {fixture.homeTeam} vs {fixture.awayTeam}
+            <span className="font-bold">{fixture.hkfcTeam}</span> vs {fixture.opponent}
           </p>
           <p className="text-sm text-muted-foreground">
             Division: {fixture.division} · {fixture.venue} · {time}

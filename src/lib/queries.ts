@@ -22,7 +22,7 @@ export function useUpcomingFixtures(teamFilter?: string) {
   return useQuery({
     queryKey: ['upcomingFixtures', teamFilter],
     queryFn: () => authGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
-    staleTime: 1000 * 60 * 5,
+    staleTime: 0, refetchOnMount: true,
   });
 }
 
@@ -30,7 +30,7 @@ export function usePlayersForMatch(matchId: string) {
   return useQuery({
     queryKey: ['playersForMatch', matchId],
     queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`),
-    staleTime: 1000 * 60 * 10,
+    staleTime: 0, refetchOnMount: true,
   });
 }
 

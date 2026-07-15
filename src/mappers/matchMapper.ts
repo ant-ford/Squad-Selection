@@ -16,6 +16,7 @@ export function mapMatch(record: any): Match {
     matchStatus: f[MATCHES_FIELDS.matchStatus] || '',
     venue: f[MATCHES_FIELDS.venue] || '',
     fixtureId: f[MATCHES_FIELDS.fixtureId] || '',
-    selectedPlayers: f[MATCHES_FIELDS.selectedPlayers] || [],
+    selectedPlayersHome: f[MATCHES_FIELDS.selectedPlayersHome] || [],
+    selectedPlayersAway: f[MATCHES_FIELDS.selectedPlayersAway] || [],
   };
 }
