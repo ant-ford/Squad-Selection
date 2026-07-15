@@ -4,6 +4,7 @@ type MatchInfo = {
   date: string;
   homeTeam: string;
   awayTeam: string;
+  hkfcTeam?: string;
   division: string;
   venue: string;
   targetSquadSize: number;
@@ -21,7 +22,7 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
     <div className="border-b border-border bg-card">
       <div className="container mx-auto px-4 py-2">
         <p className="text-sm font-medium text-foreground">
-          {match.homeTeam} vs {match.awayTeam}
+          {match.hkfcTeam ? <><span className="font-bold">{match.hkfcTeam}</span> vs {match.hkfcTeam === match.homeTeam ? match.awayTeam : match.homeTeam}</> : <>{match.homeTeam} vs {match.awayTeam}</>}
         </p>
         <p className="text-xs text-muted-foreground">
           {format(d, 'EEE d MMM')} · {format(d, 'HH:mm')} · {match.venue} · Division: {match.division}

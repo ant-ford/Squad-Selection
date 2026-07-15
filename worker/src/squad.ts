@@ -193,6 +193,8 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
 
   const teamsByName = new Map(teams.map((t) => [t.teamName || "", t]));
   const matchInfo = {
+    hkfcTeam,
+
     date: match.matchDate || "",
     homeTeam: match.homeTeam || "",
     awayTeam: match.awayTeam || "",
