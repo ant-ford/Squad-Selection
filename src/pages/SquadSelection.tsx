@@ -20,7 +20,9 @@ export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading, isError, error } = usePlayersForMatch(matchId!);
+
+
+  const { data, isLoading, isError, error } = usePlayersForMatch(matchId!, (searchParams.get("side") as "home"|"away")||undefined);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);

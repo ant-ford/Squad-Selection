@@ -46,7 +46,8 @@ export default {
 
       const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
       if (method === "GET" && matchPlayersMatch) {
-        return json(await getPlayersForMatch(env, matchPlayersMatch[1]), 200, origin);
+        const side = url.searchParams.get("side") as "home" | "away" | null;
+        return json(await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined), 200, origin);
       }
 
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);

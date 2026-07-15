@@ -57,9 +57,9 @@ export function useBatchUpdateSquad(matchId: string) {
 
     onMutate: async (newDeltas) => {
       await queryClient.cancelQueries({ queryKey: ['playersForMatch', matchId] });
-      const previousData = queryClient.getQueryData<GetPlayersForMatchOutput>(['playersForMatch', matchId]);
+      const previousData = queryClient.getQueryData<GetPlayersForMatchOutput>(['playersForMatch', matchId, side]);
 
-      queryClient.setQueryData(['playersForMatch', matchId], (old: GetPlayersForMatchOutput | undefined) => {
+      queryClient.setQueryData(['playersForMatch', matchId, side], (old: GetPlayersForMatchOutput | undefined) => {
       if (!old) return old;
     
       return {
@@ -76,10 +76,10 @@ export function useBatchUpdateSquad(matchId: string) {
       return { previousData };
     },
     onError: (err, newDeltas, context) => {
-      queryClient.setQueryData(['playersForMatch', matchId], context?.previousData);
+      queryClient.setQueryData(['playersForMatch', matchId, side], context?.previousData);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId] });
+      queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId, side] });
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
     }
   });

@@ -11,26 +11,26 @@ import { mapAvailability } from "../../src/mappers/availabilityMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
 import type { Match, Player, MatchCard, Team } from "../../src/generated/domainTypes";
 
-function hkfcTeamName(match: Match, rankMap: Record<string, number>): string {
+function hkfcTeamName(match: Match, rankMap: Record<string, number>, side?: "home" | "away"): string {
   const home = match.homeTeam || "";
   const away = match.awayTeam || "";
   if (rankMap[home] !== undefined) return home;
   return away;
 }
 
-function isHkfcHome(match: Match, rankMap: Record<string, number>): boolean {
+function isHkfcHome(match: Match, rankMap: Record<string, number>, side?: "home" | "away"): boolean {
   const home = match.homeTeam || "";
   return rankMap[home] !== undefined;
 }
 
-function getSelectedPlayerIds(match: Match, rankMap: Record<string, number>): string[] {
+function getSelectedPlayerIds(match: Match, rankMap: Record<string, number>, side?: "home" | "away"): string[] {
   if (isHkfcHome(match, rankMap)) {
     return match.selectedPlayersHome || [];
   }
   return match.selectedPlayersAway || [];
 }
 
-function getSelectionFieldName(match: Match, rankMap: Record<string, number>): string {
+function getSelectionFieldName(match: Match, rankMap: Record<string, number>, side?: "home" | "away"): string {
   if (isHkfcHome(match, rankMap)) {
     return MATCHES_FIELDS.selectedPlayersHome;
   }
@@ -118,7 +118,7 @@ async function buildEvaluationContext(
   };
 }
 
-export async function getPlayersForMatch(env: Env, matchId: string) {
+export async function getPlayersForMatch(env: Env, matchId: string, side?: "home" | "away") {
   const ref = await getReferenceData(env);
   const { teamRankMap, teams } = ref;
   const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
@@ -127,7 +127,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
 
-  const hkfcTeam = hkfcTeamName(match, teamRankMap);
+  const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
   const { data: heavyData } = await getCached(
@@ -149,7 +149,7 @@ export async function getPlayersForMatch(env: Env, matchId: string) {
     if (pId) exceptionMap.set(pId, exc);
   }
 
-  const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap));
+  const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
 
   const players = allPlayers.map((p) => {
     const isSelected = selectedPlayerIds.has(p.id);
