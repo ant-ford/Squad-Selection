@@ -22,7 +22,7 @@ export const EMPTY_FILTERS: FilterState = {
 export function filtersToParams(f: FilterState): string {
   const parts: string[] = [];
   for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
-    const vals = [...f[cat]];
+    const vals = [...(f[cat] ?? [])];
     if (vals.length) parts.push(`${cat}=${vals.sort().join(',')}`);
   }
   return parts.join('&');
