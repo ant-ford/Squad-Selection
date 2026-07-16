@@ -32,6 +32,13 @@ export function invalidateCache(key: string) {
   store.delete(key);
 }
 
+/** Remove related cached entries when one change affects multiple endpoints. */
+export function invalidateCachePrefix(prefix: string) {
+  for (const key of store.keys()) {
+    if (key.startsWith(prefix)) store.delete(key);
+  }
+}
+
 export function invalidateAll() {
   store.clear();
 }

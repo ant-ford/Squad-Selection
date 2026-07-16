@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
 import { useUpcomingFixtures } from '@/lib/queries';
+import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
@@ -16,14 +16,15 @@ export default function FixtureList() {
 
   const fixtures = data?.fixtures || [];
 
+  const coachTeams = profile?.coachTeams ?? [];
   const tabs = [
     { key: 'all', label: 'All' },
-    ...profile.coachTeams.map(t => ({ key: t.teamName, label: t.teamName })),
+    ...coachTeams.map(t => ({ key: t.teamName, label: t.teamName })),
   ];
 
   const grouped = useMemo(() => {
     return fixtures.reduce<Record<string, UpcomingFixture[]>>((acc, f) => {
-      const dateKey = format(parseISO(f.date), 'yyyy-MM-dd');
+      const dateKey = safeFormat(f.date, 'yyyy-MM-dd', 'unknown');
       (acc[dateKey] ||= []).push(f);
       return acc;
     }, {});
@@ -64,7 +65,7 @@ export default function FixtureList() {
           {sortedDates.map(dateKey => (
             <div key={dateKey}>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                {format(parseISO(dateKey), 'EEE d MMM yyyy')}
+                {safeFormat(dateKey, 'EEE d MMM yyyy')}
               </p>
               <div className="space-y-2">
                 {grouped[dateKey].map(f => (

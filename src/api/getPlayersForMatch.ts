@@ -15,11 +15,14 @@ export interface MatchPlayer {
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';
-  blocks: EligibilityIssue[];
-  warnings: EligibilityIssue[];
-  conflicts: { type: string; team: string; matchId: string }[];
+  reason: string | null;
+  blocks: EligibilityIssue[]; // #5: populated by worker from reason
+  warnings: string[]; // #4: changed from EligibilityIssue[] to string[]
+  conflicts: { type: string; team: string; matchId: string }[]; // #6
   selectionStatus: string;
   selectionId: string;
+  isU21?: boolean;
+  isVisitingPlayer?: boolean;
 }
 
 export interface MatchInfo {
@@ -30,6 +33,7 @@ export interface MatchInfo {
   venue: string;
   targetSquadSize: number;
   selectedCount: number;
+  hkfcTeam?: string;
 }
 
 export interface GetPlayersForMatchOutput {
@@ -37,12 +41,6 @@ export interface GetPlayersForMatchOutput {
   players: MatchPlayer[];
 }
 
-/**
- * The eligibility engine (player list + block/warning reasons) now runs
- * in the Worker (GET /api/match/:matchId/players) instead of in the
- * browser, so it can trust its own read of Airtable rather than data a
- * client could tamper with in devtools.
- */
 export async function getPlayersForMatch(matchId: string): Promise<GetPlayersForMatchOutput> {
   return apiGet<GetPlayersForMatchOutput>(`/api/match/${encodeURIComponent(matchId)}/players`);
 }

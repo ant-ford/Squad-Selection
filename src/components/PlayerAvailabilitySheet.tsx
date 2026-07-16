@@ -18,6 +18,7 @@ type Fixture = {
   playerNotes: string;
   availabilityExceptionId: string;
   selectionStatus: string;
+  isHome: boolean;
 };
 
 type SquadMember = {
@@ -49,13 +50,12 @@ export default function PlayerAvailabilitySheet({
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<{ players: SquadMember[] }>(`/api/match/${fixture.id}/squad`)
-      .then(data => {
-        if (!cancelled) setSquad(data.players ?? []);
-      })
+    const side = fixture.isHome ? 'home' : 'away';
+    apiGet<{ players: SquadMember[] }>(`/api/match/${fixture.id}/squad?side=${side}`)
+      .then(data => { if (!cancelled) setSquad(data.players ?? []); })
       .catch(() => { if (!cancelled) setSquad([]); });
     return () => { cancelled = true; };
-  }, [fixture.id]);
+  }, [fixture.id, fixture.isHome]);
 
   const handleSave = async () => {
     setSaving(true);

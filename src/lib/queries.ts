@@ -26,10 +26,10 @@ export function useUpcomingFixtures(teamFilter?: string) {
   });
 }
 
-export function usePlayersForMatch(matchId: string) {
+export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   return useQuery({
-    queryKey: ['playersForMatch', matchId],
-    queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`),
+    queryKey: ['playersForMatch', matchId, side], // #3 fix: include side
+    queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`, { side }),
     staleTime: 0, refetchOnMount: true,
   });
 }
@@ -40,47 +40,5 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
     queryFn: () => apiGet<{ exceptions: { playerId: string; status: string; notes: string }[] }>(`/api/match/${matchId}/availability`),
     refetchInterval: isEnabled ? 30000 : false,
     enabled: isEnabled,
-  });
-}
-
-export function useBatchUpdateSquad(matchId: string) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (deltas: any[]) => {
-      const user = await getCurrentSupabaseUser();
-      return apiPost(`/api/match/${matchId}/squad/batch`, { 
-        deltas, 
-        actingEmail: user?.email 
-      });
-    },
-
-    onMutate: async (newDeltas) => {
-      await queryClient.cancelQueries({ queryKey: ['playersForMatch', matchId] });
-      const previousData = queryClient.getQueryData<GetPlayersForMatchOutput>(['playersForMatch', matchId, side]);
-
-      queryClient.setQueryData(['playersForMatch', matchId, side], (old: GetPlayersForMatchOutput | undefined) => {
-      if (!old) return old;
-    
-      return {
-          ...old,
-          players: old.players.map((p) => {
-          const delta = newDeltas.find((d: any) => d.playerId === p.id);
-          if (!delta) return p;
-        
-          return {...p, selectionStatus: delta.action === 'select' ? 'Selected' : '' };
-          })
-        };
-    });
-
-      return { previousData };
-    },
-    onError: (err, newDeltas, context) => {
-      queryClient.setQueryData(['playersForMatch', matchId, side], context?.previousData);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId, side] });
-      queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
-    }
   });
 }

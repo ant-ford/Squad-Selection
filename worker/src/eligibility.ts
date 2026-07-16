@@ -38,6 +38,8 @@ export interface EligibilityResult {
 export interface VirtualSelection {
   player: string[];
   match: string[];
+  /** The selected HKFC side. Present for derby-safe selections. */
+  team?: string;
 }
 
 // ── Internal helpers ────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ export interface VirtualSelection {
 type TeamMap = Map<string, Team>;
 type RankMap = Record<string, number>;
 type Exception = { playerId: string; matchId: string; status: string };
+type SameDayTeamFixture = { matchId: string; teamName: string };
 
 function buildRankMap(teamMap: TeamMap): RankMap {
   const rm: RankMap = {};
@@ -63,7 +66,21 @@ function safeLinkId(value: unknown): string | null {
   }
 }
 
-function isLeague(match: Match): boolean {
+function selectionKey(matchId: string, teamName: string): string {
+  return `${matchId}:${teamName}`;
+}
+
+function cardsForPlayer(playerId: string, ctx: EvaluationContext): MatchCard[] {
+  return ctx.matchCardsByPlayer?.get(playerId) ?? ctx.matchCards.filter((card) => safeLinkId(card.player) === playerId);
+}
+
+function matchForCard(card: MatchCard, ctx: EvaluationContext): Match | undefined {
+  const matchId = safeLinkId(card.match);
+  return matchId ? ctx.matchesById?.get(matchId) : undefined;
+}
+
+function isLeague(match: Match | undefined | null): boolean {
+  if (!match) return false;
   return (
     (match.competitionType || match.division || "")
       .toLowerCase()
@@ -72,7 +89,8 @@ function isLeague(match: Match): boolean {
   );
 }
 
-function isCup(match: Match): boolean {
+function isCup(match: Match | undefined | null): boolean {
+  if (!match) return false;
   const ct = (match.competitionType || match.division || "").toLowerCase();
   return ct.includes("cup") || ct.includes("plate") || ct.includes("bowl");
 }
@@ -278,36 +296,19 @@ function checkVisitingPlayer(
   player: Player,
   targetHkfcTeam: string,
   match: Match,
-  matchCards: MatchCard[],
-  currentSeason: string,
+  ctx: EvaluationContext,
 ): string | null {
   if (!player.isVisitingPlayer) return null;
 
-  // §6.2 — Fixed to registered team
   if (player.registeredTeam !== targetHkfcTeam) {
     return "Visiting player — fixed to registered team";
   }
 
-  // §6.3 — Cup eligibility: 5 league appearances for registered team
   if (isCup(match)) {
-    const leagueApps = matchCards.filter((mc) => {
-      const pId = safeLinkId(mc.player);
-      if (pId !== player.id) return false;
-      if (mc.team !== player.registeredTeam) return false;
-      if (mc.season !== currentSeason) return false;
-
-      // If we can determine competitionType, only count league matches
-      if (mc.match) {
-        const mcMatch = mc.match as unknown as Match;
-        if (mcMatch.competitionType || mcMatch.division) {
-          return isLeague(mcMatch);
-        }
-      }
-      // Best-effort: count when we can't determine competition type
-      return true;
-    }).length;
-
-    if (leagueApps < 5) {
+    const appearances = cardsForPlayer(player.id, ctx).filter(
+      (card) => card.season === ctx.currentSeason
+    ).length;
+    if (appearances < 5) {
       return "Visiting player — fewer than 5 appearances for registered team";
     }
   }
@@ -321,11 +322,11 @@ function checkSameDayMovement(
   player: Player,
   targetHkfcTeam: string,
   targetRank: number,
-  match: Match,
   rankMap: RankMap,
   sameDayMatches: Match[],
   allSelections: VirtualSelection[],
   allExceptions: Exception[],
+  ctx?: EvaluationContext,
 ): {
   blockReason: string | null;
   selectedByTeam: string | null;
@@ -333,28 +334,43 @@ function checkSameDayMovement(
 } {
   let selectedByTeam: string | null = null;
   let sameDayHigherTeam: string | null = null;
+  const sameDayFixtures = ctx?.sameDayFixtures ?? sameDayMatches.map((sdm) => ({
+    matchId: sdm.id,
+    teamName: hkfcTeamNameSafe(sdm, rankMap) ?? "",
+  }));
+  const playerSelections = ctx?.selectionsByPlayer?.get(player.id);
 
-  for (const sdm of sameDayMatches) {
-    const sdmTeam = hkfcTeamNameSafe(sdm, rankMap);
+  for (const fixture of sameDayFixtures) {
+    const sdmTeam = fixture.teamName;
     if (!sdmTeam) continue;
     const sdmRank = rankMap[sdmTeam] ?? 99;
+    const isSelected = playerSelections
+      ? playerSelections.has(selectionKey(fixture.matchId, sdmTeam))
+      : allSelections.some((selection) => safeLinkId(selection.player) === player.id && safeLinkId(selection.match) === fixture.matchId && (!selection.team || selection.team === sdmTeam));
 
     // Cross-team selection visibility (independent of block)
-    const sel = allSelections.find(
-      (s) => safeLinkId(s.player) === player.id && safeLinkId(s.match) === sdm.id,
-    );
-    if (sel && sdmTeam !== targetHkfcTeam) {
+    if (isSelected && sdmTeam !== targetHkfcTeam) {
       selectedByTeam = sdmTeam;
+    }
+
+    // Only U21 players moving from their registered team to a higher-ranked
+    // team may be selected twice on the same date.
+    const permittedU21DoubleGame = player.u21Eligible &&
+      sdmTeam === player.registeredTeam &&
+      targetRank < (rankMap[player.registeredTeam || ""] ?? 99);
+    if (isSelected && sdmTeam !== targetHkfcTeam && !permittedU21DoubleGame) {
+      return {
+        blockReason: `Selected for ${sdmTeam} on same day`,
+        selectedByTeam: sdmTeam,
+        sameDayHigherTeam: sdmRank < targetRank ? sdmTeam : null,
+      };
     }
 
     // Only consider HIGHER-ranked teams (lower numeric rank)
     if (sdmRank >= targetRank) continue;
 
     // If player is already selected by the higher team, block (even if unavailable)
-    const higherSel = allSelections.find(
-      (s) => safeLinkId(s.player) === player.id && safeLinkId(s.match) === sdm.id,
-    );
-    if (higherSel) {
+    if (isSelected) {
       return {
         blockReason: `Selected for ${sdmTeam} on same day`,
         selectedByTeam: sdmTeam,
@@ -366,7 +382,7 @@ function checkSameDayMovement(
     const hasException = allExceptions.some(
       (e) =>
         e.playerId === player.id &&
-        e.matchId === sdm.id &&
+        e.matchId === fixture.matchId &&
         e.status === "Unavailable",
     );
     if (hasException) {
@@ -391,8 +407,7 @@ function checkPremierRestriction(
   player: Player,
   targetHkfcTeam: string,
   targetIsPremier: boolean,
-  matchCards: MatchCard[],
-  currentSeason: string,
+  ctx: EvaluationContext,
   rankMap: RankMap,
 ): string | null {
   const { isPremier: playerIsPremier } = playerRanks(player, rankMap);
@@ -401,11 +416,10 @@ function checkPremierRestriction(
   if (targetIsPremier === playerIsPremier) return null;
 
   // Count completed league matches for each team
-  const targetCompleted = countCompletedMatches(targetHkfcTeam, matchCards, currentSeason);
+  const targetCompleted = countCompletedMatches(targetHkfcTeam, ctx);
   const playerCompleted = countCompletedMatches(
     player.registeredTeam || "",
-    matchCards,
-    currentSeason,
+    ctx,
   );
 
   if (targetCompleted < 3 || playerCompleted < 3) {
@@ -415,15 +429,27 @@ function checkPremierRestriction(
   return null;
 }
 
-function countCompletedMatches(teamName: string, matchCards: MatchCard[], season: string): number {
+function countCompletedMatches(teamName: string, ctx: EvaluationContext): number {
   const matchIds = new Set<string>();
-  for (const mc of matchCards) {
-    if (mc.team === teamName && mc.season === season) {
+  for (const mc of ctx.matchCards) {
+    if (mc.team === teamName && isLeague(matchForCard(mc, ctx))) {
       const mId = safeLinkId(mc.match);
       if (mId) matchIds.add(mId);
     }
   }
   return matchIds.size;
+}
+
+function indexedU21DoubleGameCount(targetHkfcTeam: string, ctx: EvaluationContext): number | null {
+  const selectedForTarget = ctx.sameDaySelectionsByTeam?.get(targetHkfcTeam);
+  if (!selectedForTarget) return null;
+  let count = 0;
+  for (const playerId of selectedForTarget) {
+    const selectedPlayer = ctx.playersById.get(playerId);
+    if (!selectedPlayer?.u21Eligible || !selectedPlayer.registeredTeam || selectedPlayer.registeredTeam === targetHkfcTeam) continue;
+    if (ctx.sameDaySelectionsByTeam?.get(selectedPlayer.registeredTeam)?.has(playerId)) count++;
+  }
+  return count;
 }
 
 // ── Step 6: Play-Up Rules (§9-11, §13) ─────────────────────────────────
@@ -432,10 +458,9 @@ function checkPlayUpRules(
   player: Player,
   targetRank: number,
   playerRank: number,
-  matchCards: MatchCard[],
-  currentSeason: string,
+  ctx: EvaluationContext,
 ): { blockReason: string | null; playUpCount: number } {
-  const playUpCount = calculatePlayUpCount(player, matchCards, currentSeason);
+  const playUpCount = calculatePlayUpCount(player, ctx);
 
   // §9.1 — Higher-to-lower movement blocked
   if (playerRank < targetRank) {
@@ -460,14 +485,10 @@ function checkPlayUpRules(
 
 function calculatePlayUpCount(
   player: Player,
-  matchCards: MatchCard[],
-  currentSeason: string,
+  ctx: EvaluationContext,
 ): number {
-  return matchCards.filter((mc) => {
-    const pId = safeLinkId(mc.player);
-    if (pId !== player.id) return false;
+  return cardsForPlayer(player.id, ctx).filter((mc) => {
     if (!mc.playUp) return false;
-    if (mc.season !== currentSeason) return false;
     // §11.2 — GK exemption: exclude GK appearances from count
     if (mc.goalkeeper) return false;
     return true;
@@ -479,9 +500,8 @@ function calculatePlayUpCount(
 function checkCupEligibility(
   player: Player,
   match: Match,
-  matchCards: MatchCard[],
-  currentSeason: string,
-  rankMap: RankMap,
+  targetTeam: string,
+  ctx: EvaluationContext,
 ): string | null {
   if (!isCup(match)) return null;
 
@@ -491,21 +511,17 @@ function checkCupEligibility(
   }
 
   // §14.2 — Minimum 2 league appearances
-  const leagueApps = matchCards.filter((mc) => {
-    const pId = safeLinkId(mc.player);
-    return pId === player.id && mc.season === currentSeason;
-  }).length;
+  const cards = cardsForPlayer(player.id, ctx);
+  const leagueApps = cards.filter((card) => isLeague(matchForCard(card, ctx))).length;
 
   if (leagueApps < 2) {
     return "Fewer than 2 league appearances — ineligible for Cup";
   }
 
   // §14.3 — Cross-cup restriction
-  const targetTeam = hkfcTeamNameSafe(match, rankMap) ?? "";
-  const otherTeamCupCard = matchCards.find((mc) => {
-    const pId = safeLinkId(mc.player);
-    return pId === player.id && mc.team !== targetTeam && mc.season === currentSeason;
-  });
+  const otherTeamCupCard = cards.find((card) =>
+    card.team !== targetTeam && isCup(matchForCard(card, ctx)),
+  );
 
   if (otherTeamCupCard) {
     const otherTeam = otherTeamCupCard.team || "another team";
@@ -524,11 +540,18 @@ function checkU21DoubleGame(
   sameDayMatches: Match[],
   playersById: Map<string, Player>,
   rankMap: RankMap,
+  ctx?: EvaluationContext,
 ): string | null {
   if (!player.u21Eligible) return null;
 
   // Only applies when playing for a different (higher) team
   if (targetHkfcTeam === player.registeredTeam) return null;
+
+  const indexedCount = ctx ? indexedU21DoubleGameCount(targetHkfcTeam, ctx) : null;
+  if (indexedCount !== null && ctx) {
+    const alreadySelected = ctx.sameDaySelectionsByTeam?.get(targetHkfcTeam)?.has(player.id) ?? false;
+    return indexedCount >= 3 && !alreadySelected ? "U21 double-game limit reached" : null;
+  }
 
   // Count U21 double-game players already selected for target team today
   let u21DoubleGameCount = 0;
@@ -622,7 +645,10 @@ function countU21DoubleGames(
   sameDayMatches: Match[],
   playersById: Map<string, Player>,
   rankMap: RankMap,
+  ctx?: EvaluationContext,
 ): number {
+  const indexedCount = ctx ? indexedU21DoubleGameCount(targetHkfcTeam, ctx) : null;
+  if (indexedCount !== null) return indexedCount;
   let count = 0;
   const countedIds = new Set<string>();
 
@@ -699,10 +725,24 @@ export interface EvaluationContext {
   teamMap: TeamMap;
   /** Computed once from teamMap; passed to all helpers. */
   rankMap: RankMap;
+  /** Explicitly selected side of the match; required for HKFC derby fixtures. */
+  targetTeam?: string;
   sameDayMatches: Match[];
+  /** One entry per HKFC team on the day, so both derby teams are represented. */
+  sameDayFixtures?: SameDayTeamFixture[];
   allSelections: VirtualSelection[];
+  /** O(1) selection lookup, keyed by player then match/team. */
+  selectionsByPlayer?: Map<string, Set<string>>;
+  /** O(1) same-day selected-player lookup, keyed by team. */
+  sameDaySelectionsByTeam?: Map<string, Set<string>>;
   allExceptions: Exception[];
+  /** O(1) lookup for Unavailable exceptions, keyed by player/match. */
+  unavailablePlayerMatchKeys?: Set<string>;
   matchCards: MatchCard[];
+  /** Current-season match cards grouped by player. */
+  matchCardsByPlayer?: Map<string, MatchCard[]>;
+  /** Matches keyed by record id, used to distinguish league and cup cards. */
+  matchesById?: Map<string, Match>;
   currentSeason: string;
   playersById: Map<string, Player>;
 }
@@ -718,11 +758,9 @@ export function evaluatePlayerEligibility(
   match: Match,
   ctx: EvaluationContext,
 ): EligibilityResult {
-  const rankMap = buildRankMap(ctx.teamMap);
-  // Use ctx.rankMap if provided, otherwise fall back to freshly built one
-  const effectiveRankMap = Object.keys(ctx.rankMap).length > 0 ? ctx.rankMap : rankMap;
+  const effectiveRankMap = ctx.rankMap;
 
-  const targetHkfcTeam = hkfcTeamNameSafe(match, effectiveRankMap);
+  const targetHkfcTeam = ctx.targetTeam ?? hkfcTeamNameSafe(match, effectiveRankMap);
   if (!targetHkfcTeam || effectiveRankMap[targetHkfcTeam] === undefined) {
     return blockedResult("Admin data incomplete");
   }
@@ -742,14 +780,14 @@ export function evaluatePlayerEligibility(
 
   // ── Step 3: Visiting Player ──
   const visitingBlock = checkVisitingPlayer(
-    player, targetHkfcTeam, match, ctx.matchCards, ctx.currentSeason,
+    player, targetHkfcTeam, match, ctx,
   );
   if (visitingBlock) return blockedResult(visitingBlock);
 
   // ── Step 4: Same-Day Movement ──
   const sameDayResult = checkSameDayMovement(
-    player, targetHkfcTeam, targetRank, match, effectiveRankMap,
-    ctx.sameDayMatches, ctx.allSelections, ctx.allExceptions,
+    player, targetHkfcTeam, targetRank, effectiveRankMap,
+    ctx.sameDayMatches, ctx.allSelections, ctx.allExceptions, ctx,
   );
   if (sameDayResult.blockReason) {
     return blockedResult(sameDayResult.blockReason, {
@@ -761,7 +799,7 @@ export function evaluatePlayerEligibility(
   // ── Step 5: Premier Division Restriction ──
   const premierBlock = checkPremierRestriction(
     player, targetHkfcTeam, targetIsPremier,
-    ctx.matchCards, ctx.currentSeason, effectiveRankMap,
+    ctx, effectiveRankMap,
   );
   if (premierBlock) {
     return blockedResult(premierBlock, {
@@ -773,7 +811,7 @@ export function evaluatePlayerEligibility(
   // ── Step 6: Play-Up Rules ──
   const playUpResult = checkPlayUpRules(
     player, targetRank, playerRank,
-    ctx.matchCards, ctx.currentSeason,
+    ctx,
   );
   if (playUpResult.blockReason) {
     return blockedResult(playUpResult.blockReason, {
@@ -785,7 +823,7 @@ export function evaluatePlayerEligibility(
 
   // ── Step 7: Cup Eligibility ──
   const cupBlock = checkCupEligibility(
-    player, match, ctx.matchCards, ctx.currentSeason, effectiveRankMap,
+    player, match, targetHkfcTeam, ctx,
   );
   if (cupBlock) {
     return blockedResult(cupBlock, {
@@ -798,7 +836,7 @@ export function evaluatePlayerEligibility(
   // ── Step 8: U21 Double-Game ──
   const u21Block = checkU21DoubleGame(
     player, targetHkfcTeam,
-    ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap,
+    ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap, ctx,
   );
   if (u21Block) {
     return blockedResult(u21Block, {
@@ -810,7 +848,7 @@ export function evaluatePlayerEligibility(
 
   // ── Count U21 double-games for warning threshold ──
   const u21DoubleGameCount = countU21DoubleGames(
-    targetHkfcTeam, ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap,
+    targetHkfcTeam, ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap, ctx,
   );
 
   // ── Generate Warnings ──

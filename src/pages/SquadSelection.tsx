@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, X, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { apiPost } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
@@ -19,19 +19,17 @@ const POS_SHORT: Record<string, string> = {
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const side = (searchParams.get("side") as "home" | "away") || undefined;
 
-
-
-  const { data, isLoading, isError, error } = usePlayersForMatch(matchId!, (searchParams.get("side") as "home"|"away")||undefined);
+  const { data, isLoading, isError, error } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // ✅ Hooks called at top level
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -41,26 +39,31 @@ export default function SquadSelection() {
 
   const handleFilterChange = useCallback((f: FilterState) => {
     setFilters(f);
-    const params = filtersToParams(f);
-    setSearchParams(params ? params : {}, { replace: true });
+    const params = new URLSearchParams(window.location.search);
+    const filterStr = filtersToParams(f);
+    // clear previous filter keys
+    ['position', 'eligibility', 'selection', 'availability', 'ability'].forEach(k => params.delete(k));
+    if (filterStr) {
+      filterStr.split('&').forEach(pair => {
+        const [k, v] = pair.split('=');
+        if (k && v) params.set(k, v);
+      });
+    }
+    setSearchParams(params, { replace: true });
   }, [setSearchParams]);
 
   const mergedPlayers = useMemo(() => {
     if (!data?.players) return [];
     const map = new Map(data.players.map(p => [p.id, { ...p }]));
-    
     if (pollData?.exceptions) {
       for (const exc of pollData.exceptions) {
         const p = map.get(exc.playerId);
         if (p) { p.availabilityStatus = exc.status; p.playerNotes = exc.notes || ''; }
       }
     }
-    
     for (const delta of pendingDeltas) {
       const p = map.get(delta.playerId);
-      if (p) {
-        p.selectionStatus = delta.action === 'select' ? 'Selected' : '';
-      }
+      if (p) p.selectionStatus = delta.action === 'select' ? 'Selected' : '';
     }
     return Array.from(map.values());
   }, [data, pollData, pendingDeltas]);
@@ -95,13 +98,10 @@ export default function SquadSelection() {
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
     if (!player || player.eligibilityStatus === 'blocked') return;
-
     const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
     const isCurrentlySelected = player.selectionStatus === 'Selected';
     const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
-
     const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
-
     if (serverMatchesIntended) {
       setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
     } else {
@@ -113,68 +113,44 @@ export default function SquadSelection() {
     const eligiblePlayers = filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked');
     const allSelected = eligiblePlayers.every(p => p.selectionStatus === 'Selected');
     const action: Delta['action'] = allSelected ? 'remove' : 'select';
-
-    const newDeltas: Delta[] = filteredPlayers
-      .filter(p => p.eligibilityStatus !== 'blocked')
-      .map(p => ({ 
-        playerId: p.id, 
-        action 
-      }));
-
+    const newDeltas = eligiblePlayers.map(p => ({ playerId: p.id, action }));
     updateDeltas(newDeltas);
   };
 
   const handleSave = async () => {
-      if (!hasChanges) return;
-      setSaving(true);
-      try {
-        const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
-        
-        // 1. Send the save request to the backend
-        await apiPost('/squad/sync', { 
-          matchId, 
-          selectedIds,
-          actingEmail: user?.email 
-        });
-
-        // 2. Optimistically update the React Query cache so the UI doesn't "snap back"
-        queryClient.setQueryData(['playersForMatch', matchId], (old: any) => {
-          if (!old) return old;
-          return {
-            ...old,
-            match: { ...old.match, selectedCount: selectedIds.length },
-            players: old.players.map((p: any) => ({
-              ...p,
-              selectionStatus: selectedIds.includes(p.id) ? 'Selected' : ''
-            }))
-          };
-        });
-
-        toast.success('Squad synced successfully');
-        
-        // 3. Clear local pending changes (the UI now relies on the instantly updated cache)
-        setPendingDeltas([]);
-        setHasChanges(false);
-        
-        // 4. Trigger a background refetch to ensure perfect sync across the app
-        queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId] });
-        queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
-        
-      } catch (e: any) {
-        toast.error(e?.message || 'Failed to sync squad');
-      } finally {
-        setSaving(false);
-      }
-    };
-
-  const actualChanges = useMemo(() => {
-    return pendingDeltas.filter(delta => {
-      const serverPlayer = data?.players.find(p => p.id === delta.playerId);
-      const serverIsSelected = serverPlayer?.selectionStatus === 'Selected';
-      const pendingIsSelected = delta.action === 'select';
-      return serverIsSelected !== pendingIsSelected;
-    });
-  }, [pendingDeltas, data?.players]);
+    if (!hasChanges) return;
+    setSaving(true);
+    try {
+      const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
+      await apiPost('/squad/sync', {
+        matchId,
+        selectedIds,
+        actingEmail: user?.email,
+        side: side,
+      });
+      const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
+      queryClient.setQueryData(qk, (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          match: { ...old.match, selectedCount: selectedIds.length },
+          players: old.players.map((p: any) => ({
+            ...p,
+            selectionStatus: selectedIds.includes(p.id) ? 'Selected' : ''
+          }))
+        };
+      });
+      toast.success('Squad synced successfully');
+      setPendingDeltas([]);
+      setHasChanges(false);
+      queryClient.invalidateQueries({ queryKey: qk });
+      queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to sync squad');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (isLoading) return <div className="p-6">Loading squad...</div>;
   if (isError) return <div className="p-6 text-destructive">Failed to load players: {(error as any)?.message || "Unknown error"}</div>;
@@ -187,45 +163,28 @@ export default function SquadSelection() {
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
-
       <MatchHeader match={optimisticMatch} />
-      
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
-
       <div className="container mx-auto py-2 px-4.5 mb-1 flex items-center gap-3">
         <input
           type="checkbox"
           id="toggle-all"
           className="h-4 w-4 accent-primary"
-          checked={
-            filteredPlayers.length > 0 && 
-            filteredPlayers
-              .filter(p => p.eligibilityStatus !== 'blocked')
-              .every(p => p.selectionStatus === 'Selected')
-          }
+          checked={filteredPlayers.length > 0 && filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked').every(p => p.selectionStatus === 'Selected')}
           onChange={handleToggleAllVisible}
         />
-        <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">
-          Select All
-        </label>
+        <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
       </div>
-
       <div className="container mx-auto px-4">
         {filteredPlayers.map(p => (
-          <PlayerRow
-            key={p.id}
-            player={p}
-            selected={p.selectionStatus === 'Selected'}
-            onToggleSelection={() => handleToggleSelection(p.id)}
-          />
+          <PlayerRow key={p.id} player={p} selected={p.selectionStatus === 'Selected'} onToggleSelection={() => handleToggleSelection(p.id)} />
         ))}
       </div>
-
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50">
           <button onClick={() => setPendingDeltas([])} className="flex-1 py-3 border rounded">Discard</button>
           <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-primary text-white rounded">
-            {saving ? 'Saving...' : `Save (${actualChanges.length} changes)`}
+            {saving ? 'Saving...' : `Save (${pendingDeltas.length} changes)`}
           </button>
         </div>
       )}

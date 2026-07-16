@@ -120,7 +120,7 @@
                 "color": "tealLight2"
               },
               {
-                "id": "selsJqMjxBSqDMO4h",
+                "id": "selBGDIaxdmivQHAe",
                 "name": "",
                 "color": "blueLight2"
               }
@@ -512,117 +512,117 @@
               {
                 "id": "sel7KqNu7IjnxW3Bs",
                 "name": "A",
-                "color": "cyanLight2"
+                "color": "blueLight1"
               },
               {
                 "id": "selW6iMNH3bX6dI0L",
                 "name": "A-",
-                "color": "redLight1"
+                "color": "blueBright"
               },
               {
                 "id": "self9ubaSdUIEzb5S",
                 "name": "B+",
-                "color": "tealLight2"
+                "color": "cyanLight2"
               },
               {
                 "id": "selwvV4pLyPPsUQ4F",
                 "name": "B",
-                "color": "greenLight2"
+                "color": "cyanLight1"
               },
               {
                 "id": "sel7SVNRSPWmxw8jD",
                 "name": "B-",
-                "color": "pinkLight1"
+                "color": "cyanBright"
               },
               {
                 "id": "sel0P0OpHeWDPlLdf",
                 "name": "C+",
-                "color": "yellowLight2"
+                "color": "tealLight2"
               },
               {
                 "id": "seljiEJqElTXd6BxQ",
                 "name": "C",
-                "color": "orangeLight2"
+                "color": "tealLight1"
               },
               {
                 "id": "selCb8MSvEsNuVYW4",
                 "name": "C-",
-                "color": "purpleLight1"
+                "color": "tealBright"
               },
               {
                 "id": "selS1iRKzda0yTfYz",
                 "name": "D+",
-                "color": "redLight2"
+                "color": "greenLight2"
               },
               {
                 "id": "selzbvwgv6zkumUh6",
                 "name": "D",
-                "color": "pinkLight2"
+                "color": "greenLight1"
               },
               {
                 "id": "selpEGpdUw5daRJaW",
                 "name": "D-",
-                "color": "grayLight1"
+                "color": "greenBright"
               },
               {
                 "id": "selUC9NQK8cuHtZWc",
                 "name": "E+",
-                "color": "purpleLight2"
+                "color": "yellowLight2"
               },
               {
                 "id": "selkhgAHRdbNRxMaJ",
                 "name": "E",
-                "color": "grayLight2"
+                "color": "yellowLight1"
               },
               {
                 "id": "selyTzuJ4Ii7eZnf8",
                 "name": "E-",
-                "color": "blueBright"
+                "color": "yellowBright"
               },
               {
                 "id": "sel04MemKtGmwiaz1",
                 "name": "F+",
-                "color": "blueLight1"
+                "color": "orangeLight2"
               },
               {
                 "id": "selmbsHkPq17F5Sbe",
                 "name": "F",
-                "color": "cyanLight1"
+                "color": "orangeLight1"
               },
               {
                 "id": "selMXQEWnOwvyC6OV",
                 "name": "F-",
-                "color": "cyanBright"
+                "color": "orangeBright"
               },
               {
                 "id": "sel5Cf2Uhf5CYiG6F",
                 "name": "G+",
-                "color": "tealLight1"
+                "color": "redLight2"
               },
               {
                 "id": "selPlND0jlzHW2nrM",
                 "name": "G",
-                "color": "greenLight1"
+                "color": "redLight1"
               },
               {
                 "id": "selBNL7TOosvnbXOj",
                 "name": "G-",
-                "color": "tealBright"
+                "color": "redBright"
               },
               {
                 "id": "selKVgACgjWwb7PTX",
                 "name": "H+",
-                "color": "yellowLight1"
+                "color": "pinkLight2"
               },
               {
                 "id": "selEze8SSykb2t09e",
                 "name": "H",
-                "color": "orangeLight1"
+                "color": "pinkLight1"
               },
               {
                 "id": "sel318LelSK46V59w",
                 "name": "H-",
-                "color": "greenBright"
+                "color": "pinkBright"
               }
             ]
           },
@@ -5765,6 +5765,11 @@
           },
           "id": "fldML64ihqVGavMfc",
           "name": "Matches copy"
+        },
+        {
+          "type": "manualSort",
+          "id": "fld4oj526642es3Cx",
+          "name": "Manual sort"
         }
       ],
       "views": [
@@ -7436,12 +7441,17 @@
             "isValid": true,
             "referencedFieldIds": [],
             "result": {
-              "type": "date",
+              "type": "dateTime",
               "options": {
                 "dateFormat": {
-                  "name": "us",
-                  "format": "M/D/YYYY"
-                }
+                  "name": "iso",
+                  "format": "YYYY-MM-DD"
+                },
+                "timeFormat": {
+                  "name": "24hour",
+                  "format": "HH:mm"
+                },
+                "timeZone": "Asia/Hong_Kong"
               }
             }
           },
@@ -7648,6 +7658,19 @@
           },
           "id": "fldHYwbTPmWPZk4gm",
           "name": "Match"
+        },
+        {
+          "type": "multipleLookupValues",
+          "options": {
+            "isValid": true,
+            "recordLinkFieldId": "fldHYwbTPmWPZk4gm",
+            "fieldIdInLinkedTable": "fldw6Fsvfa2WOjF14",
+            "result": {
+              "type": "singleLineText"
+            }
+          },
+          "id": "fldD5yRjfwCustUHL",
+          "name": "Season"
         },
         {
           "type": "multipleLookupValues",
@@ -9376,7 +9399,7 @@
                     "color": "tealLight2"
                   },
                   {
-                    "id": "selsJqMjxBSqDMO4h",
+                    "id": "selBGDIaxdmivQHAe",
                     "name": "",
                     "color": "blueLight2"
                   }
@@ -9970,7 +9993,7 @@
                     "color": "tealLight2"
                   },
                   {
-                    "id": "selsJqMjxBSqDMO4h",
+                    "id": "selBGDIaxdmivQHAe",
                     "name": "",
                     "color": "blueLight2"
                   }
