@@ -178,7 +178,9 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     const eligibility = evaluatePlayerEligibility(p, match, ctx);
     const name = [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player";
     const blocks = eligibility.status === "blocked" && eligibility.reason ? [{ rule: "", reason: eligibility.reason }] : [];
-    const conflicts = eligibility.selectedByTeam ? [{ type: "selected", team: eligibility.selectedByTeam, matchId: "" }] : [];
+    const conflicts: { type: string; team: string; matchId: string }[] = [];
+    if (eligibility.selectedByTeam) conflicts.push({ type: "selected", team: eligibility.selectedByTeam, matchId: "" });
+    if (eligibility.sameDayHigherTeam) conflicts.push({ type: "available", team: eligibility.sameDayHigherTeam, matchId: "" });
     return {
       id: p.id,
       preferredName: name,
@@ -232,12 +234,19 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
 
-  // Ensure we only send valid strings (defensive)
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
-  await airtableUpdate(env, TABLES.match, matchId, { [fieldName]: cleanIds });
+
+  // Derby safety: ensure a player isn't selected for BOTH sides of the same match
+  const updates: Record<string, string[]> = { [fieldName]: cleanIds };
+  if (side === "home" || side === "away") {
+    const oppositeField = side === "home" ? MATCHES_FIELDS.selectedPlayersAway : MATCHES_FIELDS.selectedPlayersHome;
+    const oppositeCurrent = side === "home" ? match.selectedPlayersAway : match.selectedPlayersHome;
+    updates[oppositeField] = (oppositeCurrent || []).filter((id) => !cleanIds.includes(id));
+  }
+
+  await airtableUpdate(env, TABLES.match, matchId, updates);
 
   const season = match.season || "";
-
   const allMatchesInSeason = await getAllMatches(env, season);
   const affectedMatchIds = new Set([
     matchId,

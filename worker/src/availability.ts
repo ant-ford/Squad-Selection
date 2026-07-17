@@ -129,14 +129,27 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
   if (!input.email || !input.matchId) throw new HttpError("email and matchId are required", 400);
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
+
+  // Idempotent: find any existing exception for this player + match
+  const playerExceptionRecords = await airtableFindAll(
+    env,
+    TABLES.availabilityException,
+    `FIND("${escapeFormulaValue(user.id)}", {${AVAILABILITYEXCEPTIONS_FIELDS.player}}) > 0`
+  );
+  const existing = playerExceptionRecords
+    .map(mapAvailability)
+    .find((e) => linkId(e.match) === input.matchId);
+  const existingId = existing?.id;
+
   if (input.status === "Available") {
-    if (input.existingExceptionId) {
-      await airtableDelete(env, TABLES.availabilityException, input.existingExceptionId);
+    if (existingId) {
+      await airtableDelete(env, TABLES.availabilityException, existingId);
     }
     invalidateCachePrefix(`players-for-match:${input.matchId}:`);
     invalidateCachePrefix("exceptions:");
     return { success: true };
   }
+
   const fields = buildExceptionFields({
     matchId: input.matchId,
     playerId: user.id,
@@ -144,8 +157,9 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     notes: input.notes,
     updatedById: user.id,
   });
-  if (input.existingExceptionId) {
-    await airtableUpdate(env, TABLES.availabilityException, input.existingExceptionId, fields);
+
+  if (existingId) {
+    await airtableUpdate(env, TABLES.availabilityException, existingId, fields);
   } else {
     await airtableCreate(env, TABLES.availabilityException, fields);
   }

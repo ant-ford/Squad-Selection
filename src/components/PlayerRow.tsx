@@ -54,16 +54,18 @@ export default function PlayerRow({ player, selected, onToggleSelection }: Playe
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm shrink-0">U21</span>}
           {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-sm shrink-0">VP</span>}
-          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} 路 Ability {player.playingAbility || '–'}</span>
+          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} • Ability {player.playingAbility || '–'}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          {player.registeredTeam || '–'} 路 {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} 路 {player.availabilityStatus}
+          {player.registeredTeam || '–'} • {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} • {player.availabilityStatus}
         </p>
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{player.playerNotes}"</p>}
 
         {/* #6 cross-team conflict badge */}
         {player.conflicts?.map((c, i) => (
-          <span key={i} className="text-[10px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded mr-1">Selected: {c.team}</span>
+          <span key={i} className={`text-[10px] px-1 py-0.5 rounded mr-1 ${c.type === 'selected' ? 'text-blue-600 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
+            {c.type === 'selected' ? `Selected: ${c.team}` : `Available: ${c.team}`}
+          </span>
         ))}
 
         {/* #5 blocks (reason) + #4 warnings */}

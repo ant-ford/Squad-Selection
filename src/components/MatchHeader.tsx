@@ -21,7 +21,9 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
     <div className="border-b border-border bg-card">
       <div className="container mx-auto px-4 py-2">
         <p className="text-sm font-medium text-foreground">
-          {match.hkfcTeam ? <><span className="font-bold">{match.hkfcTeam}</span> vs {match.hkfcTeam === match.homeTeam ? match.awayTeam : match.homeTeam}</> : <>{match.homeTeam} vs {match.awayTeam}</>}
+          <span className={match.hkfcTeam === match.homeTeam ? "font-bold" : ""}>{match.homeTeam}</span>
+          {" vs "}
+          <span className={match.hkfcTeam === match.awayTeam ? "font-bold" : ""}>{match.awayTeam}</span>
         </p>
         <p className="text-xs text-muted-foreground">
           {safeFormat(match.date, 'EEE d MMM')} · {safeFormat(match.date, 'HH:mm')} · {match.venue} · Division: {match.division}

@@ -47,41 +47,51 @@ export async function getMyFixtures(env: Env, email: string) {
 
   const matchIds = upcoming.map((m) => m.id);
   const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
-  
-  const playerExceptions = allExceptions.filter(
-    (e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || "")
-  );
+  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
 
-  const fixtures = upcoming.map((m) => {
+  const fixtures = upcoming.flatMap((m) => {
     const home = m.homeTeam || "";
     const away = m.awayTeam || "";
-    const isHome = home === teamName;
-    const hkfcTeam = teamNames.has(home) ? home : away;
-    const opponent = hkfcTeam === home ? away : home;
-    const team = teamsByName.get(hkfcTeam);
-    const exc = exceptionByMatch.get(m.id);
-    
-    const isSelected = (m.selectedPlayersHome || []).includes(user.id) || (m.selectedPlayersAway || []).includes(user.id);
+    const isDerby = teamNames.has(home) && teamNames.has(away);
 
-    return {
-      id: m.id,
-      date: m.matchDate || "",
-      homeTeam: home,
-      awayTeam: away,
-      hkfcTeam,
-      opponent,
-      isHome,
-      venue: m.venue || "",
-      division: m.division || "",
-      availabilityStatus: exc?.availabilityStatus || "Available",
-      playerNotes: exc?.note || "",
-      availabilityExceptionId: exc?.id || "",
-      selectionStatus: isSelected ? "Selected" : "",
-      selectionNotes: "", 
-      selectedCount: (m.selectedPlayersHome || []).length + (m.selectedPlayersAway || []).length,
-      targetSquadSize: team?.targetSquadSize || 16,
-    };
+    if (!isDerby) {
+      const isHome = home === teamName;
+      const hkfcTeam = teamNames.has(home) ? home : away;
+      const opponent = hkfcTeam === home ? away : home;
+      const team = teamsByName.get(hkfcTeam);
+      const exc = exceptionByMatch.get(m.id);
+      const isSelected = (m.selectedPlayersHome || []).includes(user.id) || (m.selectedPlayersAway || []).includes(user.id);
+      return [{
+        id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away,
+        hkfcTeam, opponent, isHome, venue: m.venue || "", division: m.division || "",
+        availabilityStatus: exc?.availabilityStatus || "Available",
+        playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "",
+        selectionStatus: isSelected ? "Selected" : "", selectionNotes: "",
+        selectedCount: isHome ? (m.selectedPlayersHome || []).length : (m.selectedPlayersAway || []).length,
+        targetSquadSize: team?.targetSquadSize || 16,
+      }];
+    }
+
+    // Derby: one tile per HKFC side, but only the side the player is eligible for
+    return [home, away]
+      .filter((sideTeam) => sideTeam === teamName)
+      .map((sideTeam) => {
+        const isHome = sideTeam === home;
+        const team = teamsByName.get(sideTeam);
+        const exc = exceptionByMatch.get(m.id);
+        const isSelected = isHome ? (m.selectedPlayersHome || []).includes(user.id) : (m.selectedPlayersAway || []).includes(user.id);
+        return {
+          id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away,
+          hkfcTeam: sideTeam, opponent: sideTeam === home ? away : home, isHome,
+          venue: m.venue || "", division: m.division || "",
+          availabilityStatus: exc?.availabilityStatus || "Available",
+          playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "",
+          selectionStatus: isSelected ? "Selected" : "", selectionNotes: "",
+          selectedCount: isHome ? (m.selectedPlayersHome || []).length : (m.selectedPlayersAway || []).length,
+          targetSquadSize: team?.targetSquadSize || 16,
+        };
+      });
   });
 
   return { ...base, fixtures };
@@ -93,10 +103,12 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   const player = mapPlayer(record);
   if (!player.active) throw new HttpError("Player not found or inactive", 404);
 
+  const ref = await getReferenceData(env);
+  const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const teamName = player.registeredTeam || "";
+
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
-  
   const upcoming = allMatches
     .filter((m) => m.matchDate && m.matchDate >= now)
     .filter((m) => (m.homeTeam || "") === teamName || (m.awayTeam || "") === teamName)
@@ -107,22 +119,41 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && matchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
 
-  const fixtures = upcoming.map((m) => {
-    const exc = exceptionByMatch.get(m.id);
-    const isSelected = (m.selectedPlayersHome || []).includes(playerId) || (m.selectedPlayersAway || []).includes(playerId);
-    
-    return {
-      id: m.id,
-      date: m.matchDate || "",
-      homeTeam: m.homeTeam || "",
-      awayTeam: m.awayTeam || "",
-      venue: m.venue || "",
-      division: m.division || "",
-      availabilityStatus: exc?.availabilityStatus || "Available",
-      playerNotes: exc?.note || "",
-      availabilityExceptionId: exc?.id || "",
-      selectionStatus: isSelected ? "Selected" : "",
-    };
+  const fixtures = upcoming.flatMap((m) => {
+    const home = m.homeTeam || "";
+    const away = m.awayTeam || "";
+    const isDerby = teamNames.has(home) && teamNames.has(away);
+
+    if (!isDerby) {
+      const isHome = home === teamName;
+      const hkfcTeam = teamNames.has(home) ? home : away;
+      const opponent = hkfcTeam === home ? away : home;
+      const exc = exceptionByMatch.get(m.id);
+      const isSelected = (m.selectedPlayersHome || []).includes(playerId) || (m.selectedPlayersAway || []).includes(playerId);
+      return [{
+        id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away,
+        hkfcTeam, opponent, isHome, venue: m.venue || "", division: m.division || "",
+        availabilityStatus: exc?.availabilityStatus || "Available",
+        playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "",
+        selectionStatus: isSelected ? "Selected" : "",
+      }];
+    }
+
+    return [home, away]
+      .filter((sideTeam) => sideTeam === teamName)
+      .map((sideTeam) => {
+        const isHome = sideTeam === home;
+        const exc = exceptionByMatch.get(m.id);
+        const isSelected = isHome ? (m.selectedPlayersHome || []).includes(playerId) : (m.selectedPlayersAway || []).includes(playerId);
+        return {
+          id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away,
+          hkfcTeam: sideTeam, opponent: sideTeam === home ? away : home, isHome,
+          venue: m.venue || "", division: m.division || "",
+          availabilityStatus: exc?.availabilityStatus || "Available",
+          playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "",
+          selectionStatus: isSelected ? "Selected" : "",
+        };
+      });
   });
 
   return {

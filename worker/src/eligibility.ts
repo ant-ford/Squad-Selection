@@ -328,10 +328,13 @@ function checkSameDayMovement(
   blockReason: string | null;
   selectedByTeam: string | null;
   sameDayHigherTeam: string | null;
+  warnings: string[];
 } {
   let selectedByTeam: string | null = null;
   let sameDayHigherTeam: string | null = null;
+  const warnings: string[] = [];
   const playerSelections = ctx.selectionsByPlayer.get(player.id);
+  const playerRank = playerRanks(player, rankMap).playerRank;
 
   for (const fixture of ctx.sameDayFixtures) {
     const sdmTeam = fixture.teamName;
@@ -351,33 +354,32 @@ function checkSameDayMovement(
         blockReason: `Selected for ${sdmTeam} on same day`,
         selectedByTeam: sdmTeam,
         sameDayHigherTeam: sdmRank < targetRank ? sdmTeam : null,
+        warnings,
       };
     }
 
     if (sdmRank >= targetRank) continue;
 
-    if (isSelected) {
-      return {
-        blockReason: `Selected for ${sdmTeam} on same day`,
-        selectedByTeam: sdmTeam,
-        sameDayHigherTeam: sdmTeam,
-      };
-    }
-
-    const hasException = ctx.unavailablePlayerMatchKeys.has(`${player.id}:${fixture.matchId}`);
-    if (hasException) {
+    // Only enforce higher-team conflict if the player is actually lower-ranked
+    if (playerRank > sdmRank) {
+      if (isSelected) {
+        return {
+          blockReason: `Selected for ${sdmTeam} on same day`,
+          selectedByTeam: sdmTeam,
+          sameDayHigherTeam: sdmTeam,
+          warnings,
+        };
+      }
+      const hasException = ctx.unavailablePlayerMatchKeys.has(`${player.id}:${fixture.matchId}`);
+      if (hasException) {
+        sameDayHigherTeam = sdmTeam;
+        continue;
+      }
       sameDayHigherTeam = sdmTeam;
-      continue;
     }
-
-    return {
-      blockReason: `Available for ${sdmTeam} on same day`,
-      selectedByTeam,
-      sameDayHigherTeam: sdmTeam,
-    };
   }
 
-  return { blockReason: null, selectedByTeam, sameDayHigherTeam };
+  return { blockReason: null, selectedByTeam, sameDayHigherTeam, warnings };
 }
 
 // ── Step 5: Premier Division Restrictions (§8) ──────────────────────────
@@ -682,17 +684,21 @@ export function evaluatePlayerEligibility(
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
     });
   }
+  const sameDayWarnings = sameDayResult.warnings;
 
   // ── Step 5: Premier Division Restriction ──
-  const premierBlock = checkPremierRestriction(
-    player, targetHkfcTeam, targetIsPremier,
-    ctx, effectiveRankMap,
-  );
-  if (premierBlock) {
-    return blockedResult(premierBlock, {
-      selectedByTeam: sameDayResult.selectedByTeam,
-      sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    });
+  const isHigherToLower = playerRank < targetRank;
+  if (!isHigherToLower) {
+    const premierBlock = checkPremierRestriction(
+      player, targetHkfcTeam, targetIsPremier,
+      ctx, effectiveRankMap,
+    );
+    if (premierBlock) {
+      return blockedResult(premierBlock, {
+        selectedByTeam: sameDayResult.selectedByTeam,
+        sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
+      });
+    }
   }
 
   // ── Step 6: Play-Up Rules ──
@@ -738,6 +744,9 @@ export function evaluatePlayerEligibility(
     player, playUpResult.playUpCount, ctx.matchCards, ctx.currentSeason,
     targetHkfcTeam, u21DoubleGameCount,
   );
+  for (const w of sameDayWarnings) {
+    if (!warnings.includes(w)) warnings.push(w);
+  }
 
   return nonBlockedResult(
     warnings.length > 0 ? "warning" : "eligible",
