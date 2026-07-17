@@ -9,8 +9,9 @@ vi.mock("../worker/src/airtable", () => ({
   escapeFormulaValue: (v: string) => v,
 }));
 
-import { evaluatePlayerEligibility, type EvaluationContext, type EligibilityReasonTag } from "../worker/src/eligibility";
-import type { Match, MatchCard, Player, SquadSelection, Team } from "../src/generated/domainTypes";
+import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type EligibilityReasonTag, type VirtualSelection } from "../worker/src/eligibility";
+import { linkId } from "../worker/src/airtable";
+import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
 
 // ── Test Data Factory ───────────────────────────────────────────────────
 
@@ -80,17 +81,89 @@ function mc(overrides: Partial<MatchCard> = {}): MatchCard {
   };
 }
 
-function sel(overrides: Partial<SquadSelection> = {}): SquadSelection {
+type TestSelection = VirtualSelection & { id?: string; selectionStatus?: string };
+
+function sel(overrides: Partial<TestSelection> = {}): TestSelection {
   return {
-    id: "s1",
     player: ["p1"],
     match: ["m1"],
-    selectionStatus: "Selected",
     ...overrides,
-  };
+  } as TestSelection;
 }
 
-function ctx(overrides: Partial<EvaluationContext> = {}): EvaluationContext {
+function buildSameDayFixtures(sameDayMatches: Match[], rankMap: RankMap): { matchId: string; teamName: string }[] {
+  return sameDayMatches.flatMap((item) => {
+    const fixtures: { matchId: string; teamName: string }[] = [];
+    if (rankMap[item.homeTeam || ""] !== undefined) fixtures.push({ matchId: item.id, teamName: item.homeTeam });
+    if (rankMap[item.awayTeam || ""] !== undefined) fixtures.push({ matchId: item.id, teamName: item.awayTeam });
+    return fixtures;
+  });
+}
+
+/**
+ * In production every VirtualSelection carries a `team` — it's built
+ * directly from Matches.Selected Players Home/Away, so it's never
+ * ambiguous. The `sel()` test factory usually omits it for brevity, so
+ * infer it from the referenced same-day match the same way real fixtures
+ * resolve their HKFC side.
+ */
+function resolveSelectionTeam(sel: VirtualSelection, sameDayMatches: Match[], rankMap: RankMap): string | undefined {
+  if (sel.team) return sel.team;
+  const matchId = linkId(sel.match);
+  const match = sameDayMatches.find((m) => m.id === matchId);
+  if (!match) return undefined;
+  if (rankMap[match.homeTeam || ""] !== undefined) return match.homeTeam;
+  if (rankMap[match.awayTeam || ""] !== undefined) return match.awayTeam;
+  return undefined;
+}
+
+function buildSelectionIndices(
+  allSelections: VirtualSelection[],
+  sameDayMatches: Match[],
+  rankMap: RankMap,
+): { selectionsByPlayer: Map<string, Set<string>>; sameDaySelectionsByTeam: Map<string, Set<string>> } {
+  const selectionsByPlayer = new Map<string, Set<string>>();
+  const sameDaySelectionsByTeam = new Map<string, Set<string>>();
+  const sameDayMatchIds = new Set(sameDayMatches.map((m) => m.id));
+
+  for (const selection of allSelections) {
+    const playerId = linkId(selection.player);
+    const matchId = linkId(selection.match);
+    const team = resolveSelectionTeam(selection, sameDayMatches, rankMap);
+    if (!playerId || !matchId || !team) continue;
+
+    const playerSelections = selectionsByPlayer.get(playerId) || new Set<string>();
+    playerSelections.add(`${matchId}:${team}`);
+    selectionsByPlayer.set(playerId, playerSelections);
+
+    if (sameDayMatchIds.has(matchId)) {
+      const selectedPlayers = sameDaySelectionsByTeam.get(team) || new Set<string>();
+      selectedPlayers.add(playerId);
+      sameDaySelectionsByTeam.set(team, selectedPlayers);
+    }
+  }
+  return { selectionsByPlayer, sameDaySelectionsByTeam };
+}
+
+function buildUnavailableKeys(allExceptions: { playerId: string; matchId: string; status: string }[]): Set<string> {
+  return new Set(
+    allExceptions.filter((e) => e.status === "Unavailable").map((e) => `${e.playerId}:${e.matchId}`)
+  );
+}
+
+function buildMatchCardsByPlayer(matchCards: MatchCard[]): Map<string, MatchCard[]> {
+  const map = new Map<string, MatchCard[]>();
+  for (const card of matchCards) {
+    const playerId = linkId(card.player);
+    if (!playerId) continue;
+    const cards = map.get(playerId) || [];
+    cards.push(card);
+    map.set(playerId, cards);
+  }
+  return map;
+}
+
+function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {}): EvaluationContext {
   const { teamMap, rankMap } = buildMaps([
     t("HKFC A", 1, true),
     t("HKFC B", 2),
@@ -98,15 +171,33 @@ function ctx(overrides: Partial<EvaluationContext> = {}): EvaluationContext {
     t("HKFC D", 4),
     t("HKFC E", 5),
   ]);
+
+  const finalRankMap = overrides.rankMap ?? rankMap;
+  const sameDayMatches = overrides.sameDayMatches ?? [];
+  const allSelections = overrides.allSelections ?? [];
+  const allExceptions = (overrides.allExceptions ?? []) as { playerId: string; matchId: string; status: string }[];
+  const matchCards = overrides.matchCards ?? [];
+  const explicitMatches = overrides.matches ?? [];
+
+  const matchesById = new Map<string, Match>(explicitMatches.map((m) => [m.id, m]));
+  const { selectionsByPlayer, sameDaySelectionsByTeam } = buildSelectionIndices(allSelections, sameDayMatches, finalRankMap);
+
   return {
-    teamMap,
-    rankMap,
-    sameDayMatches: [],
-    allSelections: [],
-    allExceptions: [],
-    matchCards: [],
-    currentSeason: "2025-2026",
-    playersById: new Map(),
+    teamMap: overrides.teamMap ?? teamMap,
+    rankMap: finalRankMap,
+    sameDayMatches,
+    sameDayFixtures: buildSameDayFixtures(sameDayMatches, finalRankMap),
+    allSelections,
+    selectionsByPlayer,
+    sameDaySelectionsByTeam,
+    allExceptions,
+    unavailablePlayerMatchKeys: buildUnavailableKeys(allExceptions),
+    matchCards,
+    matchCardsByPlayer: buildMatchCardsByPlayer(matchCards),
+    matchesById,
+    currentSeason: overrides.currentSeason ?? "2025-2026",
+    playersById: overrides.playersById ?? new Map(),
+    completedLeagueMatchesByTeam: computeCompletedLeagueMatchCounts({ matchCards, matchesById }),
     ...overrides,
   };
 }
@@ -378,12 +469,15 @@ describe("evaluatePlayerEligibility", () => {
         mc({ player: ["p1"], team: "HKFC B", season: "2025-2026", match: ["mb2"] }),
         mc({ player: ["p1"], team: "HKFC B", season: "2025-2026", match: ["mb3"] }),
       ];
+      const matches = [
+        m({ id: "ma1" }), m({ id: "ma2" }), m({ id: "ma3" }),
+        m({ id: "mb1" }), m({ id: "mb2" }), m({ id: "mb3" }),
+      ];
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC A" }),
         m({ homeTeam: "HKFC B" }),
-        ctx({ teamMap, rankMap, matchCards })
+        ctx({ teamMap, rankMap, matchCards, matches })
       );
-      // Should not be blocked by Premier restriction (may be blocked by other rules)
       expect(r.reason).not.toBe("Premier movement restriction — team has not completed 3 matches");
     });
 
@@ -546,7 +640,7 @@ describe("evaluatePlayerEligibility", () => {
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
         m({ homeTeam: "HKFC C", competitionType: "Cup" }),
-        ctx({ matchCards })
+        ctx({ matchCards, matches: [m({ id: "m1" })] })
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Fewer than 2 league appearances — ineligible for Cup");
@@ -569,12 +663,13 @@ describe("evaluatePlayerEligibility", () => {
       const matchCards = [
         mc({ player: ["p1"], team: "HKFC C", season: "2025-2026" }),
         mc({ player: ["p1"], team: "HKFC C", season: "2025-2026" }),
-        mc({ player: ["p1"], team: "HKFC D", season: "2025-2026" }), // played for D in cup
+        mc({ player: ["p1"], team: "HKFC D", season: "2025-2026", match: ["cup-d-1"] }), // distinct match: a real cup game, not the same fixture as the two league cards above
       ];
+      const matches = [m({ id: "m1" }), m({ id: "cup-d-1", competitionType: "Cup" })];
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
         m({ homeTeam: "HKFC C", competitionType: "Cup" }),
-        ctx({ matchCards })
+        ctx({ matchCards, matches })
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toContain("Already played in a Cup for");

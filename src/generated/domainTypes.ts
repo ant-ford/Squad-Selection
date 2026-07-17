@@ -54,6 +54,7 @@ export interface AvailabilityException {
   match?: string[];
   availabilityStatus?: string;
   note?: string;
+  season?: string;
 }
 
 export interface MatchCard {

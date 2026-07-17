@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { safeFormat } from '@/lib/dateUtils';
 
 type MatchInfo = {
   date: string;
@@ -12,7 +12,6 @@ type MatchInfo = {
 };
 
 export default function MatchHeader({ match }: { match: MatchInfo }) {
-  const d = parseISO(match.date);
   const stats = [
     { label: 'Selected', value: match.selectedCount },
     { label: 'Target', value: match.targetSquadSize },
@@ -25,7 +24,7 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
           {match.hkfcTeam ? <><span className="font-bold">{match.hkfcTeam}</span> vs {match.hkfcTeam === match.homeTeam ? match.awayTeam : match.homeTeam}</> : <>{match.homeTeam} vs {match.awayTeam}</>}
         </p>
         <p className="text-xs text-muted-foreground">
-          {format(d, 'EEE d MMM')} · {format(d, 'HH:mm')} · {match.venue} · Division: {match.division}
+          {safeFormat(match.date, 'EEE d MMM')} · {safeFormat(match.date, 'HH:mm')} · {match.venue} · Division: {match.division}
         </p>
       </div>
       <div className="container mx-auto px-4 pb-3 grid grid-cols-2 gap-2 text-center">

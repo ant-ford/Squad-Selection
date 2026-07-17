@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { safeFormat } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 
 type Fixture = {
@@ -19,8 +19,7 @@ type Fixture = {
 
 export default function FixtureCard({ fixture }: { fixture: Fixture }) {
   const navigate = useNavigate();
-  const d = parseISO(fixture.date);
-  const time = format(d, 'HH:mm');
+  const time = safeFormat(fixture.date, 'HH:mm');
   const shortfall = fixture.targetSquadSize - fixture.selectedCount;
   const isFull = shortfall <= 0;
 

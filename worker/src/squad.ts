@@ -1,14 +1,13 @@
 import { Env, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
 import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
-import { getReferenceData } from "./reference";
-import { evaluatePlayerEligibility, type EvaluationContext, type VirtualSelection } from "./eligibility";
+import { getReferenceData, getExceptionsForSeasons } from "./reference";
+import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
 import { mapMatch } from "../../src/mappers/matchMapper";
-import { mapAvailability } from "../../src/mappers/availabilityMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
-import type { Match, Player, MatchCard, Team } from "../../src/generated/domainTypes";
+import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
 
 type MatchSide = "home" | "away";
 
@@ -68,11 +67,11 @@ async function buildEvaluationContext(
   teamMap: Map<string, Team>,
   allPlayers: Player[],
   targetTeam: string,
-): Promise<{ ctx: EvaluationContext; exceptionsRaw: ReturnType<typeof mapAvailability>[] }> {
+): Promise<{ ctx: EvaluationContext; exceptionsRaw: AvailabilityException[] }> {
   const currentSeason = match.season || "";
   const matchDate = match.matchDate || "";
   const [exceptionsRaw, matchCards, allMatches] = await Promise.all([
-    airtableFindAll(env, TABLES.availabilityException).then((records) => records.map(mapAvailability)),
+    getExceptionsForSeasons(env, [currentSeason]),
     getMatchCardsForSeason(env, currentSeason),
     getAllMatches(env, currentSeason),
   ]);
@@ -80,7 +79,6 @@ async function buildEvaluationContext(
   for (const p of allPlayers) playersById.set(p.id, p);
   const exceptionIndex = exceptionsRaw.map((e) => ({ playerId: linkId(e.player) || "", matchId: linkId(e.match) || "", status: e.availabilityStatus || "Available" }));
 
-  // #DerbyFix: exclude the current match so derby opponent doesn't self-block
   const sameDayMatches = getSameDayMatches(allMatches, matchDate).filter(m => m.id !== match.id);
 
   const matchesById = new Map(allMatches.map((item) => [item.id, item]));
@@ -120,27 +118,31 @@ async function buildEvaluationContext(
       sameDaySelectionsByTeam.set(selection.team, selectedPlayers);
     }
   }
+
   const unavailablePlayerMatchKeys = new Set(exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`));
-  return {
-    ctx: {
-      teamMap,
-      rankMap: teamRankMap,
-      targetTeam,
-      sameDayMatches,
-      sameDayFixtures,
-      allSelections: virtualSelections,
-      selectionsByPlayer,
-      sameDaySelectionsByTeam,
-      allExceptions: exceptionIndex,
-      unavailablePlayerMatchKeys,
-      matchCards,
-      matchCardsByPlayer,
-      matchesById,
-      currentSeason,
-      playersById,
-    },
-    exceptionsRaw,
+
+  const completedLeagueMatchesByTeam = computeCompletedLeagueMatchCounts({ matchCards, matchesById });
+
+  const ctx: EvaluationContext = {
+    teamMap,
+    rankMap: teamRankMap,
+    targetTeam,
+    sameDayMatches,
+    sameDayFixtures,
+    allSelections: virtualSelections,
+    selectionsByPlayer,
+    sameDaySelectionsByTeam,
+    allExceptions: exceptionIndex,
+    unavailablePlayerMatchKeys,
+    matchCards,
+    matchCardsByPlayer,
+    matchesById,
+    currentSeason,
+    playersById,
+    completedLeagueMatchesByTeam,
   };
+
+  return { ctx, exceptionsRaw };
 }
 
 export async function getPlayersForMatch(env: Env, matchId: string, side?: "home" | "away") {
@@ -234,9 +236,18 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
   await airtableUpdate(env, TABLES.match, matchId, { [fieldName]: cleanIds });
 
-  invalidateCache(`all-matches:${match.season || ""}`);
-  invalidateCachePrefix("players-for-match:");
-  invalidateCache('upcoming-fixtures');
+  const season = match.season || "";
+
+  const allMatchesInSeason = await getAllMatches(env, season);
+  const affectedMatchIds = new Set([
+    matchId,
+    ...getSameDayMatches(allMatchesInSeason, match.matchDate || "").map((m) => m.id),
+  ]);
+
+  invalidateCache(`all-matches:${season}`);
+  for (const id of affectedMatchIds) {
+    invalidateCachePrefix(`players-for-match:${id}:`);
+  }
 }
 
 export async function selectPlayer(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {

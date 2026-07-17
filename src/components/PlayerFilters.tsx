@@ -129,7 +129,7 @@ export interface PlayerFiltersProps {
 }
 
 export default function PlayerFilters({ filters, onChange, bulkSelectMode, onToggleBulk }: PlayerFiltersProps) {
-  const totalActive = [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability].length;
+  const totalActive = [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability, ...filters.ability].length;
 
   return (
     <div className="border-b border-border">

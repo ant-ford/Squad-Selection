@@ -946,6 +946,26 @@
           "description": "Groups members into age bands based on their {Age} value."
         },
         {
+          "type": "formula",
+          "options": {
+            "isValid": true,
+            "formula": "IF(\r\n  AND(\r\n    {fldPrHEsBa6RuJ9df},\r\n    DATETIME_DIFF(\r\n      DATETIME_PARSE(\r\n        YEAR(\r\n          IF(\r\n            OR(\r\n              MONTH(TODAY()) > 9,\r\n              AND(MONTH(TODAY()) = 9, DAY(TODAY()) >= 1)\r\n            ),\r\n            TODAY(),\r\n            DATEADD(TODAY(), -1, 'year')\r\n          )\r\n        ) & \"-09-01\"\r\n      ),\r\n      {fldPrHEsBa6RuJ9df},\r\n      'years'\r\n    ) < 21\r\n  ),\r\n  TRUE(),\r\n  FALSE()\r\n)",
+            "referencedFieldIds": [
+              "fldPrHEsBa6RuJ9df"
+            ],
+            "result": {
+              "type": "checkbox",
+              "options": {
+                "icon": "check",
+                "color": "greenBright"
+              }
+            }
+          },
+          "id": "fldc1zxSWxBmfPUXz",
+          "name": "U21 Eligible",
+          "description": "Checks if player is under 21 on the previous September 1st."
+        },
+        {
           "type": "singleLineText",
           "id": "fldXNCG5vRZYdSvAX",
           "name": "HKID No.",

@@ -1,9 +1,8 @@
 import { Env, airtableFindAll, airtableFindById, linkId } from "./airtable";
-import { getReferenceData, getPlayerByEmail } from "./reference";
+import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons } from "./reference";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { mapMatch } from "../../src/mappers/matchMapper";
-import { mapAvailability } from "../../src/mappers/availabilityMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 
 async function getScheduledMatches(env: Env) {
@@ -47,7 +46,7 @@ export async function getMyFixtures(env: Env, email: string) {
   if (upcoming.length === 0) return { ...base, fixtures: [] };
 
   const matchIds = upcoming.map((m) => m.id);
-  const allExceptions = await airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability));
+  const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
   
   const playerExceptions = allExceptions.filter(
     (e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || "")
@@ -104,7 +103,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
 
   const matchIds = upcoming.map((m) => m.id);
-  const allExceptions = await airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability));
+  const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && matchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
 
@@ -161,7 +160,7 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   if (relevant.length === 0) return { fixtures: [] };
 
   const matchIds = relevant.map((m) => m.id);
-  const allExceptions = await airtableFindAll(env, TABLES.availabilityException).then((r) => r.map(mapAvailability));
+  const allExceptions = await getExceptionsForSeasons(env, relevant.map((m) => m.season || ""));
 
   const exceptionsByMatch = new Map<string, any[]>();
   for (const exc of allExceptions) {

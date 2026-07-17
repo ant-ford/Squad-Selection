@@ -71,12 +71,12 @@ function selectionKey(matchId: string, teamName: string): string {
 }
 
 function cardsForPlayer(playerId: string, ctx: EvaluationContext): MatchCard[] {
-  return ctx.matchCardsByPlayer?.get(playerId) ?? ctx.matchCards.filter((card) => safeLinkId(card.player) === playerId);
+  return ctx.matchCardsByPlayer.get(playerId) ?? [];
 }
 
 function matchForCard(card: MatchCard, ctx: EvaluationContext): Match | undefined {
   const matchId = safeLinkId(card.match);
-  return matchId ? ctx.matchesById?.get(matchId) : undefined;
+  return matchId ? ctx.matchesById.get(matchId) : undefined;
 }
 
 function isLeague(match: Match | undefined | null): boolean {
@@ -323,10 +323,7 @@ function checkSameDayMovement(
   targetHkfcTeam: string,
   targetRank: number,
   rankMap: RankMap,
-  sameDayMatches: Match[],
-  allSelections: VirtualSelection[],
-  allExceptions: Exception[],
-  ctx?: EvaluationContext,
+  ctx: EvaluationContext,
 ): {
   blockReason: string | null;
   selectedByTeam: string | null;
@@ -334,27 +331,18 @@ function checkSameDayMovement(
 } {
   let selectedByTeam: string | null = null;
   let sameDayHigherTeam: string | null = null;
-  const sameDayFixtures = ctx?.sameDayFixtures ?? sameDayMatches.map((sdm) => ({
-    matchId: sdm.id,
-    teamName: hkfcTeamNameSafe(sdm, rankMap) ?? "",
-  }));
-  const playerSelections = ctx?.selectionsByPlayer?.get(player.id);
+  const playerSelections = ctx.selectionsByPlayer.get(player.id);
 
-  for (const fixture of sameDayFixtures) {
+  for (const fixture of ctx.sameDayFixtures) {
     const sdmTeam = fixture.teamName;
     if (!sdmTeam) continue;
     const sdmRank = rankMap[sdmTeam] ?? 99;
-    const isSelected = playerSelections
-      ? playerSelections.has(selectionKey(fixture.matchId, sdmTeam))
-      : allSelections.some((selection) => safeLinkId(selection.player) === player.id && safeLinkId(selection.match) === fixture.matchId && (!selection.team || selection.team === sdmTeam));
+    const isSelected = playerSelections?.has(selectionKey(fixture.matchId, sdmTeam)) ?? false;
 
-    // Cross-team selection visibility (independent of block)
     if (isSelected && sdmTeam !== targetHkfcTeam) {
       selectedByTeam = sdmTeam;
     }
 
-    // Only U21 players moving from their registered team to a higher-ranked
-    // team may be selected twice on the same date.
     const permittedU21DoubleGame = player.u21Eligible &&
       sdmTeam === player.registeredTeam &&
       targetRank < (rankMap[player.registeredTeam || ""] ?? 99);
@@ -366,10 +354,8 @@ function checkSameDayMovement(
       };
     }
 
-    // Only consider HIGHER-ranked teams (lower numeric rank)
     if (sdmRank >= targetRank) continue;
 
-    // If player is already selected by the higher team, block (even if unavailable)
     if (isSelected) {
       return {
         blockReason: `Selected for ${sdmTeam} on same day`,
@@ -378,19 +364,12 @@ function checkSameDayMovement(
       };
     }
 
-    // If player has an Unavailable exception, they're not "available" → skip
-    const hasException = allExceptions.some(
-      (e) =>
-        e.playerId === player.id &&
-        e.matchId === fixture.matchId &&
-        e.status === "Unavailable",
-    );
+    const hasException = ctx.unavailablePlayerMatchKeys.has(`${player.id}:${fixture.matchId}`);
     if (hasException) {
       sameDayHigherTeam = sdmTeam;
       continue;
     }
 
-    // Player is available for the higher team and not selected elsewhere → block
     return {
       blockReason: `Available for ${sdmTeam} on same day`,
       selectedByTeam,
@@ -430,14 +409,26 @@ function checkPremierRestriction(
 }
 
 function countCompletedMatches(teamName: string, ctx: EvaluationContext): number {
-  const matchIds = new Set<string>();
-  for (const mc of ctx.matchCards) {
-    if (mc.team === teamName && isLeague(matchForCard(mc, ctx))) {
-      const mId = safeLinkId(mc.match);
-      if (mId) matchIds.add(mId);
-    }
+  return ctx.completedLeagueMatchesByTeam.get(teamName) ?? 0;
+}
+
+export function computeCompletedLeagueMatchCounts(
+  ctx: Pick<EvaluationContext, "matchCards" | "matchesById">,
+): Map<string, number> {
+  const matchIdsByTeam = new Map<string, Set<string>>();
+  for (const card of ctx.matchCards) {
+    if (!card.team) continue;
+    const cardMatchId = safeLinkId(card.match);
+    if (!cardMatchId) continue;
+    const cardMatch = ctx.matchesById?.get(cardMatchId);
+    if (!isLeague(cardMatch)) continue;
+    const set = matchIdsByTeam.get(card.team) ?? new Set<string>();
+    set.add(cardMatchId);
+    matchIdsByTeam.set(card.team, set);
   }
-  return matchIds.size;
+  const counts = new Map<string, number>();
+  for (const [team, set] of matchIdsByTeam) counts.set(team, set.size);
+  return counts;
 }
 
 function indexedU21DoubleGameCount(targetHkfcTeam: string, ctx: EvaluationContext): number | null {
@@ -489,8 +480,8 @@ function calculatePlayUpCount(
 ): number {
   return cardsForPlayer(player.id, ctx).filter((mc) => {
     if (!mc.playUp) return false;
-    // §11.2 — GK exemption: exclude GK appearances from count
     if (mc.goalkeeper) return false;
+    if (mc.season && mc.season !== ctx.currentSeason) return false;
     return true;
   }).length;
 }
@@ -536,63 +527,15 @@ function checkCupEligibility(
 function checkU21DoubleGame(
   player: Player,
   targetHkfcTeam: string,
-  allSelections: VirtualSelection[],
-  sameDayMatches: Match[],
-  playersById: Map<string, Player>,
-  rankMap: RankMap,
-  ctx?: EvaluationContext,
+  ctx: EvaluationContext,
 ): string | null {
   if (!player.u21Eligible) return null;
-
-  // Only applies when playing for a different (higher) team
   if (targetHkfcTeam === player.registeredTeam) return null;
 
-  const indexedCount = ctx ? indexedU21DoubleGameCount(targetHkfcTeam, ctx) : null;
-  if (indexedCount !== null && ctx) {
-    const alreadySelected = ctx.sameDaySelectionsByTeam?.get(targetHkfcTeam)?.has(player.id) ?? false;
-    return indexedCount >= 3 && !alreadySelected ? "U21 double-game limit reached" : null;
-  }
-
-  // Count U21 double-game players already selected for target team today
-  let u21DoubleGameCount = 0;
-  const countedIds = new Set<string>();
-
-  for (const sel of allSelections) {
-    const selMatchId = safeLinkId(sel.match);
-    const selPlayerId = safeLinkId(sel.player);
-    if (!selMatchId || !selPlayerId) continue;
-    if (countedIds.has(selPlayerId)) continue;
-
-    // Must be on the same day for the target team
-    const selMatch = sameDayMatches.find((m) => m.id === selMatchId);
-    if (!selMatch) continue;
-    const selHkfcTeam = hkfcTeamNameSafe(selMatch, rankMap);
-    if (selHkfcTeam !== targetHkfcTeam) continue;
-
-    const selPlayer = playersById.get(selPlayerId);
-    if (!selPlayer?.u21Eligible) continue;
-
-    // Check if this U21 is also selected for their registered team same day
-    const hasRegTeamSelection = allSelections.some((rs) => {
-      const rpId = safeLinkId(rs.player);
-      const rmId = safeLinkId(rs.match);
-      if (rpId !== selPlayerId) return false;
-      const rmMatch = sameDayMatches.find((m) => m.id === rmId);
-      if (!rmMatch) return false;
-      return hkfcTeamNameSafe(rmMatch, rankMap) === selPlayer!.registeredTeam;
-    });
-
-    if (hasRegTeamSelection) {
-      u21DoubleGameCount++;
-      countedIds.add(selPlayerId);
-    }
-  }
-
-  if (u21DoubleGameCount >= 3) {
-    return "U21 double-game limit reached";
-  }
-
-  return null;
+  const count = indexedU21DoubleGameCount(targetHkfcTeam, ctx);
+  if (count === null) return null; // guard against null before numeric compare
+  const alreadySelected = ctx.sameDaySelectionsByTeam.get(targetHkfcTeam)?.has(player.id) ?? false;
+  return count >= 3 && !alreadySelected ? "U21 double-game limit reached" : null;
 }
 
 // ── Warnings (§16) ─────────────────────────────────────────────────────
@@ -637,54 +580,6 @@ function generateWarnings(
   return warnings;
 }
 
-// ── U21 Double-Game Count Helper ────────────────────────────────────────
-
-function countU21DoubleGames(
-  targetHkfcTeam: string,
-  allSelections: VirtualSelection[],
-  sameDayMatches: Match[],
-  playersById: Map<string, Player>,
-  rankMap: RankMap,
-  ctx?: EvaluationContext,
-): number {
-  const indexedCount = ctx ? indexedU21DoubleGameCount(targetHkfcTeam, ctx) : null;
-  if (indexedCount !== null) return indexedCount;
-  let count = 0;
-  const countedIds = new Set<string>();
-
-  for (const sel of allSelections) {
-    const selPlayerId = safeLinkId(sel.player);
-    const selMatchId = safeLinkId(sel.match);
-    if (!selPlayerId || !selMatchId) continue;
-    if (countedIds.has(selPlayerId)) continue;
-
-    const selMatch = sameDayMatches.find((m) => m.id === selMatchId);
-    if (!selMatch) continue;
-    const selTeam = hkfcTeamNameSafe(selMatch, rankMap);
-    if (selTeam !== targetHkfcTeam) continue;
-
-    const selPlayer = playersById.get(selPlayerId);
-    if (!selPlayer?.u21Eligible) continue;
-
-    const hasRegSel = allSelections.some((rs) => {
-      const rp = safeLinkId(rs.player);
-      const rm = safeLinkId(rs.match);
-      if (rp !== selPlayerId) return false;
-      const rmMatch = sameDayMatches.find((m) => m.id === rm);
-      return rmMatch
-        ? hkfcTeamNameSafe(rmMatch, rankMap) === selPlayer!.registeredTeam
-        : false;
-    });
-
-    if (hasRegSel) {
-      count++;
-      countedIds.add(selPlayerId);
-    }
-  }
-
-  return count;
-}
-
 // ── Result helpers ──────────────────────────────────────────────────────
 
 function blockedResult(reason: string, extras?: Partial<EligibilityResult>): EligibilityResult {
@@ -723,28 +618,21 @@ function nonBlockedResult(
 
 export interface EvaluationContext {
   teamMap: TeamMap;
-  /** Computed once from teamMap; passed to all helpers. */
   rankMap: RankMap;
-  /** Explicitly selected side of the match; required for HKFC derby fixtures. */
   targetTeam?: string;
   sameDayMatches: Match[];
-  /** One entry per HKFC team on the day, so both derby teams are represented. */
-  sameDayFixtures?: SameDayTeamFixture[];
+  sameDayFixtures: SameDayTeamFixture[];
   allSelections: VirtualSelection[];
-  /** O(1) selection lookup, keyed by player then match/team. */
-  selectionsByPlayer?: Map<string, Set<string>>;
-  /** O(1) same-day selected-player lookup, keyed by team. */
-  sameDaySelectionsByTeam?: Map<string, Set<string>>;
+  selectionsByPlayer: Map<string, Set<string>>;
+  sameDaySelectionsByTeam: Map<string, Set<string>>;
   allExceptions: Exception[];
-  /** O(1) lookup for Unavailable exceptions, keyed by player/match. */
-  unavailablePlayerMatchKeys?: Set<string>;
+  unavailablePlayerMatchKeys: Set<string>;
   matchCards: MatchCard[];
-  /** Current-season match cards grouped by player. */
-  matchCardsByPlayer?: Map<string, MatchCard[]>;
-  /** Matches keyed by record id, used to distinguish league and cup cards. */
-  matchesById?: Map<string, Match>;
+  matchCardsByPlayer: Map<string, MatchCard[]>;
+  matchesById: Map<string, Match>;
   currentSeason: string;
   playersById: Map<string, Player>;
+  completedLeagueMatchesByTeam: Map<string, number>;
 }
 
 /**
@@ -786,8 +674,7 @@ export function evaluatePlayerEligibility(
 
   // ── Step 4: Same-Day Movement ──
   const sameDayResult = checkSameDayMovement(
-    player, targetHkfcTeam, targetRank, effectiveRankMap,
-    ctx.sameDayMatches, ctx.allSelections, ctx.allExceptions, ctx,
+    player, targetHkfcTeam, targetRank, effectiveRankMap, ctx,
   );
   if (sameDayResult.blockReason) {
     return blockedResult(sameDayResult.blockReason, {
@@ -834,10 +721,7 @@ export function evaluatePlayerEligibility(
   }
 
   // ── Step 8: U21 Double-Game ──
-  const u21Block = checkU21DoubleGame(
-    player, targetHkfcTeam,
-    ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap, ctx,
-  );
+  const u21Block = checkU21DoubleGame(player, targetHkfcTeam, ctx);
   if (u21Block) {
     return blockedResult(u21Block, {
       playUpCount: playUpResult.playUpCount,
@@ -847,9 +731,7 @@ export function evaluatePlayerEligibility(
   }
 
   // ── Count U21 double-games for warning threshold ──
-  const u21DoubleGameCount = countU21DoubleGames(
-    targetHkfcTeam, ctx.allSelections, ctx.sameDayMatches, ctx.playersById, effectiveRankMap, ctx,
-  );
+  const u21DoubleGameCount = indexedU21DoubleGameCount(targetHkfcTeam, ctx) ?? 0;
 
   // ── Generate Warnings ──
   const warnings = generateWarnings(

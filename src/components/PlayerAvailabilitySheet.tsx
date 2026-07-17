@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { format, parseISO } from 'date-fns';
+import { safeFormat } from '@/lib/dateUtils';
 import { setMyAvailability } from '@/api/setMyAvailability';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -75,7 +75,6 @@ export default function PlayerAvailabilitySheet({
     }
   };
 
-  const d = parseISO(fixture.date);
   const displaySquad = squadExpanded ? (squad ?? []) : (squad ?? []).slice(0, 12);
 
   return (
@@ -96,7 +95,7 @@ export default function PlayerAvailabilitySheet({
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
             <p className="text-xs text-muted-foreground">
-              {format(d, 'EEE d MMM')} • {format(d, 'HH:mm')} • {fixture.venue}
+              {safeFormat(fixture.date, 'EEE d MMM')} • {safeFormat(fixture.date, 'HH:mm')} • {fixture.venue}
             </p>
             {fixture.selectionStatus && (
               <p className="text-xs font-medium text-primary mt-1">

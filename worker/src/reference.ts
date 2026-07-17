@@ -1,10 +1,11 @@
 import { Env, airtableFindAll, escapeFormulaValue } from "./airtable";
 import { getCached, invalidateCache } from "../../src/lib/cache";
 import { TABLES } from "../../src/generated/tableNames";
-import { PEOPLE_FIELDS } from "../../src/generated/fieldMaps";
+import { PEOPLE_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapTeam } from "../../src/mappers/teamMapper";
-import type { Player, Team } from "../../src/generated/domainTypes";
+import { mapAvailability } from "../../src/mappers/availabilityMapper";
+import type { Player, Team, AvailabilityException } from "../../src/generated/domainTypes";
 
 export interface ReferenceData {
   players: Player[];
@@ -53,5 +54,18 @@ export async function getPlayerByEmail(env: Env, email: string): Promise<Player 
   return records[0] ? mapPlayer(records[0]) : null;
 }
 
-// Export invalidate for use in other files
+export async function getExceptionsForSeasons(env: Env, seasons: string[]): Promise<AvailabilityException[]> {
+  const uniqueSeasons = [...new Set(seasons.filter(Boolean))].sort();
+  const cacheKey = `exceptions:${uniqueSeasons.join(",") || "none"}`;
+  const { data } = await getCached<AvailabilityException[]>(cacheKey, async () => {
+    if (uniqueSeasons.length === 0) return [];
+    const formula = uniqueSeasons.length === 1
+      ? `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(uniqueSeasons[0])}"`
+      : `OR(${uniqueSeasons.map((s) => `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(s)}"`).join(",")})`;
+    const records = await airtableFindAll(env, TABLES.availabilityException, formula);
+    return records.map(mapAvailability);
+  }, 5 * 60 * 1000);
+  return data;
+}
+
 export { invalidateCache };
