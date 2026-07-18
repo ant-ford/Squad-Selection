@@ -9,6 +9,7 @@ import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
+import { CalendarSyncCard } from '@/components/CalendarSyncCard';
 
 type Fixture = GetMyFixturesOutput['fixtures'][0];
 
@@ -128,6 +129,9 @@ export default function PlayerDashboard() {
             <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
             <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
           </div>
+          
+          {/* Calendar Sync Integration */}
+          <CalendarSyncCard />
         </div>
       </div>
 

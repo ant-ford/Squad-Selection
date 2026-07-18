@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
+import { CoachCalendarExport } from '@/components/CoachCalendarExport';
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
@@ -34,23 +35,30 @@ export default function FixtureList() {
 
   return (
     <div className="container mx-auto px-4 pb-8">
-      {tabs.length > 2 && (
-        <div className="flex gap-4 border-b border-border py-2 overflow-x-auto">
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`text-sm pb-2 whitespace-nowrap shrink-0 ${
-                activeTab === t.key
-                  ? 'font-medium text-foreground border-b-2 border-primary'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="flex items-center justify-between gap-4 border-b border-border py-2">
+        {tabs.length > 2 && (
+          <div className="flex gap-4 overflow-x-auto flex-1">
+            {tabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`text-sm pb-2 whitespace-nowrap shrink-0 ${
+                  activeTab === t.key
+                    ? 'font-medium text-foreground border-b-2 border-primary'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {/* Coach Export & Subscribe Buttons */}
+        <div className="shrink-0">
+          <CoachCalendarExport activeTab={activeTab} />
         </div>
-      )}
+      </div>
 
       {isLoading ? (
         <div className="space-y-3 pt-4">

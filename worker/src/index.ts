@@ -13,6 +13,13 @@ import {
 } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 import { getRecommendationsForMatch } from "./recommendations";
+import { 
+  handleGetCalendarLink, 
+  handlePlayerCalendarFeed, 
+  handleTeamCalendarExport,
+  handleGetTeamCalendarLink,
+  handleTeamCalendarFeed
+} from "./calendar";
 
 export type { Env };
 
@@ -56,7 +63,7 @@ export default {
           origin,
         );
       }
-
+      
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
       if (method === "GET" && matchAvailabilityMatch) return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
 
@@ -108,6 +115,25 @@ export default {
         const body = await readJsonBody(request) as { matchId: string; selectedIds: string[]; actingEmail?: string; side?: "home" | "away" };
         await syncSquad(env, body.matchId, body.selectedIds, body.actingEmail, body.side);
         return json({ success: true }, 200, origin);
+      }
+
+      if (method === "GET" && pathname === "/api/calendar/link") {
+        const email = requireParam(url.searchParams.get("email"), "email");
+        return json(await handleGetCalendarLink(env, email), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/calendar/feed.ics") {
+        return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
+      }
+      if (method === "GET" && pathname === "/api/calendar/team.ics") {
+        return handleTeamCalendarExport(env, url.searchParams.get("email"), url.searchParams.get("team"));
+      }
+      if (method === "GET" && pathname === "/api/calendar/team-link") {
+        const email = requireParam(url.searchParams.get("email"), "email");
+        const team = requireParam(url.searchParams.get("team"), "team");
+        return json(await handleGetTeamCalendarLink(env, email, team), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
+        return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
       }
 
       return errorJson("Not Found", 404, origin);

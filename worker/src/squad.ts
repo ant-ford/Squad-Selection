@@ -258,6 +258,8 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   for (const id of affectedMatchIds) {
     invalidateCachePrefix(`players-for-match:${id}:`);
   }
+  invalidateCachePrefix("calendar:player:");
+  invalidateCachePrefix("calendar:team:");
 }
 
 export async function selectPlayer(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {

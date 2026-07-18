@@ -11,6 +11,7 @@
 export interface Env {
   AIRTABLE_TOKEN: string;
   AIRTABLE_BASE_ID: string;
+  CALENDAR_SECRET: string;
   /** Optional: restrict CORS to a single origin instead of "*". */
   ALLOWED_ORIGIN?: string;
 }
