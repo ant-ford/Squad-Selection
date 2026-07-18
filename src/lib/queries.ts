@@ -4,6 +4,8 @@ import { getCurrentSupabaseUser } from '@/lib/auth';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
+import type { GetRecommendationsOutput } from '@/api/getRecommendations';
+import { getRecommendations } from '@/api/getRecommendations';
 
 async function authGet<T>(url: string, params?: Record<string, any>): Promise<T> {
   const user = await getCurrentSupabaseUser();
@@ -40,5 +42,14 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
     queryFn: () => apiGet<{ exceptions: { playerId: string; status: string; notes: string }[] }>(`/api/match/${matchId}/availability`),
     refetchInterval: isEnabled ? 30000 : false,
     enabled: isEnabled,
+  });
+}
+
+export function useRecommendations(matchId: string, side?: "home" | "away", position?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['recommendations', matchId, side, position],
+    queryFn: () => getRecommendations(matchId, side, position),
+    enabled,
+    staleTime: 0,
   });
 }

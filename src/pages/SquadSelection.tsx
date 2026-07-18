@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { apiPost } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
+import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/useAuth';
@@ -88,6 +89,11 @@ export default function SquadSelection() {
     return { ...data.match, selectedCount };
   }, [data?.match, mergedPlayers]);
 
+  const selectedIdsSet = useMemo(
+    () => new Set(mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id)),
+    [mergedPlayers]
+  );
+
   const updateDeltas = (newDeltas: Delta[]) => {
     setPendingDeltas(prev => {
       const playerIdsToUpdate = new Set(newDeltas.map(d => d.playerId));
@@ -145,6 +151,7 @@ export default function SquadSelection() {
       setHasChanges(false);
       queryClient.invalidateQueries({ queryKey: qk });
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
+      queryClient.invalidateQueries({ queryKey: ['recommendations', matchId, side] });
     } catch (e: any) {
       toast.error(e?.message || 'Failed to sync squad');
     } finally {
@@ -164,6 +171,17 @@ export default function SquadSelection() {
         </button>
       </div>
       <MatchHeader match={optimisticMatch} />
+      {optimisticMatch && optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
+        <div className="container mx-auto px-4 pt-3">
+          <RecommendationsPanel
+            matchId={matchId!}
+            side={side}
+            excludeIds={selectedIdsSet}
+            onSelect={(playerId) => updateDeltas([{ playerId, action: 'select' }])}
+          />
+        </div>
+      )}
+      
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
       <div className="container mx-auto py-2 px-4.5 mb-1 flex items-center gap-3">
         <input

@@ -8,6 +8,7 @@ import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS } from
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
 import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
+import { ABILITY_RANK } from "./abilityRank";
 
 type MatchSide = "home" | "away";
 
@@ -304,13 +305,6 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
 }
 
 const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
-const ABILITY_RANK: Record<string, number> = {
-  "A+": 24, "A": 23, "A-": 22, "B+": 21, "B": 20, "B-": 19,
-  "C+": 18, "C": 17, "C-": 16, "D+": 15, "D": 14, "D-": 13,
-  "E+": 12, "E": 11, "E-": 10, "F+": 9, "F": 8, "F-": 7,
-  "G+": 6, "G": 5, "G-": 4, "H+": 3, "H": 2, "H-": 1,
-};
-
 export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSide) {
   if (!matchId) throw new HttpError("matchId is required", 400);
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);

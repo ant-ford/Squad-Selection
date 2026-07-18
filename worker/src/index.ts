@@ -12,6 +12,7 @@ import {
   syncSquad
 } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
+import { getRecommendationsForMatch } from "./recommendations";
 
 export type { Env };
 
@@ -36,6 +37,24 @@ export default {
       if (method === "GET" && matchPlayersMatch) {
         const side = url.searchParams.get("side") as "home" | "away" | null;
         return json(await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined), 200, origin);
+      }
+
+      const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
+      if (method === "GET" && matchRecsMatch) {
+        const side = url.searchParams.get("side") as "home" | "away" | null;
+        const position = url.searchParams.get("position") ?? undefined;
+        const limitParam = url.searchParams.get("limit");
+        return json(
+          await getRecommendationsForMatch(
+            env,
+            matchRecsMatch[1],
+            side ?? undefined,
+            position,
+            limitParam ? Number(limitParam) : undefined,
+          ),
+          200,
+          origin,
+        );
       }
 
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
