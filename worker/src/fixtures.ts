@@ -167,6 +167,8 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
 
+  const playersById = new Map(ref.players.map(p => [p.id, p.preferredName || p.givenNames || "Player"]));
+  
   let coachedTeamNames = new Set<string>();
   if (opts.email) {
     const user = await getPlayerByEmail(env, opts.email);
@@ -210,9 +212,22 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
     const makeCard = (hkfcTeam: string, opponent: string, isHome: boolean) => {
       const team = teamsByName.get(hkfcTeam);
       const matchExceptions = exceptionsByMatch.get(m.id) || [];
+      const unavailableExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Unavailable");
+      const maybeExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Maybe");
+
       const unavailableCount = matchExceptions.filter(e => e.availabilityStatus === "Unavailable").length;
       const maybeCount = matchExceptions.filter(e => e.availabilityStatus === "Maybe").length;
+      
+      const unavailableNames = unavailableExcs
+        .map((e: any) => playersById.get(linkId(e.player) || ""))
+        .filter((name: any): name is string => !!name);
+        
+      const maybeNames = maybeExcs
+        .map((e: any) => playersById.get(linkId(e.player) || ""))
+        .filter((name: any): name is string => !!name);
+
       const selectedCount = isHome ? (m.selectedPlayersHome || []).length : (m.selectedPlayersAway || []).length;
+      
       return {
         id: m.id + (bothCoached ? (isHome ? "-home" : "-away") : ""),
         date: m.matchDate || "",
@@ -228,6 +243,8 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
         availableCount: 0,
         maybeCount,
         unavailableCount,
+        maybeNames,
+        unavailableNames,
       };
     };
 

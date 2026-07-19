@@ -16,6 +16,8 @@ export interface UpcomingFixture {
   availableCount: number;
   maybeCount: number;
   unavailableCount: number;
+  maybeNames?: string[];
+  unavailableNames?: string[]
 }
 
 export interface GetUpcomingFixturesOutput {

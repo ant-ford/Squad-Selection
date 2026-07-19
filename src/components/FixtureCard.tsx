@@ -15,6 +15,8 @@ type Fixture = {
   selectedCount: number;
   maybeCount: number;
   unavailableCount: number;
+  maybeNames?: string[];
+  unavailableNames?: string[];
 };
 
 export default function FixtureCard({ fixture }: { fixture: Fixture }) {
@@ -52,8 +54,29 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
         </div>
       </div>
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-        <span>{fixture.maybeCount} maybe</span>
-        <span>{fixture.unavailableCount} unavail</span>
+        <span 
+          className="group relative cursor-default"
+          title={fixture.maybeNames?.join(', ')}
+        >
+          {fixture.maybeCount} maybe
+          {fixture.maybeNames && fixture.maybeNames.length > 0 && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20 pointer-events-none">
+              {fixture.maybeNames.join(', ')}
+            </div>
+          )}
+        </span>
+        
+        <span 
+          className="group relative cursor-default"
+          title={fixture.unavailableNames?.join(', ')}
+        >
+          {fixture.unavailableCount} unavail
+          {fixture.unavailableNames && fixture.unavailableNames.length > 0 && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20 pointer-events-none">
+              {fixture.unavailableNames.join(', ')}
+            </div>
+          )}
+        </span>
       </div>
     </button>
   );

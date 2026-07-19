@@ -9,7 +9,8 @@ import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
-import { CalendarSyncCard } from '@/components/CalendarSyncCard';
+import CalendarSyncSheet from '@/components/CalendarSyncSheet';
+import { CalendarDays } from 'lucide-react';
 
 type Fixture = GetMyFixturesOutput['fixtures'][0];
 
@@ -19,6 +20,7 @@ export default function PlayerDashboard() {
   const [data, setData] = useState<GetMyFixturesOutput | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
+  const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   const loadData = useCallback(() => {
     if (!user) return;
@@ -97,6 +99,13 @@ export default function PlayerDashboard() {
                 </button>
               )}
               <button
+                onClick={() => setShowCalendarSync(true)}
+                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                title="Sync to Calendar"
+              >
+                <CalendarDays className="h-4 w-4" />
+              </button>
+              <button
                 onClick={() => logout()}
                 className="p-2 text-muted-foreground hover:text-foreground transition-colors"
               >
@@ -129,9 +138,6 @@ export default function PlayerDashboard() {
             <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
             <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
           </div>
-          
-          {/* Calendar Sync Integration */}
-          <CalendarSyncCard />
         </div>
       </div>
 
@@ -164,9 +170,13 @@ export default function PlayerDashboard() {
           onClose={() => setSelectedFixture(null)}
           onSaved={() => {
             setSelectedFixture(null);
-            loadData(); // full refresh only after saving from sidebar
+            loadData();
           }}
         />
+      )}
+
+      {showCalendarSync && (
+        <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />
       )}
     </div>
   );
