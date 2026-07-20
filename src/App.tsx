@@ -1,34 +1,68 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
+import { Suspense, lazy } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/lib/useAuth';
-import Login from './pages/Login';
-import CoachLayout from './components/CoachLayout';
-import FixtureList from './pages/FixtureList';
-import SquadSelection from './pages/SquadSelection';
-import PlayerDashboard from './pages/PlayerDashboard';
+import { Skeleton } from '@/components/ui/skeleton';
 
-function AppRoutes() {
-  const { user, isLoading } = useAuth();
+const Login = lazy(() => import('./pages/Login'));
+const CoachLayout = lazy(() => import('./components/CoachLayout'));
+const FixtureList = lazy(() => import('./pages/FixtureList'));
+const SquadSelection = lazy(() => import('./pages/SquadSelection'));
+const PlayerDashboard = lazy(() => import('./pages/PlayerDashboard'));
 
-  if (isLoading) return <div>Loading...</div>;
-  if (!user) return <Login />;
-
+function LoadingSkeleton() {
   return (
-    <Routes>
-      <Route path="/" element={<PlayerDashboard />} />
-      <Route path="/coach" element={<CoachLayout />}>
-        <Route index element={<FixtureList />} />
-        <Route path="match/:matchId" element={<SquadSelection />} />
-      </Route>
-    </Routes>
+    <div className="min-h-screen bg-background p-6 space-y-4">
+      <Skeleton className="h-10 w-48" />
+      <Skeleton className="h-6 w-32" />
+      <div className="space-y-3 pt-4">
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+        <Skeleton className="h-24 w-full rounded-lg" />
+      </div>
+    </div>
   );
 }
 
+function AuthGate() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingSkeleton />;
+  if (!user) {
+    return (
+      <Suspense fallback={<LoadingSkeleton />}>
+        <Login />
+      </Suspense>
+    );
+  }
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <Outlet />
+    </Suspense>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    element: <AuthGate />,
+    children: [
+      { path: '/', element: <PlayerDashboard /> },
+      {
+        path: '/coach',
+        element: <CoachLayout />,
+        children: [
+          { index: true, element: <FixtureList /> },
+          { path: 'match/:matchId', element: <SquadSelection /> },
+        ],
+      },
+    ],
+  },
+]);
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppRoutes />
+    <>
+      <RouterProvider router={router} />
       <Toaster />
-    </BrowserRouter>
+    </>
   );
 }

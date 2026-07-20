@@ -1,7 +1,26 @@
 import React from 'react';
 
-export function Sheet({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+export function Sheet({
+  children,
+  open,
+  onOpenChange,
+}: {
+  children: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  // Backwards-compatible: if `open` isn't provided, render children as before.
+  if (open === undefined) return <>{children}</>;
+  if (!open) return null;
+  return (
+    <>
+      <div
+        className="fixed inset-0 bg-black/40 z-40"
+        onClick={() => onOpenChange?.(false)}
+      />
+      {children}
+    </>
+  );
 }
 
 export function SheetContent({
@@ -17,11 +36,8 @@ export function SheetContent({
     side === 'bottom'
       ? 'fixed bottom-0 left-0 right-0 rounded-t-2xl max-h-[85vh] overflow-y-auto'
       : 'fixed right-0 top-0 h-full w-full max-w-md border-l';
-
   return (
-    <div
-      className={`${positionClasses} bg-background p-4 shadow-lg z-50 ${className}`}
-    >
+    <div className={`${positionClasses} bg-background p-4 shadow-lg z-50 ${className}`}>
       {children}
     </div>
   );

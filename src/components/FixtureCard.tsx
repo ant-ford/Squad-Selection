@@ -1,5 +1,7 @@
 import { safeFormat } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 type Fixture = {
   id: string;
@@ -21,14 +23,25 @@ type Fixture = {
 
 export default function FixtureCard({ fixture }: { fixture: Fixture }) {
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useState<'maybe' | 'unavail' | null>(null);
+
   const time = safeFormat(fixture.date, 'HH:mm');
   const shortfall = fixture.targetSquadSize - fixture.selectedCount;
   const isFull = shortfall <= 0;
 
+  const openMatch = () =>
+    navigate(`/coach/match/${fixture.id.replace(/-home$/, '').replace(/-away$/, '')}?side=${fixture.isHome ? 'home' : 'away'}`);
+
+  const maybeNames = fixture.maybeNames ?? [];
+  const unavailNames = fixture.unavailableNames ?? [];
+
   return (
-    <button
-      onClick={() => navigate(`/coach/match/${fixture.id.replace(/-home$/,"").replace(/-away$/,"")}?side=${fixture.isHome ? "home" : "away"}`)}
-      className="w-full border border-border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={openMatch}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMatch(); } }}
+      className="w-full border border-border rounded-lg p-4 text-left hover:bg-muted/50 transition-colors cursor-pointer"
     >
       <div className="flex justify-between items-start">
         <div className="min-w-0">
@@ -43,9 +56,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
           </p>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${
-            isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-          }`}>
+          <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
             {fixture.selectedCount} / {fixture.targetSquadSize}
           </span>
           {shortfall > 0 && (
@@ -53,31 +64,42 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
           )}
         </div>
       </div>
+
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-        <span 
-          className="group relative cursor-default"
-          title={fixture.maybeNames?.join(', ')}
-        >
-          {fixture.maybeCount} maybe
-          {fixture.maybeNames && fixture.maybeNames.length > 0 && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20 pointer-events-none">
-              {fixture.maybeNames.join(', ')}
-            </div>
-          )}
-        </span>
-        
-        <span 
-          className="group relative cursor-default"
-          title={fixture.unavailableNames?.join(', ')}
-        >
-          {fixture.unavailableCount} unavail
-          {fixture.unavailableNames && fixture.unavailableNames.length > 0 && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20 pointer-events-none">
-              {fixture.unavailableNames.join(', ')}
-            </div>
-          )}
-        </span>
+        {maybeNames.length > 0 ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(expanded === 'maybe' ? null : 'maybe'); }}
+            className="relative flex items-center gap-0.5 cursor-pointer"
+          >
+            {fixture.maybeCount} maybe
+            {expanded === 'maybe' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {expanded === 'maybe' && (
+              <div className="absolute bottom-full left-0 mb-2 bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20">
+                {maybeNames.join(', ')}
+              </div>
+            )}
+          </button>
+        ) : (
+          <span>{fixture.maybeCount} maybe</span>
+        )}
+
+        {unavailNames.length > 0 ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(expanded === 'unavail' ? null : 'unavail'); }}
+            className="relative flex items-center gap-0.5 cursor-pointer"
+          >
+            {fixture.unavailableCount} unavail
+            {expanded === 'unavail' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {expanded === 'unavail' && (
+              <div className="absolute bottom-full left-0 mb-2 bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] z-20">
+                {unavailNames.join(', ')}
+              </div>
+            )}
+          </button>
+        ) : (
+          <span>{fixture.unavailableCount} unavail</span>
+        )}
       </div>
-    </button>
+    </div>
   );
 }

@@ -1,8 +1,7 @@
 import { Env } from "./airtable";
-import { getPlayerByEmail } from "./reference";
+import { getPlayerByEmail, getReferenceData } from "./reference";
 import { getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
 import { getMyProfile } from "./profile";
-import { getSquadForMatch } from "./squad";
 import { getCached } from "../../src/lib/cache";
 import { HttpError } from "./http";
 
@@ -16,10 +15,11 @@ function escapeIcsText(text: string | undefined | null): string {
     .replace(/\\/g, "\\\\")
     .replace(/;/g, "\\;")
     .replace(/,/g, "\\,")
-    .replace(/\n/g, "\\n"); // CRITICAL FIX: Must be literal backslash + n for ICS
+    .replace(/\n/g, "\\n");
 }
 
 function foldLine(line: string): string {
+  // RFC 5545: fold lines longer than 75 octets with CRLF + space.
   if (line.length <= 75) return line;
   let folded = line.substring(0, 75);
   let remaining = line.substring(75);
@@ -36,14 +36,15 @@ function formatIcsLocalTime(date: Date): string {
     timeZone: "Asia/Hong_Kong",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false
+    hour12: false,
   };
   const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
-  const get = (type: string) => parts.find(p => p.type === type)?.value || "00";
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
   return `${get("year")}${get("month")}${get("day")}T${get("hour")}${get("minute")}${get("second")}`;
 }
 
 function formatIcsUtcTime(date: Date): string {
+  // DTSTAMP must be UTC: YYYYMMDDTHHMMSSZ
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
@@ -51,10 +52,10 @@ async function hmacSign(secret: string, message: string): Promise<string> {
   if (!secret) throw new Error("CALENDAR_SECRET is not set in environment variables");
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // --- ICS Generators ---
@@ -78,7 +79,7 @@ function generateIcsPayload(events: string[]): string {
     "END:STANDARD",
     "END:VTIMEZONE",
     ...events,
-    "END:VCALENDAR"
+    "END:VCALENDAR",
   ].join("\r\n");
 }
 
@@ -86,34 +87,32 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
   const isHome = fixture.isHome;
   const cleanId = fixture.id.replace(/-home$/, "").replace(/-away$/, "");
   const uid = `${cleanId}-${isHome ? "home" : "away"}@hkfc-squad.app`;
-  
+
   const startDate = new Date(fixture.date);
   const endDate = new Date(startDate.getTime() + MATCH_DURATION_MINUTES * 60000);
-  
-  // FIX 1: Remove duplicate "HKFC"
+
   const teamName = fixture.hkfcTeam || (isHome ? fixture.homeTeam : fixture.awayTeam);
   let summaryPrefix = "";
+  // RFC 5545 only permits TENTATIVE | CONFIRMED | CANCELLED for VEVENT STATUS.
   let status = "CONFIRMED";
 
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
     const isUnavailable = fixture.availabilityStatus === "Unavailable";
-    
-    // Categorization via Emojis and STATUS
     if (isSelected) {
       summaryPrefix = "✅ ";
-      status = "SELECTED";
+      status = "CONFIRMED";
     } else if (isUnavailable) {
       summaryPrefix = "❌ ";
-      status = "UNAVAILABLE";
+      status = "CANCELLED";
     } else {
       summaryPrefix = "🟦 ";
-      status = "AVAILABLE";
+      status = "TENTATIVE";
     }
   }
 
   const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}`;
-  
+
   let description = "";
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
@@ -121,7 +120,6 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
     description = `Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
   } else {
     description = `Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} Selected\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
-    // FIX 3: Append Squad Names for Coach Export
     if (squadNames.length > 0) {
       description += `\n\nSelected Players:\n${squadNames.join("\n")}`;
     }
@@ -139,10 +137,16 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
     `LOCATION:${location}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `STATUS:${status}`,
-    "END:VEVENT"
+    "END:VEVENT",
   ];
 
   return lines.map(foldLine).join("\r\n");
+}
+
+// Resolve squad names from selectedIds + cached reference data (no per-fixture Airtable lookups).
+function resolveSquadNames(selectedIds: string[] | undefined, playersById: Map<string, string>): string[] {
+  if (!selectedIds || selectedIds.length === 0) return [];
+  return selectedIds.map((id) => playersById.get(id)).filter((n): n is string => !!n);
 }
 
 // --- Route Handlers ---
@@ -153,7 +157,6 @@ export async function handleGetCalendarLink(env: Env, email: string) {
 
   const payload = `player:${player.id}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  
   return { id: player.id, sig };
 }
 
@@ -164,8 +167,6 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   if (sig !== expectedSig) return new Response("Unauthorized", { status: 401 });
 
   const cacheKey = `calendar:player:${id}`;
-  
-  // ✅ FIX: Destructure `data` from the getCached result
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
     const events = fixtures.map((f: any) => formatVEvent(f, true));
@@ -175,8 +176,8 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   return new Response(icsString, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Cache-Control": "public, max-age=300, stale-while-revalidate=900"
-    }
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=900",
+    },
   });
 }
 
@@ -184,47 +185,32 @@ export async function handleTeamCalendarExport(env: Env, email: string | null, t
   if (!email || !team) throw new HttpError("Missing parameters", 400);
 
   const profile = await getMyProfile(env, email);
-  const isCoach = profile.coachTeams?.some(t => t.teamName === team);
+  const isCoach = profile.coachTeams?.some((t) => t.teamName === team);
   if (!isCoach) throw new HttpError("Forbidden", 403);
 
   const { fixtures } = await getUpcomingFixtures(env, { email, team });
-  
-  // Fetch squad names for each fixture
-  const events = await Promise.all(fixtures.map(async (f: any) => {
-    let squadNames: string[] = [];
-    try {
-      const side = f.isHome ? "home" : "away";
-      const cleanMatchId = f.id.replace(/-home$/, "").replace(/-away$/, "");
-      const squadData = await getSquadForMatch(env, cleanMatchId, side as "home" | "away");
-      if (squadData.players && squadData.players.length > 0) {
-        squadNames = squadData.players.map(p => p.name);
-      }
-    } catch (e) {
-      // Ignore errors fetching squad for calendar export
-    }
-    return formatVEvent(f, false, squadNames);
-  }));
+  const ref = await getReferenceData(env);
+  const playersById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
 
+  const events = fixtures.map((f: any) => formatVEvent(f, false, resolveSquadNames(f.selectedIds, playersById)));
   const icsString = generateIcsPayload(events);
 
   return new Response(icsString, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": `attachment; filename="HKFC_${team}_Schedule.ics"`,
-      "Cache-Control": "no-store"
-    }
+      "Cache-Control": "no-store",
+    },
   });
 }
 
 export async function handleGetTeamCalendarLink(env: Env, email: string, team: string) {
   const profile = await getMyProfile(env, email);
-  const isCoach = profile.coachTeams?.some(t => t.teamName === team);
+  const isCoach = profile.coachTeams?.some((t) => t.teamName === team);
   if (!isCoach) throw new HttpError("Forbidden", 403);
 
-  // Sign the team name instead of a player ID
   const payload = `team:${team}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  
   return { team, sig };
 }
 
@@ -235,34 +221,18 @@ export async function handleTeamCalendarFeed(env: Env, team: string | null, sig:
   if (sig !== expectedSig) return new Response("Unauthorized", { status: 401 });
 
   const cacheKey = `calendar:team:${team}`;
-  
   const { data: icsString } = await getCached(cacheKey, async () => {
-    // Fetch fixtures for the team (no email needed, just team context)
     const { fixtures } = await getUpcomingFixtures(env, { team });
-    
-    // Fetch squad names for each fixture to include in the description
-    const events = await Promise.all(fixtures.map(async (f: any) => {
-      let squadNames: string[] = [];
-      try {
-        const side = f.isHome ? "home" : "away";
-        const cleanMatchId = f.id.replace(/-home$/, "").replace(/-away$/, "");
-        const squadData = await getSquadForMatch(env, cleanMatchId, side as "home" | "away");
-        if (squadData.players && squadData.players.length > 0) {
-          squadNames = squadData.players.map(p => p.name);
-        }
-      } catch (e) { /* ignore errors fetching squad for calendar feed */ }
-      
-      // isPlayerFeed = false triggers the Coach formatting logic
-      return formatVEvent(f, false, squadNames);
-    }));
-    
+    const ref = await getReferenceData(env);
+    const playersById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
+    const events = fixtures.map((f: any) => formatVEvent(f, false, resolveSquadNames(f.selectedIds, playersById)));
     return generateIcsPayload(events);
   }, 5 * 60 * 1000);
 
   return new Response(icsString, {
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Cache-Control": "public, max-age=300, stale-while-revalidate=900"
-    }
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=900",
+    },
   });
 }

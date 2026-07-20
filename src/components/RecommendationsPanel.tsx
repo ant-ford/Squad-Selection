@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRecommendations } from '@/lib/queries';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, HelpCircle } from 'lucide-react';
 
 const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'];
 const POS_SHORT: Record<string, string> = { Goalkeeper: 'GK', Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD' };
@@ -14,15 +14,24 @@ interface Props {
 
 export default function RecommendationsPanel({ matchId, side, excludeIds, onSelect }: Props) {
   const [position, setPosition] = useState<string | undefined>(undefined);
+  const [showLegend, setShowLegend] = useState(false);
   const { data, isLoading } = useRecommendations(matchId, side, position);
 
-  // Filter out any recommendation that is already selected or pending selection
   const visible = (data?.recommendations ?? []).filter((r) => !excludeIds?.has(r.id));
 
   return (
     <div className="border border-border rounded-lg p-3 bg-card shadow-sm">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-medium text-foreground">Recommended Players</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-foreground">Recommended Players</p>
+          <button
+            onClick={() => setShowLegend(!showLegend)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Score legend"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+        </div>
         <select
           value={position ?? ''}
           onChange={(e) => setPosition(e.target.value || undefined)}
@@ -32,6 +41,13 @@ export default function RecommendationsPanel({ matchId, side, excludeIds, onSele
           {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
+
+      {showLegend && (
+        <div className="mb-2 p-2 bg-muted rounded text-xs text-muted-foreground">
+          Score = Ability (50%) + Position fit (20%) + Team proximity (20%) + Play-up capacity (10%).
+          “Maybe” players are heavily penalised.
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
@@ -46,7 +62,7 @@ export default function RecommendationsPanel({ matchId, side, excludeIds, onSele
                 <p className="truncate font-medium text-foreground text-xs">
                   {r.preferredName}
                   <span className="text-[11px] font-normal text-muted-foreground ml-1.5">
-                    • {r.playingAbility} • {POS_SHORT[r.playingPosition] || r.playingPosition}
+                    · {r.playingAbility} · {POS_SHORT[r.playingPosition] || r.playingPosition}
                   </span>
                 </p>
                 <div className="flex gap-1 mt-1 flex-wrap">

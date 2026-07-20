@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CheckCircle2, HelpCircle, XCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle2, HelpCircle, XCircle, Loader2 } from 'lucide-react';
 import { apiGet } from '@/lib/apiClient';
 
 type Fixture = {
@@ -44,9 +44,7 @@ export default function PlayerAvailabilitySheet({
   const [status, setStatus] = useState<string>(fixture.availabilityStatus);
   const [notes, setNotes] = useState(fixture.playerNotes);
   const [saving, setSaving] = useState(false);
-
   const [squad, setSquad] = useState<SquadMember[] | null>(null);
-  const [squadExpanded, setSquadExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,8 +73,6 @@ export default function PlayerAvailabilitySheet({
     }
   };
 
-  const displaySquad = squadExpanded ? (squad ?? []) : (squad ?? []).slice(0, 12);
-
   return (
     <>
       {/* Overlay – click to close */}
@@ -87,7 +83,7 @@ export default function PlayerAvailabilitySheet({
       {/* Drawer panel */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg"
-        onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-6">
           <h2 className="text-lg font-semibold text-foreground mb-2">Update Availability</h2>
@@ -132,7 +128,7 @@ export default function PlayerAvailabilitySheet({
             />
           </div>
 
-          {/* Squad section */}
+          {/* Squad section — full list, no expand/collapse */}
           <div className="py-3 border-t border-border mt-2">
             <h3 className="text-sm font-medium text-foreground mb-2">Squad ({squad?.length || 0} Selected)</h3>
             {squad === null ? (
@@ -143,28 +139,14 @@ export default function PlayerAvailabilitySheet({
             ) : squad.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">Squad not yet announced</p>
             ) : (
-              <>
-                <div className="space-y-1">
-                  {displaySquad.map((m, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
-                      <span className="flex-1 text-foreground truncate">{m.name}</span>
-                    </div>
-                  ))}
-                </div>
-                {squad.length > 12 && (
-                  <button
-                    onClick={() => setSquadExpanded(!squadExpanded)}
-                    className="flex items-center gap-1 text-xs text-primary mt-2"
-                  >
-                    {squadExpanded ? (
-                      <><ChevronUp className="h-3 w-3" /> Show less</>
-                    ) : (
-                      <><ChevronDown className="h-3 w-3" /> Show all ({squad.length})</>
-                    )}
-                  </button>
-                )}
-              </>
+              <div className="space-y-1">
+                {squad.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
+                    <span className="flex-1 text-foreground truncate">{m.name}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

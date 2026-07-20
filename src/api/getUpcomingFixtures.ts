@@ -13,11 +13,12 @@ export interface UpcomingFixture {
   venue: string;
   targetSquadSize: number;
   selectedCount: number;
+  selectedIds?: string[];
   availableCount: number;
   maybeCount: number;
   unavailableCount: number;
   maybeNames?: string[];
-  unavailableNames?: string[]
+  unavailableNames?: string[];
 }
 
 export interface GetUpcomingFixturesOutput {
@@ -26,7 +27,6 @@ export interface GetUpcomingFixturesOutput {
 
 export async function getUpcomingFixtures(teamFilter?: string): Promise<GetUpcomingFixturesOutput> {
   const user = await getCurrentSupabaseUser();
-
   return apiGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', {
     email: user?.email,
     team: teamFilter,

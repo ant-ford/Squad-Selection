@@ -16,7 +16,6 @@ export async function getMyFixtures(env: Env, email: string) {
 
   const teamName = user.registeredTeam || "";
   const ref = await getReferenceData(env);
-
   const coachTeams = ref.teams.filter((t) => (t.coach || []).includes(user.id)).map((t) => t.teamName || "");
   const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
   const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
@@ -35,7 +34,6 @@ export async function getMyFixtures(env: Env, email: string) {
 
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
-
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches
@@ -73,7 +71,6 @@ export async function getMyFixtures(env: Env, email: string) {
       }];
     }
 
-    // Derby: one tile per HKFC side, but only the side the player is eligible for
     return [home, away]
       .filter((sideTeam) => sideTeam === teamName)
       .map((sideTeam) => {
@@ -106,7 +103,6 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   const ref = await getReferenceData(env);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const teamName = player.registeredTeam || "";
-
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches
@@ -166,9 +162,8 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
 export async function getUpcomingFixtures(env: Env, opts: { email?: string; team?: string }) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
+  const playersById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
 
-  const playersById = new Map(ref.players.map(p => [p.id, p.preferredName || p.givenNames || "Player"]));
-  
   let coachedTeamNames = new Set<string>();
   if (opts.email) {
     const user = await getPlayerByEmail(env, opts.email);
@@ -194,7 +189,6 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
 
   const matchIds = relevant.map((m) => m.id);
   const allExceptions = await getExceptionsForSeasons(env, relevant.map((m) => m.season || ""));
-
   const exceptionsByMatch = new Map<string, any[]>();
   for (const exc of allExceptions) {
     const mId = linkId(exc.match);
@@ -214,20 +208,16 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       const matchExceptions = exceptionsByMatch.get(m.id) || [];
       const unavailableExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Unavailable");
       const maybeExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Maybe");
-
-      const unavailableCount = matchExceptions.filter(e => e.availabilityStatus === "Unavailable").length;
-      const maybeCount = matchExceptions.filter(e => e.availabilityStatus === "Maybe").length;
-      
+      const unavailableCount = unavailableExcs.length;
+      const maybeCount = maybeExcs.length;
       const unavailableNames = unavailableExcs
         .map((e: any) => playersById.get(linkId(e.player) || ""))
         .filter((name: any): name is string => !!name);
-        
       const maybeNames = maybeExcs
         .map((e: any) => playersById.get(linkId(e.player) || ""))
         .filter((name: any): name is string => !!name);
-
-      const selectedCount = isHome ? (m.selectedPlayersHome || []).length : (m.selectedPlayersAway || []).length;
-      
+      const selectedIds = isHome ? (m.selectedPlayersHome || []) : (m.selectedPlayersAway || []);
+      const selectedCount = selectedIds.length;
       return {
         id: m.id + (bothCoached ? (isHome ? "-home" : "-away") : ""),
         date: m.matchDate || "",
@@ -240,6 +230,7 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
         venue: m.venue || "",
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount,
+        selectedIds,
         availableCount: 0,
         maybeCount,
         unavailableCount,
@@ -248,19 +239,14 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       };
     };
 
-    // Derby + coach both sides ? two cards
     if (bothCoached && !opts.team) {
       return [makeCard(home, away, true), makeCard(away, home, false)];
     }
-
-    // Tab filter ? card from that tab's perspective
     if (opts.team) {
       if (home === opts.team) return [makeCard(home, away, true)];
       if (away === opts.team) return [makeCard(away, home, false)];
       return [];
     }
-
-    // Coach only manages one side
     if (coachedTeamNames.has(home)) return [makeCard(home, away, true)];
     return [makeCard(away, home, false)];
   });

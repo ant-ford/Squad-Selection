@@ -17,7 +17,7 @@ import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
-import { invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
+import { invalidateCachePrefix } from "../../src/lib/cache";
 
 type ExceptionStatus = "Maybe" | "Unavailable";
 type AvailabilityStatus = "Available" | ExceptionStatus;
@@ -45,6 +45,23 @@ function chunk<T>(items: T[], size = 10): T[][] {
   return out;
 }
 
+/**
+ * Invalidation fan-out for availability writes (Invariant #11):
+ *   players-for-match:${matchId}:  → annotated eligibility output
+ *   exceptions:                    → season exception cache in reference.ts
+ *   season-index:                  → unavailablePlayerMatchKeys drives the
+ *                                    same-day higher-team lockout
+ *   calendar:player:               → player ICS feeds embed availability
+ */
+function invalidateAvailabilityCaches(matchIds: string[]) {
+  for (const matchId of matchIds) {
+    invalidateCachePrefix(`players-for-match:${matchId}:`);
+  }
+  invalidateCachePrefix("exceptions:");
+  invalidateCachePrefix("season-index:");
+  invalidateCachePrefix("calendar:player:");
+}
+
 export interface SetAvailabilityInput {
   playerId: string;
   matchIds: string[];
@@ -56,13 +73,14 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   if (!input.playerId || !Array.isArray(input.matchIds)) {
     throw new HttpError("playerId and matchIds[] are required", 400);
   }
+
   const playerRecord = await airtableFindById(env, TABLES.player, input.playerId);
   if (!playerRecord) throw new HttpError("Player not found or inactive", 404);
   const player = mapPlayer(playerRecord);
   if (!player.active) throw new HttpError("Player not found or inactive", 404);
 
-  // Item 6: player-scoped fetch instead of a full-table scan — this
-  // player will only ever have a handful of exception records.
+  // Player-scoped fetch instead of a full-table scan — this player will
+  // only ever have a handful of exception records.
   const playerExceptionRecords = await airtableFindAll(
     env,
     TABLES.availabilityException,
@@ -96,7 +114,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     }
   }
 
-  // Item 7: batched instead of one Airtable round-trip per match.
+  // Batched instead of one Airtable round-trip per match.
   for (const batch of chunk(toDelete)) {
     await airtableBatchDelete(env, TABLES.availabilityException, batch);
   }
@@ -107,12 +125,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     await airtableBatchCreate(env, TABLES.availabilityException, batch);
   }
 
-  // Item 3: invalidateCache expects an exact key; the real cache keys are
-  // `players-for-match:${matchId}:${side}`, so this must be a prefix wipe.
-  for (const matchId of input.matchIds) {
-    invalidateCachePrefix(`players-for-match:${matchId}:`);
-  }
-  invalidateCachePrefix("exceptions:");
+  invalidateAvailabilityCaches(input.matchIds);
 
   return { success: true, updated: toDelete.length + toUpdate.length + toCreate.length };
 }
@@ -127,6 +140,7 @@ export interface SetMyAvailabilityInput {
 
 export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
   if (!input.email || !input.matchId) throw new HttpError("email and matchId are required", 400);
+
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
 
@@ -145,8 +159,7 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     if (existingId) {
       await airtableDelete(env, TABLES.availabilityException, existingId);
     }
-    invalidateCachePrefix(`players-for-match:${input.matchId}:`);
-    invalidateCachePrefix("exceptions:");
+    invalidateAvailabilityCaches([input.matchId]);
     return { success: true };
   }
 
@@ -163,7 +176,7 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
   } else {
     await airtableCreate(env, TABLES.availabilityException, fields);
   }
-  invalidateCachePrefix(`players-for-match:${input.matchId}:`);
-  invalidateCachePrefix("exceptions:");
+
+  invalidateAvailabilityCaches([input.matchId]);
   return { success: true };
 }

@@ -1,4 +1,5 @@
-import { CheckCircle2, Circle, Ban } from 'lucide-react';
+import React from 'react';
+import { CheckCircle2, Circle, Ban, AlertCircle } from 'lucide-react';
 
 type Player = {
   id: string;
@@ -30,13 +31,15 @@ interface PlayerRowProps {
   onToggleSelection: () => void;
 }
 
-export default function PlayerRow({ player, selected, onToggleSelection }: PlayerRowProps) {
+const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSelection }: PlayerRowProps) {
   const isBlocked = player.eligibilityStatus === 'blocked';
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const isMaybe = player.availabilityStatus === 'Maybe';
+
   let bgClass = '';
   if (isMaybe) bgClass = 'bg-amber-50/70';
   else if (isUnavailable) bgClass = 'bg-red-50/70';
+
   const dimmed = isBlocked || isUnavailable;
 
   return (
@@ -46,39 +49,49 @@ export default function PlayerRow({ player, selected, onToggleSelection }: Playe
     >
       <div className="shrink-0">
         {selected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
-         isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
-         <Circle className="h-5 w-5 text-muted-foreground" />}
+          isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
+          <Circle className="h-5 w-5 text-muted-foreground" />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm shrink-0">U21</span>}
           {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-sm shrink-0">VP</span>}
-          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} • Ability {player.playingAbility || '–'}</span>
+          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · Ability {player.playingAbility || '–'}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          {player.registeredTeam || '–'} • {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} • {player.availabilityStatus}
+          {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>
-        {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{player.playerNotes}"</p>}
+        {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
 
-        {/* #6 cross-team conflict badge */}
-        {player.conflicts?.map((c, i) => (
-          <span key={i} className={`text-[10px] px-1 py-0.5 rounded mr-1 ${c.type === 'selected' ? 'text-blue-600 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
-            {c.type === 'selected' ? `Selected: ${c.team}` : `Available: ${c.team}`}
-          </span>
-        ))}
+        {/* Cross-team conflict badges */}
+        {player.conflicts?.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {player.conflicts.map((c, i) => (
+              <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${c.type === 'selected' ? 'text-blue-600 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
+                {c.type === 'selected' ? `Selected: ${c.team}` : `Available: ${c.team}`}
+              </span>
+            ))}
+          </div>
+        )}
 
-        {/* #5 blocks (reason) + #4 warnings */}
-        <div className="mt-1 flex flex-wrap gap-2">
+        {/* Blocks (reason) + warnings with icons */}
+        <div className="mt-1 flex flex-wrap gap-1.5">
           {(player.blocks ?? []).map((b, i) => (
-            <span key={i} className="text-[10px] text-red-600 bg-red-50 px-1 py-0.5 rounded">{b.reason}</span>
+            <span key={i} className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+              <Ban className="h-3 w-3 shrink-0" /> {b.reason}
+            </span>
           ))}
           {(player.warnings ?? []).map((w, i) => (
-            <span key={i} className="text-[10px] text-amber-600 bg-amber-50 px-1 py-0.5 rounded">⚠ {w}</span>
+            <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+              <AlertCircle className="h-3 w-3 shrink-0" /> {w}
+            </span>
           ))}
         </div>
       </div>
       {selected && <span className="text-xs px-2 py-0.5 rounded shrink-0 bg-primary text-primary-foreground">Selected</span>}
     </div>
   );
-}
+});
+
+export default PlayerRow;

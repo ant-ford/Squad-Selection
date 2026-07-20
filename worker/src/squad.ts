@@ -12,6 +12,26 @@ import { ABILITY_RANK } from "./abilityRank";
 
 type MatchSide = "home" | "away";
 
+// ── Cached match-record fetch (Performance Pass #1) ─────────────────────
+//
+// Short-TTL isolate cache for the raw match record. Only READ endpoints use
+// it (getPlayersForMatch, getSquadForMatch). Every write path reads the
+// record fresh from Airtable so no merge ever operates on stale data, and
+// syncSquad invalidates `match:${matchId}` immediately after each write —
+// so a coach can never be served stale selections post-update.
+const MATCH_RECORD_TTL_MS = 30 * 1000;
+
+async function getMatchRecord(env: Env, matchId: string): Promise<any> {
+  const { data } = await getCached<any>(`match:${matchId}`, async () => {
+    const rec = await airtableFindById(env, TABLES.match, matchId);
+    if (!rec) throw new HttpError("Match not found", 404);
+    return rec;
+  }, MATCH_RECORD_TTL_MS);
+  return data;
+}
+
+// ── HKFC side resolution (unchanged) ────────────────────────────────────
+
 function resolveHkfcSide(match: Match, rankMap: Record<string, number>, side?: MatchSide): MatchSide {
   const home = match.homeTeam || "";
   const away = match.awayTeam || "";
@@ -37,6 +57,8 @@ function getSelectionFieldName(match: Match, rankMap: Record<string, number>, si
   return resolveHkfcSide(match, rankMap, side) === "home" ? MATCHES_FIELDS.selectedPlayersHome : MATCHES_FIELDS.selectedPlayersAway;
 }
 
+// ── Season-scoped fetches (unchanged cache keys) ────────────────────────
+
 async function getAllMatches(env: Env, season: string): Promise<Match[]> {
   const { data } = await getCached<Match[]>(`all-matches:${season}`, async () => {
     const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
@@ -61,6 +83,111 @@ function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
   return allMatches.filter((m) => norm(m.matchDate) === target);
 }
 
+// ── Season-level evaluation context (Performance Pass #3) ───────────────
+//
+// Everything that depends only on the SEASON — exceptions, match cards, the
+// full fixture list, play-up indexes, completed-league-match counts and the
+// virtual-selection indexes — is built once per season and shared by every
+// match+side opened that season. Opening 6 fixtures no longer rebuilds the
+// same indexes 6 (or 12, with sides) times.
+//
+// Per-match work is reduced to slicing the same-day window out of these
+// pre-built indexes.
+//
+// Cache key: `season-index:${season}` (10 minutes).
+// Invalidated by: syncSquad (selections changed), setAvailability and
+// setMyAvailability (exceptions changed).
+
+interface SeasonContext {
+  exceptionsRaw: AvailabilityException[];
+  exceptionIndex: { playerId: string; matchId: string; status: string }[];
+  unavailablePlayerMatchKeys: Set<string>;
+  matchCards: MatchCard[];
+  allMatches: Match[];
+  matchesById: Map<string, Match>;
+  matchCardsByPlayer: Map<string, MatchCard[]>;
+  completedLeagueMatchesByTeam: Map<string, number>;
+  virtualSelections: VirtualSelection[];
+  selectionsByPlayer: Map<string, Set<string>>;
+  selectionsByMatch: Map<string, VirtualSelection[]>;
+}
+
+async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
+  const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
+    const [exceptionsRaw, matchCards, allMatches] = await Promise.all([
+      getExceptionsForSeasons(env, [season]),
+      getMatchCardsForSeason(env, season),
+      getAllMatches(env, season),
+    ]);
+
+    const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
+
+    const matchCardsByPlayer = new Map<string, MatchCard[]>();
+    for (const card of matchCards) {
+      const playerId = linkId(card.player);
+      if (!playerId) continue;
+      const cards = matchCardsByPlayer.get(playerId) || [];
+      cards.push(card);
+      matchCardsByPlayer.set(playerId, cards);
+    }
+
+    const completedLeagueMatchesByTeam = computeCompletedLeagueMatchCounts({ matchCards, matchesById });
+
+    // Virtual selections + per-match and per-player indexes, built once.
+    const virtualSelections: VirtualSelection[] = [];
+    const selectionsByMatch = new Map<string, VirtualSelection[]>();
+    for (const m of allMatches) {
+      const forMatch: VirtualSelection[] = [];
+      for (const pId of m.selectedPlayersHome || []) {
+        const s: VirtualSelection = { player: [pId], match: [m.id], team: m.homeTeam };
+        virtualSelections.push(s);
+        forMatch.push(s);
+      }
+      for (const pId of m.selectedPlayersAway || []) {
+        const s: VirtualSelection = { player: [pId], match: [m.id], team: m.awayTeam };
+        virtualSelections.push(s);
+        forMatch.push(s);
+      }
+      if (forMatch.length > 0) selectionsByMatch.set(m.id, forMatch);
+    }
+
+    const selectionsByPlayer = new Map<string, Set<string>>();
+    for (const selection of virtualSelections) {
+      const playerId = linkId(selection.player);
+      const selectedMatchId = linkId(selection.match);
+      if (!playerId || !selectedMatchId || !selection.team) continue;
+      const playerSelections = selectionsByPlayer.get(playerId) || new Set<string>();
+      playerSelections.add(`${selectedMatchId}:${selection.team}`);
+      selectionsByPlayer.set(playerId, playerSelections);
+    }
+
+    const exceptionIndex = exceptionsRaw.map((e) => ({
+      playerId: linkId(e.player) || "",
+      matchId: linkId(e.match) || "",
+      status: e.availabilityStatus || "Available",
+    }));
+
+    const unavailablePlayerMatchKeys = new Set(
+      exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`)
+    );
+
+    return {
+      exceptionsRaw,
+      exceptionIndex,
+      unavailablePlayerMatchKeys,
+      matchCards,
+      allMatches,
+      matchesById,
+      matchCardsByPlayer,
+      completedLeagueMatchesByTeam,
+      virtualSelections,
+      selectionsByPlayer,
+      selectionsByMatch,
+    };
+  }, 10 * 60 * 1000);
+  return data;
+}
+
 async function buildEvaluationContext(
   env: Env,
   match: Match,
@@ -71,58 +198,37 @@ async function buildEvaluationContext(
 ): Promise<{ ctx: EvaluationContext; exceptionsRaw: AvailabilityException[] }> {
   const currentSeason = match.season || "";
   const matchDate = match.matchDate || "";
-  const [exceptionsRaw, matchCards, allMatches] = await Promise.all([
-    getExceptionsForSeasons(env, [currentSeason]),
-    getMatchCardsForSeason(env, currentSeason),
-    getAllMatches(env, currentSeason),
-  ]);
+
+  const season = await getSeasonContext(env, currentSeason);
+
   const playersById = new Map<string, Player>();
   for (const p of allPlayers) playersById.set(p.id, p);
-  const exceptionIndex = exceptionsRaw.map((e) => ({ playerId: linkId(e.player) || "", matchId: linkId(e.match) || "", status: e.availabilityStatus || "Available" }));
 
-  const sameDayMatches = getSameDayMatches(allMatches, matchDate).filter(m => m.id !== match.id);
+  // Same-day slice (excludes the target match) — identical semantics to the
+  // previous full-list filter, now read from the shared season context.
+  const sameDayMatches = getSameDayMatches(season.allMatches, matchDate).filter((m) => m.id !== match.id);
 
-  const matchesById = new Map(allMatches.map((item) => [item.id, item]));
-  const matchCardsByPlayer = new Map<string, MatchCard[]>();
-  for (const card of matchCards) {
-    const playerId = linkId(card.player);
-    if (!playerId) continue;
-    const cards = matchCardsByPlayer.get(playerId) || [];
-    cards.push(card);
-    matchCardsByPlayer.set(playerId, cards);
-  }
   const sameDayFixtures = sameDayMatches.flatMap((item) => {
     const fixtures: { matchId: string; teamName: string }[] = [];
     if (teamRankMap[item.homeTeam || ""] !== undefined) fixtures.push({ matchId: item.id, teamName: item.homeTeam });
     if (teamRankMap[item.awayTeam || ""] !== undefined) fixtures.push({ matchId: item.id, teamName: item.awayTeam });
     return fixtures;
   });
-  const virtualSelections: VirtualSelection[] = allMatches.flatMap(m => {
-    const selections: VirtualSelection[] = [];
-    for (const pId of m.selectedPlayersHome || []) selections.push({ player: [pId], match: [m.id], team: m.homeTeam });
-    for (const pId of m.selectedPlayersAway || []) selections.push({ player: [pId], match: [m.id], team: m.awayTeam });
-    return selections;
-  });
-  const selectionsByPlayer = new Map<string, Set<string>>();
+
+  // Same-day team-selection index, assembled only from the day's matches
+  // using the pre-built per-match selection map.
   const sameDaySelectionsByTeam = new Map<string, Set<string>>();
-  const sameDayMatchIds = new Set(sameDayMatches.map((item) => item.id));
-  for (const selection of virtualSelections) {
-    const playerId = linkId(selection.player);
-    const selectedMatchId = linkId(selection.match);
-    if (!playerId || !selectedMatchId || !selection.team) continue;
-    const playerSelections = selectionsByPlayer.get(playerId) || new Set<string>();
-    playerSelections.add(`${selectedMatchId}:${selection.team}`);
-    selectionsByPlayer.set(playerId, playerSelections);
-    if (sameDayMatchIds.has(selectedMatchId)) {
+  for (const sdm of sameDayMatches) {
+    const selections = season.selectionsByMatch.get(sdm.id);
+    if (!selections) continue;
+    for (const selection of selections) {
+      const playerId = linkId(selection.player);
+      if (!playerId || !selection.team) continue;
       const selectedPlayers = sameDaySelectionsByTeam.get(selection.team) || new Set<string>();
       selectedPlayers.add(playerId);
       sameDaySelectionsByTeam.set(selection.team, selectedPlayers);
     }
   }
-
-  const unavailablePlayerMatchKeys = new Set(exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`));
-
-  const completedLeagueMatchesByTeam = computeCompletedLeagueMatchCounts({ matchCards, matchesById });
 
   const ctx: EvaluationContext = {
     teamMap,
@@ -130,29 +236,31 @@ async function buildEvaluationContext(
     targetTeam,
     sameDayMatches,
     sameDayFixtures,
-    allSelections: virtualSelections,
-    selectionsByPlayer,
+    allSelections: season.virtualSelections,
+    selectionsByPlayer: season.selectionsByPlayer,
     sameDaySelectionsByTeam,
-    allExceptions: exceptionIndex,
-    unavailablePlayerMatchKeys,
-    matchCards,
-    matchCardsByPlayer,
-    matchesById,
+    allExceptions: season.exceptionIndex,
+    unavailablePlayerMatchKeys: season.unavailablePlayerMatchKeys,
+    matchCards: season.matchCards,
+    matchCardsByPlayer: season.matchCardsByPlayer,
+    matchesById: season.matchesById,
     currentSeason,
     playersById,
-    completedLeagueMatchesByTeam,
+    completedLeagueMatchesByTeam: season.completedLeagueMatchesByTeam,
   };
-
-  return { ctx, exceptionsRaw };
+  return { ctx, exceptionsRaw: season.exceptionsRaw };
 }
+
+// ── Public endpoints ────────────────────────────────────────────────────
 
 export async function getPlayersForMatch(env: Env, matchId: string, side?: "home" | "away") {
   const ref = await getReferenceData(env);
   const { teamRankMap, teams } = ref;
   const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
+
+  const matchRecord = await getMatchRecord(env, matchId);
   const match = mapMatch(matchRecord);
+
   const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
@@ -163,12 +271,14 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   }, 5 * 60 * 1000);
 
   const { ctx, allPlayers, allExceptions } = heavyData;
+
   const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
   const exceptionMap = new Map<string, any>();
   for (const exc of matchExceptions) {
     const pId = linkId(exc.player);
     if (pId) exceptionMap.set(pId, exc);
   }
+
   const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
 
   const players = allPlayers.map((p) => {
@@ -224,17 +334,21 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
     selectedCount: selectedPlayerIds.size,
   };
+
   return { match: matchInfo, players };
 }
 
 export async function syncSquad(env: Env, matchId: string, targetPlayerIds: string[], actingEmail?: string, side?: MatchSide) {
   if (!Array.isArray(targetPlayerIds)) throw new HttpError("selectedIds must be an array", 400);
+
+  // WRITE PATH: always read the record fresh — never from the 30s cache —
+  // so the derby-safety merge below operates on the current opposite side.
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
+
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
-
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
 
   // Derby safety: ensure a player isn't selected for BOTH sides of the same match
@@ -247,6 +361,13 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
 
   await airtableUpdate(env, TABLES.match, matchId, updates);
 
+  // Invalidation fan-out (Invariant #11). Every cache that can now be stale:
+  //   match:${matchId}        → the record we just wrote
+  //   season-index:${season}  → virtual selections / same-day indexes
+  //   all-matches:${season}   → raw season fixture list
+  //   players-for-match:*     → annotated output for this match and every
+  //                              same-day match (cross-team rules read it)
+  //   calendar:*              → ICS feeds embed the selected squad
   const season = match.season || "";
   const allMatchesInSeason = await getAllMatches(env, season);
   const affectedMatchIds = new Set([
@@ -254,6 +375,8 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
     ...getSameDayMatches(allMatchesInSeason, match.matchDate || "").map((m) => m.id),
   ]);
 
+  invalidateCache(`match:${matchId}`);
+  invalidateCachePrefix("season-index:");
   invalidateCache(`all-matches:${season}`);
   for (const id of affectedMatchIds) {
     invalidateCachePrefix(`players-for-match:${id}:`);
@@ -264,6 +387,7 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
 
 export async function selectPlayer(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {
   const { matchId, playerId, side } = input;
+  // WRITE PATH: fresh read (see syncSquad note).
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
@@ -277,6 +401,7 @@ export async function selectPlayer(env: Env, input: { matchId: string; playerId:
 
 export async function removeSelection(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {
   const { matchId, playerId, side } = input;
+  // WRITE PATH: fresh read (see syncSquad note).
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
@@ -307,10 +432,10 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
 }
 
 const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
+
 export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSide) {
   if (!matchId) throw new HttpError("matchId is required", 400);
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
+  const matchRecord = await getMatchRecord(env, matchId);
   const match = mapMatch(matchRecord);
   const ref = await getReferenceData(env);
   const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap, side);

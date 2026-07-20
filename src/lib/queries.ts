@@ -1,10 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '@/lib/apiClient';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '@/lib/apiClient';
 import { getCurrentSupabaseUser } from '@/lib/auth';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
-import type { GetRecommendationsOutput } from '@/api/getRecommendations';
 import { getRecommendations } from '@/api/getRecommendations';
 
 async function authGet<T>(url: string, params?: Record<string, any>): Promise<T> {
@@ -24,15 +23,17 @@ export function useUpcomingFixtures(teamFilter?: string) {
   return useQuery({
     queryKey: ['upcomingFixtures', teamFilter],
     queryFn: () => authGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
-    staleTime: 0, refetchOnMount: true,
+    staleTime: 20_000,
+    refetchOnMount: true,
   });
 }
 
 export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   return useQuery({
-    queryKey: ['playersForMatch', matchId, side], // #3 fix: include side
+    queryKey: ['playersForMatch', matchId, side],
     queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`, { side }),
-    staleTime: 0, refetchOnMount: true,
+    staleTime: 20_000,
+    refetchOnMount: true,
   });
 }
 
@@ -50,6 +51,6 @@ export function useRecommendations(matchId: string, side?: "home" | "away", posi
     queryKey: ['recommendations', matchId, side, position],
     queryFn: () => getRecommendations(matchId, side, position),
     enabled,
-    staleTime: 0,
+    staleTime: 20_000,
   });
 }
