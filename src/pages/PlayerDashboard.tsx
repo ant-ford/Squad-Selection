@@ -41,10 +41,9 @@ export default function PlayerDashboard() {
     status: 'Available' | 'Maybe' | 'Unavailable',
     exceptionId?: string
   ) => {
-    // 1. Store previous state for rollback
     const previousData = data;
 
-    // 2. Optimistically update the fixture in local state
+    // Optimistic update
     setData((prev) => {
       if (!prev) return prev;
       return {
@@ -58,10 +57,23 @@ export default function PlayerDashboard() {
     });
 
     try {
-      await setMyAvailability(fixtureId, status, undefined, exceptionId);
+      const result = await setMyAvailability(fixtureId, status, undefined, exceptionId);
+
+      // Track the exception ID so the next toggle can update in place
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          fixtures: prev.fixtures.map((f) =>
+            f.id === fixtureId
+              ? { ...f, availabilityExceptionId: result.exceptionId || '' }
+              : f
+          ),
+        };
+      });
+
       toast.success('Availability updated');
     } catch (err) {
-      // Rollback on error
       if (previousData) setData(previousData);
       toast.error('Failed to update availability');
     }

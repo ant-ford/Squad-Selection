@@ -9,8 +9,7 @@ export async function setMyAvailability(
 ) {
   const user = await getCurrentSupabaseUser();
   if (!user?.email) throw new Error('Not authenticated');
-
-  return apiPost<{ success: boolean }>('/api/set-my-availability', {
+  return apiPost<{ success: boolean; exceptionId: string | null }>('/api/set-my-availability', {
     email: user.email,
     matchId,
     status,
