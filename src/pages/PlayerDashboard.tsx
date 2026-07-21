@@ -1,25 +1,22 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
-import { getMyFixtures, GetMyFixturesOutput } from '@/api/getMyFixtures';
+import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
 import { setMyAvailability } from '@/api/setMyAvailability';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
-import { CalendarDays } from 'lucide-react';
-
-type Fixture = GetMyFixturesOutput['fixtures'][0];
 
 export default function PlayerDashboard() {
   const { user, isLoading, logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<GetMyFixturesOutput | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedFixture, setSelectedFixture] = useState<Fixture | null>(null);
+  const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
 
   const loadData = useCallback(() => {
@@ -35,43 +32,35 @@ export default function PlayerDashboard() {
     loadData();
   }, [loadData]);
 
-  // Optimistic update – no full re‑fetch
+  // Optimistic availability update across both fixture lists.
   const handleQuickAvailability = async (
     fixtureId: string,
     status: 'Available' | 'Maybe' | 'Unavailable',
     exceptionId?: string
   ) => {
     const previousData = data;
-
-    // Optimistic update
     setData((prev) => {
       if (!prev) return prev;
+      const update = (f: MyFixture) =>
+        f.id === fixtureId ? { ...f, availabilityStatus: status, playerNotes: f.playerNotes || '' } : f;
       return {
         ...prev,
-        fixtures: prev.fixtures.map((f) =>
-          f.id === fixtureId
-            ? { ...f, availabilityStatus: status, playerNotes: f.playerNotes || '' }
-            : f
-        ),
+        fixtures: prev.fixtures.map(update),
+        eligibleOtherFixtures: prev.eligibleOtherFixtures?.map(update),
       };
     });
-
     try {
       const result = await setMyAvailability(fixtureId, status, undefined, exceptionId);
-
-      // Track the exception ID so the next toggle can update in place
       setData((prev) => {
         if (!prev) return prev;
+        const setExcId = (f: MyFixture) =>
+          f.id === fixtureId ? { ...f, availabilityExceptionId: result.exceptionId || '' } : f;
         return {
           ...prev,
-          fixtures: prev.fixtures.map((f) =>
-            f.id === fixtureId
-              ? { ...f, availabilityExceptionId: result.exceptionId || '' }
-              : f
-          ),
+          fixtures: prev.fixtures.map(setExcId),
+          eligibleOtherFixtures: prev.eligibleOtherFixtures?.map(setExcId),
         };
       });
-
       toast.success('Availability updated');
     } catch (err) {
       if (previousData) setData(previousData);
@@ -79,16 +68,12 @@ export default function PlayerDashboard() {
     }
   };
 
-  if (isLoading || !user) {
-    return <DashboardSkeleton />;
-  }
+  if (isLoading || !user) return <DashboardSkeleton />;
+  if (loading || !data) return <DashboardSkeleton />;
 
-  if (loading || !data) {
-    return <DashboardSkeleton />;
-  }
-
-  const selectedCount = data.fixtures.filter(f => f.selectionStatus === 'Selected').length;
-  const unavailableCount = data.fixtures.filter(f => f.availabilityStatus === 'Unavailable').length;
+  const selectedCount = data.fixtures.filter((f) => f.selectionStatus === 'Selected').length;
+  const unavailableCount = data.fixtures.filter((f) => f.availabilityStatus === 'Unavailable').length;
+  const eligibleOther = data.eligibleOtherFixtures ?? [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -164,7 +149,7 @@ export default function PlayerDashboard() {
           <div className="space-y-2">
             {data.fixtures.map((f) => (
               <PlayerFixtureCard
-                key={f.id}
+                key={`${f.id}-${f.hkfcTeam}`}
                 fixture={f}
                 onTap={() => setSelectedFixture(f)}
                 onAvailabilityChange={(status, exceptionId) =>
@@ -173,6 +158,34 @@ export default function PlayerDashboard() {
               />
             ))}
           </div>
+        )}
+
+        {/* Higher-team / play-up availability management */}
+        {eligibleOther.length > 0 && (
+          <>
+            <div className="mt-6">
+              <SectionHeader title="Higher Teams & Play-Ups" count={eligibleOther.length} />
+            </div>
+            <div className="mb-2 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
+              <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <p>
+                These higher-ranked teams play on the same day as your team. Marking yourself
+                unavailable here releases you so your registered team can select you.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {eligibleOther.map((f) => (
+                <PlayerFixtureCard
+                  key={`${f.id}-${f.hkfcTeam}`}
+                  fixture={f}
+                  onTap={() => setSelectedFixture(f)}
+                  onAvailabilityChange={(status, exceptionId) =>
+                    handleQuickAvailability(f.id, status, exceptionId)
+                  }
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -186,10 +199,7 @@ export default function PlayerDashboard() {
           }}
         />
       )}
-
-      {showCalendarSync && (
-        <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />
-      )}
+      {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
     </div>
   );
 }

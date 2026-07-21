@@ -4,4 +4,5 @@ export const TABLES = {
   match: "Matches",
   availabilityException: "Availability Exceptions",
   matchCard: "Match Cards",
+  abilityGroupConfiguration: "Ability Group Configuration",
 } as const;

@@ -1,15 +1,18 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { LogOut, User } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { LogOut, User, ListChecks } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 
 export default function AppHeader({ profile }: { profile: ProfileData }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isRanking = location.pathname === '/coach/ranking';
+
   const logout = async () => {
     await supabase.auth.signOut();
     navigate('/');
   };
-  const navigate = useNavigate();
+
   const teamNames = profile.coachTeams.map(t => t.teamName).join(', ');
 
   return (
@@ -22,6 +25,17 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => navigate('/coach/ranking')}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+              isRanking
+                ? 'bg-secondary text-secondary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+          >
+            <ListChecks className="h-3.5 w-3.5" />
+            Ranking
+          </button>
           <button
             onClick={() => navigate('/')}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground"

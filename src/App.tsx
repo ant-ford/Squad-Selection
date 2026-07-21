@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import CoachLayout from './components/CoachLayout';
 import FixtureList from './pages/FixtureList';
 import SquadSelection from './pages/SquadSelection';
+import PlayerRanking from './pages/PlayerRanking';
 import PlayerDashboard from './pages/PlayerDashboard';
 
 function AuthGate() {
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <FixtureList /> },
           { path: 'match/:matchId', element: <SquadSelection /> },
+          { path: 'ranking', element: <PlayerRanking /> },
         ],
       },
     ],
@@ -34,14 +36,11 @@ const router = createBrowserRouter([
 function AppLoading() {
   return (
     <div className="min-h-screen relative flex flex-col items-center justify-center bg-background overflow-hidden">
-      {/* Ambient club-blue glow */}
       <div
         aria-hidden
         className="absolute -top-48 left-1/2 -translate-x-1/2 h-[520px] w-[820px] rounded-full blur-3xl"
         style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.12), transparent 70%)' }}
       />
-
-      {/* Faint pitch markings: border, halfway line, 23m lines, striking circles, penalty spots */}
       <svg
         aria-hidden
         className="absolute inset-0 h-full w-full text-primary opacity-[0.05]"
@@ -60,8 +59,6 @@ function AppLoading() {
         <circle cx="150" cy="275" r="4" fill="currentColor" stroke="none" />
         <circle cx="764" cy="275" r="4" fill="currentColor" stroke="none" />
       </svg>
-
-      {/* Bouncing hockey ball with dimple texture */}
       <div className="relative flex flex-col items-center">
         <div
           className="h-11 w-11 rounded-full animate-[ball-hop_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none"
@@ -74,8 +71,6 @@ function AppLoading() {
         />
         <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
       </div>
-
-      {/* Wordmark */}
       <div className="relative mt-10 text-center">
         <p className="font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground animate-[fade-up_0.6s_ease-out_both]">
           HKFC

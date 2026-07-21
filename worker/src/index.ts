@@ -9,26 +9,44 @@ import {
   selectPlayer,
   removeSelection,
   getAvailabilityForMatch,
-  syncSquad
+  syncSquad,
 } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 import { getRecommendationsForMatch } from "./recommendations";
-import { 
-  handleGetCalendarLink, 
-  handlePlayerCalendarFeed, 
+import {
+  handleGetCalendarLink,
+  handlePlayerCalendarFeed,
   handleTeamCalendarExport,
   handleGetTeamCalendarLink,
-  handleTeamCalendarFeed
+  handleTeamCalendarFeed,
 } from "./calendar";
+import {
+  getActiveRanking,
+  getInactiveRanking,
+  getAbilityGroupConfig,
+  setAbilityGroupConfig,
+  movePlayerToRank,
+  movePlayerRelative,
+  reorderRanking,
+  activatePlayer,
+  deactivatePlayer,
+  initializeRanking,
+  recomputeDerivedFields,
+} from "./ranking";
+import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
 
 export type { Env };
 
 async function readJsonBody(request: Request): Promise<any> {
-  try { return await request.json(); } catch { throw new HttpError("Request body must be valid JSON", 400); }
+  try {
+    return await request.json();
+  } catch {
+    throw new HttpError("Request body must be valid JSON", 400);
+  }
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const origin = env.ALLOWED_ORIGIN;
     const url = new URL(request.url);
     const { pathname } = url;
@@ -37,13 +55,24 @@ export default {
     if (method === "OPTIONS") return handleOptions(origin);
 
     try {
+      // ── Health Check ──────────────────────────────────────────────
+      if (method === "GET" && pathname === "/health") {
+        return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
+      }
+
+      // ── Match / Squad ──────────────────────────────────────────────
       const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
-      if (method === "GET" && matchSquadMatch) return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      if (method === "GET" && matchSquadMatch)
+        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
 
       const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
       if (method === "GET" && matchPlayersMatch) {
         const side = url.searchParams.get("side") as "home" | "away" | null;
-        return json(await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined), 200, origin);
+        return json(
+          await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined),
+          200,
+          origin,
+        );
       }
 
       const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
@@ -63,75 +92,160 @@ export default {
           origin,
         );
       }
-      
+
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
-      if (method === "GET" && matchAvailabilityMatch) return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
+      if (method === "GET" && matchAvailabilityMatch)
+        return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
 
+      // ── Player / Fixtures ──────────────────────────────────────────
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
-      if (method === "GET" && playerFixturesMatch) return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
+      if (method === "GET" && playerFixturesMatch)
+        return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
 
-      if (method === "GET" && pathname === "/api/players/active") return json(await getActivePlayers(env), 200, origin);
-      if (method === "GET" && pathname === "/api/reference-data") return json(await getReferenceData(env), 200, origin);
+      if (method === "GET" && pathname === "/api/players/active")
+        return json(await getActivePlayers(env), 200, origin);
+
+      if (method === "GET" && pathname === "/api/reference-data")
+        return json(await getReferenceData(env), 200, origin);
+
       if (method === "GET" && pathname === "/api/player-by-email") {
         const email = requireParam(url.searchParams.get("email"), "email");
         const player = await getPlayerByEmail(env, email);
         if (!player) throw new HttpError("Player record not found for this email", 404);
         return json(player, 200, origin);
       }
+
       if (method === "GET" && pathname === "/api/my-profile") {
         const email = url.searchParams.get("email");
         if (!email) return json({ error: "email is required" }, 400);
         return json(await getMyProfile(env, email));
       }
+
       if (method === "GET" && pathname === "/api/my-fixtures") {
         const email = requireParam(url.searchParams.get("email"), "email");
         return json(await getMyFixtures(env, email), 200, origin);
       }
+
       if (method === "GET" && pathname === "/api/upcoming-fixtures") {
         const email = url.searchParams.get("email") ?? undefined;
         const team = url.searchParams.get("team") ?? undefined;
         return json(await getUpcomingFixtures(env, { email, team }), 200, origin);
       }
 
+      // ── Selection writes ───────────────────────────────────────────
       if (method === "POST" && pathname === "/api/select-player") {
         const body = await readJsonBody(request);
         return json(await selectPlayer(env, body), 200, origin);
       }
-      // #8: align with worker removeSelection signature
+
       if (method === "POST" && pathname === "/api/remove-selection") {
-        const body = await readJsonBody(request) as { matchId: string; playerId: string; side?: "home" | "away" };
+        const body = (await readJsonBody(request)) as {
+          matchId: string;
+          playerId: string;
+          side?: "home" | "away";
+        };
         return json(await removeSelection(env, body), 200, origin);
       }
+
       if (method === "POST" && pathname === "/api/set-availability") {
         const body = await readJsonBody(request);
         return json(await setAvailability(env, body), 200, origin);
       }
+
       if (method === "POST" && pathname === "/api/set-my-availability") {
         const body = await readJsonBody(request);
         return json(await setMyAvailability(env, body), 200, origin);
       }
-      // #2: forward side to syncSquad
+
       if (method === "POST" && pathname === "/squad/sync") {
-        const body = await readJsonBody(request) as { matchId: string; selectedIds: string[]; actingEmail?: string; side?: "home" | "away" };
+        const body = (await readJsonBody(request)) as {
+          matchId: string;
+          selectedIds: string[];
+          actingEmail?: string;
+          side?: "home" | "away";
+        };
         await syncSquad(env, body.matchId, body.selectedIds, body.actingEmail, body.side);
         return json({ success: true }, 200, origin);
       }
 
+      // ── Ranking ────────────────────────────────────────────────────
+      if (method === "GET" && pathname === "/api/ranking")
+        return json(await getActiveRanking(env), 200, origin);
+
+      if (method === "GET" && pathname === "/api/ranking/inactive")
+        return json(await getInactiveRanking(env), 200, origin);
+
+      if (method === "GET" && pathname === "/api/ranking/config")
+        return json(await getAbilityGroupConfig(env), 200, origin);
+
+      if (method === "POST" && pathname === "/api/ranking/config") {
+        const body = (await readJsonBody(request)) as {
+          config: AbilityGroupConfigMap;
+          actingEmail?: string;
+        };
+        const config = await setAbilityGroupConfig(env, body.config, body.actingEmail);
+        // Respond immediately; re-rank all ability badges in the background.
+        ctx.waitUntil(recomputeDerivedFields(env));
+        return json(config, 200, origin);
+      }
+
+      if (method === "POST" && pathname === "/api/ranking/move") {
+        const body = (await readJsonBody(request)) as { playerId: string; newRank: number };
+        return json(await movePlayerToRank(env, body.playerId, body.newRank), 200, origin);
+      }
+
+      if (method === "POST" && pathname === "/api/ranking/move-relative") {
+        const body = (await readJsonBody(request)) as {
+          sourceId: string;
+          targetId: string;
+          position: "above" | "below";
+        };
+        return json(
+          await movePlayerRelative(env, body.sourceId, body.targetId, body.position),
+          200,
+          origin,
+        );
+      }
+
+      if (method === "POST" && pathname === "/api/ranking/reorder") {
+        const body = (await readJsonBody(request)) as { playerIds: string[] };
+        return json(await reorderRanking(env, body.playerIds), 200, origin);
+      }
+
+      if (method === "POST" && pathname === "/api/ranking/activate") {
+        const body = (await readJsonBody(request)) as { playerId: string };
+        return json(await activatePlayer(env, body.playerId), 200, origin);
+      }
+
+      if (method === "POST" && pathname === "/api/ranking/deactivate") {
+        const body = (await readJsonBody(request)) as { playerId: string };
+        return json(await deactivatePlayer(env, body.playerId), 200, origin);
+      }
+
+      if (method === "POST" && (pathname === "/api/ranking/initialize" || pathname === "/api/ranking/backfill")) {
+        return json(await initializeRanking(env), 200, origin);
+      }
+
+      // ── Calendar ───────────────────────────────────────────────────
       if (method === "GET" && pathname === "/api/calendar/link") {
         const email = requireParam(url.searchParams.get("email"), "email");
         return json(await handleGetCalendarLink(env, email), 200, origin);
       }
+
       if (method === "GET" && pathname === "/api/calendar/feed.ics") {
         return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
       }
+
       if (method === "GET" && pathname === "/api/calendar/team.ics") {
         return handleTeamCalendarExport(env, url.searchParams.get("email"), url.searchParams.get("team"));
       }
+
       if (method === "GET" && pathname === "/api/calendar/team-link") {
         const email = requireParam(url.searchParams.get("email"), "email");
         const team = requireParam(url.searchParams.get("team"), "team");
         return json(await handleGetTeamCalendarLink(env, email, team), 200, origin);
       }
+
       if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
         return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
       }
@@ -139,7 +253,8 @@ export default {
       return errorJson("Not Found", 404, origin);
     } catch (err) {
       if (err instanceof HttpError) return errorJson(err.message, err.status, origin);
-      if (err instanceof AirtableError) return errorJson(`Airtable: ${err.message}`, err.status >= 400 ? err.status : 502, origin);
+      if (err instanceof AirtableError)
+        return errorJson(`Airtable: ${err.message}`, err.status >= 400 ? err.status : 502, origin);
       console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
       return errorJson("Internal Server Error", 500, origin);
     }

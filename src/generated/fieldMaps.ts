@@ -14,6 +14,10 @@ export const PEOPLE_FIELDS = {
   everRegisteredToPremier: "Ever Registered To Premier",
   u21Eligible: "U21 Eligible",
   playerCoach: "Player/Coach",
+  sectionRank: "Section Rank",
+  teamRank: "Team Rank",
+  positionalRank: "Positional Rank",
+  rankUpdatedAt: "Rank Updated At",
 } as const;
 
 export const TEAMS_FIELDS = {
@@ -68,4 +72,10 @@ export const MATCHCARDS_FIELDS = {
   season: "Season",
   fixtureId: "Fixture Id",
   rawPlayerName: "RawPlayerName",
+} as const;
+
+export const ABILITYGROUP_CONFIG_FIELDS = {
+  group: "Group",
+  capacity: "Capacity",
+  isResidual: "Is Residual",
 } as const;

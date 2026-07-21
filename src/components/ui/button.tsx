@@ -8,6 +8,8 @@ type Props =
 
 export function Button({
   className = '',
+  variant,
+  size,
   ...props
 }: Props) {
   return (

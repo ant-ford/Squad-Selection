@@ -8,6 +8,7 @@ export interface Player {
   active?: boolean;
   registeredTeam?: string;
   playingPosition?: string;
+  /** Calculated by ranking engine: e.g. "A+", "A", "A-", "B+", ..., "H-". */
   playingAbility?: string;
   isVisitingPlayer?: boolean;
   isSuspended?: boolean;
@@ -15,6 +16,14 @@ export interface Player {
   everRegisteredToPremier?: boolean;
   u21Eligible?: boolean;
   playerCoach?: string[];
+  /** The ONLY manually-maintained ranking value. 1 = strongest, N = lowest. */
+  sectionRank?: number;
+  /** Calculated: rank within the player's Registered Team (1 = best in team). */
+  teamRank?: number;
+  /** Calculated: rank within the player's Playing Position across the entire section (1 = best in position). */
+  positionalRank?: number;
+  /** ISO timestamp of the last rank change for this player. */
+  rankUpdatedAt?: string;
 }
 
 export interface Team {
@@ -59,17 +68,11 @@ export interface AvailabilityException {
 
 export interface MatchCard {
   id: string;
-  /** → People link. */
   player?: string[];
-  /** → Matches link. */
   match?: string[];
-  /** The team whose match this was (single select text). */
   team?: string;
-  /** Player's registered team (single select text). */
   playerTeam?: string;
-  /** Formula: Team != PlayerTeam. */
   playUp?: boolean;
-  /** Role in this specific match — source of truth for GK exemption. */
   goalkeeper?: boolean;
   jersey?: number;
   goals?: number;
@@ -77,8 +80,43 @@ export interface MatchCard {
   u21?: boolean;
   vp?: boolean;
   captain?: boolean;
-  /** Inherited from match link (formula). */
   season?: string;
   fixtureId?: string;
   rawPlayerName?: string;
+}
+
+// ── Ranking types ────────────────────────────────────────────────────────
+
+export type AbilityGroupConfigMap = {
+  A: number;
+  B: number;
+  C: number;
+  D: number;
+  E: number;
+  F: number;
+  G: number;
+};
+
+export interface AbilityGroupConfiguration {
+  id: string;
+  group: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
+  capacity: number;
+  isResidual?: boolean;
+}
+
+export interface InactiveRankingEntry {
+  id: string;
+  preferredName?: string;
+  surname?: string;
+  givenNames?: string;
+  registeredTeam?: string;
+  playingPosition?: string;
+  lastSectionRank?: number;
+}
+
+export interface RankingList {
+  players: Player[];
+  activeCount: number;
+  lastUpdated: string;
+  config: AbilityGroupConfigMap;
 }
