@@ -47,6 +47,27 @@ import type {
   RankingList,
 } from "../../src/generated/domainTypes";
 
+// ── In-memory derived-rank annotation ────────────────────────────────────
+//
+// Team Rank and Positional Rank are pure display values consumed only by
+// PlayerRanking.tsx. Nothing in squad.ts, eligibility.ts, fixtures.ts, or
+// recommendations.ts reads them. Computing them at read time removes the
+// cascading-write problem where a single reorder touched dozens of records.
+
+function annotateWithDerivedRanks(players: Player[]): Player[] {
+  const teamCounters = new Map<string, number>();
+  const posCounters = new Map<string, number>();
+  return players.map((p) => {
+    const tk = p.registeredTeam ?? "";
+    const pk = p.playingPosition ?? "";
+    const tr = (teamCounters.get(tk) ?? 0) + 1;
+    teamCounters.set(tk, tr);
+    const pr = (posCounters.get(pk) ?? 0) + 1;
+    posCounters.set(pk, pr);
+    return { ...p, teamRank: tr, positionalRank: pr };
+  });
+}
+
 // ── Caching ──────────────────────────────────────────────────────────────
 const RANKING_CACHE_TTL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -182,7 +203,9 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
   const { data } = await getCached<RankingList>(
     rankingCacheKey(true),
     async () => {
-      const players = await fetchActiveRankingFromAirtable(env);
+      const raw = await fetchActiveRankingFromAirtable(env);
+      // Team Rank / Positional Rank are computed here, not persisted.
+      const players = annotateWithDerivedRanks(raw);
       return {
         players,
         activeCount: players.length,
@@ -363,8 +386,6 @@ export async function deactivatePlayer(env: Env, playerId: string): Promise<Rank
   await airtableUpdate(env, TABLES.player, playerId, {
     [PEOPLE_FIELDS.active]: false,
     [PEOPLE_FIELDS.sectionRank]: null,
-    [PEOPLE_FIELDS.teamRank]: null,
-    [PEOPLE_FIELDS.positionalRank]: null,
     [PEOPLE_FIELDS.playingAbility]: null,
     [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
   });
@@ -420,15 +441,11 @@ async function recomputeDerivedFieldsFromList(
     positionalCounters.set(positionKey, positionalRank);
     const assignment = computeAbilityAssignment(rank, n, config);
     const needsUpdate =
-      p.teamRank !== teamRank ||
-      p.positionalRank !== positionalRank ||
       p.playingAbility !== assignment.abilityDisplay;
     if (needsUpdate) {
       fieldUpdates.push({
         id: p.id,
         fields: {
-          [PEOPLE_FIELDS.teamRank]: teamRank,
-          [PEOPLE_FIELDS.positionalRank]: positionalRank,
           [PEOPLE_FIELDS.playingAbility]: assignment.abilityDisplay,
           [PEOPLE_FIELDS.rankUpdatedAt]: now,
         },
@@ -446,10 +463,8 @@ async function recomputeDerivedFieldsFromList(
   await batchUpdatePlayers(env, fieldUpdates);
   invalidateCache(rankingCacheKey(true));
   invalidateCache("club-reference");
-  invalidateCachePrefix("reference-data:");
   invalidateCachePrefix("players-for-match:");
-  invalidateCachePrefix("season-index:");
-  invalidateCachePrefix("calendar:");
+
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config };
 }
 

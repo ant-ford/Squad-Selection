@@ -1,18 +1,38 @@
+import { Suspense, lazy } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/lib/useAuth';
 import Login from './pages/Login';
-import CoachLayout from './components/CoachLayout';
-import FixtureList from './pages/FixtureList';
-import SquadSelection from './pages/SquadSelection';
-import PlayerRanking from './pages/PlayerRanking';
 import PlayerDashboard from './pages/PlayerDashboard';
+
+// Coach-only routes — deferred so player-only visits skip this bundle.
+const CoachLayout   = lazy(() => import('./components/CoachLayout'));
+const FixtureList   = lazy(() => import('./pages/FixtureList'));
+const SquadSelection = lazy(() => import('./pages/SquadSelection'));
+const PlayerRanking = lazy(() => import('./pages/PlayerRanking'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <AppLoading />;
   if (!user) return <Login />;
   return <Outlet />;
+}
+
+/** Minimal skeleton shown while a lazy coach route loads. */
+function RouteSkeleton() {
+  return (
+    <div className="min-h-screen bg-background p-6 space-y-4">
+      <div className="animate-pulse space-y-3">
+        <div className="h-10 w-48 bg-muted rounded" />
+        <div className="h-6 w-32 bg-muted rounded" />
+        <div className="pt-4 space-y-3">
+          <div className="h-24 w-full bg-muted rounded-lg" />
+          <div className="h-24 w-full bg-muted rounded-lg" />
+          <div className="h-24 w-full bg-muted rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const router = createBrowserRouter([
@@ -22,11 +42,36 @@ const router = createBrowserRouter([
       { path: '/', element: <PlayerDashboard /> },
       {
         path: '/coach',
-        element: <CoachLayout />,
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <CoachLayout />
+          </Suspense>
+        ),
         children: [
-          { index: true, element: <FixtureList /> },
-          { path: 'match/:matchId', element: <SquadSelection /> },
-          { path: 'ranking', element: <PlayerRanking /> },
+          {
+            index: true,
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <FixtureList />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'match/:matchId',
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <SquadSelection />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'ranking',
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <PlayerRanking />
+              </Suspense>
+            ),
+          },
         ],
       },
     ],

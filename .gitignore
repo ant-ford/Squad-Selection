@@ -1,5 +1,6 @@
 node_modules
 dist/
+branding/
 .env
 .env.local
 .env.*

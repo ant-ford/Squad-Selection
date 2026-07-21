@@ -60,10 +60,12 @@ async function findPlayerExceptions(
   playerId: string,
   matchIds: string[],
 ): Promise<Map<string, AvailabilityException>> {
-  // Collect the seasons that cover the requested matches
+  // Collect the seasons that cover the requested matches (parallel fetch)
   const matchSeasons = new Set<string>();
-  for (const matchId of matchIds) {
-    const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  const matchRecords = await Promise.all(
+    matchIds.map((matchId) => airtableFindById(env, TABLES.match, matchId)),
+  );
+  for (const matchRecord of matchRecords) {
     if (matchRecord) {
       const season = matchRecord.fields?.[MATCHES_FIELDS.season] || "";
       if (season) matchSeasons.add(season);

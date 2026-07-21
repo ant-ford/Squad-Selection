@@ -8,6 +8,7 @@ import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/useAuth';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -143,10 +144,12 @@ export default function SquadSelection() {
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
     if (!player || player.eligibilityStatus === 'blocked') return;
+
     const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
     const isCurrentlySelected = player.selectionStatus === 'Selected';
     const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
     const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
+
     if (serverMatchesIntended) {
       setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
     } else {
@@ -172,6 +175,7 @@ export default function SquadSelection() {
         actingEmail: user?.email,
         side: side,
       });
+
       const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
       queryClient.setQueryData(qk, (old: any) => {
         if (!old) return old;
@@ -184,6 +188,7 @@ export default function SquadSelection() {
           }))
         };
       });
+
       toast.success('Squad synced successfully');
       setPendingDeltas([]);
       setHasChanges(false);
@@ -290,17 +295,17 @@ export default function SquadSelection() {
         </div>
       )}
 
+      {/* §4.1 — Standardized confirmation dialog (replaces inline blocker modal) */}
       {blocker.state === 'blocked' && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
-          <div className="bg-background rounded-lg p-4 max-w-sm mx-4 shadow-lg">
-            <p className="text-foreground font-medium mb-2">Discard unsaved changes?</p>
-            <p className="text-sm text-muted-foreground mb-4">You have pending selection changes that will be lost.</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => blocker.reset()} className="px-3 py-2 rounded border border-border text-sm font-medium">Stay</button>
-              <button onClick={() => blocker.proceed()} className="px-3 py-2 rounded bg-destructive text-destructive-foreground text-sm font-medium">Discard</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="You have pending selection changes that will be lost."
+          confirmLabel="Discard"
+          cancelLabel="Stay"
+          destructive
+          onConfirm={() => blocker.proceed()}
+          onCancel={() => blocker.reset()}
+        />
       )}
     </div>
   );

@@ -17,13 +17,17 @@
     "@supabase/supabase-js": "^2.110.0",
     "@tanstack/react-query": "^5.101.2",
     "date-fns": "^4",
-    "lucide-react": "latest",
+    "lucide-react": "^1.25.0",
     "react": "^19",
     "react-dom": "^19",
     "react-router-dom": "^7",
     "sonner": "^2.0.7",
     "vite-plugin-pwa": "^1.3.0",
-    "zod": "^4"
+    "zod": "^4",
+    "@dnd-kit/core": "^6",
+    "@dnd-kit/sortable": "^10",
+    "@dnd-kit/utilities": "^3",
+    "@tanstack/react-virtual": "^3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.43.0",

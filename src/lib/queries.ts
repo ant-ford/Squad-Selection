@@ -178,11 +178,30 @@ export function useUpdateAbilityConfig() {
     onSuccess: (updatedConfig, variables) => {
       const newConfig = updatedConfig || variables;
       queryClient.setQueryData<AbilityGroupConfigMap>(['rankingConfig'], newConfig);
-      queryClient.invalidateQueries({ queryKey: ['rankingConfig'] });
-      queryClient.invalidateQueries({ queryKey: ['ranking'] });
-      setTimeout(() => {
+
+      // The Worker responds as soon as config rows are persisted, then
+      // recomputes ability badges in the background via ctx.waitUntil().
+      // An immediate invalidate would race the background recompute and
+      // return stale badges. Instead, poll until `lastUpdated` changes.
+      const previousData = queryClient.getQueryData<RankingList>(['ranking']);
+      const previousTimestamp = previousData?.lastUpdated;
+      let attempts = 0;
+      const maxAttempts = 6; // 6 × 1.5s = 9s max wait
+
+      const poll = setInterval(() => {
+        attempts++;
         queryClient.invalidateQueries({ queryKey: ['ranking'] });
-      }, 4000);
+
+        // Check after a short delay whether fresh data arrived
+        setTimeout(() => {
+          const current = queryClient.getQueryData<RankingList>(['ranking']);
+          if (current && current.lastUpdated !== previousTimestamp) {
+            clearInterval(poll);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(poll);
+          }
+        }, 800);
+      }, 1500);
     },
   });
 }
