@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/useAuth';
 import { useMyProfile } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppHeader from '@/components/AppHeader';
+import AppFooter from '@/components/AppFooter';
 
 export default function CoachLayout() {
   const { user, isLoading } = useAuth();
@@ -20,9 +21,12 @@ export default function CoachLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <AppHeader profile={profile} />
-      <Outlet context={{ profile }} />
+      <main className="flex-1">
+        <Outlet context={{ profile }} />
+      </main>
+      <AppFooter />
     </div>
   );
 }
