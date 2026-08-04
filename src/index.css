@@ -70,7 +70,7 @@
   --shadow-y: 2px;
   --shadow-blur: 0px;
   --shadow-spread: 0px;
-  --shadow-opacity: 0;
+  --shadow-opacity: 0.06;
   --shadow-color: hsl(202.8169 89.1213% 53.1373%);
   --shadow-rgb: 0 0 0;
   --shadow-2xs: var(--shadow-x) var(--shadow-y) var(--shadow-blur) var(--shadow-spread) rgb(var(--shadow-rgb) / calc(var(--shadow-opacity) * 0.5));
