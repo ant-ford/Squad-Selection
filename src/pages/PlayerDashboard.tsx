@@ -10,6 +10,7 @@ import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
+import AppFooter from '@/components/AppFooter';
 
 export default function PlayerDashboard() {
   const { user, isLoading, logout } = useAuth();
@@ -78,12 +79,22 @@ export default function PlayerDashboard() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-background">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
-              <p className="text-sm text-muted-foreground">Squad Selection</p>
+            <div className="flex items-center gap-2">
+              {/* Primary logo - clean version */}
+              <div className="h-8 w-8">
+                <img
+                  src="/assets/logo-plain.svg"
+                  alt="Eddy"
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
+                <p className="text-sm text-muted-foreground">Squad Selection</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {data.isCoach && (
@@ -200,6 +211,7 @@ export default function PlayerDashboard() {
         />
       )}
       {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
+      <AppFooter />
     </div>
   );
 }

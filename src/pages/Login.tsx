@@ -40,9 +40,18 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="max-w-md w-full bg-card p-6 rounded-lg border border-border">
-        <h1 className="text-2xl font-bold text-foreground mb-6">HKFC Hockey</h1>
-        <p className="text-muted-foreground mb-6">
+      <div className="max-w-md w-full bg-card p-6 rounded-lg border border-border shadow-lg">
+        {/* Animated logo */}
+        <div className="flex justify-center mb-6">
+          <img
+            src="/assets/logo-animated.svg"
+            alt="Eddy"
+            className="h-16 w-16 object-contain"
+          />
+        </div>
+
+        <h1 className="text-2xl font-bold text-foreground mb-6 text-center">HKFC Squad Manager</h1>
+        <p className="text-muted-foreground mb-6 text-center">
           Enter your email to receive a magic link
         </p>
 

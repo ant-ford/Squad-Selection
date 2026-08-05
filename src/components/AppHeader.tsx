@@ -16,13 +16,23 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
   const teamNames = profile.coachTeams.map(t => t.teamName).join(', ');
 
   return (
-    <header className="w-full border-b border-border bg-card">
+    <header className="w-full border-b border-border bg-background">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <div>
-          <p className="text-lg font-semibold text-foreground">HKFC Squad Selection</p>
-          <p className="text-sm text-muted-foreground">
-            {teamNames ? `Coaching: ${teamNames}` : 'No teams assigned'}
-          </p>
+        <div className="flex items-center gap-2">
+          {/* Primary logo - clean version */}
+          <div className="h-8 w-8">
+            <img
+              src="/assets/logo-plain.svg"
+              alt="Eddy"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-foreground">HKFC Squad Selection</p>
+            <p className="text-sm text-muted-foreground">
+              {teamNames ? `Coaching: ${teamNames}` : 'No teams assigned'}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button
