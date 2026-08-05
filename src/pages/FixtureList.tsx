@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useUpcomingFixtures } from '@/lib/queries';
-import { safeFormat } from '@/lib/dateUtils';
+import { safeFormat, isPastFixture } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
@@ -11,6 +11,7 @@ import { CoachCalendarExport } from '@/components/CoachCalendarExport';
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const [activeTab, setActiveTab] = useState('all');
+  const [showPast, setShowPast] = useState(false);
 
   // Performance: fetch ALL coached fixtures once; tabs filter client-side.
   // The Worker already returns every coached team's fixtures when no team
@@ -20,9 +21,12 @@ export default function FixtureList() {
   const allFixtures = data?.fixtures || [];
 
   const fixtures = useMemo(() => {
-    if (activeTab === 'all') return allFixtures;
-    return allFixtures.filter((f) => f.hkfcTeam === activeTab);
-  }, [allFixtures, activeTab]);
+    let filtered = activeTab === 'all' ? allFixtures : allFixtures.filter((f) => f.hkfcTeam === activeTab);
+    if (!showPast) {
+      filtered = filtered.filter((f) => !isPastFixture(f.date));
+    }
+    return filtered;
+  }, [allFixtures, activeTab, showPast]);
 
   const coachTeams = profile?.coachTeams ?? [];
   const tabs = [
@@ -58,7 +62,14 @@ export default function FixtureList() {
             ))}
           </div>
         )}
-        <div className="shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowPast((v) => !v)}
+            className={`text-xs px-2 py-1 rounded-md ${showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+            title={showPast ? 'Hide past fixtures' : 'Show past fixtures'}
+          >
+            {showPast ? 'Showing past' : 'Hide past'}
+          </button>
           <CoachCalendarExport activeTab={activeTab} />
         </div>
       </div>
@@ -68,7 +79,12 @@ export default function FixtureList() {
         </div>
       ) : fixtures.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-muted-foreground">No upcoming fixtures found</p>
+          <p className="text-muted-foreground">{showPast ? 'No fixtures found' : 'No upcoming fixtures found'}</p>
+          {showPast && (
+            <button onClick={() => setShowPast(false)} className="mt-2 text-sm text-primary hover:underline">
+              Show upcoming fixtures
+            </button>
+          )}
         </div>
       ) : (
         <div className="pt-4 space-y-4">

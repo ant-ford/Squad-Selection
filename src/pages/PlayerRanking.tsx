@@ -71,7 +71,7 @@ const GROUP_COLORS: Record<string, string> = {
 };
 
 const STAGE_FILTER_OPTIONS = [
-  { key: 'All', label: 'All', minOrdinal: -1 },
+  { key: 'None', label: 'None', minOrdinal: -1 },
   { key: 'Trial Application', label: 'Trial Application', minOrdinal: 1 },
   { key: 'Sponsoring', label: 'Sponsoring', minOrdinal: 2 },
 ] as const;
@@ -660,7 +660,7 @@ export default function PlayerRanking() {
       {confirmInitialize && (
         <ConfirmDialog
           title="Initialize ranking"
-          message="Initialize section ranks for all active players and applicants without one? Existing ranks are preserved."
+          message="Automatically assign ranks to all unranked active players and applicants, ordered by playing ability. Existing ranks are preserved."
           confirmLabel="Initialize"
           onConfirm={executeInitialize}
           onCancel={() => setConfirmInitialize(false)}
@@ -753,14 +753,19 @@ function RankingFilterContent(props: {
 
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
-        {STAGE_FILTER_OPTIONS.map((s) => (
-          <Chip
-            key={s.key}
-            label={s.label}
-            active={props.stageFilter === s.key}
-            onClick={() => props.onStageFilter(props.stageFilter === s.key ? null : s.key)}
-          />
-        ))}
+        {STAGE_FILTER_OPTIONS.map((s) => {
+          const isActive = props.stageFilter === s.key;
+          // Highlight "Sponsoring" when "Trial Application" is selected to show cumulative filtering
+          const isHighlighted = props.stageFilter === 'Trial Application' && s.key === 'Sponsoring';
+          return (
+            <Chip
+              key={s.key}
+              label={s.label}
+              active={isActive || isHighlighted}
+              onClick={() => props.onStageFilter(props.stageFilter === s.key ? null : s.key)}
+            />
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-2 mt-2">
@@ -774,7 +779,7 @@ function RankingFilterContent(props: {
         <button
           onClick={props.onInitialize}
           className="text-xs flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
-          title="Assigns initial section ranks to all unranked active players and applicants, ordered by ability."
+          title="Automatically assigns initial section ranks to all unranked active players and applicants, ordered by playing ability."
         >
           <ListChecks className="h-3 w-3" /> Initialise
         </button>
@@ -908,8 +913,8 @@ function RankingRowInner(props: {
         </button>
         {menuOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-            <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
+            <div className="fixed inset-0 z-[60]" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-0 top-7 z-[61] w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
               <button
                 onClick={() => {
                   setMenuOpen(false);
@@ -1025,7 +1030,6 @@ function MoveToRankSheet({
             Move
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground">Staged — remember to press Save.</p>
       </div>
     </ModalSheet>
   );
@@ -1045,7 +1049,7 @@ function ConfigSheet({
   onSave: (config: AbilityGroupConfigMap) => void;
 }) {
   const [local, setLocal] = useState<AbilityGroupConfigMap>({ ...config });
-
+  
   useEffect(() => {
     setLocal({ ...config });
   }, [config]);
