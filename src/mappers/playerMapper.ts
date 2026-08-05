@@ -41,5 +41,7 @@ export function mapPlayer(record: any): Player {
     teamRank: toOptionalInt(f[PEOPLE_FIELDS.teamRank]),
     positionalRank: toOptionalInt(f[PEOPLE_FIELDS.positionalRank]),
     rankUpdatedAt: f[PEOPLE_FIELDS.rankUpdatedAt] || undefined,
+    status: f[PEOPLE_FIELDS.status],
+    applicantStage: f[PEOPLE_FIELDS.applicantStage],
   };
 }

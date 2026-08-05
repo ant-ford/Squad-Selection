@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
 import { getCurrentSupabaseUser } from '@/lib/auth';
@@ -16,7 +17,21 @@ async function authGet<T>(url: string, params?: Record<string, any>): Promise<T>
   return apiGet<T>(url, { ...params, email: user?.email });
 }
 
+/** True while the browser tab is visible; used to pause background polling. */
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(() =>
+    typeof document === 'undefined' ? true : !document.hidden,
+  );
+  useEffect(() => {
+    const handler = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+  return visible;
+}
+
 // ── Profile & Fixtures ───────────────────────────────────────────────────
+
 export function useMyProfile() {
   return useQuery({
     queryKey: ['myProfile'],
@@ -29,8 +44,7 @@ export function useUpcomingFixtures(teamFilter?: string) {
   return useQuery({
     queryKey: ['upcomingFixtures', teamFilter],
     queryFn: () => authGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
-    staleTime: 20_000,
-    refetchOnMount: true,
+    staleTime: 300_000,
   });
 }
 
@@ -38,16 +52,16 @@ export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   return useQuery({
     queryKey: ['playersForMatch', matchId, side],
     queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`, { side }),
-    staleTime: 20_000,
-    refetchOnMount: true,
+    staleTime: 300_000,
   });
 }
 
 export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
+  const isVisible = useDocumentVisible();
   return useQuery({
     queryKey: ['availabilityPoll', matchId],
     queryFn: () => apiGet<{ exceptions: { playerId: string; status: string; notes: string }[] }>(`/api/match/${matchId}/availability`),
-    refetchInterval: isEnabled ? 30000 : false,
+    refetchInterval: isEnabled && isVisible ? 30000 : false,
     enabled: isEnabled,
   });
 }
@@ -57,17 +71,18 @@ export function useRecommendations(matchId: string, side?: "home" | "away", posi
     queryKey: ['recommendations', matchId, side, position],
     queryFn: () => getRecommendations(matchId, side, position),
     enabled,
-    staleTime: 20_000,
+    staleTime: 300_000,
   });
 }
 
 // ── Ranking ──────────────────────────────────────────────────────────────
+
 export function useRanking() {
   return useQuery({
     queryKey: ['ranking'],
     queryFn: () => apiGet<RankingList>('/api/ranking'),
+    // Reverted to 15s per ChatGPT feedback: Section Captains expect prompt updates
     staleTime: 15_000,
-    refetchOnMount: true,
   });
 }
 
@@ -75,7 +90,7 @@ export function useInactiveRanking() {
   return useQuery({
     queryKey: ['rankingInactive'],
     queryFn: () => apiGet<InactiveRankingEntry[]>('/api/ranking/inactive'),
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 }
 
@@ -83,7 +98,6 @@ export function useAbilityGroupConfig() {
   return useQuery({
     queryKey: ['rankingConfig'],
     queryFn: () => apiGet<AbilityGroupConfigMap>('/api/ranking/config'),
-    // Always refetch on mount so the config sheet never shows stale values.
     staleTime: 0,
     refetchOnMount: true,
   });
@@ -92,11 +106,15 @@ export function useAbilityGroupConfig() {
 /**
  * Ranking mutations return the fully refreshed RankingList from the Worker,
  * so we write it straight into the cache instead of triggering a refetch.
+ * Automatically injects the acting user's email for audit logging.
  */
 function useRankingMutation<TVariables>(url: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (variables: TVariables) => apiPost<RankingList>(url, variables),
+    mutationFn: async (variables: TVariables) => {
+      const user = await getCurrentSupabaseUser();
+      return apiPost<RankingList>(url, { ...variables, actingEmail: user?.email });
+    },
     onSuccess: (data) => {
       if (data?.players) {
         queryClient.setQueryData<RankingList>(['ranking'], data);
@@ -120,7 +138,6 @@ export function useMoveRankingRelative() {
   );
 }
 
-/** Batch reorder: sends the complete new order; server diffs & writes only changes. */
 export function useReorderRanking() {
   return useRankingMutation<{ playerIds: string[] }>('/api/ranking/reorder');
 }
@@ -132,8 +149,10 @@ export function useInitializeRanking() {
 export function useActivatePlayer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (variables: { playerId: string }) =>
-      apiPost<RankingList>('/api/ranking/activate', variables),
+    mutationFn: async (variables: { playerId: string }) => {
+      const user = await getCurrentSupabaseUser();
+      return apiPost<RankingList>('/api/ranking/activate', { ...variables, actingEmail: user?.email });
+    },
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
@@ -147,8 +166,10 @@ export function useActivatePlayer() {
 export function useDeactivatePlayer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (variables: { playerId: string }) =>
-      apiPost<RankingList>('/api/ranking/deactivate', variables),
+    mutationFn: async (variables: { playerId: string }) => {
+      const user = await getCurrentSupabaseUser();
+      return apiPost<RankingList>('/api/ranking/deactivate', { ...variables, actingEmail: user?.email });
+    },
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
@@ -160,48 +181,30 @@ export function useDeactivatePlayer() {
 }
 
 /**
- * Config save responds as soon as the config rows are persisted; the Worker
- * re-ranks ability badges in the background. We write the returned config
- * straight to the cache (so reopening the sheet shows fresh values) and do a
- * delayed ranking refetch to pick up the freshly recomputed badges.
+ * Config save now waits synchronously for the Worker to recompute ability 
+ * badges and returns the fully updated RankingList. No polling required!
  */
 export function useUpdateAbilityConfig() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (config: AbilityGroupConfigMap) => {
       const user = await getCurrentSupabaseUser();
-      return apiPost<AbilityGroupConfigMap>('/api/ranking/config', {
+      return apiPost<RankingList>('/api/ranking/config', {
         config,
         actingEmail: user?.email,
       });
     },
-    onSuccess: (updatedConfig, variables) => {
-      const newConfig = updatedConfig || variables;
-      queryClient.setQueryData<AbilityGroupConfigMap>(['rankingConfig'], newConfig);
-
-      // The Worker responds as soon as config rows are persisted, then
-      // recomputes ability badges in the background via ctx.waitUntil().
-      // An immediate invalidate would race the background recompute and
-      // return stale badges. Instead, poll until `lastUpdated` changes.
-      const previousData = queryClient.getQueryData<RankingList>(['ranking']);
-      const previousTimestamp = previousData?.lastUpdated;
-      let attempts = 0;
-      const maxAttempts = 6; // 6 × 1.5s = 9s max wait
-
-      const poll = setInterval(() => {
-        attempts++;
+    onSuccess: (updatedRankingList) => {
+      // Update config cache
+      if (updatedRankingList.config) {
+        queryClient.setQueryData<AbilityGroupConfigMap>(['rankingConfig'], updatedRankingList.config);
+      }
+      // Update ranking cache directly with the fully consistent response
+      if (updatedRankingList.players) {
+        queryClient.setQueryData<RankingList>(['ranking'], updatedRankingList);
+      } else {
         queryClient.invalidateQueries({ queryKey: ['ranking'] });
-
-        // Check after a short delay whether fresh data arrived
-        setTimeout(() => {
-          const current = queryClient.getQueryData<RankingList>(['ranking']);
-          if (current && current.lastUpdated !== previousTimestamp) {
-            clearInterval(poll);
-          } else if (attempts >= maxAttempts) {
-            clearInterval(poll);
-          }
-        }, 800);
-      }, 1500);
+      }
     },
   });
 }

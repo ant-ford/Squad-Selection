@@ -57,7 +57,6 @@ import type {
 } from '@/generated/domainTypes';
 
 // ── Constants ────────────────────────────────────────────────────────────
-
 const POS_SHORT: Record<string, string> = {
   Defender: 'DEF',
   Midfielder: 'MID',
@@ -66,19 +65,27 @@ const POS_SHORT: Record<string, string> = {
   'Flexible/Varies': 'FLEX',
 };
 const ALL_POSITIONS = Object.keys(POS_SHORT);
-
-/** §2.6 — colours for the config stacked-bar visualization. */
 const GROUP_COLORS: Record<string, string> = {
-  A: '#3b82f6',
-  B: '#06b6d4',
-  C: '#14b8a6',
-  D: '#22c55e',
-  E: '#eab308',
-  F: '#f97316',
-  G: '#ef4444',
+  A: '#3b82f6', B: '#06b6d4', C: '#14b8a6', D: '#22c55e',
+  E: '#eab308', F: '#f97316', G: '#ef4444',
 };
 
+const STAGE_FILTER_OPTIONS = [
+  { key: 'All', label: 'All', minOrdinal: -1 },
+  { key: 'Trial Application', label: 'Trial Application', minOrdinal: 1 },
+  { key: 'Sponsoring', label: 'Sponsoring', minOrdinal: 2 },
+] as const;
+
 // ── Helpers ──────────────────────────────────────────────────────────────
+function stageOrdinal(stage?: string): number {
+  if (!stage) return -1;
+  const m = /^(\d+)./.exec(stage);
+  return m ? Number(m[1]) : -1;
+}
+
+function shortStage(s?: string): string {
+  return s ? s.replace(/^\d+.\s*/, '') : '';
+}
 
 function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: number) {
   const boundaries: { group: string; start: number; end: number }[] = [];
@@ -114,7 +121,6 @@ function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGr
   return 'H';
 }
 
-/** §2.4 — resolve the ability group for a given 1-based rank. */
 function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGroupBoundaries>): string {
   for (const b of boundaries) {
     if (rank >= b.start && rank <= b.end) return b.group;
@@ -123,13 +129,11 @@ function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGrou
 }
 
 // ── Main component ───────────────────────────────────────────────────────
-
 export default function PlayerRanking() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const isSectionCaptain = !!profile?.isSectionCaptain;
-
   const ranking = useRanking();
   const inactiveQuery = useInactiveRanking();
   const configQuery = useAbilityGroupConfig();
@@ -140,34 +144,36 @@ export default function PlayerRanking() {
   const updateConfig = useUpdateAbilityConfig();
 
   // ── Filter / UI state ──────────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  // Search debounce (200ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [moveToRankPlayer, setMoveToRankPlayer] = useState<Player | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-
-  // Draft order: null = clean (server order); otherwise the coach's staged order.
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
-
-  // §2.3 / §4.1 — confirmation modals (replaces window.confirm)
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ playerId: string; label: string } | null>(null);
   const [confirmInitialize, setConfirmInitialize] = useState(false);
-
-  // §2.2 — mobile filter sheet
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // §1.5 — scope disabled state to the row being mutated
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
-
-  // §2.4 — sticky group header
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
 
@@ -176,7 +182,6 @@ export default function PlayerRanking() {
   const players = data?.players ?? [];
   const config = data?.config ?? (configQuery.data as AbilityGroupConfigMap | undefined) ?? emptyConfig();
   const totalActive = data?.activeCount ?? 0;
-
   const playersById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
 
   const displayPlayers = useMemo(() => {
@@ -211,7 +216,14 @@ export default function PlayerRanking() {
 
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const minOrdinal = stageFilter ? STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.minOrdinal ?? -1 : -1;
+
     return displayPlayers.filter((p) => {
+      if (p.applicantStage === 'Rejected') return false;
+      if (minOrdinal !== -1 && p.status === 'Applicant') {
+        const ord = stageOrdinal(p.applicantStage);
+        if (ord === -1 || ord < minOrdinal) return false;
+      }
       if (teamFilter && p.registeredTeam !== teamFilter) return false;
       if (positionFilter && p.playingPosition !== positionFilter) return false;
       if (q) {
@@ -220,7 +232,7 @@ export default function PlayerRanking() {
       }
       return true;
     });
-  }, [displayPlayers, teamFilter, positionFilter, search]);
+  }, [displayPlayers, teamFilter, positionFilter, search, stageFilter]);
 
   const modifiedCount = useMemo(() => {
     if (!draftIds) return 0;
@@ -234,7 +246,6 @@ export default function PlayerRanking() {
 
   const hasChanges = modifiedCount > 0;
 
-  // ── §1.4 — Virtualization ─────────────────────────────────────────────
   const virtualizer = useVirtualizer({
     count: filteredPlayers.length,
     getScrollElement: () => listRef.current,
@@ -242,23 +253,31 @@ export default function PlayerRanking() {
     overscan: 8,
   });
 
-  // ── §2.4 — Sticky group header scroll handler ─────────────────────────
+  const rafId = useRef<number>(0);
   const handleListScroll = useCallback(() => {
-    const container = listRef.current;
-    if (!container) return;
-    const rows = container.querySelectorAll('[data-rank]');
-    const containerTop = container.getBoundingClientRect().top;
-    for (const row of rows) {
-      const rect = row.getBoundingClientRect();
-      if (rect.bottom > containerTop + 48) {
-        const rank = Number(row.getAttribute('data-rank'));
-        setCurrentGroup(getGroupForRank(rank, boundaries));
-        return;
+    if (rafId.current) cancelAnimationFrame(rafId.current);
+    rafId.current = requestAnimationFrame(() => {
+      const container = listRef.current;
+      if (!container) return;
+      const rows = container.querySelectorAll('[data-rank]');
+      const containerTop = container.getBoundingClientRect().top;
+      for (const row of rows) {
+        const rect = row.getBoundingClientRect();
+        if (rect.bottom > containerTop + 48) {
+          const rank = Number(row.getAttribute('data-rank'));
+          setCurrentGroup(getGroupForRank(rank, boundaries));
+          return;
+        }
       }
-    }
+    });
   }, [boundaries]);
 
-  // ── Draft mutations (all local until Save) ─────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+    };
+  }, []);
+
   const reorderDraft = useCallback(
     (sourceId: string, targetId: string, before: boolean) => {
       if (sourceId === targetId) return;
@@ -298,7 +317,6 @@ export default function PlayerRanking() {
     [filteredPlayers, reorderDraft],
   );
 
-  // ── §2.1 — dnd-kit handlers ───────────────────────────────────────────
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -314,13 +332,11 @@ export default function PlayerRanking() {
       setActiveDragId(null);
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-
       const sourceId = String(active.id);
       const targetId = String(over.id);
       const sourceIdx = filteredPlayers.findIndex((p) => p.id === sourceId);
       const targetIdx = filteredPlayers.findIndex((p) => p.id === targetId);
       if (sourceIdx === -1 || targetIdx === -1) return;
-
       const before = sourceIdx > targetIdx;
       reorderDraft(sourceId, targetId, before);
     },
@@ -331,7 +347,6 @@ export default function PlayerRanking() {
     setActiveDragId(null);
   }, []);
 
-  // ── Save / Discard ─────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!draftIds || modifiedCount === 0) return;
     try {
@@ -358,8 +373,7 @@ export default function PlayerRanking() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasChanges]);
 
-  // ── Other actions ──────────────────────────────────────────────────────
-  const displayPlayersRef = useMemo(() => ({ current: displayPlayers }), [displayPlayers]);
+  const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
 
   const handleOpenMoveToRank = useCallback((playerId: string) => {
@@ -367,7 +381,6 @@ export default function PlayerRanking() {
     setMoveToRankPlayer(p);
   }, []);
 
-  // §2.3 — replaced window.confirm with ConfirmDialog
   const handleDeactivateById = useCallback(
     (playerId: string) => {
       const player = playersById.get(playerId);
@@ -377,7 +390,6 @@ export default function PlayerRanking() {
     [playersById],
   );
 
-  // §1.5 — track which player is being mutated
   const executeDeactivate = useCallback(
     async (playerId: string, label: string) => {
       setMutatingPlayerId(playerId);
@@ -400,7 +412,7 @@ export default function PlayerRanking() {
       try {
         await activate.mutateAsync({ playerId: entry.id });
         setDraftIds(null);
-        toast.success(`${entry.preferredName ?? 'Player'} reactivated`);
+        toast.success(`${entry.preferredName ?? 'Player'} ${entry.status === 'Applicant' ? 'added to ranking' : 'reactivated'}`);
       } catch (err: any) {
         toast.error(err?.message ?? 'Failed to activate player');
       } finally {
@@ -410,7 +422,6 @@ export default function PlayerRanking() {
     [activate],
   );
 
-  // §2.3 — replaced window.confirm with ConfirmDialog
   const handleInitialize = useCallback(() => {
     setConfirmInitialize(true);
   }, []);
@@ -425,7 +436,6 @@ export default function PlayerRanking() {
     }
   }, [initialize]);
 
-  // ── Render ─────────────────────────────────────────────────────────────
   if (ranking.isLoading) return <RankingSkeleton />;
   if (ranking.isError) {
     return (
@@ -439,17 +449,18 @@ export default function PlayerRanking() {
   }
   if (!data) return <RankingSkeleton />;
 
-  // §1.5 — only the Save button is globally disabled; per-row disable is scoped
   const isSaving = reorder.isPending;
   const activeDragPlayer = activeDragId ? playersById.get(activeDragId) : null;
 
   const filterBarProps = {
-    search,
-    onSearch: setSearch,
+    search: searchInput,
+    onSearch: setSearchInput,
     teamFilter,
     onTeamFilter: setTeamFilter,
     positionFilter,
     onPositionFilter: setPositionFilter,
+    stageFilter,
+    onStageFilter: setStageFilter,
     teamOptions,
     showInactive,
     onToggleShowInactive: () => setShowInactive((v) => !v),
@@ -458,7 +469,6 @@ export default function PlayerRanking() {
 
   return (
     <div className="pb-32">
-      {/* ── Top bar ── */}
       <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
         <button onClick={() => navigate('/coach')} className="flex items-center gap-1 text-sm text-muted-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
@@ -474,15 +484,10 @@ export default function PlayerRanking() {
         )}
       </div>
 
-      {/* ── Title ── */}
       <div className="container mx-auto px-4 pt-2 pb-1">
         <h1 className="text-xl font-semibold text-foreground">Player Ranking</h1>
-        <p className="text-xs text-muted-foreground">
-          {data.activeCount} active player{data.activeCount === 1 ? '' : 's'} · single source of truth for ability assessment.
-        </p>
       </div>
 
-      {/* ── §2.2 — Filter bar: mobile sheet vs desktop inline ── */}
       {isMobile ? (
         <>
           <div className="container mx-auto px-4 py-2 border-y border-border bg-card">
@@ -492,7 +497,7 @@ export default function PlayerRanking() {
             >
               <Filter className="h-4 w-4" />
               Filters
-              {(search || teamFilter || positionFilter) && ' (active)'}
+              {(search || teamFilter || positionFilter || stageFilter) && ' (active)'}
             </button>
           </div>
           <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
@@ -510,7 +515,6 @@ export default function PlayerRanking() {
         </div>
       )}
 
-      {/* ── §2.4 — Sticky group indicator ── */}
       {currentGroup && filteredPlayers.length > 0 && (
         <div className="sticky top-0 z-10 container mx-auto px-4">
           <div className="bg-background/95 backdrop-blur-sm border-b border-border py-1 px-2 rounded-b-lg">
@@ -521,7 +525,6 @@ export default function PlayerRanking() {
         </div>
       )}
 
-      {/* ── §1.4 — Virtualized, scrollable list ── */}
       <div
         ref={listRef}
         onScroll={handleListScroll}
@@ -585,8 +588,6 @@ export default function PlayerRanking() {
                 })}
               </div>
             </SortableContext>
-
-            {/* Drag preview overlay */}
             <DragOverlay>
               {activeDragPlayer ? (
                 <RankingRowInner
@@ -607,7 +608,6 @@ export default function PlayerRanking() {
         )}
       </div>
 
-      {/* ── Inactive section ── */}
       {showInactive && (
         <InactiveSection
           entries={inactiveQuery.data ?? []}
@@ -616,7 +616,6 @@ export default function PlayerRanking() {
         />
       )}
 
-      {/* ── Move-to-rank sheet (§2.5 — with inline validation) ── */}
       {moveToRankPlayer && (
         <MoveToRankSheet
           player={moveToRankPlayer}
@@ -629,7 +628,6 @@ export default function PlayerRanking() {
         />
       )}
 
-      {/* ── §2.6 — Config sheet with stacked bar ── */}
       {showConfig && isSectionCaptain && (
         <ConfigSheet
           config={config}
@@ -639,7 +637,7 @@ export default function PlayerRanking() {
           onSave={async (next) => {
             try {
               await updateConfig.mutateAsync(next);
-              toast.success('Configuration saved — ability badges are refreshing');
+              toast.success('Configuration saved — ability badges updated');
               setShowConfig(false);
             } catch (err: any) {
               toast.error(err?.message ?? 'Failed to update configuration');
@@ -648,7 +646,6 @@ export default function PlayerRanking() {
         />
       )}
 
-      {/* ── §2.3 / §4.1 — Confirmation dialogs (shared ConfirmDialog) ── */}
       {confirmDeactivate && (
         <ConfirmDialog
           title="Remove from ranking"
@@ -659,17 +656,17 @@ export default function PlayerRanking() {
           onCancel={() => setConfirmDeactivate(null)}
         />
       )}
+
       {confirmInitialize && (
         <ConfirmDialog
           title="Initialize ranking"
-          message="Initialize section ranks for all active players without one? Existing ranks are preserved."
+          message="Initialize section ranks for all active players and applicants without one? Existing ranks are preserved."
           confirmLabel="Initialize"
           onConfirm={executeInitialize}
           onCancel={() => setConfirmInitialize(false)}
         />
       )}
 
-      {/* ── Unsaved-changes bar ── */}
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
           <div className="flex-1 text-sm text-muted-foreground">
@@ -698,8 +695,6 @@ export default function PlayerRanking() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────
-
-/** §2.2 — filter content shared between inline bar and mobile sheet. */
 function RankingFilterContent(props: {
   search: string;
   onSearch: (v: string) => void;
@@ -707,12 +702,14 @@ function RankingFilterContent(props: {
   onTeamFilter: (v: string | null) => void;
   positionFilter: string | null;
   onPositionFilter: (v: string | null) => void;
+  stageFilter: string | null;
+  onStageFilter: (v: string | null) => void;
   teamOptions: string[];
   showInactive: boolean;
   onToggleShowInactive: () => void;
   onInitialize: () => void;
 }) {
-  const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter;
+  const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter || !!props.stageFilter;
   return (
     <>
       <div className="flex items-center gap-2 mb-1.5">
@@ -729,6 +726,7 @@ function RankingFilterContent(props: {
               props.onSearch('');
               props.onTeamFilter(null);
               props.onPositionFilter(null);
+              props.onStageFilter(null);
             }}
             className="text-xs text-destructive flex items-center gap-0.5"
           >
@@ -736,6 +734,7 @@ function RankingFilterContent(props: {
           </button>
         )}
       </div>
+
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Team:</span>
         <Chip label="All" active={!props.teamFilter} onClick={() => props.onTeamFilter(null)} />
@@ -743,13 +742,27 @@ function RankingFilterContent(props: {
           <Chip key={t} label={t} active={props.teamFilter === t} onClick={() => props.onTeamFilter(props.teamFilter === t ? null : t)} />
         ))}
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
+
+      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Position:</span>
         <Chip label="All" active={!props.positionFilter} onClick={() => props.onPositionFilter(null)} />
         {ALL_POSITIONS.map((p) => (
           <Chip key={p} label={POS_SHORT[p] ?? p} active={props.positionFilter === p} onClick={() => props.onPositionFilter(props.positionFilter === p ? null : p)} />
         ))}
       </div>
+
+      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+        <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
+        {STAGE_FILTER_OPTIONS.map((s) => (
+          <Chip
+            key={s.key}
+            label={s.label}
+            active={props.stageFilter === s.key}
+            onClick={() => props.onStageFilter(props.stageFilter === s.key ? null : s.key)}
+          />
+        ))}
+      </div>
+
       <div className="flex items-center gap-2 mt-2">
         <button
           onClick={props.onToggleShowInactive}
@@ -761,6 +774,7 @@ function RankingFilterContent(props: {
         <button
           onClick={props.onInitialize}
           className="text-xs flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
+          title="Assigns initial section ranks to all unranked active players and applicants, ordered by ability."
         >
           <ListChecks className="h-3 w-3" /> Initialise
         </button>
@@ -790,7 +804,6 @@ function TierDivider({ group }: { group: string }) {
   );
 }
 
-// ── §2.1 — dnd-kit sortable row wrapper ──────────────────────────────────
 function SortableRankingRow(props: {
   player: Player;
   isFirst: boolean;
@@ -832,7 +845,6 @@ function SortableRankingRow(props: {
   );
 }
 
-// ── Shared row rendering (sortable rows + DragOverlay) ───────────────────
 function RankingRowInner(props: {
   player: Player;
   isFirst: boolean;
@@ -850,32 +862,46 @@ function RankingRowInner(props: {
   const rank = player.sectionRank ?? 0;
   const ability = player.playingAbility ?? '—';
   const abilityTone = getAbilityTone(ability);
+  const isApplicant = player.status === 'Applicant';
 
   return (
     <div
       data-rank={rank}
       style={props.style}
-      className={`flex items-center gap-2 py-1 px-2 bg-card border rounded-lg transition-colors ${
-        isDragging ? 'border-primary' : 'border-border'
-      }`}
+      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${
+        isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'
+      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
     >
-      {/* Drag handle — pointer events from dnd-kit, works on touch */}
       <div
         className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none"
         {...props.dragHandleProps}
       >
         <GripVertical className="h-4 w-4" />
       </div>
+
       <div className="w-8 text-center shrink-0">
-        <span className="text-sm font-bold text-foreground tabular-nums">{rank}</span>
+        <span className="text-sm font-bold text-foreground tabular-nums">{rank || '—'}</span>
       </div>
+
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate leading-tight">{nameOf(player)}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate leading-tight">{nameOf(player)}</p>
+          {isApplicant && (
+            <span
+              className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0"
+              title={player.applicantStage}
+            >
+              Applicant{player.applicantStage ? `· ${shortStage(player.applicantStage)}` : ''}
+            </span>
+          )}
+        </div>
         <p className="text-[11px] text-muted-foreground truncate leading-tight">
           {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'} · T#{player.teamRank ?? '–'} · P#{player.positionalRank ?? '–'}
         </p>
       </div>
+
       <AbilityBadge value={ability} tone={abilityTone} />
+
       <div className="relative">
         <button onClick={() => setMenuOpen((v) => !v)} className="p-1 text-muted-foreground hover:text-foreground" title="More actions">
           <Settings2 className="h-4 w-4" />
@@ -907,6 +933,7 @@ function RankingRowInner(props: {
           </>
         )}
       </div>
+
       <div className="flex flex-col gap-0.5">
         <button
           onClick={() => props.onMoveStep(player.id, 'up')}
@@ -949,7 +976,6 @@ function getAbilityTone(value: string): string {
   return 'bg-muted text-muted-foreground';
 }
 
-// ── §2.5 — Move-to-rank sheet with inline validation ─────────────────────
 function MoveToRankSheet({
   player,
   activeCount,
@@ -970,7 +996,7 @@ function MoveToRankSheet({
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Current rank: <span className="font-medium text-foreground">#{player.sectionRank}</span>. Allowed: 1 to {activeCount}.
+          Current rank: <span className="font-medium text-foreground">#{player.sectionRank || 'Unranked'}</span>. Allowed: 1 to {activeCount}.
         </p>
         <input
           type="number"
@@ -981,9 +1007,7 @@ function MoveToRankSheet({
             setValue(e.target.value);
             setError('');
           }}
-          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${
-            error ? 'border-destructive' : 'border-border'
-          }`}
+          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`}
         />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
@@ -1007,7 +1031,6 @@ function MoveToRankSheet({
   );
 }
 
-// ── §2.6 — Config sheet with stacked-bar visualization ───────────────────
 function ConfigSheet({
   config,
   activeCount,
@@ -1022,6 +1045,7 @@ function ConfigSheet({
   onSave: (config: AbilityGroupConfigMap) => void;
 }) {
   const [local, setLocal] = useState<AbilityGroupConfigMap>({ ...config });
+
   useEffect(() => {
     setLocal({ ...config });
   }, [config]);
@@ -1056,7 +1080,6 @@ function ConfigSheet({
         </div>
       </div>
 
-      {/* §2.6 — Stacked proportion bar */}
       <div className="mt-3 space-y-2">
         <div className="flex h-4 rounded-full overflow-hidden border border-border">
           {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => {
@@ -1109,7 +1132,6 @@ function ConfigSheet({
   );
 }
 
-// ── Inactive section ─────────────────────────────────────────────────────
 function InactiveSection({
   entries,
   loading,
@@ -1133,17 +1155,25 @@ function InactiveSection({
           {entries.map((e) => (
             <li key={e.id} className="flex items-center gap-2 py-1 px-2 bg-card border border-border rounded-lg">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{nameOf(e)}</p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{nameOf(e)}</p>
+                  {e.status === 'Applicant' && e.applicantStage && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0">
+                      {shortStage(e.applicantStage)}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-muted-foreground truncate">
                   {e.registeredTeam ?? '–'} · {POS_SHORT[e.playingPosition ?? ''] ?? '–'}
-                  {typeof e.lastSectionRank === 'number' ? ` · last rank #${e.lastSectionRank}` : ''}
+                  {typeof e.lastSectionRank === 'number' ? `· last rank #${e.lastSectionRank}` : ''}
                 </p>
               </div>
               <button
                 onClick={() => onReactivate(e)}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground"
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap"
               >
-                <UserPlus className="h-3.5 w-3.5" /> Reactivate
+                <UserPlus className="h-3.5 w-3.5" />
+                {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}
               </button>
             </li>
           ))}
@@ -1153,7 +1183,6 @@ function InactiveSection({
   );
 }
 
-// ── Modal sheet (bottom drawer) ──────────────────────────────────────────
 function ModalSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <>
@@ -1171,12 +1200,10 @@ function ModalSheet({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
-// ── Loading skeleton ─────────────────────────────────────────────────────
 function RankingSkeleton() {
   return (
     <div className="container mx-auto px-4 py-4 space-y-3">
       <Skeleton className="h-8 w-40" />
-      <Skeleton className="h-6 w-64" />
       <div className="pt-2 space-y-2">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-12 w-full rounded-lg" />

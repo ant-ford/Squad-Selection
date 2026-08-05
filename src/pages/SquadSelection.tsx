@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
 import { toast } from 'sonner';
@@ -30,15 +31,12 @@ export default function SquadSelection() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const side = (searchParams.get("side") as "home" | "away") || undefined;
-
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -106,17 +104,23 @@ export default function SquadSelection() {
   // Single sort: Selected first, then by Ability rank descending, then alphabetical
   const sortedPlayers = useMemo(() => {
     return [...filteredPlayers].sort((a, b) => {
-      // Selected players always at top
       const aSelected = a.selectionStatus === 'Selected' ? 1 : 0;
       const bSelected = b.selectionStatus === 'Selected' ? 1 : 0;
       if (aSelected !== bSelected) return bSelected - aSelected;
-      // Then by ability rank descending
       const abilityDiff = (ABILITY_RANK[b.playingAbility] ?? 0) - (ABILITY_RANK[a.playingAbility] ?? 0);
       if (abilityDiff !== 0) return abilityDiff;
-      // Tiebreak: alphabetical
       return a.preferredName.localeCompare(b.preferredName);
     });
   }, [filteredPlayers]);
+
+  // Virtualization: only ~15 rows in the DOM instead of the full squad list.
+  const listRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: sortedPlayers.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 72,
+    overscan: 10,
+  });
 
   const optimisticMatch = useMemo(() => {
     if (!data?.match) return null;
@@ -144,12 +148,10 @@ export default function SquadSelection() {
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
     if (!player || player.eligibilityStatus === 'blocked') return;
-
     const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
     const isCurrentlySelected = player.selectionStatus === 'Selected';
     const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
     const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
-
     if (serverMatchesIntended) {
       setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
     } else {
@@ -175,7 +177,6 @@ export default function SquadSelection() {
         actingEmail: user?.email,
         side: side,
       });
-
       const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
       queryClient.setQueryData(qk, (old: any) => {
         if (!old) return old;
@@ -188,7 +189,6 @@ export default function SquadSelection() {
           }))
         };
       });
-
       toast.success('Squad synced successfully');
       setPendingDeltas([]);
       setHasChanges(false);
@@ -237,9 +237,7 @@ export default function SquadSelection() {
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
-
       <MatchHeader match={optimisticMatch} />
-
       {optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
         <div className="container mx-auto px-4 pt-3">
           <RecommendationsPanel
@@ -250,9 +248,7 @@ export default function SquadSelection() {
           />
         </div>
       )}
-
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
-
       <div className="container mx-auto py-2 px-4 mb-1 flex items-center gap-3">
         <input
           type="checkbox"
@@ -263,19 +259,40 @@ export default function SquadSelection() {
         />
         <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
       </div>
-
-      {/* Player list — sorted: Selected first, then by Ability */}
-      <div className="container mx-auto px-4">
-        {sortedPlayers.map(p => (
-          <PlayerRow
-            key={p.id}
-            player={p}
-            selected={p.selectionStatus === 'Selected'}
-            onToggleSelection={() => handleToggleSelection(p.id)}
-          />
-        ))}
+      {/* Player list — virtualized; sorted: Selected first, then by Ability */}
+      <div ref={listRef} className="container mx-auto px-4 max-h-[70vh] overflow-y-auto">
+        {sortedPlayers.length === 0 ? (
+          <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
+            No players match the current filters.
+          </div>
+        ) : (
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const p = sortedPlayers[virtualRow.index];
+              return (
+                <div
+                  key={p.id}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <PlayerRow
+                    player={p}
+                    selected={p.selectionStatus === 'Selected'}
+                    onToggleSelection={() => handleToggleSelection(p.id)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
-
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
@@ -294,8 +311,6 @@ export default function SquadSelection() {
           </button>
         </div>
       )}
-
-      {/* §4.1 — Standardized confirmation dialog (replaces inline blocker modal) */}
       {blocker.state === 'blocked' && (
         <ConfirmDialog
           title="Discard unsaved changes?"

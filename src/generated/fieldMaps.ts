@@ -18,6 +18,8 @@ export const PEOPLE_FIELDS = {
   teamRank: "Team Rank",
   positionalRank: "Positional Rank",
   rankUpdatedAt: "Rank Updated At",
+  status: "Status",
+  applicantStage: "Applicant Stage",
 } as const;
 
 export const TEAMS_FIELDS = {

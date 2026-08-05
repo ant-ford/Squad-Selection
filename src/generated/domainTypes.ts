@@ -24,6 +24,11 @@ export interface Player {
   positionalRank?: number;
   /** ISO timestamp of the last rank change for this player. */
   rankUpdatedAt?: string;
+  /** People.Status — "Member" | "Applicant" | "Resigned". */
+  status?: string;
+  /** People.Applicant Stage — "1. Trial Application" … "6. Membership Officer (Signed)",
+   *  "Accepted" | "Pending" | "On Hold" | "Rejected" | "Temporary". */
+  applicantStage?: string;
 }
 
 export interface Team {
@@ -112,6 +117,10 @@ export interface InactiveRankingEntry {
   registeredTeam?: string;
   playingPosition?: string;
   lastSectionRank?: number;
+  /** People.Status — "Member" | "Applicant" | "Resigned". */
+  status?: string;
+  /** People.Applicant Stage. */
+  applicantStage?: string;
 }
 
 export interface RankingList {
@@ -119,4 +128,6 @@ export interface RankingList {
   activeCount: number;
   lastUpdated: string;
   config: AbilityGroupConfigMap;
+  /** Monotonic version identifier (timestamp) for stale detection and optimistic UI. */
+  version: number;
 }

@@ -12,10 +12,17 @@ export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const [activeTab, setActiveTab] = useState('all');
 
-  const filter = activeTab === 'all' ? undefined : activeTab;
-  const { data, isLoading } = useUpcomingFixtures(filter);
+  // Performance: fetch ALL coached fixtures once; tabs filter client-side.
+  // The Worker already returns every coached team's fixtures when no team
+  // param is passed, so per-tab requests were redundant round-trips that
+  // blanked the list behind skeletons on every tab switch.
+  const { data, isLoading } = useUpcomingFixtures();
+  const allFixtures = data?.fixtures || [];
 
-  const fixtures = data?.fixtures || [];
+  const fixtures = useMemo(() => {
+    if (activeTab === 'all') return allFixtures;
+    return allFixtures.filter((f) => f.hkfcTeam === activeTab);
+  }, [allFixtures, activeTab]);
 
   const coachTeams = profile?.coachTeams ?? [];
   const tabs = [
@@ -43,9 +50,7 @@ export default function FixtureList() {
                 key={t.key}
                 onClick={() => setActiveTab(t.key)}
                 className={`text-sm pb-2 whitespace-nowrap shrink-0 ${
-                  activeTab === t.key
-                    ? 'font-medium text-foreground border-b-2 border-primary'
-                    : 'text-muted-foreground'
+                  activeTab === t.key ? 'font-medium text-foreground border-b-2 border-primary' : 'text-muted-foreground'
                 }`}
               >
                 {t.label}
@@ -53,13 +58,10 @@ export default function FixtureList() {
             ))}
           </div>
         )}
-        
-        {/* Coach Export & Subscribe Buttons */}
         <div className="shrink-0">
           <CoachCalendarExport activeTab={activeTab} />
         </div>
       </div>
-
       {isLoading ? (
         <div className="space-y-3 pt-4">
           {[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full rounded-lg" />)}

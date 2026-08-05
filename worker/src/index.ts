@@ -31,8 +31,8 @@ import {
   activatePlayer,
   deactivatePlayer,
   initializeRanking,
-  recomputeDerivedFields,
 } from "./ranking";
+import { getEligibilityMetrics, resetEligibilityMetrics } from "./metrics";
 import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
 
 export type { Env };
@@ -58,6 +58,15 @@ export default {
       // ── Health Check ──────────────────────────────────────────────
       if (method === "GET" && pathname === "/health") {
         return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
+      }
+
+      // ── Eligibility operational metrics (aggregate counts only — no player data) ──
+      if (method === "GET" && pathname === "/api/eligibility-metrics") {
+        return json(getEligibilityMetrics(), 200, origin);
+      }
+      if (method === "POST" && pathname === "/api/eligibility-metrics/reset") {
+        resetEligibilityMetrics();
+        return json({ success: true }, 200, origin);
       }
 
       // ── Match / Squad ──────────────────────────────────────────────
@@ -183,15 +192,15 @@ export default {
           config: AbilityGroupConfigMap;
           actingEmail?: string;
         };
-        const config = await setAbilityGroupConfig(env, body.config, body.actingEmail);
-        // Respond immediately; re-rank all ability badges in the background.
-        ctx.waitUntil(recomputeDerivedFields(env));
-        return json(config, 200, origin);
+        // setAbilityGroupConfig now recomputes synchronously and returns the
+        // fully updated RankingList — no background recompute needed.
+        const rankingList = await setAbilityGroupConfig(env, body.config, body.actingEmail);
+        return json(rankingList, 200, origin);
       }
 
       if (method === "POST" && pathname === "/api/ranking/move") {
-        const body = (await readJsonBody(request)) as { playerId: string; newRank: number };
-        return json(await movePlayerToRank(env, body.playerId, body.newRank), 200, origin);
+        const body = (await readJsonBody(request)) as { playerId: string; newRank: number; actingEmail?: string };
+        return json(await movePlayerToRank(env, body.playerId, body.newRank, body.actingEmail), 200, origin);
       }
 
       if (method === "POST" && pathname === "/api/ranking/move-relative") {
@@ -199,27 +208,28 @@ export default {
           sourceId: string;
           targetId: string;
           position: "above" | "below";
+          actingEmail?: string;
         };
         return json(
-          await movePlayerRelative(env, body.sourceId, body.targetId, body.position),
+          await movePlayerRelative(env, body.sourceId, body.targetId, body.position, body.actingEmail),
           200,
           origin,
         );
       }
 
       if (method === "POST" && pathname === "/api/ranking/reorder") {
-        const body = (await readJsonBody(request)) as { playerIds: string[] };
-        return json(await reorderRanking(env, body.playerIds), 200, origin);
+        const body = (await readJsonBody(request)) as { playerIds: string[]; actingEmail?: string };
+        return json(await reorderRanking(env, body.playerIds, body.actingEmail), 200, origin);
       }
 
       if (method === "POST" && pathname === "/api/ranking/activate") {
-        const body = (await readJsonBody(request)) as { playerId: string };
-        return json(await activatePlayer(env, body.playerId), 200, origin);
+        const body = (await readJsonBody(request)) as { playerId: string; actingEmail?: string };
+        return json(await activatePlayer(env, body.playerId, body.actingEmail), 200, origin);
       }
 
       if (method === "POST" && pathname === "/api/ranking/deactivate") {
-        const body = (await readJsonBody(request)) as { playerId: string };
-        return json(await deactivatePlayer(env, body.playerId), 200, origin);
+        const body = (await readJsonBody(request)) as { playerId: string; actingEmail?: string };
+        return json(await deactivatePlayer(env, body.playerId, body.actingEmail), 200, origin);
       }
 
       if (method === "POST" && (pathname === "/api/ranking/initialize" || pathname === "/api/ranking/backfill")) {

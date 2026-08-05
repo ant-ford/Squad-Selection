@@ -30,8 +30,7 @@ async function getMatchRecord(env: Env, matchId: string): Promise<any> {
   return data;
 }
 
-// ── HKFC side resolution (unchanged) ────────────────────────────────────
-
+// ── HKFC side resolution ────────────────────────────────────────────────
 function resolveHkfcSide(match: Match, rankMap: Record<string, number>, side?: MatchSide): MatchSide {
   const home = match.homeTeam || "";
   const away = match.awayTeam || "";
@@ -57,8 +56,7 @@ function getSelectionFieldName(match: Match, rankMap: Record<string, number>, si
   return resolveHkfcSide(match, rankMap, side) === "home" ? MATCHES_FIELDS.selectedPlayersHome : MATCHES_FIELDS.selectedPlayersAway;
 }
 
-// ── Season-scoped fetches (unchanged cache keys) ────────────────────────
-
+// ── Season-scoped fetches ───────────────────────────────────────────────
 async function getAllMatches(env: Env, season: string): Promise<Match[]> {
   const { data } = await getCached<Match[]>(`all-matches:${season}`, async () => {
     const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
@@ -88,16 +86,11 @@ function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
 // Everything that depends only on the SEASON — exceptions, match cards, the
 // full fixture list, play-up indexes, completed-league-match counts and the
 // virtual-selection indexes — is built once per season and shared by every
-// match+side opened that season. Opening 6 fixtures no longer rebuilds the
-// same indexes 6 (or 12, with sides) times.
-//
-// Per-match work is reduced to slicing the same-day window out of these
-// pre-built indexes.
+// match+side opened that season.
 //
 // Cache key: `season-index:${season}` (10 minutes).
 // Invalidated by: syncSquad (selections changed), setAvailability and
 // setMyAvailability (exceptions changed).
-
 interface SeasonContext {
   exceptionsRaw: AvailabilityException[];
   exceptionIndex: { playerId: string; matchId: string; status: string }[];
@@ -119,9 +112,7 @@ async function getSeasonContext(env: Env, season: string): Promise<SeasonContext
       getMatchCardsForSeason(env, season),
       getAllMatches(env, season),
     ]);
-
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
-
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
     for (const card of matchCards) {
       const playerId = linkId(card.player);
@@ -130,9 +121,7 @@ async function getSeasonContext(env: Env, season: string): Promise<SeasonContext
       cards.push(card);
       matchCardsByPlayer.set(playerId, cards);
     }
-
     const completedLeagueMatchesByTeam = computeCompletedLeagueMatchCounts({ matchCards, matchesById });
-
     // Virtual selections + per-match and per-player indexes, built once.
     const virtualSelections: VirtualSelection[] = [];
     const selectionsByMatch = new Map<string, VirtualSelection[]>();
@@ -150,7 +139,6 @@ async function getSeasonContext(env: Env, season: string): Promise<SeasonContext
       }
       if (forMatch.length > 0) selectionsByMatch.set(m.id, forMatch);
     }
-
     const selectionsByPlayer = new Map<string, Set<string>>();
     for (const selection of virtualSelections) {
       const playerId = linkId(selection.player);
@@ -160,17 +148,14 @@ async function getSeasonContext(env: Env, season: string): Promise<SeasonContext
       playerSelections.add(`${selectedMatchId}:${selection.team}`);
       selectionsByPlayer.set(playerId, playerSelections);
     }
-
     const exceptionIndex = exceptionsRaw.map((e) => ({
       playerId: linkId(e.player) || "",
       matchId: linkId(e.match) || "",
       status: e.availabilityStatus || "Available",
     }));
-
     const unavailablePlayerMatchKeys = new Set(
       exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`)
     );
-
     return {
       exceptionsRaw,
       exceptionIndex,
@@ -198,16 +183,12 @@ async function buildEvaluationContext(
 ): Promise<{ ctx: EvaluationContext; exceptionsRaw: AvailabilityException[] }> {
   const currentSeason = match.season || "";
   const matchDate = match.matchDate || "";
-
   const season = await getSeasonContext(env, currentSeason);
-
   const playersById = new Map<string, Player>();
   for (const p of allPlayers) playersById.set(p.id, p);
 
-  // Same-day slice (excludes the target match) — identical semantics to the
-  // previous full-list filter, now read from the shared season context.
+  // Same-day slice (excludes the target match).
   const sameDayMatches = getSameDayMatches(season.allMatches, matchDate).filter((m) => m.id !== match.id);
-
   const sameDayFixtures = sameDayMatches.flatMap((item) => {
     const fixtures: { matchId: string; teamName: string }[] = [];
     if (teamRankMap[item.homeTeam || ""] !== undefined) fixtures.push({ matchId: item.id, teamName: item.homeTeam });
@@ -215,8 +196,7 @@ async function buildEvaluationContext(
     return fixtures;
   });
 
-  // Same-day team-selection index, assembled only from the day's matches
-  // using the pre-built per-match selection map.
+  // Same-day team-selection index, assembled only from the day's matches.
   const sameDaySelectionsByTeam = new Map<string, Set<string>>();
   for (const sdm of sameDayMatches) {
     const selections = season.selectionsByMatch.get(sdm.id);
@@ -252,15 +232,12 @@ async function buildEvaluationContext(
 }
 
 // ── Public endpoints ────────────────────────────────────────────────────
-
 export async function getPlayersForMatch(env: Env, matchId: string, side?: "home" | "away") {
   const ref = await getReferenceData(env);
   const { teamRankMap, teams } = ref;
   const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
-
   const matchRecord = await getMatchRecord(env, matchId);
   const match = mapMatch(matchRecord);
-
   const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
@@ -269,7 +246,6 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     const { ctx, exceptionsRaw } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
     return { ctx, allPlayers: ref.players, allExceptions: exceptionsRaw };
   }, 5 * 60 * 1000);
-
   const { ctx, allPlayers, allExceptions } = heavyData;
 
   const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
@@ -288,7 +264,10 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     const playerNotes = exc?.note || exc?.playerNotes || "";
     const eligibility = evaluatePlayerEligibility(p, match, ctx);
     const name = [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player";
-    const blocks = eligibility.status === "blocked" && eligibility.reason ? [{ rule: "", reason: eligibility.reason }] : [];
+    // Blocks carry the stable internal ruleId alongside the exact reason string.
+    const blocks = eligibility.status === "blocked" && eligibility.reason
+      ? [{ rule: eligibility.ruleId ?? "", reason: eligibility.reason }]
+      : [];
     const conflicts: { type: string; team: string; matchId: string }[] = [];
     if (eligibility.selectedByTeam) conflicts.push({ type: "selected", team: eligibility.selectedByTeam, matchId: "" });
     if (eligibility.sameDayHigherTeam) conflicts.push({ type: "available", team: eligibility.sameDayHigherTeam, matchId: "" });
@@ -334,19 +313,16 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
     selectedCount: selectedPlayerIds.size,
   };
-
   return { match: matchInfo, players };
 }
 
 export async function syncSquad(env: Env, matchId: string, targetPlayerIds: string[], actingEmail?: string, side?: MatchSide) {
   if (!Array.isArray(targetPlayerIds)) throw new HttpError("selectedIds must be an array", 400);
-
   // WRITE PATH: always read the record fresh — never from the 30s cache —
   // so the derby-safety merge below operates on the current opposite side.
   const matchRecord = await airtableFindById(env, TABLES.match, matchId);
   if (!matchRecord) throw new HttpError("Match not found", 404);
   const match = mapMatch(matchRecord);
-
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
@@ -358,23 +334,15 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
     const oppositeCurrent = side === "home" ? match.selectedPlayersAway : match.selectedPlayersHome;
     updates[oppositeField] = (oppositeCurrent || []).filter((id) => !cleanIds.includes(id));
   }
-
   await airtableUpdate(env, TABLES.match, matchId, updates);
 
   // Invalidation fan-out (Invariant #11). Every cache that can now be stale:
-  //   match:${matchId}        → the record we just wrote
-  //   season-index:${season}  → virtual selections / same-day indexes
-  //   all-matches:${season}   → raw season fixture list
-  //   players-for-match:*     → annotated output for this match and every
-  //                              same-day match (cross-team rules read it)
-  //   calendar:*              → ICS feeds embed the selected squad
   const season = match.season || "";
   const allMatchesInSeason = await getAllMatches(env, season);
   const affectedMatchIds = new Set([
     matchId,
     ...getSameDayMatches(allMatchesInSeason, match.matchDate || "").map((m) => m.id),
   ]);
-
   invalidateCache(`match:${matchId}`);
   invalidateCachePrefix("season-index:");
   invalidateCache(`all-matches:${season}`);
