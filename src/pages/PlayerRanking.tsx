@@ -29,7 +29,6 @@ import {
   UserMinus,
   UserPlus,
   GripVertical,
-  ListChecks,
   Loader2,
   Filter,
 } from 'lucide-react';
@@ -43,7 +42,6 @@ import {
   useActivatePlayer,
   useDeactivatePlayer,
   useInactiveRanking,
-  useInitializeRanking,
   useRanking,
   useReorderRanking,
   useUpdateAbilityConfig,
@@ -70,21 +68,19 @@ const GROUP_COLORS: Record<string, string> = {
   E: '#eab308', F: '#f97316', G: '#ef4444',
 };
 
-const STAGE_FILTER_OPTIONS = [
-  { key: 'None', label: 'None', minOrdinal: -1 },
-  { key: 'Trial Application', label: 'Trial Application', minOrdinal: 1 },
-  { key: 'Sponsoring', label: 'Sponsoring', minOrdinal: 2 },
-] as const;
+/** Ordinal of the terminal "Accepted" stage — these applicants are categorised as Members. */
+const ACCEPTED_STAGE_ORDINAL = 7;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function stageOrdinal(stage?: string): number {
   if (!stage) return -1;
-  const m = /^(\d+)./.exec(stage);
+  if (stage === 'Accepted') return ACCEPTED_STAGE_ORDINAL;
+  const m = /^(\d+)\./.exec(stage);
   return m ? Number(m[1]) : -1;
 }
 
 function shortStage(s?: string): string {
-  return s ? s.replace(/^\d+.\s*/, '') : '';
+  return s ? s.replace(/^\d+\.\s*/, '') : '';
 }
 
 function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: number) {
@@ -140,7 +136,6 @@ export default function PlayerRanking() {
   const reorder = useReorderRanking();
   const activate = useActivatePlayer();
   const deactivate = useDeactivatePlayer();
-  const initialize = useInitializeRanking();
   const updateConfig = useUpdateAbilityConfig();
 
   // ── Filter / UI state ──────────────────────────────────────────────────
@@ -156,23 +151,22 @@ export default function PlayerRanking() {
 
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
-  const [stageFilter, setStageFilter] = useState<string | null>(null);
+  // Applicant visibility buckets — both selected by default.
+  const [showTrialApplicants, setShowTrialApplicants] = useState(true);
+  const [showSponsoringApplicants, setShowSponsoringApplicants] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [moveToRankPlayer, setMoveToRankPlayer] = useState<Player | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ playerId: string; label: string } | null>(null);
-  const [confirmInitialize, setConfirmInitialize] = useState(false);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
-
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
-
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
@@ -216,13 +210,22 @@ export default function PlayerRanking() {
 
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const minOrdinal = stageFilter ? STAGE_FILTER_OPTIONS.find(o => o.key === stageFilter)?.minOrdinal ?? -1 : -1;
-
     return displayPlayers.filter((p) => {
+      // Rejected applicants are never shown.
       if (p.applicantStage === 'Rejected') return false;
-      if (minOrdinal !== -1 && p.status === 'Applicant') {
+      // Applicant visibility buckets. Members and Accepted applicants
+      // (categorised as Members) are always shown.
+      if (p.status === 'Applicant') {
         const ord = stageOrdinal(p.applicantStage);
-        if (ord === -1 || ord < minOrdinal) return false;
+        if (ord !== ACCEPTED_STAGE_ORDINAL) {
+          if (ord >= 2) {
+            // Sponsoring pipeline (stages 2–6)
+            if (!showSponsoringApplicants) return false;
+          } else {
+            // Trial Application (stage 1) and pre-stage states (Pending / On Hold / Temporary)
+            if (!showTrialApplicants) return false;
+          }
+        }
       }
       if (teamFilter && p.registeredTeam !== teamFilter) return false;
       if (positionFilter && p.playingPosition !== positionFilter) return false;
@@ -232,7 +235,7 @@ export default function PlayerRanking() {
       }
       return true;
     });
-  }, [displayPlayers, teamFilter, positionFilter, search, stageFilter]);
+  }, [displayPlayers, teamFilter, positionFilter, search, showTrialApplicants, showSponsoringApplicants]);
 
   const modifiedCount = useMemo(() => {
     if (!draftIds) return 0;
@@ -243,8 +246,10 @@ export default function PlayerRanking() {
     }
     return count;
   }, [draftIds, displayPlayers, playersById]);
-
   const hasChanges = modifiedCount > 0;
+
+  // True when the applicant buckets deviate from the default (both visible).
+  const applicantsHidden = !showTrialApplicants || !showSponsoringApplicants;
 
   const virtualizer = useVirtualizer({
     count: filteredPlayers.length,
@@ -278,6 +283,7 @@ export default function PlayerRanking() {
     };
   }, []);
 
+  // ── Draft mutations (all local until Save) ─────────────────────────────
   const reorderDraft = useCallback(
     (sourceId: string, targetId: string, before: boolean) => {
       if (sourceId === targetId) return;
@@ -317,16 +323,15 @@ export default function PlayerRanking() {
     [filteredPlayers, reorderDraft],
   );
 
+  // ── dnd-kit handlers ───────────────────────────────────────────────────
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
   );
-
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
   }, []);
-
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
@@ -342,11 +347,11 @@ export default function PlayerRanking() {
     },
     [filteredPlayers, reorderDraft],
   );
-
   const handleDragCancel = useCallback(() => {
     setActiveDragId(null);
   }, []);
 
+  // ── Save / Discard ─────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!draftIds || modifiedCount === 0) return;
     try {
@@ -373,6 +378,7 @@ export default function PlayerRanking() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasChanges]);
 
+  // ── Other actions ──────────────────────────────────────────────────────
   const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
 
@@ -422,20 +428,7 @@ export default function PlayerRanking() {
     [activate],
   );
 
-  const handleInitialize = useCallback(() => {
-    setConfirmInitialize(true);
-  }, []);
-
-  const executeInitialize = useCallback(async () => {
-    try {
-      const result = await initialize.mutateAsync();
-      setDraftIds(null);
-      toast.success(`Ranking initialised (${result.activeCount} active players)`);
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to initialise ranking');
-    }
-  }, [initialize]);
-
+  // ── Render ─────────────────────────────────────────────────────────────
   if (ranking.isLoading) return <RankingSkeleton />;
   if (ranking.isError) {
     return (
@@ -459,12 +452,21 @@ export default function PlayerRanking() {
     onTeamFilter: setTeamFilter,
     positionFilter,
     onPositionFilter: setPositionFilter,
-    stageFilter,
-    onStageFilter: setStageFilter,
+    showTrialApplicants,
+    showSponsoringApplicants,
+    onNoneApplicants: () => {
+      setShowTrialApplicants(false);
+      setShowSponsoringApplicants(false);
+    },
+    onToggleTrialApplicants: () => setShowTrialApplicants((v) => !v),
+    onToggleSponsoringApplicants: () => setShowSponsoringApplicants((v) => !v),
+    onResetApplicants: () => {
+      setShowTrialApplicants(true);
+      setShowSponsoringApplicants(true);
+    },
     teamOptions,
     showInactive,
     onToggleShowInactive: () => setShowInactive((v) => !v),
-    onInitialize: handleInitialize,
   };
 
   return (
@@ -497,7 +499,7 @@ export default function PlayerRanking() {
             >
               <Filter className="h-4 w-4" />
               Filters
-              {(search || teamFilter || positionFilter || stageFilter) && ' (active)'}
+              {(search || teamFilter || positionFilter || applicantsHidden) && ' (active)'}
             </button>
           </div>
           <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
@@ -657,16 +659,6 @@ export default function PlayerRanking() {
         />
       )}
 
-      {confirmInitialize && (
-        <ConfirmDialog
-          title="Initialize ranking"
-          message="Automatically assign ranks to all unranked active players and applicants, ordered by playing ability. Existing ranks are preserved."
-          confirmLabel="Initialize"
-          onConfirm={executeInitialize}
-          onCancel={() => setConfirmInitialize(false)}
-        />
-      )}
-
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
           <div className="flex-1 text-sm text-muted-foreground">
@@ -702,14 +694,18 @@ function RankingFilterContent(props: {
   onTeamFilter: (v: string | null) => void;
   positionFilter: string | null;
   onPositionFilter: (v: string | null) => void;
-  stageFilter: string | null;
-  onStageFilter: (v: string | null) => void;
+  showTrialApplicants: boolean;
+  showSponsoringApplicants: boolean;
+  onNoneApplicants: () => void;
+  onToggleTrialApplicants: () => void;
+  onToggleSponsoringApplicants: () => void;
+  onResetApplicants: () => void;
   teamOptions: string[];
   showInactive: boolean;
   onToggleShowInactive: () => void;
-  onInitialize: () => void;
 }) {
-  const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter || !!props.stageFilter;
+  const applicantsHidden = !props.showTrialApplicants || !props.showSponsoringApplicants;
+  const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter || applicantsHidden;
   return (
     <>
       <div className="flex items-center gap-2 mb-1.5">
@@ -726,7 +722,7 @@ function RankingFilterContent(props: {
               props.onSearch('');
               props.onTeamFilter(null);
               props.onPositionFilter(null);
-              props.onStageFilter(null);
+              props.onResetApplicants();
             }}
             className="text-xs text-destructive flex items-center gap-0.5"
           >
@@ -734,7 +730,6 @@ function RankingFilterContent(props: {
           </button>
         )}
       </div>
-
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Team:</span>
         <Chip label="All" active={!props.teamFilter} onClick={() => props.onTeamFilter(null)} />
@@ -742,7 +737,6 @@ function RankingFilterContent(props: {
           <Chip key={t} label={t} active={props.teamFilter === t} onClick={() => props.onTeamFilter(props.teamFilter === t ? null : t)} />
         ))}
       </div>
-
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Position:</span>
         <Chip label="All" active={!props.positionFilter} onClick={() => props.onPositionFilter(null)} />
@@ -750,24 +744,24 @@ function RankingFilterContent(props: {
           <Chip key={p} label={POS_SHORT[p] ?? p} active={props.positionFilter === p} onClick={() => props.onPositionFilter(props.positionFilter === p ? null : p)} />
         ))}
       </div>
-
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
-        {STAGE_FILTER_OPTIONS.map((s) => {
-          const isActive = props.stageFilter === s.key;
-          // Highlight "Sponsoring" when "Trial Application" is selected to show cumulative filtering
-          const isHighlighted = props.stageFilter === 'Trial Application' && s.key === 'Sponsoring';
-          return (
-            <Chip
-              key={s.key}
-              label={s.label}
-              active={isActive || isHighlighted}
-              onClick={() => props.onStageFilter(props.stageFilter === s.key ? null : s.key)}
-            />
-          );
-        })}
+        <Chip
+          label="None"
+          active={!props.showTrialApplicants && !props.showSponsoringApplicants}
+          onClick={props.onNoneApplicants}
+        />
+        <Chip
+          label="Trial Application"
+          active={props.showTrialApplicants}
+          onClick={props.onToggleTrialApplicants}
+        />
+        <Chip
+          label="Sponsoring"
+          active={props.showSponsoringApplicants}
+          onClick={props.onToggleSponsoringApplicants}
+        />
       </div>
-
       <div className="flex items-center gap-2 mt-2">
         <button
           onClick={props.onToggleShowInactive}
@@ -776,13 +770,6 @@ function RankingFilterContent(props: {
           {props.showInactive ? 'Hide inactive' : 'Show inactive'}
         </button>
         <div className="flex-1" />
-        <button
-          onClick={props.onInitialize}
-          className="text-xs flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
-          title="Automatically assigns initial section ranks to all unranked active players and applicants, ordered by playing ability."
-        >
-          <ListChecks className="h-3 w-3" /> Initialise
-        </button>
       </div>
     </>
   );
@@ -883,11 +870,9 @@ function RankingRowInner(props: {
       >
         <GripVertical className="h-4 w-4" />
       </div>
-
       <div className="w-8 text-center shrink-0">
         <span className="text-sm font-bold text-foreground tabular-nums">{rank || '—'}</span>
       </div>
-
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-sm font-medium text-foreground truncate leading-tight">{nameOf(player)}</p>
@@ -896,7 +881,7 @@ function RankingRowInner(props: {
               className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0"
               title={player.applicantStage}
             >
-              Applicant{player.applicantStage ? `· ${shortStage(player.applicantStage)}` : ''}
+              Applicant{player.applicantStage ? ` · ${shortStage(player.applicantStage)}` : ''}
             </span>
           )}
         </div>
@@ -904,17 +889,15 @@ function RankingRowInner(props: {
           {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'} · T#{player.teamRank ?? '–'} · P#{player.positionalRank ?? '–'}
         </p>
       </div>
-
       <AbilityBadge value={ability} tone={abilityTone} />
-
       <div className="relative">
         <button onClick={() => setMenuOpen((v) => !v)} className="p-1 text-muted-foreground hover:text-foreground" title="More actions">
           <Settings2 className="h-4 w-4" />
         </button>
         {menuOpen && (
           <>
-            <div className="fixed inset-0 z-[60]" onClick={() => setMenuOpen(false)} />
-            <div className="absolute right-0 top-7 z-[61] w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
+            <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
               <button
                 onClick={() => {
                   setMenuOpen(false);
@@ -938,7 +921,6 @@ function RankingRowInner(props: {
           </>
         )}
       </div>
-
       <div className="flex flex-col gap-0.5">
         <button
           onClick={() => props.onMoveStep(player.id, 'up')}
@@ -996,7 +978,6 @@ function MoveToRankSheet({
   const [error, setError] = useState('');
   const n = Number(value);
   const isValid = Number.isInteger(n) && n >= 1 && n <= activeCount;
-
   return (
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
@@ -1030,6 +1011,7 @@ function MoveToRankSheet({
             Move
           </Button>
         </div>
+        <p className="text-[11px] text-muted-foreground">Staged — remember to press Save.</p>
       </div>
     </ModalSheet>
   );
@@ -1049,7 +1031,6 @@ function ConfigSheet({
   onSave: (config: AbilityGroupConfigMap) => void;
 }) {
   const [local, setLocal] = useState<AbilityGroupConfigMap>({ ...config });
-  
   useEffect(() => {
     setLocal({ ...config });
   }, [config]);
@@ -1083,7 +1064,6 @@ function ConfigSheet({
           <span className="text-xs text-muted-foreground w-10 text-right">rest</span>
         </div>
       </div>
-
       <div className="mt-3 space-y-2">
         <div className="flex h-4 rounded-full overflow-hidden border border-border">
           {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => {
@@ -1119,7 +1099,6 @@ function ConfigSheet({
           <span>H</span>
         </div>
       </div>
-
       <div className="flex gap-2 mt-4">
         <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>
           Cancel
@@ -1169,7 +1148,7 @@ function InactiveSection({
                 </div>
                 <p className="text-[11px] text-muted-foreground truncate">
                   {e.registeredTeam ?? '–'} · {POS_SHORT[e.playingPosition ?? ''] ?? '–'}
-                  {typeof e.lastSectionRank === 'number' ? `· last rank #${e.lastSectionRank}` : ''}
+                  {typeof e.lastSectionRank === 'number' ? ` · last rank #${e.lastSectionRank}` : ''}
                 </p>
               </div>
               <button
