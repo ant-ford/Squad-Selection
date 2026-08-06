@@ -1,11 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { LogOut, User, ListChecks } from 'lucide-react';
+import { LogOut, User, ListChecks, LayoutDashboard } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 
 export default function AppHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const isDashboard = location.pathname === '/coach' || location.pathname === '/coach/fixtures';
   const isRanking = location.pathname === '/coach/ranking';
 
   const logout = async () => {
@@ -15,34 +16,28 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
 
   const teamNames = profile.coachTeams.map(t => t.teamName).join(', ');
 
+  const navBtn = (active: boolean) =>
+    `flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
+      active
+        ? 'bg-secondary text-secondary-foreground'
+        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+    }`;
+
   return (
-    <header className="w-full border-b border-border bg-background">
+    <header className="w-full border-b border-border bg-card">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {/* Primary logo - clean version */}
-          <div className="h-8 w-8">
-            <img
-              src="/assets/logo-plain.svg"
-              alt="Eddy"
-              className="h-full w-full object-contain"
-            />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-foreground">HKFC Squad Selection</p>
-            <p className="text-sm text-muted-foreground">
-              {teamNames ? `Coaching: ${teamNames}` : 'No teams assigned'}
-            </p>
-          </div>
+        <div>
+          <p className="text-lg font-semibold text-foreground">HKFC Squad Selection</p>
+          <p className="text-sm text-muted-foreground">
+            {teamNames ? `Coaching: ${teamNames}` : 'No teams assigned'}
+          </p>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => navigate('/coach/ranking')}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors ${
-              isRanking
-                ? 'bg-secondary text-secondary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
+          <button onClick={() => navigate('/coach')} className={navBtn(isDashboard)}>
+            <LayoutDashboard className="h-3.5 w-3.5" />
+            Dashboard
+          </button>
+          <button onClick={() => navigate('/coach/ranking')} className={navBtn(isRanking)}>
             <ListChecks className="h-3.5 w-3.5" />
             Ranking
           </button>
@@ -54,7 +49,7 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
             Player View
           </button>
           <button
-            onClick={() => logout()}
+            onClick={logout}
             className="p-2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <LogOut className="h-4 w-4" />

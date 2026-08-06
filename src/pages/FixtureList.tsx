@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { useUpcomingFixtures } from '@/lib/queries';
 import { safeFormat, isPastFixture } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,8 +10,51 @@ import { CoachCalendarExport } from '@/components/CoachCalendarExport';
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
-  const [activeTab, setActiveTab] = useState('all');
-  const [showPast, setShowPast] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize state from URL parameters
+  const teamFromUrl = searchParams.get('team') || 'all';
+  const [activeTab, setActiveTab] = useState(teamFromUrl);
+  const [showPast, setShowPast] = useState(searchParams.get('past') === '1');
+
+  // Sync URL when activeTab changes
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    const newParams = new URLSearchParams(searchParams);
+    if (tab === 'all') {
+      newParams.delete('team');
+    } else {
+      newParams.set('team', tab);
+    }
+    setSearchParams(newParams, { replace: true });
+  };
+
+  // Sync URL when showPast changes
+  const handleTogglePast = () => {
+    setShowPast(prev => {
+      const next = !prev;
+      const newParams = new URLSearchParams(searchParams);
+      if (next) {
+        newParams.set('past', '1');
+      } else {
+        newParams.delete('past');
+      }
+      setSearchParams(newParams, { replace: true });
+      return next;
+    });
+  };
+
+  // Keep state in sync if URL changes externally (e.g., browser back/forward buttons)
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('team') || 'all';
+    if (tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+    const pastFromUrl = searchParams.get('past') === '1';
+    if (pastFromUrl !== showPast) {
+      setShowPast(pastFromUrl);
+    }
+  }, [searchParams, activeTab, showPast]);
 
   // Performance: fetch ALL coached fixtures once; tabs filter client-side.
   // The Worker already returns every coached team's fixtures when no team
@@ -52,9 +95,11 @@ export default function FixtureList() {
             {tabs.map(t => (
               <button
                 key={t.key}
-                onClick={() => setActiveTab(t.key)}
+                onClick={() => handleTabChange(t.key)}
                 className={`text-sm pb-2 whitespace-nowrap shrink-0 ${
-                  activeTab === t.key ? 'font-medium text-foreground border-b-2 border-primary' : 'text-muted-foreground'
+                  activeTab === t.key
+                    ? 'font-medium text-foreground border-b-2 border-primary'
+                    : 'text-muted-foreground'
                 }`}
               >
                 {t.label}
@@ -64,8 +109,10 @@ export default function FixtureList() {
         )}
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={() => setShowPast((v) => !v)}
-            className={`text-xs px-2 py-1 rounded-md ${showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+            onClick={handleTogglePast}
+            className={`text-xs px-2 py-1 rounded-md ${
+              showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+            }`}
             title={showPast ? 'Hide past fixtures' : 'Show past fixtures'}
           >
             {showPast ? 'Showing past' : 'Hide past'}
@@ -75,13 +122,20 @@ export default function FixtureList() {
       </div>
       {isLoading ? (
         <div className="space-y-3 pt-4">
-          {[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full rounded-lg" />)}
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          ))}
         </div>
       ) : fixtures.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-muted-foreground">{showPast ? 'No fixtures found' : 'No upcoming fixtures found'}</p>
+          <p className="text-muted-foreground">
+            {showPast ? 'No fixtures found' : 'No upcoming fixtures found'}
+          </p>
           {showPast && (
-            <button onClick={() => setShowPast(false)} className="mt-2 text-sm text-primary hover:underline">
+            <button
+              onClick={handleTogglePast}
+              className="mt-2 text-sm text-primary hover:underline"
+            >
               Show upcoming fixtures
             </button>
           )}

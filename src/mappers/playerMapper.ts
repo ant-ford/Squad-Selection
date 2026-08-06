@@ -1,17 +1,18 @@
 import { Player } from "../generated/domainTypes";
 import { PEOPLE_FIELDS } from "../generated/fieldMaps";
 
-/**
- * Coerce an Airtable cell value to a non-negative integer or `undefined`.
- * Used for the numeric ranking fields, where Airtable may return `null`,
- * an empty string, or a numeric string depending on whether the value has
- * ever been set.
- */
 function toOptionalInt(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const n = Number(value);
   if (!Number.isFinite(n)) return undefined;
   return Math.trunc(n);
+}
+
+/** Airtable attachment fields come back as an array of attachment objects. */
+function firstAttachmentUrl(value: unknown): string | undefined {
+  if (Array.isArray(value) && value.length > 0 && value[0]?.url) return value[0].url;
+  if (typeof value === "string" && value) return value;
+  return undefined;
 }
 
 export function mapPlayer(record: any): Player {
@@ -43,5 +44,8 @@ export function mapPlayer(record: any): Player {
     rankUpdatedAt: f[PEOPLE_FIELDS.rankUpdatedAt] || undefined,
     status: f[PEOPLE_FIELDS.status],
     applicantStage: f[PEOPLE_FIELDS.applicantStage],
+    photo: firstAttachmentUrl(f[PEOPLE_FIELDS.photo]),
+    sportsBackground: f[PEOPLE_FIELDS.sportsBackground] || undefined,
+    selectionComments: f[PEOPLE_FIELDS.selectionComments] || undefined,
   };
 }

@@ -2,35 +2,15 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  MeasuringStrategy,
-  type DragStartEvent,
-  type DragEndEvent,
+  DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors,
+  MeasuringStrategy, type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  ArrowLeft,
-  Search,
-  Settings2,
-  X,
-  ChevronUp,
-  ChevronDown,
-  UserMinus,
-  UserPlus,
-  GripVertical,
-  Loader2,
-  Filter,
+  ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserMinus, UserPlus,
+  GripVertical, Loader2, Filter, FileText, MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -38,51 +18,32 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
-  useAbilityGroupConfig,
-  useActivatePlayer,
-  useDeactivatePlayer,
-  useInactiveRanking,
-  useRanking,
-  useReorderRanking,
-  useUpdateAbilityConfig,
+  useAbilityGroupConfig, useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
+  useRanking, useReorderRanking, useUpdateAbilityConfig,
 } from '@/lib/queries';
 import { emptyConfig, computeAbilityAssignment } from '../../worker/src/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
-import type {
-  AbilityGroupConfigMap,
-  InactiveRankingEntry,
-  Player,
-} from '@/generated/domainTypes';
+import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@/generated/domainTypes';
 
-// ── Constants ────────────────────────────────────────────────────────────
 const POS_SHORT: Record<string, string> = {
-  Defender: 'DEF',
-  Midfielder: 'MID',
-  Forward: 'FWD',
-  Goalkeeper: 'GK',
-  'Flexible/Varies': 'FLEX',
+  Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
 };
 const ALL_POSITIONS = Object.keys(POS_SHORT);
 const GROUP_COLORS: Record<string, string> = {
   A: '#3b82f6', B: '#06b6d4', C: '#14b8a6', D: '#22c55e',
   E: '#eab308', F: '#f97316', G: '#ef4444',
 };
-
-/** Ordinal of the terminal "Accepted" stage — these applicants are categorised as Members. */
 const ACCEPTED_STAGE_ORDINAL = 7;
 
-// ── Helpers ──────────────────────────────────────────────────────────────
 function stageOrdinal(stage?: string): number {
   if (!stage) return -1;
   if (stage === 'Accepted') return ACCEPTED_STAGE_ORDINAL;
   const m = /^(\d+)\./.exec(stage);
   return m ? Number(m[1]) : -1;
 }
-
 function shortStage(s?: string): string {
   return s ? s.replace(/^\d+\.\s*/, '') : '';
 }
-
 function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: number) {
   const boundaries: { group: string; start: number; end: number }[] = [];
   let cursor = 0;
@@ -97,7 +58,6 @@ function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: numb
   }
   return boundaries;
 }
-
 function nameOf(p: Player | InactiveRankingEntry): string {
   const a = (p.preferredName ?? '').trim();
   const b = (p.surname ?? '').trim();
@@ -108,23 +68,19 @@ function nameOf(p: Player | InactiveRankingEntry): string {
   if (c) return c;
   return 'Unknown';
 }
-
+function initialsOf(p: Player): string {
+  return (nameOf(p).split(' ').map((w) => w[0]).join('').slice(0, 2) || '?').toUpperCase();
+}
 function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGroupBoundaries>) {
   const rank = player.sectionRank ?? 0;
-  for (const b of boundaries) {
-    if (rank >= b.start && rank <= b.end) return b.group;
-  }
+  for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
   return 'H';
 }
-
 function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGroupBoundaries>): string {
-  for (const b of boundaries) {
-    if (rank >= b.start && rank <= b.end) return b.group;
-  }
+  for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
   return 'H';
 }
 
-// ── Main component ───────────────────────────────────────────────────────
 export default function PlayerRanking() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -138,20 +94,15 @@ export default function PlayerRanking() {
   const deactivate = useDeactivatePlayer();
   const updateConfig = useUpdateAbilityConfig();
 
-  // ── Filter / UI state ──────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  // Search debounce (200ms)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-    }, 200);
+    const timer = setTimeout(() => setSearch(searchInput), 200);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
   const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
-  // Applicant visibility buckets — both selected by default.
   const [showTrialApplicants, setShowTrialApplicants] = useState(true);
   const [showSponsoringApplicants, setShowSponsoringApplicants] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
@@ -160,6 +111,7 @@ export default function PlayerRanking() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ playerId: string; label: string } | null>(null);
+  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   useEffect(() => {
@@ -171,7 +123,6 @@ export default function PlayerRanking() {
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
 
-  // ── Derived data ───────────────────────────────────────────────────────
   const data = ranking.data;
   const players = data?.players ?? [];
   const config = data?.config ?? (configQuery.data as AbilityGroupConfigMap | undefined) ?? emptyConfig();
@@ -197,10 +148,7 @@ export default function PlayerRanking() {
     });
   }, [draftIds, players, playersById, config]);
 
-  const boundaries = useMemo(
-    () => computeGroupBoundaries(config, totalActive),
-    [config, totalActive],
-  );
+  const boundaries = useMemo(() => computeGroupBoundaries(config, totalActive), [config, totalActive]);
 
   const teamOptions = useMemo(() => {
     const set = new Set<string>();
@@ -211,20 +159,12 @@ export default function PlayerRanking() {
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return displayPlayers.filter((p) => {
-      // Rejected applicants are never shown.
       if (p.applicantStage === 'Rejected') return false;
-      // Applicant visibility buckets. Members and Accepted applicants
-      // (categorised as Members) are always shown.
       if (p.status === 'Applicant') {
         const ord = stageOrdinal(p.applicantStage);
         if (ord !== ACCEPTED_STAGE_ORDINAL) {
-          if (ord >= 2) {
-            // Sponsoring pipeline (stages 2–6)
-            if (!showSponsoringApplicants) return false;
-          } else {
-            // Trial Application (stage 1) and pre-stage states (Pending / On Hold / Temporary)
-            if (!showTrialApplicants) return false;
-          }
+          if (ord >= 2) { if (!showSponsoringApplicants) return false; }
+          else if (!showTrialApplicants) return false;
         }
       }
       if (teamFilter && p.registeredTeam !== teamFilter) return false;
@@ -247,8 +187,6 @@ export default function PlayerRanking() {
     return count;
   }, [draftIds, displayPlayers, playersById]);
   const hasChanges = modifiedCount > 0;
-
-  // True when the applicant buckets deviate from the default (both visible).
   const applicantsHidden = !showTrialApplicants || !showSponsoringApplicants;
 
   const virtualizer = useVirtualizer({
@@ -269,89 +207,58 @@ export default function PlayerRanking() {
       for (const row of rows) {
         const rect = row.getBoundingClientRect();
         if (rect.bottom > containerTop + 48) {
-          const rank = Number(row.getAttribute('data-rank'));
-          setCurrentGroup(getGroupForRank(rank, boundaries));
+          setCurrentGroup(getGroupForRank(Number(row.getAttribute('data-rank')), boundaries));
           return;
         }
       }
     });
   }, [boundaries]);
+  useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
-  useEffect(() => {
-    return () => {
-      if (rafId.current) cancelAnimationFrame(rafId.current);
-    };
-  }, []);
+  const reorderDraft = useCallback((sourceId: string, targetId: string, before: boolean) => {
+    if (sourceId === targetId) return;
+    setDraftIds((prev) => {
+      const base = prev ?? players.map((p) => p.id);
+      const next = base.filter((id) => id !== sourceId);
+      const ti = next.indexOf(targetId);
+      if (ti === -1) return prev;
+      next.splice(before ? ti : ti + 1, 0, sourceId);
+      return next;
+    });
+  }, [players]);
 
-  // ── Draft mutations (all local until Save) ─────────────────────────────
-  const reorderDraft = useCallback(
-    (sourceId: string, targetId: string, before: boolean) => {
-      if (sourceId === targetId) return;
-      setDraftIds((prev) => {
-        const base = prev ?? players.map((p) => p.id);
-        const next = base.filter((id) => id !== sourceId);
-        const ti = next.indexOf(targetId);
-        if (ti === -1) return prev;
-        next.splice(before ? ti : ti + 1, 0, sourceId);
-        return next;
-      });
-    },
-    [players],
-  );
+  const moveToAbsoluteRank = useCallback((id: string, rank: number) => {
+    setDraftIds((prev) => {
+      const base = prev ?? players.map((p) => p.id);
+      const next = base.filter((x) => x !== id);
+      next.splice(Math.max(0, Math.min(rank, next.length + 1)) - 1, 0, id);
+      return next;
+    });
+  }, [players]);
 
-  const moveToAbsoluteRank = useCallback(
-    (id: string, rank: number) => {
-      setDraftIds((prev) => {
-        const base = prev ?? players.map((p) => p.id);
-        const next = base.filter((x) => x !== id);
-        const clamped = Math.max(1, Math.min(rank, next.length + 1));
-        next.splice(clamped - 1, 0, id);
-        return next;
-      });
-    },
-    [players],
-  );
+  const moveStep = useCallback((id: string, dir: 'up' | 'down') => {
+    const idx = filteredPlayers.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const neighbor = dir === 'up' ? filteredPlayers[idx - 1] : filteredPlayers[idx + 1];
+    if (!neighbor) return;
+    reorderDraft(id, neighbor.id, dir === 'up');
+  }, [filteredPlayers, reorderDraft]);
 
-  const moveStep = useCallback(
-    (id: string, dir: 'up' | 'down') => {
-      const idx = filteredPlayers.findIndex((p) => p.id === id);
-      if (idx === -1) return;
-      const neighbor = dir === 'up' ? filteredPlayers[idx - 1] : filteredPlayers[idx + 1];
-      if (!neighbor) return;
-      reorderDraft(id, neighbor.id, dir === 'up');
-    },
-    [filteredPlayers, reorderDraft],
-  );
-
-  // ── dnd-kit handlers ───────────────────────────────────────────────────
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-  );
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveDragId(String(event.active.id));
-  }, []);
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      setActiveDragId(null);
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-      const sourceId = String(active.id);
-      const targetId = String(over.id);
-      const sourceIdx = filteredPlayers.findIndex((p) => p.id === sourceId);
-      const targetIdx = filteredPlayers.findIndex((p) => p.id === targetId);
-      if (sourceIdx === -1 || targetIdx === -1) return;
-      const before = sourceIdx > targetIdx;
-      reorderDraft(sourceId, targetId, before);
-    },
-    [filteredPlayers, reorderDraft],
-  );
-  const handleDragCancel = useCallback(() => {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const handleDragStart = useCallback((e: DragStartEvent) => setActiveDragId(String(e.active.id)), []);
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
     setActiveDragId(null);
-  }, []);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const sourceId = String(active.id);
+    const targetId = String(over.id);
+    const si = filteredPlayers.findIndex((p) => p.id === sourceId);
+    const ti = filteredPlayers.findIndex((p) => p.id === targetId);
+    if (si === -1 || ti === -1) return;
+    reorderDraft(sourceId, targetId, si > ti);
+  }, [filteredPlayers, reorderDraft]);
+  const handleDragCancel = useCallback(() => setActiveDragId(null), []);
 
-  // ── Save / Discard ─────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!draftIds || modifiedCount === 0) return;
     try {
@@ -370,73 +277,47 @@ export default function PlayerRanking() {
 
   useEffect(() => {
     if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasChanges]);
 
-  // ── Other actions ──────────────────────────────────────────────────────
   const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
-
   const handleOpenMoveToRank = useCallback((playerId: string) => {
-    const p = displayPlayersRef.current.find((x) => x.id === playerId) ?? null;
-    setMoveToRankPlayer(p);
+    setMoveToRankPlayer(displayPlayersRef.current.find((x) => x.id === playerId) ?? null);
   }, []);
+  const handleDeactivateById = useCallback((playerId: string) => {
+    const player = playersById.get(playerId);
+    setConfirmDeactivate({ playerId, label: player ? nameOf(player) : 'this player' });
+  }, [playersById]);
+  const executeDeactivate = useCallback(async (playerId: string, label: string) => {
+    setMutatingPlayerId(playerId);
+    try {
+      await deactivate.mutateAsync({ playerId });
+      setDraftIds(null);
+      toast.success(`${label} removed from ranking`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to deactivate player');
+    } finally { setMutatingPlayerId(null); }
+  }, [deactivate]);
+  const handleActivate = useCallback(async (entry: InactiveRankingEntry) => {
+    setMutatingPlayerId(entry.id);
+    try {
+      await activate.mutateAsync({ playerId: entry.id });
+      setDraftIds(null);
+      toast.success(`${entry.preferredName ?? 'Player'} ${entry.status === 'Applicant' ? 'added to ranking' : 'reactivated'}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Failed to activate player');
+    } finally { setMutatingPlayerId(null); }
+  }, [activate]);
 
-  const handleDeactivateById = useCallback(
-    (playerId: string) => {
-      const player = playersById.get(playerId);
-      const label = player ? nameOf(player) : 'this player';
-      setConfirmDeactivate({ playerId, label });
-    },
-    [playersById],
-  );
-
-  const executeDeactivate = useCallback(
-    async (playerId: string, label: string) => {
-      setMutatingPlayerId(playerId);
-      try {
-        await deactivate.mutateAsync({ playerId });
-        setDraftIds(null);
-        toast.success(`${label} removed from ranking`);
-      } catch (err: any) {
-        toast.error(err?.message ?? 'Failed to deactivate player');
-      } finally {
-        setMutatingPlayerId(null);
-      }
-    },
-    [deactivate],
-  );
-
-  const handleActivate = useCallback(
-    async (entry: InactiveRankingEntry) => {
-      setMutatingPlayerId(entry.id);
-      try {
-        await activate.mutateAsync({ playerId: entry.id });
-        setDraftIds(null);
-        toast.success(`${entry.preferredName ?? 'Player'} ${entry.status === 'Applicant' ? 'added to ranking' : 'reactivated'}`);
-      } catch (err: any) {
-        toast.error(err?.message ?? 'Failed to activate player');
-      } finally {
-        setMutatingPlayerId(null);
-      }
-    },
-    [activate],
-  );
-
-  // ── Render ─────────────────────────────────────────────────────────────
   if (ranking.isLoading) return <RankingSkeleton />;
   if (ranking.isError) {
     return (
       <div className="p-6 text-center text-destructive">
         Failed to load ranking: {(ranking.error as any)?.message ?? 'Unknown error'}
-        <div className="mt-3">
-          <Button onClick={() => ranking.refetch()}>Retry</Button>
-        </div>
+        <div className="mt-3"><Button onClick={() => ranking.refetch()}>Retry</Button></div>
       </div>
     );
   }
@@ -446,41 +327,28 @@ export default function PlayerRanking() {
   const activeDragPlayer = activeDragId ? playersById.get(activeDragId) : null;
 
   const filterBarProps = {
-    search: searchInput,
-    onSearch: setSearchInput,
-    teamFilter,
-    onTeamFilter: setTeamFilter,
-    positionFilter,
-    onPositionFilter: setPositionFilter,
-    showTrialApplicants,
-    showSponsoringApplicants,
-    onNoneApplicants: () => {
-      setShowTrialApplicants(false);
-      setShowSponsoringApplicants(false);
-    },
+    search: searchInput, onSearch: setSearchInput,
+    teamFilter, onTeamFilter: setTeamFilter,
+    positionFilter, onPositionFilter: setPositionFilter,
+    showTrialApplicants, showSponsoringApplicants,
+    onNoneApplicants: () => { setShowTrialApplicants(false); setShowSponsoringApplicants(false); },
     onToggleTrialApplicants: () => setShowTrialApplicants((v) => !v),
     onToggleSponsoringApplicants: () => setShowSponsoringApplicants((v) => !v),
-    onResetApplicants: () => {
-      setShowTrialApplicants(true);
-      setShowSponsoringApplicants(true);
-    },
+    onResetApplicants: () => { setShowTrialApplicants(true); setShowSponsoringApplicants(true); },
     teamOptions,
-    showInactive,
-    onToggleShowInactive: () => setShowInactive((v) => !v),
+    showInactive, onToggleShowInactive: () => setShowInactive((v) => !v),
   };
 
   return (
     <div className="pb-32">
       <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
-        <button onClick={() => navigate('/coach')} className="flex items-center gap-1 text-sm text-muted-foreground">
+        <button onClick={() => navigate('/coach/fixtures')} className="flex items-center gap-1 text-sm text-muted-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
         <div className="flex-1" />
         {isSectionCaptain && (
-          <button
-            onClick={() => setShowConfig(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
-          >
+          <button onClick={() => setShowConfig(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80">
             <Settings2 className="h-3.5 w-3.5" /> Configuration
           </button>
         )}
@@ -493,20 +361,15 @@ export default function PlayerRanking() {
       {isMobile ? (
         <>
           <div className="container mx-auto px-4 py-2 border-y border-border bg-card">
-            <button
-              onClick={() => setIsFilterSheetOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-            >
-              <Filter className="h-4 w-4" />
-              Filters
+            <button onClick={() => setIsFilterSheetOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors">
+              <Filter className="h-4 w-4" /> Filters
               {(search || teamFilter || positionFilter || applicantsHidden) && ' (active)'}
             </button>
           </div>
           <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
             <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-              <SheetHeader>
-                <SheetTitle>Filters</SheetTitle>
-              </SheetHeader>
+              <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
               <RankingFilterContent {...filterBarProps} />
             </SheetContent>
           </Sheet>
@@ -527,35 +390,17 @@ export default function PlayerRanking() {
         </div>
       )}
 
-      <div
-        ref={listRef}
-        onScroll={handleListScroll}
-        className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto"
-      >
+      <div ref={listRef} onScroll={handleListScroll} className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto">
         {filteredPlayers.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
             No players match the current filters.
           </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-          >
-            <SortableContext
-              items={filteredPlayers.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div
-                style={{
-                  height: `${virtualizer.getTotalSize()}px`,
-                  width: '100%',
-                  position: 'relative',
-                }}
-              >
+          <DndContext sensors={sensors} collisionDetection={closestCenter}
+            onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}
+            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}>
+            <SortableContext items={filteredPlayers.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+              <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((virtualRow) => {
                   const p = filteredPlayers[virtualRow.index];
                   const prevPlayer = filteredPlayers[virtualRow.index - 1];
@@ -563,18 +408,8 @@ export default function PlayerRanking() {
                   const prevGrp = prevPlayer ? getDividerGroup(prevPlayer, boundaries) : null;
                   const showDivider = prevGrp !== null && currentGrp !== prevGrp;
                   return (
-                    <div
-                      key={p.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
+                    <div key={p.id} data-index={virtualRow.index} ref={virtualizer.measureElement}
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}>
                       {showDivider && <TierDivider group={prevGrp!} />}
                       <SortableRankingRow
                         player={p}
@@ -584,6 +419,7 @@ export default function PlayerRanking() {
                         onMoveStep={moveStep}
                         onOpenMoveToRank={handleOpenMoveToRank}
                         onDeactivate={handleDeactivateById}
+                        onPhotoClick={setExpandedPhoto}
                       />
                     </div>
                   );
@@ -594,13 +430,9 @@ export default function PlayerRanking() {
               {activeDragPlayer ? (
                 <RankingRowInner
                   player={activeDragPlayer}
-                  isFirst={false}
-                  isLast={false}
-                  disabled={false}
-                  isDragging={false}
-                  onMoveStep={() => {}}
-                  onOpenMoveToRank={() => {}}
-                  onDeactivate={() => {}}
+                  isFirst={false} isLast={false} disabled={false} isDragging={false}
+                  menuOpen={false} onMenuOpenChange={() => {}}
+                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onDeactivate={() => {}} onPhotoClick={() => {}}
                   dragHandleProps={{}}
                   style={{ opacity: 0.9, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
                 />
@@ -611,11 +443,7 @@ export default function PlayerRanking() {
       </div>
 
       {showInactive && (
-        <InactiveSection
-          entries={inactiveQuery.data ?? []}
-          loading={inactiveQuery.isLoading}
-          onReactivate={handleActivate}
-        />
+        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} />
       )}
 
       {moveToRankPlayer && (
@@ -623,10 +451,7 @@ export default function PlayerRanking() {
           player={moveToRankPlayer}
           activeCount={totalActive}
           onClose={() => setMoveToRankPlayer(null)}
-          onSubmit={(rank) => {
-            moveToAbsoluteRank(moveToRankPlayer.id, rank);
-            setMoveToRankPlayer(null);
-          }}
+          onSubmit={(rank) => { moveToAbsoluteRank(moveToRankPlayer.id, rank); setMoveToRankPlayer(null); }}
         />
       )}
 
@@ -659,26 +484,23 @@ export default function PlayerRanking() {
         />
       )}
 
+      {/* Full-size photo overlay */}
+      {expandedPhoto && (
+        <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-6" onClick={() => setExpandedPhoto(null)}>
+          <img src={expandedPhoto} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+        </div>
+      )}
+
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
           <div className="flex-1 text-sm text-muted-foreground">
             {modifiedCount} unsaved change{modifiedCount !== 1 ? 's' : ''}
           </div>
-          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 py-3 border rounded text-sm font-medium disabled:opacity-50">
-            Discard
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex-1 py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50"
-          >
+          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 py-3 border rounded text-sm font-medium disabled:opacity-50">Discard</button>
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
             {reorder.isPending ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Saving…
-              </span>
-            ) : (
-              `Save (${modifiedCount})`
-            )}
+              <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
+            ) : `Save (${modifiedCount})`}
           </button>
         </div>
       )}
@@ -686,23 +508,15 @@ export default function PlayerRanking() {
   );
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────
 function RankingFilterContent(props: {
-  search: string;
-  onSearch: (v: string) => void;
-  teamFilter: string | null;
-  onTeamFilter: (v: string | null) => void;
-  positionFilter: string | null;
-  onPositionFilter: (v: string | null) => void;
-  showTrialApplicants: boolean;
-  showSponsoringApplicants: boolean;
-  onNoneApplicants: () => void;
-  onToggleTrialApplicants: () => void;
-  onToggleSponsoringApplicants: () => void;
-  onResetApplicants: () => void;
+  search: string; onSearch: (v: string) => void;
+  teamFilter: string | null; onTeamFilter: (v: string | null) => void;
+  positionFilter: string | null; onPositionFilter: (v: string | null) => void;
+  showTrialApplicants: boolean; showSponsoringApplicants: boolean;
+  onNoneApplicants: () => void; onToggleTrialApplicants: () => void;
+  onToggleSponsoringApplicants: () => void; onResetApplicants: () => void;
   teamOptions: string[];
-  showInactive: boolean;
-  onToggleShowInactive: () => void;
+  showInactive: boolean; onToggleShowInactive: () => void;
 }) {
   const applicantsHidden = !props.showTrialApplicants || !props.showSponsoringApplicants;
   const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter || applicantsHidden;
@@ -718,14 +532,8 @@ function RankingFilterContent(props: {
         />
         {hasFilter && (
           <button
-            onClick={() => {
-              props.onSearch('');
-              props.onTeamFilter(null);
-              props.onPositionFilter(null);
-              props.onResetApplicants();
-            }}
-            className="text-xs text-destructive flex items-center gap-0.5"
-          >
+            onClick={() => { props.onSearch(''); props.onTeamFilter(null); props.onPositionFilter(null); props.onResetApplicants(); }}
+            className="text-xs text-destructive flex items-center gap-0.5">
             <X className="h-3 w-3" /> Clear
           </button>
         )}
@@ -746,27 +554,14 @@ function RankingFilterContent(props: {
       </div>
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
-        <Chip
-          label="None"
-          active={!props.showTrialApplicants && !props.showSponsoringApplicants}
-          onClick={props.onNoneApplicants}
-        />
-        <Chip
-          label="Trial Application"
-          active={props.showTrialApplicants}
-          onClick={props.onToggleTrialApplicants}
-        />
-        <Chip
-          label="Sponsoring"
-          active={props.showSponsoringApplicants}
-          onClick={props.onToggleSponsoringApplicants}
-        />
+        <Chip label="None" active={!props.showTrialApplicants && !props.showSponsoringApplicants} onClick={props.onNoneApplicants} />
+        <Chip label="Trial Application" active={props.showTrialApplicants} onClick={props.onToggleTrialApplicants} />
+        <Chip label="Sponsoring" active={props.showSponsoringApplicants} onClick={props.onToggleSponsoringApplicants} />
       </div>
       <div className="flex items-center gap-2 mt-2">
         <button
           onClick={props.onToggleShowInactive}
-          className={`text-xs px-2 py-1 rounded-md ${props.showInactive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-        >
+          className={`text-xs px-2 py-1 rounded-md ${props.showInactive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
           {props.showInactive ? 'Hide inactive' : 'Show inactive'}
         </button>
         <div className="flex-1" />
@@ -777,10 +572,8 @@ function RankingFilterContent(props: {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-    >
+    <button onClick={onClick}
+      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
       {label}
     </button>
   );
@@ -798,39 +591,22 @@ function TierDivider({ group }: { group: string }) {
 
 function SortableRankingRow(props: {
   player: Player;
-  isFirst: boolean;
-  isLast: boolean;
-  disabled: boolean;
+  isFirst: boolean; isLast: boolean; disabled: boolean;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
+  onPhotoClick: (url: string) => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.player.id, disabled: props.disabled });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  };
-
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.player.id, disabled: props.disabled });
+  const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
       <RankingRowInner
         player={props.player}
-        isFirst={props.isFirst}
-        isLast={props.isLast}
-        disabled={props.disabled}
-        isDragging={isDragging}
-        onMoveStep={props.onMoveStep}
-        onOpenMoveToRank={props.onOpenMoveToRank}
-        onDeactivate={props.onDeactivate}
+        isFirst={props.isFirst} isLast={props.isLast} disabled={props.disabled} isDragging={isDragging}
+        menuOpen={false} onMenuOpenChange={() => {}}
+        onMoveStep={props.onMoveStep} onOpenMoveToRank={props.onOpenMoveToRank}
+        onDeactivate={props.onDeactivate} onPhotoClick={props.onPhotoClick}
         dragHandleProps={listeners ?? {}}
       />
     </div>
@@ -839,103 +615,129 @@ function SortableRankingRow(props: {
 
 function RankingRowInner(props: {
   player: Player;
-  isFirst: boolean;
-  isLast: boolean;
-  disabled: boolean;
-  isDragging: boolean;
+  isFirst: boolean; isLast: boolean; disabled: boolean; isDragging: boolean;
+  menuOpen: boolean; onMenuOpenChange: (v: boolean) => void;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
+  onPhotoClick: (url: string) => void;
   dragHandleProps: Record<string, any>;
   style?: React.CSSProperties;
 }) {
   const { player, disabled, isDragging } = props;
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [showCv, setShowCv] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const rank = player.sectionRank ?? 0;
   const ability = player.playingAbility ?? '—';
   const abilityTone = getAbilityTone(ability);
   const isApplicant = player.status === 'Applicant';
+  const hasCv = isApplicant && !!player.sportsBackground && player.sportsBackground.trim() !== '';
+  const hasComments = !!player.selectionComments && player.selectionComments.trim() !== '';
 
   return (
     <div
       data-rank={rank}
-      style={props.style}
+      // Raise the whole row above its virtualized siblings while the menu is open.
+      style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
       className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${
         isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'
-      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
-    >
-      <div
-        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none"
-        {...props.dragHandleProps}
-      >
+      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}>
+      <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
         <GripVertical className="h-4 w-4" />
       </div>
-      <div className="w-8 text-center shrink-0">
+
+      {/* Profile photo — tap to expand */}
+      <button
+        onClick={(e) => { e.stopPropagation(); if (player.photo) props.onPhotoClick(player.photo); }}
+        className="shrink-0 rounded-full overflow-hidden border border-border"
+        title={player.photo ? 'View photo' : undefined}>
+        {player.photo ? (
+          <img src={player.photo} alt={nameOf(player)} className="h-9 w-9 rounded-full object-cover" />
+        ) : (
+          <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+            {initialsOf(player)}
+          </div>
+        )}
+      </button>
+
+      <div className="w-7 text-center shrink-0">
         <span className="text-sm font-bold text-foreground tabular-nums">{rank || '—'}</span>
       </div>
+
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <p className="text-sm font-medium text-foreground truncate leading-tight">{nameOf(player)}</p>
+          {player.shirtNoValue && (
+            <span className="text-[10px] font-bold text-muted-foreground shrink-0">#{player.shirtNoValue}</span>
+          )}
           {isApplicant && (
-            <span
-              className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0"
-              title={player.applicantStage}
-            >
+            <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0" title={player.applicantStage}>
               Applicant{player.applicantStage ? ` · ${shortStage(player.applicantStage)}` : ''}
             </span>
+          )}
+          {hasCv && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowCv((v) => !v); }}
+              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showCv ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              <FileText className="h-3 w-3" /> CV
+            </button>
+          )}
+          {hasComments && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowComments((v) => !v); }}
+              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showComments ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              <MessageSquare className="h-3 w-3" /> Player Comments
+            </button>
           )}
         </div>
         <p className="text-[11px] text-muted-foreground truncate leading-tight">
           {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'} · T#{player.teamRank ?? '–'} · P#{player.positionalRank ?? '–'}
         </p>
+        {showCv && player.sportsBackground && (
+          <div className="mt-1.5 text-[11px] text-foreground whitespace-pre-wrap bg-muted/50 border border-border rounded p-2">
+            {player.sportsBackground}
+          </div>
+        )}
+        {showComments && player.selectionComments && (
+          <div className="mt-1.5 text-[11px] text-foreground whitespace-pre-wrap bg-muted/50 border border-border rounded p-2">
+            {player.selectionComments}
+          </div>
+        )}
       </div>
+
       <AbilityBadge value={ability} tone={abilityTone} />
+
       <div className="relative">
-        <button onClick={() => setMenuOpen((v) => !v)} className="p-1 text-muted-foreground hover:text-foreground" title="More actions">
+        <button onClick={() => props.onMenuOpenChange(!props.menuOpen)} className="p-1 text-muted-foreground hover:text-foreground" title="More actions">
           <Settings2 className="h-4 w-4" />
         </button>
-        {menuOpen && (
+        {props.menuOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+            <div className="fixed inset-0 z-30" onClick={() => props.onMenuOpenChange(false)} />
             <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
               <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  props.onOpenMoveToRank(player.id);
-                }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
-              >
+                onClick={() => { props.onMenuOpenChange(false); props.onOpenMoveToRank(player.id); }}
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted">
                 Move to rank…
               </button>
               <div className="my-1 h-px bg-border" />
               <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  props.onDeactivate(player.id);
-                }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive"
-              >
+                onClick={() => { props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive">
                 <UserMinus className="h-3.5 w-3.5 mr-2" /> Deactivate
               </button>
             </div>
           </>
         )}
       </div>
+
       <div className="flex flex-col gap-0.5">
-        <button
-          onClick={() => props.onMoveStep(player.id, 'up')}
-          disabled={disabled || props.isFirst}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-          title="Move up"
-        >
+        <button onClick={() => props.onMoveStep(player.id, 'up')} disabled={disabled || props.isFirst}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move up">
           <ChevronUp className="h-4 w-4" />
         </button>
-        <button
-          onClick={() => props.onMoveStep(player.id, 'down')}
-          disabled={disabled || props.isLast}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
-          title="Move down"
-        >
+        <button onClick={() => props.onMoveStep(player.id, 'down')} disabled={disabled || props.isLast}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move down">
           <ChevronDown className="h-4 w-4" />
         </button>
       </div>
@@ -944,13 +746,8 @@ function RankingRowInner(props: {
 }
 
 function AbilityBadge({ value, tone }: { value: string; tone: string }) {
-  return (
-    <span className={`text-xs font-bold px-2 py-0.5 rounded shrink-0 ${tone}`} title={value}>
-      {value}
-    </span>
-  );
+  return <span className={`text-xs font-bold px-2 py-0.5 rounded shrink-0 ${tone}`} title={value}>{value}</span>;
 }
-
 function getAbilityTone(value: string): string {
   if (value.startsWith('A')) return 'bg-blue-100 text-blue-800 border border-blue-200';
   if (value.startsWith('B')) return 'bg-cyan-100 text-cyan-800 border border-cyan-200';
@@ -963,16 +760,8 @@ function getAbilityTone(value: string): string {
   return 'bg-muted text-muted-foreground';
 }
 
-function MoveToRankSheet({
-  player,
-  activeCount,
-  onClose,
-  onSubmit,
-}: {
-  player: Player;
-  activeCount: number;
-  onClose: () => void;
-  onSubmit: (rank: number) => void;
+function MoveToRankSheet({ player, activeCount, onClose, onSubmit }: {
+  player: Player; activeCount: number; onClose: () => void; onSubmit: (rank: number) => void;
 }) {
   const [value, setValue] = useState(String(player.sectionRank ?? 1));
   const [error, setError] = useState('');
@@ -984,30 +773,14 @@ function MoveToRankSheet({
         <p className="text-sm text-muted-foreground">
           Current rank: <span className="font-medium text-foreground">#{player.sectionRank || 'Unranked'}</span>. Allowed: 1 to {activeCount}.
         </p>
-        <input
-          type="number"
-          min={1}
-          max={activeCount}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setError('');
-          }}
-          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`}
-        />
+        <input type="number" min={1} max={activeCount} value={value}
+          onChange={(e) => { setValue(e.target.value); setError(''); }}
+          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`} />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
           <Button className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button
-            className="flex-1 bg-primary text-primary-foreground"
-            onClick={() => {
-              if (isValid) {
-                onSubmit(n);
-              } else {
-                setError(`Enter a whole number between 1 and ${activeCount}.`);
-              }
-            }}
-          >
+          <Button className="flex-1 bg-primary text-primary-foreground"
+            onClick={() => { if (isValid) onSubmit(n); else setError(`Enter a whole number between 1 and ${activeCount}.`); }}>
             Move
           </Button>
         </div>
@@ -1017,27 +790,14 @@ function MoveToRankSheet({
   );
 }
 
-function ConfigSheet({
-  config,
-  activeCount,
-  saving,
-  onClose,
-  onSave,
-}: {
-  config: AbilityGroupConfigMap;
-  activeCount: number;
-  saving: boolean;
-  onClose: () => void;
-  onSave: (config: AbilityGroupConfigMap) => void;
+function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
+  config: AbilityGroupConfigMap; activeCount: number; saving: boolean;
+  onClose: () => void; onSave: (config: AbilityGroupConfigMap) => void;
 }) {
   const [local, setLocal] = useState<AbilityGroupConfigMap>({ ...config });
-  useEffect(() => {
-    setLocal({ ...config });
-  }, [config]);
-
+  useEffect(() => { setLocal({ ...config }); }, [config]);
   const total = (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).reduce((acc, g) => acc + (local[g] ?? 0), 0);
   const overCapacity = total > activeCount;
-
   return (
     <ModalSheet title="Ability Group Configuration" onClose={onClose}>
       <p className="text-sm text-muted-foreground mb-3">
@@ -1047,14 +807,9 @@ function ConfigSheet({
         {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => (
           <div key={g} className="flex items-center gap-3">
             <span className="w-6 text-base font-bold text-foreground">{g}</span>
-            <input
-              type="number"
-              min={0}
-              disabled={saving}
-              value={local[g] ?? 0}
+            <input type="number" min={0} disabled={saving} value={local[g] ?? 0}
               onChange={(e) => setLocal((s) => ({ ...s, [g]: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
-              className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground disabled:opacity-50"
-            />
+              className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground disabled:opacity-50" />
             <span className="text-xs text-muted-foreground w-10 text-right">players</span>
           </div>
         ))}
@@ -1071,22 +826,17 @@ function ConfigSheet({
             if (cap === 0 || activeCount === 0) return null;
             const pct = (cap / activeCount) * 100;
             return (
-              <div
-                key={g}
-                className="h-full flex items-center justify-center text-[8px] font-bold text-white transition-all duration-200"
+              <div key={g} className="h-full flex items-center justify-center text-[8px] font-bold text-white transition-all duration-200"
                 style={{ width: `${pct}%`, backgroundColor: GROUP_COLORS[g] }}
-                title={`Group ${g}: ${cap} players (${pct.toFixed(0)}%)`}
-              >
+                title={`Group ${g}: ${cap} players (${pct.toFixed(0)}%)`}>
                 {pct > 6 ? g : ''}
               </div>
             );
           })}
           {activeCount > total && (
-            <div
-              className="h-full flex items-center justify-center text-[8px] font-bold text-pink-800 bg-pink-200 transition-all duration-200"
+            <div className="h-full flex items-center justify-center text-[8px] font-bold text-pink-800 bg-pink-200 transition-all duration-200"
               style={{ width: `${((activeCount - total) / activeCount) * 100}%` }}
-              title={`Group H (residual): ${activeCount - total} players`}
-            >
+              title={`Group H (residual): ${activeCount - total} players`}>
               {((activeCount - total) / activeCount) * 100 > 6 ? 'H' : ''}
             </div>
           )}
@@ -1100,14 +850,9 @@ function ConfigSheet({
         </div>
       </div>
       <div className="flex gap-2 mt-4">
-        <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>
-          Cancel
-        </Button>
-        <Button
-          className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
-          disabled={overCapacity || saving}
-          onClick={() => onSave(local)}
-        >
+        <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
+          disabled={overCapacity || saving} onClick={() => onSave(local)}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
         </Button>
       </div>
@@ -1115,20 +860,12 @@ function ConfigSheet({
   );
 }
 
-function InactiveSection({
-  entries,
-  loading,
-  onReactivate,
-}: {
-  entries: InactiveRankingEntry[];
-  loading: boolean;
-  onReactivate: (entry: InactiveRankingEntry) => void;
+function InactiveSection({ entries, loading, onReactivate }: {
+  entries: InactiveRankingEntry[]; loading: boolean; onReactivate: (entry: InactiveRankingEntry) => void;
 }) {
   return (
     <div className="container mx-auto px-4 pt-6">
-      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-        Inactive ({entries.length})
-      </h2>
+      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Inactive ({entries.length})</h2>
       {loading ? (
         <Skeleton className="h-10 w-full" />
       ) : entries.length === 0 ? (
@@ -1151,10 +888,8 @@ function InactiveSection({
                   {typeof e.lastSectionRank === 'number' ? ` · last rank #${e.lastSectionRank}` : ''}
                 </p>
               </div>
-              <button
-                onClick={() => onReactivate(e)}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap"
-              >
+              <button onClick={() => onReactivate(e)}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap">
                 <UserPlus className="h-3.5 w-3.5" />
                 {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}
               </button>
@@ -1173,9 +908,7 @@ function ModalSheet({ title, onClose, children }: { title: string; onClose: () =
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
-            <X className="h-5 w-5" />
-          </button>
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
         </div>
         {children}
       </div>
@@ -1188,9 +921,7 @@ function RankingSkeleton() {
     <div className="container mx-auto px-4 py-4 space-y-3">
       <Skeleton className="h-8 w-40" />
       <div className="pt-2 space-y-2">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full rounded-lg" />
-        ))}
+        {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
       </div>
     </div>
   );

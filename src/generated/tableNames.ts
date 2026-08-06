@@ -5,4 +5,5 @@ export const TABLES = {
   availabilityException: "Availability Exceptions",
   matchCard: "Match Cards",
   abilityGroupConfiguration: "Ability Group Configuration",
+  selectionEvent: "Selection Events",
 } as const;

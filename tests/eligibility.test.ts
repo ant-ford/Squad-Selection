@@ -648,13 +648,13 @@ describe("evaluatePlayerEligibility", () => {
 
     it("allows cup with 2+ league appearances", () => {
       const matchCards = [
-        mc({ player: ["p1"], team: "HKFC C", season: "2025-2026" }),
-        mc({ player: ["p1"], team: "HKFC C", season: "2025-2026" }),
+        mc({ id: "mc1", player: ["p1"], team: "HKFC C", season: "2025-2026", match: ["m1"] }),
+        mc({ id: "mc2", player: ["p1"], team: "HKFC C", season: "2025-2026", match: ["m2"] }),
       ];
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
         m({ homeTeam: "HKFC C", competitionType: "Cup" }),
-        ctx({ matchCards })
+        ctx({ matchCards, matches: [m({ id: "m1" }), m({ id: "m2" })] })
       );
       expect(r.reason).not.toBe("Fewer than 2 league appearances — ineligible for Cup");
     });

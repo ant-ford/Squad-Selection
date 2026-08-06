@@ -20,6 +20,9 @@ export const PEOPLE_FIELDS = {
   rankUpdatedAt: "Rank Updated At",
   status: "Status",
   applicantStage: "Applicant Stage",
+  photo: "Photo",
+  sportsBackground: "Sports Background / Involvement",
+  selectionComments: "Selection Comments/Coach Requests",
 } as const;
 
 export const TEAMS_FIELDS = {
@@ -56,6 +59,7 @@ export const AVAILABILITYEXCEPTIONS_FIELDS = {
   note: "Player Notes",
   updatedBy: "Updated By",
   season: "Season (Matches)",
+  updatedAt: "Updated At",
 } as const;
 
 export const MATCHCARDS_FIELDS = {

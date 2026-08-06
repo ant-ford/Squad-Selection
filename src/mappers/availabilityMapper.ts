@@ -4,7 +4,6 @@ import { singleSelect } from '@/../worker/src/airtable';
 
 export function mapAvailability(record: any): AvailabilityException {
   const f = record.fields;
-
   return {
     id: record.id,
     player: f[AVAILABILITYEXCEPTIONS_FIELDS.player] || [],
@@ -12,5 +11,6 @@ export function mapAvailability(record: any): AvailabilityException {
     availabilityStatus: singleSelect(f[AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]) || '',
     note: f[AVAILABILITYEXCEPTIONS_FIELDS.note] || '',
     season: singleSelect(f[AVAILABILITYEXCEPTIONS_FIELDS.season]) || '',
+    updatedAt: f[AVAILABILITYEXCEPTIONS_FIELDS.updatedAt] || '',
   };
 }

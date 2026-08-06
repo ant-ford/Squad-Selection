@@ -7,6 +7,7 @@ import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
 import { getRecommendations } from '@/api/getRecommendations';
 import type {
+  RecentChange,
   AbilityGroupConfigMap,
   InactiveRankingEntry,
   RankingList,
@@ -206,5 +207,36 @@ export function useUpdateAbilityConfig() {
         queryClient.invalidateQueries({ queryKey: ['ranking'] });
       }
     },
+  });
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────
+export interface PlayUpWatchEntry { id: string; name: string; registeredTeam: string; playUpCount: number }
+export interface RecentAvailabilityChange {
+  playerId: string; playerName: string; team: string; status: string; note: string;
+  matchLabel: string; matchDate: string; updatedAt: string;
+}
+
+export function usePlayUpWatch() {
+  return useQuery({
+    queryKey: ['playUpWatch'],
+    queryFn: () => authGet<{ season: string; watch: PlayUpWatchEntry[] }>('/api/playup-watch'),
+    staleTime: 300_000,
+  });
+}
+
+export function useRecentAvailability(days = 7) {
+  return useQuery({
+    queryKey: ['recentAvailability', days],
+    queryFn: () => authGet<{ changes: RecentAvailabilityChange[] }>('/api/recent-availability', { days }),
+    staleTime: 60_000,
+  });
+}
+
+export function useRecentChanges(days = 7) {
+  return useQuery({
+    queryKey: ['recentChanges', days],
+    queryFn: () => authGet<{ changes: RecentChange[] }>('/api/recent-changes', { days }),
+    staleTime: 60_000,
   });
 }

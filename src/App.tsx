@@ -6,10 +6,11 @@ import Login from './pages/Login';
 import PlayerDashboard from './pages/PlayerDashboard';
 
 // Coach-only routes — deferred so player-only visits skip this bundle.
-const CoachLayout   = lazy(() => import('./components/CoachLayout'));
-const FixtureList   = lazy(() => import('./pages/FixtureList'));
+const CoachLayout    = lazy(() => import('./components/CoachLayout'));
+const CoachDashboard = lazy(() => import('./pages/CoachDashboard'));
+const FixtureList    = lazy(() => import('./pages/FixtureList'));
 const SquadSelection = lazy(() => import('./pages/SquadSelection'));
-const PlayerRanking = lazy(() => import('./pages/PlayerRanking'));
+const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -50,6 +51,14 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <CoachDashboard />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'fixtures',
             element: (
               <Suspense fallback={<RouteSkeleton />}>
                 <FixtureList />
@@ -115,17 +124,11 @@ function AppLoading() {
           }}
         />
         <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
-      </div>
-      <div className="relative mt-10 text-center">
-        <p className="font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground animate-[fade-up_0.6s_ease-out_both]">
-          HKFC
-        </p>
-        <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:120ms]">
-          Squad Selection
-        </p>
-        <p className="mt-6 font-mono text-[10px] tracking-widest text-muted-foreground/70 animate-[fade-up_0.6s_ease-out_both] [animation-delay:240ms]">
-          warming up…
-        </p>
+        <div className="relative mt-10 text-center">
+          <p className="font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground animate-[fade-up_0.6s_ease-out_both]">HKFC</p>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:120ms]">Squad Selection</p>
+          <p className="mt-6 font-mono text-[10px] tracking-widest text-muted-foreground/70 animate-[fade-up_0.6s_ease-out_both] [animation-delay:240ms]">warming up…</p>
+        </div>
       </div>
     </div>
   );

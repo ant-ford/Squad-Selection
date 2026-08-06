@@ -8,7 +8,6 @@ export interface Player {
   active?: boolean;
   registeredTeam?: string;
   playingPosition?: string;
-  /** Calculated by ranking engine: e.g. "A+", "A", "A-", "B+", ..., "H-". */
   playingAbility?: string;
   isVisitingPlayer?: boolean;
   isSuspended?: boolean;
@@ -16,19 +15,18 @@ export interface Player {
   everRegisteredToPremier?: boolean;
   u21Eligible?: boolean;
   playerCoach?: string[];
-  /** The ONLY manually-maintained ranking value. 1 = strongest, N = lowest. */
   sectionRank?: number;
-  /** Calculated: rank within the player's Registered Team (1 = best in team). */
   teamRank?: number;
-  /** Calculated: rank within the player's Playing Position across the entire section (1 = best in position). */
   positionalRank?: number;
-  /** ISO timestamp of the last rank change for this player. */
   rankUpdatedAt?: string;
-  /** People.Status — "Member" | "Applicant" | "Resigned". */
   status?: string;
-  /** People.Applicant Stage — "1. Trial Application" … "6. Membership Officer (Signed)",
-   *  "Accepted" | "Pending" | "On Hold" | "Rejected" | "Temporary". */
   applicantStage?: string;
+  /** People.Photo — first attachment URL. */
+  photo?: string;
+  /** People."Sports Background / Involvement" — applicant Hockey CV. */
+  sportsBackground?: string;
+  /** People."Selection Comments/Coach Requests" — free-text coach notes. */
+  selectionComments?: string;
 }
 
 export interface Team {
@@ -46,10 +44,8 @@ export interface Team {
 export interface Match {
   id: string;
   matchDate: string;
-  /** Formula field: derived from Date using 1 July boundary. */
   season?: string;
   division: string;
-  /** Distinguishes League / Cup / Plate / Bowl. */
   competitionType?: string;
   homeTeam: string;
   homeTeamScore: number;
@@ -69,6 +65,7 @@ export interface AvailabilityException {
   availabilityStatus?: string;
   note?: string;
   season?: string;
+  updatedAt?: string;
 }
 
 export interface MatchCard {
@@ -93,13 +90,8 @@ export interface MatchCard {
 // ── Ranking types ────────────────────────────────────────────────────────
 
 export type AbilityGroupConfigMap = {
-  A: number;
-  B: number;
-  C: number;
-  D: number;
-  E: number;
-  F: number;
-  G: number;
+  A: number; B: number; C: number; D: number;
+  E: number; F: number; G: number;
 };
 
 export interface AbilityGroupConfiguration {
@@ -117,9 +109,7 @@ export interface InactiveRankingEntry {
   registeredTeam?: string;
   playingPosition?: string;
   lastSectionRank?: number;
-  /** People.Status — "Member" | "Applicant" | "Resigned". */
   status?: string;
-  /** People.Applicant Stage. */
   applicantStage?: string;
 }
 
@@ -128,6 +118,5 @@ export interface RankingList {
   activeCount: number;
   lastUpdated: string;
   config: AbilityGroupConfigMap;
-  /** Monotonic version identifier (timestamp) for stale detection and optimistic UI. */
   version: number;
 }

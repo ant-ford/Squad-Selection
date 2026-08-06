@@ -34,6 +34,7 @@ import {
 } from "./ranking";
 import { getEligibilityMetrics, resetEligibilityMetrics } from "./metrics";
 import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
+import { getPlayUpWatch, getRecentAvailability, getRecentChanges } from "./dashboard";
 
 export type { Env };
 
@@ -139,6 +140,19 @@ export default {
         const email = url.searchParams.get("email") ?? undefined;
         const team = url.searchParams.get("team") ?? undefined;
         return json(await getUpcomingFixtures(env, { email, team }), 200, origin);
+      }
+
+      if (method === "GET" && pathname === "/api/recent-changes") {
+        const days = Number(url.searchParams.get("days") ?? 7);
+        return json(await getRecentChanges(env, Number.isFinite(days) && days > 0 ? days : 7), 200, origin);
+      }
+
+      if (method === "GET" && pathname === "/api/playup-watch") {
+        return json(await getPlayUpWatch(env), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/recent-availability") {
+        const days = Number(url.searchParams.get("days") ?? 7);
+        return json(await getRecentAvailability(env, Number.isFinite(days) ? days : 7), 200, origin);
       }
 
       // ── Selection writes ───────────────────────────────────────────

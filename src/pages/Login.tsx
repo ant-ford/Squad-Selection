@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/useAuth';
+import { useMyProfile } from '@/lib/queries';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -7,23 +8,25 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginWithEmail, user } = useAuth();
+  const { data: profile, isLoading: profileLoading } = useMyProfile();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) {
-      navigate('/');
+    if (!user) return;
+    // Wait for profile to resolve before deciding where to send them.
+    if (profileLoading) return;
+    if (profile?.isCoach) {
+      navigate('/coach', { replace: true });
+    } else {
+      navigate('/', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, profile, profileLoading, navigate]);
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
-
-    // TypeScript: ensure the event target is the form
     const form = e.target as HTMLFormElement | null;
     if (!form) return;
-
     setLoading(true);
-
     try {
       await loginWithEmail(email);
       toast.success('Magic link sent! Check your email.');
@@ -41,7 +44,6 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full bg-card p-6 rounded-lg border border-border shadow-lg">
-        {/* Animated logo */}
         <div className="flex justify-center mb-6">
           <img
             src="/assets/logo-animated.svg"
@@ -49,13 +51,12 @@ export default function Login() {
             className="h-16 w-16 object-contain"
           />
         </div>
-
-        <h1 className="text-2xl font-bold text-foreground mb-6 text-center">HKFC Squad Manager</h1>
+        <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
+          HKFC Squad Manager
+        </h1>
         <p className="text-muted-foreground mb-6 text-center">
           Enter your email to receive a magic link
         </p>
-
-        {/* Modern React 19: use native DOM event type */}
         <form onSubmit={(e) => handleSubmit(e as unknown as SubmitEvent)}>
           <input
             type="email"
@@ -67,7 +68,6 @@ export default function Login() {
             required
             className="w-full p-2 border border-border rounded mb-4 bg-background text-foreground"
           />
-
           <button
             type="submit"
             disabled={loading}

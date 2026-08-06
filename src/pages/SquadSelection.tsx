@@ -233,7 +233,7 @@ export default function SquadSelection() {
   return (
     <div className="pb-24">
       <div className="container mx-auto px-4">
-        <button onClick={() => navigate('/coach')} className="flex items-center gap-1 py-3 text-sm text-muted-foreground">
+        <button onClick={() => navigate('/coach/fixtures')} className="flex items-center gap-1 py-3 text-sm text-muted-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
