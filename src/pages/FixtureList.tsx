@@ -12,12 +12,10 @@ export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Initialize state from URL parameters
   const teamFromUrl = searchParams.get('team') || 'all';
   const [activeTab, setActiveTab] = useState(teamFromUrl);
   const [showPast, setShowPast] = useState(searchParams.get('past') === '1');
 
-  // Sync URL when activeTab changes
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     const newParams = new URLSearchParams(searchParams);
@@ -29,7 +27,6 @@ export default function FixtureList() {
     setSearchParams(newParams, { replace: true });
   };
 
-  // Sync URL when showPast changes
   const handleTogglePast = () => {
     setShowPast(prev => {
       const next = !prev;
@@ -44,7 +41,6 @@ export default function FixtureList() {
     });
   };
 
-  // Keep state in sync if URL changes externally (e.g., browser back/forward buttons)
   useEffect(() => {
     const tabFromUrl = searchParams.get('team') || 'all';
     if (tabFromUrl !== activeTab) {
@@ -56,10 +52,6 @@ export default function FixtureList() {
     }
   }, [searchParams, activeTab, showPast]);
 
-  // Performance: fetch ALL coached fixtures once; tabs filter client-side.
-  // The Worker already returns every coached team's fixtures when no team
-  // param is passed, so per-tab requests were redundant round-trips that
-  // blanked the list behind skeletons on every tab switch.
   const { data, isLoading } = useUpcomingFixtures();
   const allFixtures = data?.fixtures || [];
 
@@ -74,9 +66,6 @@ export default function FixtureList() {
   const coachTeams = profile?.coachTeams ?? [];
   const isSectionCaptain = !!profile?.isSectionCaptain;
 
-  // Section captains see the full section — derive all team names from
-  // the fixtures response itself, since the Worker returns all teams when
-  // the caller is a section captain.
   const allTeamNames = useMemo(() => {
     const names = new Set(allFixtures.map((f) => f.hkfcTeam).filter(Boolean));
     return Array.from(names).sort();

@@ -51,7 +51,6 @@ describe('dateUtils — isPastFixture', () => {
   });
 
   it('returns false for today (same date)', () => {
-    // Set to noon, fixture at midnight — today is same calendar day
     vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
     expect(isPastFixture('2026-08-07T19:00:00')).toBe(false);
   });
@@ -78,10 +77,8 @@ describe('dateUtils — isPastFixture', () => {
   });
 
   it('handles dates in different format that parse correctly', () => {
-    // Yesterday
     vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
     expect(isPastFixture('2026-08-06')).toBe(true);
-    // Tomorrow
     expect(isPastFixture('2026-08-09')).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { Env } from "./index";
 import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
-import { ABILITY_RANK } from "./abilityRank";
+import { ABILITY_RANK } from "../../src/lib/abilityRank";
 
 export interface RecommendationCandidate {
   id: string;
@@ -63,11 +63,10 @@ export function buildRecommendations(
       positionScore = 20; // Neutral state: don't penalize anyone if no filter is set
     }
 
-    // 2c. Club Proximity Score (20 points max) - WEIGHTING IS KEPT ACTIVE HERE
+    // 2c. Club Proximity Score (20 points max)
     const candidateTeamRank = teamRankMap[p.registeredTeam] ?? targetTeamRank;
     const distance = candidateTeamRank - targetTeamRank;
     let teamDistanceScore = 0;
-
     if (distance === 0) {
       teamDistanceScore = 20; // Same team context
     } else if (distance > 0) {
@@ -77,10 +76,8 @@ export function buildRecommendations(
     }
 
     // 2d. Play-Up Capacity Score (10 points max)
-    // UPDATE: Only apply play-up limits/penalization if the player belongs to a LOWER team (higher rank number)
     const playUpCount = p.playUpCount ?? 0;
     let playUpScore = 10;
-    
     if (distance > 0) {
       // Player is playing up from a lower tier squad -> reduce score based on workload
       playUpScore = Math.max(0, 10 - playUpCount * 3);
@@ -92,7 +89,7 @@ export function buildRecommendations(
     // Calculate baseline total score
     let totalScore = Math.round(abilityScore + positionScore + teamDistanceScore + playUpScore);
 
-    // UPDATE: Heavily dock the score if a player has responded with "Maybe" 
+    // Heavily dock the score if a player has responded with "Maybe" 
     // Subtraction of 45 ensures they plummet below fully confirmed available options.
     if (p.availabilityStatus === "Maybe") {
       totalScore = Math.max(0, totalScore - 45);
@@ -102,7 +99,7 @@ export function buildRecommendations(
     const reasons: string[] = [];
     if (rankValue >= 22) reasons.push("Top Ability");
     
-    // UPDATE: Rebranded from "Fresh Legs" to "Play-Up Capacity" and limited strictly to lower-squad players
+    // Rebranded from "Fresh Legs" to "Play-Up Capacity" and limited strictly to lower-squad players
     if (distance > 0 && playUpCount < 4) {
       reasons.push("Play-Up Capacity");
     }
@@ -112,7 +109,7 @@ export function buildRecommendations(
     } else if (neededPosition && p.playingPosition === "Flexible/Varies") {
       reasons.push("Versatile Choice");
     }
-    
+
     // NOTE: "Club Proximity" reason tag block has been removed here so it isn't disclosed to coaches
 
     return {
@@ -151,7 +148,6 @@ export async function getRecommendationsForMatch(
   if (!playerData || !playerData.match) {
     throw new Error("Match environment data could not be computed.");
   }
-
   const match = playerData.match;
   const targetTeamName = side === "away" ? match.awayTeam : match.homeTeam;
 

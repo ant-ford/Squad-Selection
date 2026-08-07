@@ -8,7 +8,7 @@ import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
 import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
-import { ABILITY_RANK } from "./abilityRank";
+import { ABILITY_RANK } from "../../src/lib/abilityRank";
 
 type MatchSide = "home" | "away";
 

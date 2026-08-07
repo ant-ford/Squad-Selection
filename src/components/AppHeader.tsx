@@ -6,7 +6,6 @@ import type { ProfileData } from '@/api/getMyProfile';
 export default function AppHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
   const location = useLocation();
-
   const isDashboard = location.pathname === '/coach' || location.pathname === '/coach/fixtures';
   const isRanking = location.pathname === '/coach/ranking';
 

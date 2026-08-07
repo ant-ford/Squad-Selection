@@ -1,13 +1,4 @@
 // Low-level Airtable REST client for the Worker.
-//
-// This is the ONLY place in the whole project that is allowed to hold the
-// Airtable token / talk to api.airtable.com. Field name constants, table
-// names, domain types, and the record -> domain-object mappers are NOT
-// duplicated here — they are imported straight from the frontend's
-// src/generated/ and src/mappers/ (see reference.ts, fixtures.ts, squad.ts,
-// availability.ts). Those files are plain TypeScript with no browser APIs,
-// so Wrangler's esbuild bundler pulls them into the Worker bundle unmodified.
-
 export interface Env {
   AIRTABLE_TOKEN: string;
   AIRTABLE_BASE_ID: string;
@@ -31,7 +22,7 @@ function tableUrl(env: Env, table: string) {
   return `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
 }
 
-async function airtableFetch<T>( env: Env, url: string, init?: RequestInit ): Promise<T | null> {
+async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Promise<T | null> {
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -40,7 +31,7 @@ async function airtableFetch<T>( env: Env, url: string, init?: RequestInit ): Pr
       ...(init?.headers || {}),
     },
   });
-
+  
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new AirtableError(
@@ -48,15 +39,15 @@ async function airtableFetch<T>( env: Env, url: string, init?: RequestInit ): Pr
       response.status
     );
   }
-
+  
   if (response.status === 204) return null;
   return response.json() as Promise<T>;
 }
 
 /** Single page of records (max 100, or whatever `params.pageSize` says). */
-export async function airtableList( env: Env, table: string, params?: Record<string, string> ): Promise<{ records: any[]; offset?: string }> {
+export async function airtableList(env: Env, table: string, params?: Record<string, string>): Promise<{ records: any[]; offset?: string }> {
   const search = new URLSearchParams(params);
-  const result = await airtableFetch<{ records: any[]; offset?: string }>( env, `${tableUrl(env, table)}?${search.toString()}` );
+  const result = await airtableFetch<{ records: any[]; offset?: string }>(env, `${tableUrl(env, table)}?${search.toString()}`);
   if (!result) { throw new Error("Unexpected null Airtable response"); }
   return result;
 }
@@ -69,17 +60,14 @@ export async function airtableFindAll(
 ): Promise<any[]> {
   const records: any[] = [];
   let offset: string | undefined;
-
   do {
     const params: Record<string, string> = { pageSize: "100" };
     if (filterByFormula) params.filterByFormula = filterByFormula;
     if (offset) params.offset = offset;
-
     const page = await airtableList(env, table, params);
     records.push(...(page.records ?? []));
     offset = page.offset;
   } while (offset);
-
   return records;
 }
 
@@ -160,7 +148,6 @@ export async function airtableBatchDelete(
   ids: string[]
 ): Promise<any> {
   const body = JSON.stringify({ records: ids });
-  console.log(`Batch delete body: ${body}`);
   return airtableFetch(env, tableUrl(env, table), {
     method: "DELETE",
     body,

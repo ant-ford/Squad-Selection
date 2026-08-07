@@ -1,6 +1,6 @@
 /**
-Ranking engine — single source of truth for player ability assessment.
-*/
+ * Ranking engine — single source of truth for player ability assessment.
+ */
 import {
   airtableBatchUpdate,
   airtableBatchCreate,
@@ -17,12 +17,8 @@ import {
 } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
-import {
-  computeAbilityAssignment,
-  emptyConfig,
-  validateConfig,
-} from "./abilityGroup";
-import { ABILITY_RANK } from "./abilityRank";
+import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
+import { ABILITY_RANK } from "../../src/lib/abilityRank";
 import { getPlayerByEmail, getReferenceData } from "./reference";
 import {
   invalidateCache,
@@ -139,11 +135,6 @@ export async function getAbilityGroupConfig(
   return data;
 }
 
-/**
-Saves the ability group configuration and SYNCHRONOUSLY recomputes all
-derived ability badges. Returns the fully updated RankingList so the
-frontend can update its cache immediately without polling.
-*/
 export async function setAbilityGroupConfig(
   env: Env,
   config: AbilityGroupConfigMap,
@@ -152,6 +143,7 @@ export async function setAbilityGroupConfig(
   if (!actingEmail) throw new HttpError("actingEmail is required", 400);
   const actor = await getPlayerByEmail(env, actingEmail);
   if (!actor) throw new HttpError("Player record not found for this email", 404);
+  
   const ref = await getReferenceData(env);
   const isSectionCaptain = ref.teams.some((t) =>
     (t.sectionCaptain || []).includes(actor.id),
@@ -159,6 +151,7 @@ export async function setAbilityGroupConfig(
   if (!isSectionCaptain) {
     throw new HttpError("Only the Section Captain can modify the ranking configuration", 403);
   }
+
   const ranking = await getActiveRanking(env);
   const validation = validateConfig(config, ranking.activeCount);
   if (validation) throw new HttpError(validation, 400);
@@ -190,7 +183,6 @@ export async function setAbilityGroupConfig(
   }
 
   invalidateCache("ranking:config");
-  // Synchronously recompute derived fields so the response is fully consistent
   return recomputeDerivedFields(env);
 }
 
@@ -247,7 +239,7 @@ async function executeRankMove(
       sectionRankUpdates.push({ id: p.id, rank: r - 1, oldRank: r });
     }
   }
-
+  
   await applySectionRankUpdates(env, sectionRankUpdates, actingEmail);
   const rankById = new Map(sectionRankUpdates.map((u) => [u.id, u.rank]));
   const updatedPlayers = players.map((p) => ({
@@ -318,6 +310,7 @@ export async function reorderRanking(
       409,
     );
   }
+
   const known = new Set(players.map((p) => p.id));
   const seen = new Set<string>();
   for (const id of playerIds) {
@@ -329,6 +322,7 @@ export async function reorderRanking(
   const playerById = new Map(players.map((p) => [p.id, p]));
   const updates: { id: string; rank: number; oldRank: number }[] = [];
   const updatedPlayers: Player[] = [];
+  
   playerIds.forEach((id, i) => {
     const p = playerById.get(id)!;
     const newRank = i + 1;
@@ -344,7 +338,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
   const record = await airtableFindById(env, TABLES.player, playerId);
   if (!record) throw new HttpError("Player not found", 404);
   const player = mapPlayer(record);
-
+  
   if (player.active !== true) {
     const activePlayers = await fetchActiveRankingFromAirtable(env);
     const newRank = activePlayers.length + 1;
@@ -355,6 +349,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
       [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
     });
   }
+  
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -368,6 +363,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   invalidateCache(rankingCacheKey(true));
   const players = await fetchActiveRankingFromAirtable(env);
   const idx = players.findIndex((p) => p.id === playerId);
+  
   if (idx === -1) {
     await airtableUpdate(env, TABLES.player, playerId, { [PEOPLE_FIELDS.active]: false });
     return getActiveRanking(env);
@@ -375,14 +371,14 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
 
   const oldRank = players[idx].sectionRank ?? 0;
   console.log(`[Ranking Audit] ${new Date().toISOString()} | User: ${actingEmail || 'system'} | Player: ${playerId} | Old Rank: ${oldRank} | New Rank: N/A (Deactivated)`);
-
+  
   const sectionRankUpdates: { id: string; rank: number; oldRank: number }[] = [];
   for (const p of players) {
     const r = p.sectionRank ?? 0;
     if (p.id === playerId) continue;
     if (r > oldRank) sectionRankUpdates.push({ id: p.id, rank: r - 1, oldRank: r });
   }
-
+  
   await applySectionRankUpdates(env, sectionRankUpdates, actingEmail);
   await airtableUpdate(env, TABLES.player, playerId, {
     [PEOPLE_FIELDS.active]: false,
@@ -390,7 +386,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
     [PEOPLE_FIELDS.playingAbility]: null,
     [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
   });
-
+  
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -402,9 +398,11 @@ export async function initializeRanking(env: Env): Promise<RankingList> {
     'AND({Applicant Stage}!="Rejected", {Status}!="Resigned", OR({Active}=TRUE(), {Status}="Applicant"))',
   );
   const players = records.map(mapPlayer);
+  
   const ranked = players
     .filter((p) => typeof p.sectionRank === "number" && p.sectionRank > 0)
     .sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
+    
   const unranked = players
     .filter((p) => !(typeof p.sectionRank === "number" && p.sectionRank > 0))
     .sort((a, b) => {
@@ -416,8 +414,8 @@ export async function initializeRanking(env: Env): Promise<RankingList> {
 
   const combined = [...ranked, ...unranked];
   const updates: { id: string; rank: number; oldRank: number }[] = combined.map((p, i) => ({ id: p.id, rank: i + 1, oldRank: p.sectionRank ?? 0 }));
+  
   if (updates.length > 0) await applySectionRankUpdates(env, updates, "system");
-
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -441,17 +439,17 @@ async function recomputeDerivedFieldsFromList(
       updatedPlayers.push(p);
       continue;
     }
-
+    
     const teamKey = p.registeredTeam ?? "";
     const positionKey = p.playingPosition ?? "";
     const teamRank = (teamCounters.get(teamKey) ?? 0) + 1;
     teamCounters.set(teamKey, teamRank);
     const positionalRank = (positionalCounters.get(positionKey) ?? 0) + 1;
     positionalCounters.set(positionKey, positionalRank);
-
+    
     const assignment = computeAbilityAssignment(rank, n, config);
     const needsUpdate = p.playingAbility !== assignment.abilityDisplay;
-
+    
     if (needsUpdate) {
       fieldUpdates.push({
         id: p.id,
@@ -461,7 +459,7 @@ async function recomputeDerivedFieldsFromList(
         },
       });
     }
-
+    
     updatedPlayers.push({
       ...p,
       teamRank,
@@ -475,7 +473,7 @@ async function recomputeDerivedFieldsFromList(
   invalidateCache(rankingCacheKey(true));
   invalidateCache("club-reference");
   invalidateCachePrefix("players-for-match:");
-
+  
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };
 }
 
@@ -491,10 +489,11 @@ async function applySectionRankUpdates(
 ): Promise<void> {
   if (updates.length === 0) return;
   const now = new Date().toISOString();
-  // Audit Log
+  
   for (const u of updates) {
     console.log(`[Ranking Audit] ${now} | User: ${actingEmail || 'system'} | Player: ${u.id} | Old Rank: ${u.oldRank ?? '?'} | New Rank: ${u.rank}`);
   }
+  
   const stamped = updates.map(({ id, rank }) => ({
     id,
     fields: {
@@ -502,6 +501,7 @@ async function applySectionRankUpdates(
       [PEOPLE_FIELDS.rankUpdatedAt]: now,
     },
   }));
+  
   await batchUpdatePlayers(env, stamped);
   invalidateCache(rankingCacheKey(true));
 }

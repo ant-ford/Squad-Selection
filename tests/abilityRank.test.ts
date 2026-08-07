@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ABILITY_RANK } from '../worker/src/abilityRank';
+import { ABILITY_RANK } from '../src/lib/abilityRank';
 
 describe('ABILITY_RANK', () => {
   it('ranks A+ highest and H- lowest', () => {

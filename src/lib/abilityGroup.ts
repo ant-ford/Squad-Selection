@@ -13,8 +13,11 @@
  *
  * Within each group the top-ranked players receive "+", the middle
  * receive neutral, and the bottom receive "−".
+ *
+ * Shared module: imported by both the frontend (PlayerRanking) and the
+ * Worker (ranking engine). Must remain pure — no Cloudflare or browser APIs.
  */
-import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
+import type { AbilityGroupConfigMap } from "../generated/domainTypes";
 
 export type SubGroup = "plus" | "neutral" | "minus";
 
@@ -58,7 +61,6 @@ export function validateConfig(
 function computeSubGroup(offset: number, nG: number): SubGroup {
   const k = Math.floor(nG / 3);
   const r = nG % 3;
-
   let plus: number;
   let neutral: number;
 
@@ -94,7 +96,6 @@ export function computeAbilityAssignment(
   config: AbilityGroupConfigMap,
 ): AbilityAssignment {
   let cursor = 0;
-
   for (const g of ORDERED_GROUPS) {
     const cap = Math.max(0, Math.floor(config[g] ?? 0));
     if (cap === 0) continue;
@@ -112,14 +113,12 @@ export function computeAbilityAssignment(
         abilityDisplay: `${g}${subGroupSuffix(sg)}`,
       };
     }
-
     cursor = end;
   }
 
   // Group H — residual
   const hStart = cursor + 1;
   const hEnd = totalActive;
-
   if (rank >= hStart && rank <= hEnd) {
     const nG = hEnd - hStart + 1;
     const offset = rank - hStart;

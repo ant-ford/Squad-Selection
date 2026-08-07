@@ -122,3 +122,11 @@ export interface RankingList {
   config: AbilityGroupConfigMap;
   version: number;
 }
+
+export interface RecentChange {
+  id: string;
+  kind: string;
+  playerName: string;
+  text: string;
+  at: string;
+}

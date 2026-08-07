@@ -49,8 +49,8 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
     >
       <div className="shrink-0">
         {selected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :
-          isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
-          <Circle className="h-5 w-5 text-muted-foreground" />}
+         isBlocked ? <Ban className="h-5 w-5 text-muted-foreground" /> :
+         <Circle className="h-5 w-5 text-muted-foreground" />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -63,7 +63,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
           {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
-        {/* Cross-team conflict badges */}
+
         {player.conflicts?.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1.5">
             {player.conflicts.map((c, i) => (
@@ -73,7 +73,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
             ))}
           </div>
         )}
-        {/* Blocks (reason) + warnings with icons */}
+
         <div className="mt-1 flex flex-wrap gap-1.5">
           {(player.blocks ?? []).map((b, i) => (
             <span key={i} className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">

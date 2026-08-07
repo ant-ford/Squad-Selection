@@ -21,7 +21,7 @@ import {
   useAbilityGroupConfig, useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig,
 } from '@/lib/queries';
-import { emptyConfig, computeAbilityAssignment } from '../../worker/src/abilityGroup';
+import { emptyConfig, computeAbilityAssignment } from '@/lib/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@/generated/domainTypes';
 
@@ -38,12 +38,14 @@ const ACCEPTED_STAGE_ORDINAL = 7;
 function stageOrdinal(stage?: string): number {
   if (!stage) return -1;
   if (stage === 'Accepted') return ACCEPTED_STAGE_ORDINAL;
-  const m = /^(\d+)\./.exec(stage);
+  const m = /^(\d+)./.exec(stage);
   return m ? Number(m[1]) : -1;
 }
+
 function shortStage(s?: string): string {
-  return s ? s.replace(/^\d+\.\s*/, '') : '';
+  return s ? s.replace(/^\d+.\s*/, '') : '';
 }
+
 function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: number) {
   const boundaries: { group: string; start: number; end: number }[] = [];
   let cursor = 0;
@@ -58,6 +60,7 @@ function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: numb
   }
   return boundaries;
 }
+
 function nameOf(p: Player | InactiveRankingEntry): string {
   const a = (p.preferredName ?? '').trim();
   const b = (p.surname ?? '').trim();
@@ -68,14 +71,17 @@ function nameOf(p: Player | InactiveRankingEntry): string {
   if (c) return c;
   return 'Unknown';
 }
+
 function initialsOf(p: Player): string {
   return (nameOf(p).split(' ').map((w) => w[0]).join('').slice(0, 2) || '?').toUpperCase();
 }
+
 function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGroupBoundaries>) {
   const rank = player.sectionRank ?? 0;
   for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
   return 'H';
 }
+
 function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGroupBoundaries>): string {
   for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
   return 'H';
@@ -94,7 +100,7 @@ export default function PlayerRanking() {
   const deactivate = useDeactivatePlayer();
   const updateConfig = useUpdateAbilityConfig();
 
-  // ── Filter / UI state (multi-select Sets for team & position) ─────────
+  // ── Filter / UI state ─────────
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   useEffect(() => {
@@ -115,11 +121,13 @@ export default function PlayerRanking() {
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
@@ -131,6 +139,7 @@ export default function PlayerRanking() {
       return n;
     });
   }, []);
+
   const togglePosition = useCallback((p: string) => {
     setPositionFilter((prev) => {
       const n = new Set(prev);
@@ -149,8 +158,10 @@ export default function PlayerRanking() {
     const source = draftIds
       ? draftIds.map((id) => playersById.get(id)).filter((p): p is Player => !!p)
       : players;
+      
     const teamCounters = new Map<string, number>();
     const posCounters = new Map<string, number>();
+    
     return source.map((p, i) => {
       const rank = i + 1;
       const tk = p.registeredTeam ?? '';
@@ -165,7 +176,6 @@ export default function PlayerRanking() {
   }, [draftIds, players, playersById, config]);
 
   const boundaries = useMemo(() => computeGroupBoundaries(config, totalActive), [config, totalActive]);
-
   const teamOptions = useMemo(() => {
     const set = new Set<string>();
     for (const p of players) if (p.registeredTeam) set.add(p.registeredTeam);
@@ -202,6 +212,7 @@ export default function PlayerRanking() {
     }
     return count;
   }, [draftIds, displayPlayers, playersById]);
+
   const hasChanges = modifiedCount > 0;
   const applicantsHidden = !showTrialApplicants || !showSponsoringApplicants;
 
@@ -229,6 +240,7 @@ export default function PlayerRanking() {
       }
     });
   }, [boundaries]);
+
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
   const reorderDraft = useCallback((sourceId: string, targetId: string, before: boolean) => {
@@ -262,6 +274,7 @@ export default function PlayerRanking() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const handleDragStart = useCallback((e: DragStartEvent) => setActiveDragId(String(e.active.id)), []);
+  
   const handleDragEnd = useCallback((e: DragEndEvent) => {
     setActiveDragId(null);
     const { active, over } = e;
@@ -273,6 +286,7 @@ export default function PlayerRanking() {
     if (si === -1 || ti === -1) return;
     reorderDraft(sourceId, targetId, si > ti);
   }, [filteredPlayers, reorderDraft]);
+
   const handleDragCancel = useCallback(() => setActiveDragId(null), []);
 
   const handleSave = useCallback(async () => {
@@ -300,6 +314,7 @@ export default function PlayerRanking() {
 
   const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
+
   const handleOpenMoveToRank = useCallback((playerId: string) => {
     setMoveToRankPlayer(displayPlayersRef.current.find((x) => x.id === playerId) ?? null);
   }, []);
@@ -336,7 +351,7 @@ export default function PlayerRanking() {
     return (
       <div className="p-6 text-center text-destructive">
         Failed to load ranking: {(ranking.error as any)?.message ?? 'Unknown error'}
-        <div className="mt-3"><Button onClick={() => ranking.refetch()}>Retry</Button></div>
+        <div className="mt-3"> <Button onClick={() => ranking.refetch()}>Retry</Button> </div>
       </div>
     );
   }
@@ -571,6 +586,7 @@ function RankingFilterContent(props: {
 }) {
   const applicantsHidden = !props.showTrialApplicants || !props.showSponsoringApplicants;
   const hasFilter = !!props.search || props.teamFilter.size > 0 || props.positionFilter.size > 0 || applicantsHidden;
+
   return (
     <>
       <div className="flex items-center gap-2 mb-1.5">
@@ -718,9 +734,7 @@ function RankingRowInner(props: {
     <div
       data-rank={rank}
       style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
-      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${
-        isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'
-      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
+      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
     >
       <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
         <GripVertical className="h-4 w-4" />
@@ -850,6 +864,7 @@ function MoveToRankSheet({ player, activeCount, onClose, onSubmit }: {
   const [error, setError] = useState('');
   const n = Number(value);
   const isValid = Number.isInteger(n) && n >= 1 && n <= activeCount;
+
   return (
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
@@ -885,6 +900,7 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
   useEffect(() => { setLocal({ ...config }); }, [config]);
   const total = (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).reduce((acc, g) => acc + (local[g] ?? 0), 0);
   const overCapacity = total > activeCount;
+
   return (
     <ModalSheet title="Ability Group Configuration" onClose={onClose}>
       <p className="text-sm text-muted-foreground mb-3">
@@ -908,6 +924,7 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
           <span className="text-xs text-muted-foreground w-10 text-right">rest</span>
         </div>
       </div>
+
       <div className="mt-3 space-y-2">
         <div className="flex h-4 rounded-full overflow-hidden border border-border">
           {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => {
@@ -943,6 +960,7 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
           <span>H</span>
         </div>
       </div>
+
       <div className="flex gap-2 mt-4">
         <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>Cancel</Button>
         <Button
@@ -982,7 +1000,7 @@ function InactiveSection({ entries, loading, onReactivate }: {
                 </div>
                 <p className="text-[11px] text-muted-foreground truncate">
                   {e.registeredTeam ?? '–'} · {POS_SHORT[e.playingPosition ?? ''] ?? '–'}
-                  {typeof e.lastSectionRank === 'number' ? ` · last rank #${e.lastSectionRank}` : ''}
+                  {typeof e.lastSectionRank === 'number' ? `· last rank #${e.lastSectionRank}` : ''}
                 </p>
               </div>
               <button
@@ -1007,7 +1025,7 @@ function ModalSheet({ title, onClose, children }: { title: string; onClose: () =
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground"> <X className="h-5 w-5" /> </button>
         </div>
         {children}
       </div>

@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  computeAbilityAssignment,
-  emptyConfig,
-  validateConfig,
-} from '../worker/src/abilityGroup';
+import { computeAbilityAssignment, emptyConfig, validateConfig } from '../src/lib/abilityGroup';
 import type { AbilityGroupConfigMap } from '../src/generated/domainTypes';
 
 describe('abilityGroup — computeAbilityAssignment', () => {
@@ -26,7 +22,6 @@ describe('abilityGroup — computeAbilityAssignment', () => {
   });
 
   it('assigns sub-group "+" to top third, neutral to middle, "-" to bottom', () => {
-    // Group A with 5 players: 5/3 → k=1, r=2 → plus=2, neutral=2, minus=1
     const a1 = computeAbilityAssignment(1, 80, config);
     const a2 = computeAbilityAssignment(2, 80, config);
     const a3 = computeAbilityAssignment(3, 80, config);
@@ -40,23 +35,19 @@ describe('abilityGroup — computeAbilityAssignment', () => {
   });
 
   it('residual players fall into group H', () => {
-    // A:3 fills 1-3, remaining 7 go to H
     const cfg: AbilityGroupConfigMap = { A: 3, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
     const result = computeAbilityAssignment(5, 10, cfg);
     expect(result.abilityGroup).toBe('H');
   });
 
   it('group H display uses "-" suffix for bottom sub-group', () => {
-    // A:3 fills 1-3, H has players 4-10 (7 players). Bottom 3rd gets "-"
     const cfg: AbilityGroupConfigMap = { A: 3, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
-    // k=2, r=1 → plus=2, neutral=3, minus=2. Offset 5 (rank 9-4=5) >= 2+3=5 → minus
     const result = computeAbilityAssignment(9, 10, cfg);
     expect(result.abilityDisplay).toBe('H-');
   });
 
   it('group H display uses "+" suffix for top sub-group', () => {
     const cfg: AbilityGroupConfigMap = { A: 3, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
-    // k=2, r=1 → plus=2, neutral=3, minus=2. Rank 4-3=1 offset < 2 → plus
     const result = computeAbilityAssignment(4, 10, cfg);
     expect(result.abilityDisplay).toBe('H+');
   });
@@ -73,7 +64,6 @@ describe('abilityGroup — computeAbilityAssignment', () => {
   });
 
   it('sub-group algorithm: r=0 case (divisible by 3)', () => {
-    // Group of 3: k=1, r=0 → plus=1, neutral=1, minus=1
     const cfg: AbilityGroupConfigMap = { A: 3, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
     const a1 = computeAbilityAssignment(1, 3, cfg);
     const a2 = computeAbilityAssignment(2, 3, cfg);
@@ -84,7 +74,6 @@ describe('abilityGroup — computeAbilityAssignment', () => {
   });
 
   it('sub-group algorithm: r=2 case', () => {
-    // Group of 5: k=1, r=2 → plus=2, neutral=2, minus=1
     const cfg: AbilityGroupConfigMap = { A: 5, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
     const a1 = computeAbilityAssignment(1, 5, cfg);
     const a2 = computeAbilityAssignment(2, 5, cfg);
@@ -101,13 +90,11 @@ describe('abilityGroup — computeAbilityAssignment', () => {
   it('single-player group gets neutral (no suffix)', () => {
     const cfg: AbilityGroupConfigMap = { A: 1, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
     const result = computeAbilityAssignment(1, 2, cfg);
-    // k=0, r=1 → plus=0, neutral=1, minus=0 → neutral gets no suffix
     expect(result.abilityDisplay).toBe('A');
   });
 
   it('display reflects neutral sub-group with no suffix', () => {
     const cfg: AbilityGroupConfigMap = { A: 2, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
-    // k=0, r=2 → plus=1, neutral=1, minus=0
     const r1 = computeAbilityAssignment(1, 2, cfg);
     const r2 = computeAbilityAssignment(2, 2, cfg);
     expect(r1.abilityDisplay).toBe('A+');

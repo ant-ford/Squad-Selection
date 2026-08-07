@@ -28,6 +28,7 @@ describe('PlayerFilters', () => {
         eligibility: new Set(['blocked']),
         selection: new Set(),
         availability: new Set(['Unavailable']),
+        ability: new Set(),
       };
       const params = filtersToParams(f);
       expect(params).toContain('position=MID');
@@ -80,6 +81,7 @@ describe('PlayerFilters', () => {
         eligibility: new Set(['blocked', 'warning']),
         selection: new Set(['none']),
         availability: new Set(['Unavailable']),
+        ability: new Set(),
       };
       const rt = paramsToFilters(filtersToParams(original));
       for (const cat of ['position','eligibility','selection','availability'] as const) {
