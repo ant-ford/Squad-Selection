@@ -72,9 +72,22 @@ export default function FixtureList() {
   }, [allFixtures, activeTab, showPast]);
 
   const coachTeams = profile?.coachTeams ?? [];
+  const isSectionCaptain = !!profile?.isSectionCaptain;
+
+  // Section captains see the full section — derive all team names from
+  // the fixtures response itself, since the Worker returns all teams when
+  // the caller is a section captain.
+  const allTeamNames = useMemo(() => {
+    const names = new Set(allFixtures.map((f) => f.hkfcTeam).filter(Boolean));
+    return Array.from(names).sort();
+  }, [allFixtures]);
+
   const tabs = [
     { key: 'all', label: 'All' },
-    ...coachTeams.map(t => ({ key: t.teamName, label: t.teamName })),
+    ...(isSectionCaptain
+      ? allTeamNames.map((name) => ({ key: name, label: name }))
+      : coachTeams.map((t) => ({ key: t.teamName, label: t.teamName }))
+    ),
   ];
 
   const grouped = useMemo(() => {
@@ -96,11 +109,7 @@ export default function FixtureList() {
               <button
                 key={t.key}
                 onClick={() => handleTabChange(t.key)}
-                className={`text-sm pb-2 whitespace-nowrap shrink-0 ${
-                  activeTab === t.key
-                    ? 'font-medium text-foreground border-b-2 border-primary'
-                    : 'text-muted-foreground'
-                }`}
+                className={`text-sm pb-2 whitespace-nowrap shrink-0 ${activeTab === t.key ? 'font-medium text-foreground border-b-2 border-primary' : 'text-muted-foreground'}`}
               >
                 {t.label}
               </button>
@@ -110,9 +119,7 @@ export default function FixtureList() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleTogglePast}
-            className={`text-xs px-2 py-1 rounded-md ${
-              showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-            }`}
+            className={`text-xs px-2 py-1 rounded-md ${showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
             title={showPast ? 'Hide past fixtures' : 'Show past fixtures'}
           >
             {showPast ? 'Showing past' : 'Hide past'}
@@ -120,6 +127,7 @@ export default function FixtureList() {
           <CoachCalendarExport activeTab={activeTab} />
         </div>
       </div>
+
       {isLoading ? (
         <div className="space-y-3 pt-4">
           {[1, 2, 3].map(i => (

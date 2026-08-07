@@ -44,7 +44,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
 
   return (
     <div
-      className={`flex items-center gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-60' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
+      className={`flex items-center gap-2 sm:gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-60' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
       onClick={!isBlocked ? onToggleSelection : undefined}
     >
       <div className="shrink-0">
@@ -53,17 +53,16 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
           <Circle className="h-5 w-5 text-muted-foreground" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
-          {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm shrink-0">U21</span>}
-          {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-sm shrink-0">VP</span>}
-          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · Ability {player.playingAbility || '–'}</span>
+          {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1 py-0.5 rounded-sm shrink-0">U21</span>}
+          {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm shrink-0">VP</span>}
+          <span className="text-[11px] text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · {player.playingAbility || '–'}</span>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground">
           {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
-
         {/* Cross-team conflict badges */}
         {player.conflicts?.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -74,7 +73,6 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
             ))}
           </div>
         )}
-
         {/* Blocks (reason) + warnings with icons */}
         <div className="mt-1 flex flex-wrap gap-1.5">
           {(player.blocks ?? []).map((b, i) => (

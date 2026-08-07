@@ -31,8 +31,10 @@ export default function SquadSelection() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const side = (searchParams.get("side") as "home" | "away") || undefined;
+
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
+
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
   const [saving, setSaving] = useState(false);
@@ -148,9 +150,11 @@ export default function SquadSelection() {
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
     if (!player || player.eligibilityStatus === 'blocked') return;
+
     const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
     const isCurrentlySelected = player.selectionStatus === 'Selected';
     const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
+
     const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
     if (serverMatchesIntended) {
       setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
@@ -237,7 +241,9 @@ export default function SquadSelection() {
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
+
       <MatchHeader match={optimisticMatch} />
+
       {optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
         <div className="container mx-auto px-4 pt-3">
           <RecommendationsPanel
@@ -248,7 +254,9 @@ export default function SquadSelection() {
           />
         </div>
       )}
+
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
+
       <div className="container mx-auto py-2 px-4 mb-1 flex items-center gap-3">
         <input
           type="checkbox"
@@ -259,6 +267,7 @@ export default function SquadSelection() {
         />
         <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
       </div>
+
       {/* Player list — virtualized; sorted: Selected first, then by Ability */}
       <div ref={listRef} className="container mx-auto px-4 max-h-[70vh] overflow-y-auto">
         {sortedPlayers.length === 0 ? (
@@ -293,8 +302,12 @@ export default function SquadSelection() {
           </div>
         )}
       </div>
+
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
+        <div
+          className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-50 items-center"
+          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
             {pendingPlayers.slice(0, 4).map(p => (
               <span key={p.id} className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0 font-medium">
@@ -305,12 +318,13 @@ export default function SquadSelection() {
               <span className="text-xs text-muted-foreground shrink-0">+{pendingPlayers.length - 4} more</span>
             )}
           </div>
-          <button onClick={() => setPendingDeltas([])} className="flex-1 py-3 border rounded text-sm font-medium">Discard</button>
-          <button onClick={handleSave} disabled={saving} className="flex-1 py-3 bg-primary text-white rounded text-sm font-medium">
+          <button onClick={() => setPendingDeltas([])} className="flex-1 py-2.5 sm:py-3 border rounded text-sm font-medium">Discard</button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 sm:py-3 bg-primary text-white rounded text-sm font-medium">
             {saving ? 'Saving...' : `Save (${pendingDeltas.length})`}
           </button>
         </div>
       )}
+
       {blocker.state === 'blocked' && (
         <ConfirmDialog
           title="Discard unsaved changes?"
