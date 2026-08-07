@@ -33,7 +33,6 @@ export default function PlayerDashboard() {
     loadData();
   }, [loadData]);
 
-  // Optimistic availability update across both fixture lists.
   const handleQuickAvailability = async (
     fixtureId: string,
     status: 'Available' | 'Maybe' | 'Unavailable',
@@ -72,24 +71,16 @@ export default function PlayerDashboard() {
   if (isLoading || !user) return <DashboardSkeleton />;
   if (loading || !data) return <DashboardSkeleton />;
 
-  const selectedCount = data.fixtures.filter((f) => f.selectionStatus === 'Selected').length;
-  const unavailableCount = data.fixtures.filter((f) => f.availabilityStatus === 'Unavailable').length;
   const eligibleOther = data.eligibleOtherFixtures ?? [];
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-background">
+      <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {/* Primary logo - clean version */}
               <div className="h-8 w-8">
-                <img
-                  src="/assets/logo-plain.svg"
-                  alt="Eddy"
-                  className="h-full w-full object-contain"
-                />
+                <img src="/assets/logo-plain.svg" alt="Eddy" className="h-full w-full object-contain" />
               </div>
               <div>
                 <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
@@ -124,7 +115,7 @@ export default function PlayerDashboard() {
         </div>
       </header>
 
-      {/* Player Info */}
+      {/* Player identity card (compact — stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
@@ -142,14 +133,9 @@ export default function PlayerDashboard() {
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <StatBox label="Selected" value={selectedCount} color="bg-primary/10 text-primary" />
-            <StatBox label="Unavailable" value={unavailableCount} color="bg-destructive/10 text-destructive" />
-          </div>
         </div>
       </div>
 
-      {/* Fixtures */}
       <div className="container mx-auto px-4 pb-8">
         <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
         {data.fixtures.length === 0 ? (
@@ -171,7 +157,6 @@ export default function PlayerDashboard() {
           </div>
         )}
 
-        {/* Higher-team / play-up availability management */}
         {eligibleOther.length > 0 && (
           <>
             <div className="mt-6">
@@ -216,15 +201,6 @@ export default function PlayerDashboard() {
   );
 }
 
-function StatBox({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className={`rounded-lg p-3 text-center ${color}`}>
-      <p className="text-xl font-bold">{value}</p>
-      <p className="text-xs mt-0.5">{label}</p>
-    </div>
-  );
-}
-
 function DashboardSkeleton() {
   return (
     <div className="min-h-screen bg-background">
@@ -233,7 +209,7 @@ function DashboardSkeleton() {
         <Skeleton className="h-4 w-24 mt-1" />
       </div>
       <div className="container mx-auto px-4 py-4 space-y-4">
-        <Skeleton className="h-32 w-full rounded-xl" />
+        <Skeleton className="h-20 w-full rounded-xl" />
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-20 w-full rounded-lg" />
         <Skeleton className="h-20 w-full rounded-lg" />

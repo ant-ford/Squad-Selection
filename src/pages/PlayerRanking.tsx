@@ -94,6 +94,7 @@ export default function PlayerRanking() {
   const deactivate = useDeactivatePlayer();
   const updateConfig = useUpdateAbilityConfig();
 
+  // ── Filter / UI state (multi-select Sets for team & position) ─────────
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   useEffect(() => {
@@ -101,8 +102,8 @@ export default function PlayerRanking() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const [teamFilter, setTeamFilter] = useState<string | null>(null);
-  const [positionFilter, setPositionFilter] = useState<string | null>(null);
+  const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
+  const [positionFilter, setPositionFilter] = useState<Set<string>>(new Set());
   const [showTrialApplicants, setShowTrialApplicants] = useState(true);
   const [showSponsoringApplicants, setShowSponsoringApplicants] = useState(true);
   const [showInactive, setShowInactive] = useState(false);
@@ -122,6 +123,21 @@ export default function PlayerRanking() {
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
+
+  const toggleTeam = useCallback((t: string) => {
+    setTeamFilter((prev) => {
+      const n = new Set(prev);
+      if (n.has(t)) n.delete(t); else n.add(t);
+      return n;
+    });
+  }, []);
+  const togglePosition = useCallback((p: string) => {
+    setPositionFilter((prev) => {
+      const n = new Set(prev);
+      if (n.has(p)) n.delete(p); else n.add(p);
+      return n;
+    });
+  }, []);
 
   const data = ranking.data;
   const players = data?.players ?? [];
@@ -167,8 +183,8 @@ export default function PlayerRanking() {
           else if (!showTrialApplicants) return false;
         }
       }
-      if (teamFilter && p.registeredTeam !== teamFilter) return false;
-      if (positionFilter && p.playingPosition !== positionFilter) return false;
+      if (teamFilter.size > 0 && !teamFilter.has(p.registeredTeam ?? '')) return false;
+      if (positionFilter.size > 0 && !positionFilter.has(p.playingPosition ?? '')) return false;
       if (q) {
         const name = `${p.preferredName ?? ''} ${p.surname ?? ''} ${p.givenNames ?? ''}`.toLowerCase();
         if (!name.includes(q)) return false;
@@ -287,10 +303,12 @@ export default function PlayerRanking() {
   const handleOpenMoveToRank = useCallback((playerId: string) => {
     setMoveToRankPlayer(displayPlayersRef.current.find((x) => x.id === playerId) ?? null);
   }, []);
+
   const handleDeactivateById = useCallback((playerId: string) => {
     const player = playersById.get(playerId);
     setConfirmDeactivate({ playerId, label: player ? nameOf(player) : 'this player' });
   }, [playersById]);
+
   const executeDeactivate = useCallback(async (playerId: string, label: string) => {
     setMutatingPlayerId(playerId);
     try {
@@ -301,6 +319,7 @@ export default function PlayerRanking() {
       toast.error(err?.message ?? 'Failed to deactivate player');
     } finally { setMutatingPlayerId(null); }
   }, [deactivate]);
+
   const handleActivate = useCallback(async (entry: InactiveRankingEntry) => {
     setMutatingPlayerId(entry.id);
     try {
@@ -327,28 +346,37 @@ export default function PlayerRanking() {
   const activeDragPlayer = activeDragId ? playersById.get(activeDragId) : null;
 
   const filterBarProps = {
-    search: searchInput, onSearch: setSearchInput,
-    teamFilter, onTeamFilter: setTeamFilter,
-    positionFilter, onPositionFilter: setPositionFilter,
-    showTrialApplicants, showSponsoringApplicants,
+    search: searchInput,
+    onSearch: setSearchInput,
+    teamFilter,
+    onToggleTeam: toggleTeam,
+    onClearTeams: () => setTeamFilter(new Set()),
+    positionFilter,
+    onTogglePosition: togglePosition,
+    onClearPositions: () => setPositionFilter(new Set()),
+    showTrialApplicants,
+    showSponsoringApplicants,
     onNoneApplicants: () => { setShowTrialApplicants(false); setShowSponsoringApplicants(false); },
     onToggleTrialApplicants: () => setShowTrialApplicants((v) => !v),
     onToggleSponsoringApplicants: () => setShowSponsoringApplicants((v) => !v),
     onResetApplicants: () => { setShowTrialApplicants(true); setShowSponsoringApplicants(true); },
     teamOptions,
-    showInactive, onToggleShowInactive: () => setShowInactive((v) => !v),
+    showInactive,
+    onToggleShowInactive: () => setShowInactive((v) => !v),
   };
 
   return (
     <div className="pb-32">
       <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
-        <button onClick={() => navigate('/coach/fixtures')} className="flex items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Fixtures
+        <button onClick={() => navigate('/coach')} className="flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
         </button>
         <div className="flex-1" />
         {isSectionCaptain && (
-          <button onClick={() => setShowConfig(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80">
+          <button
+            onClick={() => setShowConfig(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
+          >
             <Settings2 className="h-3.5 w-3.5" /> Configuration
           </button>
         )}
@@ -361,10 +389,13 @@ export default function PlayerRanking() {
       {isMobile ? (
         <>
           <div className="container mx-auto px-4 py-2 border-y border-border bg-card">
-            <button onClick={() => setIsFilterSheetOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors">
-              <Filter className="h-4 w-4" /> Filters
-              {(search || teamFilter || positionFilter || applicantsHidden) && ' (active)'}
+            <button
+              onClick={() => setIsFilterSheetOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+            >
+              <Filter className="h-4 w-4" />
+              Filters
+              {(search || teamFilter.size > 0 || positionFilter.size > 0 || applicantsHidden) && ' (active)'}
             </button>
           </div>
           <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
@@ -396,9 +427,14 @@ export default function PlayerRanking() {
             No players match the current filters.
           </div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter}
-            onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}
-            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          >
             <SortableContext items={filteredPlayers.map((p) => p.id)} strategy={verticalListSortingStrategy}>
               <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -408,8 +444,12 @@ export default function PlayerRanking() {
                   const prevGrp = prevPlayer ? getDividerGroup(prevPlayer, boundaries) : null;
                   const showDivider = prevGrp !== null && currentGrp !== prevGrp;
                   return (
-                    <div key={p.id} data-index={virtualRow.index} ref={virtualizer.measureElement}
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}>
+                    <div
+                      key={p.id}
+                      data-index={virtualRow.index}
+                      ref={virtualizer.measureElement}
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+                    >
                       {showDivider && <TierDivider group={prevGrp!} />}
                       <SortableRankingRow
                         player={p}
@@ -484,7 +524,6 @@ export default function PlayerRanking() {
         />
       )}
 
-      {/* Full-size photo overlay */}
       {expandedPhoto && (
         <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-6" onClick={() => setExpandedPhoto(null)}>
           <img src={expandedPhoto} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
@@ -496,7 +535,9 @@ export default function PlayerRanking() {
           <div className="flex-1 text-sm text-muted-foreground">
             {modifiedCount} unsaved change{modifiedCount !== 1 ? 's' : ''}
           </div>
-          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 py-3 border rounded text-sm font-medium disabled:opacity-50">Discard</button>
+          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 py-3 border rounded text-sm font-medium disabled:opacity-50">
+            Discard
+          </button>
           <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
             {reorder.isPending ? (
               <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
@@ -508,18 +549,28 @@ export default function PlayerRanking() {
   );
 }
 
+// ── Filter bar ───────────────────────────────────────────────────────────
 function RankingFilterContent(props: {
-  search: string; onSearch: (v: string) => void;
-  teamFilter: string | null; onTeamFilter: (v: string | null) => void;
-  positionFilter: string | null; onPositionFilter: (v: string | null) => void;
-  showTrialApplicants: boolean; showSponsoringApplicants: boolean;
-  onNoneApplicants: () => void; onToggleTrialApplicants: () => void;
-  onToggleSponsoringApplicants: () => void; onResetApplicants: () => void;
+  search: string;
+  onSearch: (v: string) => void;
+  teamFilter: Set<string>;
+  onToggleTeam: (t: string) => void;
+  onClearTeams: () => void;
+  positionFilter: Set<string>;
+  onTogglePosition: (p: string) => void;
+  onClearPositions: () => void;
+  showTrialApplicants: boolean;
+  showSponsoringApplicants: boolean;
+  onNoneApplicants: () => void;
+  onToggleTrialApplicants: () => void;
+  onToggleSponsoringApplicants: () => void;
+  onResetApplicants: () => void;
   teamOptions: string[];
-  showInactive: boolean; onToggleShowInactive: () => void;
+  showInactive: boolean;
+  onToggleShowInactive: () => void;
 }) {
   const applicantsHidden = !props.showTrialApplicants || !props.showSponsoringApplicants;
-  const hasFilter = !!props.search || !!props.teamFilter || !!props.positionFilter || applicantsHidden;
+  const hasFilter = !!props.search || props.teamFilter.size > 0 || props.positionFilter.size > 0 || applicantsHidden;
   return (
     <>
       <div className="flex items-center gap-2 mb-1.5">
@@ -532,36 +583,51 @@ function RankingFilterContent(props: {
         />
         {hasFilter && (
           <button
-            onClick={() => { props.onSearch(''); props.onTeamFilter(null); props.onPositionFilter(null); props.onResetApplicants(); }}
-            className="text-xs text-destructive flex items-center gap-0.5">
+            onClick={() => {
+              props.onSearch('');
+              props.onClearTeams();
+              props.onClearPositions();
+              props.onResetApplicants();
+            }}
+            className="text-xs text-destructive flex items-center gap-0.5"
+          >
             <X className="h-3 w-3" /> Clear
           </button>
         )}
       </div>
+
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Team:</span>
-        <Chip label="All" active={!props.teamFilter} onClick={() => props.onTeamFilter(null)} />
+        <Chip label="All" active={props.teamFilter.size === 0} onClick={props.onClearTeams} />
         {props.teamOptions.map((t) => (
-          <Chip key={t} label={t} active={props.teamFilter === t} onClick={() => props.onTeamFilter(props.teamFilter === t ? null : t)} />
+          <Chip key={t} label={t} active={props.teamFilter.has(t)} onClick={() => props.onToggleTeam(t)} />
         ))}
       </div>
+
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Position:</span>
-        <Chip label="All" active={!props.positionFilter} onClick={() => props.onPositionFilter(null)} />
+        <Chip label="All" active={props.positionFilter.size === 0} onClick={props.onClearPositions} />
         {ALL_POSITIONS.map((p) => (
-          <Chip key={p} label={POS_SHORT[p] ?? p} active={props.positionFilter === p} onClick={() => props.onPositionFilter(props.positionFilter === p ? null : p)} />
+          <Chip key={p} label={POS_SHORT[p] ?? p} active={props.positionFilter.has(p)} onClick={() => props.onTogglePosition(p)} />
         ))}
       </div>
+
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
-        <Chip label="None" active={!props.showTrialApplicants && !props.showSponsoringApplicants} onClick={props.onNoneApplicants} />
+        <Chip
+          label="None"
+          active={!props.showTrialApplicants && !props.showSponsoringApplicants}
+          onClick={props.onNoneApplicants}
+        />
         <Chip label="Trial Application" active={props.showTrialApplicants} onClick={props.onToggleTrialApplicants} />
         <Chip label="Sponsoring" active={props.showSponsoringApplicants} onClick={props.onToggleSponsoringApplicants} />
       </div>
+
       <div className="flex items-center gap-2 mt-2">
         <button
           onClick={props.onToggleShowInactive}
-          className={`text-xs px-2 py-1 rounded-md ${props.showInactive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+          className={`text-xs px-2 py-1 rounded-md ${props.showInactive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+        >
           {props.showInactive ? 'Hide inactive' : 'Show inactive'}
         </button>
         <div className="flex-1" />
@@ -572,8 +638,10 @@ function RankingFilterContent(props: {
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick}
-      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+    <button
+      onClick={onClick}
+      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+    >
       {label}
     </button>
   );
@@ -591,7 +659,9 @@ function TierDivider({ group }: { group: string }) {
 
 function SortableRankingRow(props: {
   player: Player;
-  isFirst: boolean; isLast: boolean; disabled: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  disabled: boolean;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
@@ -603,10 +673,16 @@ function SortableRankingRow(props: {
     <div ref={setNodeRef} style={style} {...attributes}>
       <RankingRowInner
         player={props.player}
-        isFirst={props.isFirst} isLast={props.isLast} disabled={props.disabled} isDragging={isDragging}
-        menuOpen={false} onMenuOpenChange={() => {}}
-        onMoveStep={props.onMoveStep} onOpenMoveToRank={props.onOpenMoveToRank}
-        onDeactivate={props.onDeactivate} onPhotoClick={props.onPhotoClick}
+        isFirst={props.isFirst}
+        isLast={props.isLast}
+        disabled={props.disabled}
+        isDragging={isDragging}
+        menuOpen={false}
+        onMenuOpenChange={() => {}}
+        onMoveStep={props.onMoveStep}
+        onOpenMoveToRank={props.onOpenMoveToRank}
+        onDeactivate={props.onDeactivate}
+        onPhotoClick={props.onPhotoClick}
         dragHandleProps={listeners ?? {}}
       />
     </div>
@@ -615,8 +691,12 @@ function SortableRankingRow(props: {
 
 function RankingRowInner(props: {
   player: Player;
-  isFirst: boolean; isLast: boolean; disabled: boolean; isDragging: boolean;
-  menuOpen: boolean; onMenuOpenChange: (v: boolean) => void;
+  isFirst: boolean;
+  isLast: boolean;
+  disabled: boolean;
+  isDragging: boolean;
+  menuOpen: boolean;
+  onMenuOpenChange: (v: boolean) => void;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
@@ -637,20 +717,20 @@ function RankingRowInner(props: {
   return (
     <div
       data-rank={rank}
-      // Raise the whole row above its virtualized siblings while the menu is open.
       style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
       className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${
         isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'
-      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}>
+      } ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
+    >
       <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
         <GripVertical className="h-4 w-4" />
       </div>
 
-      {/* Profile photo — tap to expand */}
       <button
         onClick={(e) => { e.stopPropagation(); if (player.photo) props.onPhotoClick(player.photo); }}
         className="shrink-0 rounded-full overflow-hidden border border-border"
-        title={player.photo ? 'View photo' : undefined}>
+        title={player.photo ? 'View photo' : undefined}
+      >
         {player.photo ? (
           <img src={player.photo} alt={nameOf(player)} className="h-9 w-9 rounded-full object-cover" />
         ) : (
@@ -678,15 +758,17 @@ function RankingRowInner(props: {
           {hasCv && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowCv((v) => !v); }}
-              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showCv ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showCv ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
               <FileText className="h-3 w-3" /> CV
             </button>
           )}
           {hasComments && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowComments((v) => !v); }}
-              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showComments ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
-              <MessageSquare className="h-3 w-3" /> Player Comments
+              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showComments ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <MessageSquare className="h-3 w-3" /> Comments
             </button>
           )}
         </div>
@@ -717,13 +799,15 @@ function RankingRowInner(props: {
             <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
               <button
                 onClick={() => { props.onMenuOpenChange(false); props.onOpenMoveToRank(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted">
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
+              >
                 Move to rank…
               </button>
               <div className="my-1 h-px bg-border" />
               <button
                 onClick={() => { props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive">
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive"
+              >
                 <UserMinus className="h-3.5 w-3.5 mr-2" /> Deactivate
               </button>
             </div>
@@ -732,12 +816,10 @@ function RankingRowInner(props: {
       </div>
 
       <div className="flex flex-col gap-0.5">
-        <button onClick={() => props.onMoveStep(player.id, 'up')} disabled={disabled || props.isFirst}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move up">
+        <button onClick={() => props.onMoveStep(player.id, 'up')} disabled={disabled || props.isFirst} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move up">
           <ChevronUp className="h-4 w-4" />
         </button>
-        <button onClick={() => props.onMoveStep(player.id, 'down')} disabled={disabled || props.isLast}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move down">
+        <button onClick={() => props.onMoveStep(player.id, 'down')} disabled={disabled || props.isLast} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move down">
           <ChevronDown className="h-4 w-4" />
         </button>
       </div>
@@ -748,6 +830,7 @@ function RankingRowInner(props: {
 function AbilityBadge({ value, tone }: { value: string; tone: string }) {
   return <span className={`text-xs font-bold px-2 py-0.5 rounded shrink-0 ${tone}`} title={value}>{value}</span>;
 }
+
 function getAbilityTone(value: string): string {
   if (value.startsWith('A')) return 'bg-blue-100 text-blue-800 border border-blue-200';
   if (value.startsWith('B')) return 'bg-cyan-100 text-cyan-800 border border-cyan-200';
@@ -773,14 +856,18 @@ function MoveToRankSheet({ player, activeCount, onClose, onSubmit }: {
         <p className="text-sm text-muted-foreground">
           Current rank: <span className="font-medium text-foreground">#{player.sectionRank || 'Unranked'}</span>. Allowed: 1 to {activeCount}.
         </p>
-        <input type="number" min={1} max={activeCount} value={value}
+        <input
+          type="number" min={1} max={activeCount} value={value}
           onChange={(e) => { setValue(e.target.value); setError(''); }}
-          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`} />
+          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`}
+        />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
           <Button className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 bg-primary text-primary-foreground"
-            onClick={() => { if (isValid) onSubmit(n); else setError(`Enter a whole number between 1 and ${activeCount}.`); }}>
+          <Button
+            className="flex-1 bg-primary text-primary-foreground"
+            onClick={() => { if (isValid) onSubmit(n); else setError(`Enter a whole number between 1 and ${activeCount}.`); }}
+          >
             Move
           </Button>
         </div>
@@ -807,9 +894,11 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
         {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => (
           <div key={g} className="flex items-center gap-3">
             <span className="w-6 text-base font-bold text-foreground">{g}</span>
-            <input type="number" min={0} disabled={saving} value={local[g] ?? 0}
+            <input
+              type="number" min={0} disabled={saving} value={local[g] ?? 0}
               onChange={(e) => setLocal((s) => ({ ...s, [g]: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
-              className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground disabled:opacity-50" />
+              className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground disabled:opacity-50"
+            />
             <span className="text-xs text-muted-foreground w-10 text-right">players</span>
           </div>
         ))}
@@ -826,17 +915,22 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
             if (cap === 0 || activeCount === 0) return null;
             const pct = (cap / activeCount) * 100;
             return (
-              <div key={g} className="h-full flex items-center justify-center text-[8px] font-bold text-white transition-all duration-200"
+              <div
+                key={g}
+                className="h-full flex items-center justify-center text-[8px] font-bold text-white transition-all duration-200"
                 style={{ width: `${pct}%`, backgroundColor: GROUP_COLORS[g] }}
-                title={`Group ${g}: ${cap} players (${pct.toFixed(0)}%)`}>
+                title={`Group ${g}: ${cap} players (${pct.toFixed(0)}%)`}
+              >
                 {pct > 6 ? g : ''}
               </div>
             );
           })}
           {activeCount > total && (
-            <div className="h-full flex items-center justify-center text-[8px] font-bold text-pink-800 bg-pink-200 transition-all duration-200"
+            <div
+              className="h-full flex items-center justify-center text-[8px] font-bold text-pink-800 bg-pink-200 transition-all duration-200"
               style={{ width: `${((activeCount - total) / activeCount) * 100}%` }}
-              title={`Group H (residual): ${activeCount - total} players`}>
+              title={`Group H (residual): ${activeCount - total} players`}
+            >
               {((activeCount - total) / activeCount) * 100 > 6 ? 'H' : ''}
             </div>
           )}
@@ -851,8 +945,11 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
       </div>
       <div className="flex gap-2 mt-4">
         <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
-          disabled={overCapacity || saving} onClick={() => onSave(local)}>
+        <Button
+          className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
+          disabled={overCapacity || saving}
+          onClick={() => onSave(local)}
+        >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
         </Button>
       </div>
@@ -888,8 +985,10 @@ function InactiveSection({ entries, loading, onReactivate }: {
                   {typeof e.lastSectionRank === 'number' ? ` · last rank #${e.lastSectionRank}` : ''}
                 </p>
               </div>
-              <button onClick={() => onReactivate(e)}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap">
+              <button
+                onClick={() => onReactivate(e)}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap"
+              >
                 <UserPlus className="h-3.5 w-3.5" />
                 {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}
               </button>
