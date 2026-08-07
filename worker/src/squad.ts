@@ -445,18 +445,14 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   if (!teamName) throw new HttpError("team name is required", 400);
   if (!Array.isArray(playerIds)) throw new HttpError("playerIds must be an array", 400);
 
-  // Validate all player IDs exist
   const ref = await getReferenceData(env);
   const team = ref.teams.find(t => t.teamName === teamName);
   if (!team) throw new HttpError("Team not found", 404);
 
   const validIds = playerIds.filter(id => typeof id === "string" && id.startsWith("rec"));
 
-  // Find the team record to update
-  const teamRecords = await airtableFindAll(env, TABLES.team, `{${TEAMS_FIELDS.teamName}}="${escapeFormulaValue(teamName)}"`);
-  if (teamRecords.length === 0) throw new HttpError("Team record not found", 404);
-
-  await airtableUpdate(env, TABLES.team, teamRecords[0].id, {
+  // Use team.id from reference data — avoids a redundant Airtable lookup
+  await airtableUpdate(env, TABLES.team, team.id, {
     [TEAMS_FIELDS.autoSelectPlayers]: validIds,
   });
 
