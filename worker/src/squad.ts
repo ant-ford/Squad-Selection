@@ -4,7 +4,7 @@ import { getReferenceData, getExceptionsForSeasons } from "./reference";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
+import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
 import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
@@ -320,6 +320,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     venue: match.venue || "",
     targetSquadSize: teamsByName.get(hkfcTeam)?.targetSquadSize || 16,
     selectedCount: selectedPlayerIds.size,
+    autoSelectEnabled: match.autoSelectEnabled ?? false,
+    autoSelectPlayerIds: teamsByName.get(hkfcTeam)?.autoSelectPlayers || [],
   };
   return { match: matchInfo, players };
 }
@@ -404,6 +406,66 @@ export async function selectPlayer(env: Env, input: { matchId: string; playerId:
     await syncSquad(env, matchId, [...currentSelected, playerId], undefined, side);
   }
   return { success: true };
+}
+
+export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+  await airtableUpdate(env, TABLES.match, matchId, {
+    [MATCHES_FIELDS.autoSelectEnabled]: enabled,
+  });
+  invalidateCache(`match:${matchId}`);
+  invalidateCachePrefix(`players-for-match:${matchId}:`);
+  console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
+  return { success: true, autoSelectEnabled: enabled };
+}
+
+// ── Priority Player List Management ─────────────────────────────────────
+
+export async function getTeamAutoSelectPlayers(env: Env, teamName: string) {
+  if (!teamName) throw new HttpError("team name is required", 400);
+  const ref = await getReferenceData(env);
+  const team = ref.teams.find(t => t.teamName === teamName);
+  if (!team) throw new HttpError("Team not found", 404);
+  const playerIds = team.autoSelectPlayers || [];
+  const players = ref.players
+    .filter(p => playerIds.includes(p.id))
+    .map(p => ({
+      id: p.id,
+      preferredName: [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player",
+      registeredTeam: p.registeredTeam || "",
+      playingPosition: p.playingPosition || "",
+      playingAbility: p.playingAbility || "",
+      active: p.active ?? true,
+    }));
+  return { teamName, playerIds, players };
+}
+
+export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playerIds: string[], actingEmail?: string) {
+  if (!teamName) throw new HttpError("team name is required", 400);
+  if (!Array.isArray(playerIds)) throw new HttpError("playerIds must be an array", 400);
+
+  // Validate all player IDs exist
+  const ref = await getReferenceData(env);
+  const team = ref.teams.find(t => t.teamName === teamName);
+  if (!team) throw new HttpError("Team not found", 404);
+
+  const validIds = playerIds.filter(id => typeof id === "string" && id.startsWith("rec"));
+
+  // Find the team record to update
+  const teamRecords = await airtableFindAll(env, TABLES.team, `{${TEAMS_FIELDS.teamName}}="${escapeFormulaValue(teamName)}"`);
+  if (teamRecords.length === 0) throw new HttpError("Team record not found", 404);
+
+  await airtableUpdate(env, TABLES.team, teamRecords[0].id, {
+    [TEAMS_FIELDS.autoSelectPlayers]: validIds,
+  });
+
+  // Invalidate reference data cache so match-info picks up the new list
+  invalidateCache("club-reference");
+  invalidateCachePrefix("players-for-match:");
+
+  console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);
+  return { success: true, teamName, playerIds: validIds };
 }
 
 export async function removeSelection(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {

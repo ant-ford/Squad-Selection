@@ -3,8 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
-import { apiPost } from '../lib/apiClient';
+import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2 } from 'lucide-react';
+import { apiPost, apiGet } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import RecommendationsPanel from '@/components/RecommendationsPanel';
@@ -26,15 +26,21 @@ function initials(name: string): string {
   return (name.split(' ').map(n => n[0]).join('').slice(0, 2) || '?').toUpperCase();
 }
 
+interface PriorityPlayer {
+  id: string;
+  preferredName: string;
+  registeredTeam: string;
+  playingPosition: string;
+  playingAbility: string;
+}
+
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const side = (searchParams.get("side") as "home" | "away") || undefined;
-
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
   const [saving, setSaving] = useState(false);
@@ -42,11 +48,208 @@ export default function SquadSelection() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
+  // ── Auto-Select state ────────────────────────────────────────────────
+  const [autoSelectEnabled, setAutoSelectEnabled] = useState<boolean>(false);
+  const [autoSelectPending, setAutoSelectPending] = useState(false);
+  const [suppressedPlayerIds, setSuppressedPlayerIds] = useState<Set<string>>(new Set());
+  const [hasRunAutoSelect, setHasRunAutoSelect] = useState(false);
+  const [priorityPlayers, setPriorityPlayers] = useState<PriorityPlayer[]>([]);
+  const [showPriorityManager, setShowPriorityManager] = useState(false);
+  const [prioritySearch, setPrioritySearch] = useState('');
+  const [savingPriority, setSavingPriority] = useState(false);
+
+  const priorityPlayerIds = useMemo(
+    () => new Set(data?.match?.autoSelectPlayerIds || []),
+    [data?.match?.autoSelectPlayerIds]
+  );
+
+  // Initialise auto-select from server
+  useEffect(() => {
+    if (data?.match?.autoSelectEnabled !== undefined) {
+      setAutoSelectEnabled(data.match.autoSelectEnabled);
+    }
+  }, [data?.match?.autoSelectEnabled]);
+
+  // ── Auto-selection: only priority players, if eligible & available ──
+  useEffect(() => {
+    if (!autoSelectEnabled || !data?.players || data.players.length === 0) return;
+    if (!hasRunAutoSelect) {
+      applyAutoSelect(data.players);
+      setHasRunAutoSelect(true);
+    }
+  }, [autoSelectEnabled, data?.players, hasRunAutoSelect]);
+
+  useEffect(() => {
+    if (!autoSelectEnabled || !pollData?.exceptions || pollData.exceptions.length === 0) return;
+    if (!data?.players) return;
+    applyAutoSelect(data.players);
+  }, [pollData?.exceptions, autoSelectEnabled]);
+
+  const applyAutoSelect = useCallback((players: MatchPlayer[]) => {
+    if (priorityPlayerIds.size === 0) return;
+
+    const autoIds = players
+      .filter(p =>
+        priorityPlayerIds.has(p.id) &&
+        (p.eligibilityStatus === 'eligible' || p.eligibilityStatus === 'warning') &&
+        p.availabilityStatus === 'Available' &&
+        p.selectionStatus !== 'Selected' &&
+        !suppressedPlayerIds.has(p.id)
+      )
+      .map(p => p.id);
+
+    if (autoIds.length === 0) return;
+
+    setPendingDeltas(prev => {
+      const existingIds = new Set(prev.map(d => d.playerId));
+      const newDeltas: Delta[] = [];
+      for (const id of autoIds) {
+        if (!existingIds.has(id)) {
+          newDeltas.push({ playerId: id, action: 'select' });
+        }
+      }
+      return [...prev, ...newDeltas];
+    });
+  }, [priorityPlayerIds, suppressedPlayerIds]);
+
+  // ── Player toggle: track suppression for priority players ──
+  const handleToggleSelection = (playerId: string) => {
+    const player = mergedPlayers.find(p => p.id === playerId);
+    if (!player || player.eligibilityStatus === 'blocked') return;
+
+    const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
+    const isCurrentlySelected = player.selectionStatus === 'Selected';
+    const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
+
+    // Suppress priority players when coach unselects them while auto-select is on
+    if (nextAction === 'remove' && autoSelectEnabled && priorityPlayerIds.has(playerId)) {
+      setSuppressedPlayerIds(prev => new Set([...prev, playerId]));
+    }
+    if (nextAction === 'select' && suppressedPlayerIds.has(playerId)) {
+      setSuppressedPlayerIds(prev => {
+        const next = new Set(prev);
+        next.delete(playerId);
+        return next;
+      });
+    }
+
+    const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
+    if (serverMatchesIntended) {
+      setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
+    } else {
+      updateDeltas([{ playerId, action: nextAction }]);
+    }
+  };
+
+  // ── Auto-select toggle ────────────────────────────────────────────────
+  const handleToggleAutoSelect = async (enabled: boolean) => {
+    setAutoSelectEnabled(enabled);
+    setAutoSelectPending(true);
+
+    if (enabled) {
+      setSuppressedPlayerIds(new Set());
+      setHasRunAutoSelect(false);
+
+      if (data?.players && priorityPlayerIds.size > 0) {
+        const autoIds = data.players
+          .filter(p =>
+            priorityPlayerIds.has(p.id) &&
+            (p.eligibilityStatus === 'eligible' || p.eligibilityStatus === 'warning') &&
+            p.availabilityStatus === 'Available' &&
+            p.selectionStatus !== 'Selected'
+          )
+          .map(p => p.id);
+
+        if (autoIds.length > 0) {
+          setPendingDeltas(prev => {
+            const existingIds = new Set(prev.map(d => d.playerId));
+            const newDeltas: Delta[] = autoIds
+              .filter(id => !existingIds.has(id))
+              .map(id => ({ playerId: id, action: 'select' as const }));
+            return [...prev, ...newDeltas];
+          });
+        }
+        setHasRunAutoSelect(true);
+      }
+    }
+
+    try {
+      await apiPost(`/api/match/${matchId}/auto-select`, {
+        enabled,
+        actingEmail: user?.email,
+      });
+    } catch (e: any) {
+      toast.error('Failed to save auto-select setting');
+    } finally {
+      setAutoSelectPending(false);
+    }
+  };
+
+  // ── Priority player management ────────────────────────────────────────
+  const loadPriorityPlayers = useCallback(async () => {
+    if (!data?.match?.hkfcTeam) return;
+    try {
+      const result = await apiGet<{ players: PriorityPlayer[] }>(
+        `/api/team/auto-select-players?team=${encodeURIComponent(data.match.hkfcTeam)}`
+      );
+      setPriorityPlayers(result.players || []);
+    } catch {
+      // Silently fail — management panel just shows empty
+    }
+  }, [data?.match?.hkfcTeam]);
+
+  useEffect(() => {
+    if (showPriorityManager) loadPriorityPlayers();
+  }, [showPriorityManager, loadPriorityPlayers]);
+
+  const handleSavePriority = async () => {
+    if (!data?.match?.hkfcTeam) return;
+    setSavingPriority(true);
+    try {
+      const ids = priorityPlayers.map(p => p.id);
+      await apiPost('/api/team/auto-select-players', {
+        teamName: data.match.hkfcTeam,
+        playerIds: ids,
+        actingEmail: user?.email,
+      });
+      // Refresh match info to get updated autoSelectPlayerIds
+      queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId, side] });
+      toast.success(`Priority list saved (${ids.length} players)`);
+      setShowPriorityManager(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to save priority list');
+    } finally {
+      setSavingPriority(false);
+    }
+  };
+
+  const handleAddPriority = (playerId: string, playerName: string, playerTeam: string, position: string, ability: string) => {
+    if (priorityPlayers.some(p => p.id === playerId)) return;
+    setPriorityPlayers(prev => [...prev, { id: playerId, preferredName: playerName, registeredTeam: playerTeam, playingPosition: position, playingAbility: ability }]);
+  };
+
+  const handleRemovePriority = (playerId: string) => {
+    setPriorityPlayers(prev => prev.filter(p => p.id !== playerId));
+  };
+
+  // Which players can be added to the priority list (eligible/warning, not already in list)
+  const addablePlayers = useMemo(() => {
+    if (!data?.players) return [];
+    const existingIds = new Set(priorityPlayers.map(p => p.id));
+    const search = prioritySearch.trim().toLowerCase();
+    return data.players
+      .filter(p =>
+        (p.eligibilityStatus === 'eligible' || p.eligibilityStatus === 'warning') &&
+        !existingIds.has(p.id) &&
+        (!search || p.preferredName.toLowerCase().includes(search))
+      )
+      .sort((a, b) => a.preferredName.localeCompare(b.preferredName));
+  }, [data?.players, priorityPlayers, prioritySearch]);
+
   useEffect(() => {
     setHasChanges(pendingDeltas.length > 0);
   }, [pendingDeltas]);
 
-  // Unsaved-changes guard: browser tab close / refresh
   useEffect(() => {
     if (!hasChanges) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
@@ -54,7 +257,6 @@ export default function SquadSelection() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasChanges]);
 
-  // Unsaved-changes guard: in-app navigation
   const blocker = useBlocker(hasChanges);
 
   const handleFilterChange = useCallback((f: FilterState) => {
@@ -103,7 +305,6 @@ export default function SquadSelection() {
     });
   }, [mergedPlayers, filters]);
 
-  // Single sort: Selected first, then by Ability rank descending, then alphabetical
   const sortedPlayers = useMemo(() => {
     return [...filteredPlayers].sort((a, b) => {
       const aSelected = a.selectionStatus === 'Selected' ? 1 : 0;
@@ -115,7 +316,6 @@ export default function SquadSelection() {
     });
   }, [filteredPlayers]);
 
-  // Virtualization: only ~15 rows in the DOM instead of the full squad list.
   const listRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: sortedPlayers.length,
@@ -140,6 +340,16 @@ export default function SquadSelection() {
     [mergedPlayers, pendingDeltas]
   );
 
+  // Count of priority players that are currently auto-selected
+  const autoSelectedCount = useMemo(() => {
+    if (!autoSelectEnabled || priorityPlayerIds.size === 0) return null;
+    return mergedPlayers.filter(p =>
+      p.selectionStatus === 'Selected' &&
+      priorityPlayerIds.has(p.id) &&
+      !suppressedPlayerIds.has(p.id)
+    ).length;
+  }, [autoSelectEnabled, mergedPlayers, priorityPlayerIds, suppressedPlayerIds]);
+
   const updateDeltas = (newDeltas: Delta[]) => {
     setPendingDeltas(prev => {
       const playerIdsToUpdate = new Set(newDeltas.map(d => d.playerId));
@@ -147,26 +357,25 @@ export default function SquadSelection() {
     });
   };
 
-  const handleToggleSelection = (playerId: string) => {
-    const player = mergedPlayers.find(p => p.id === playerId);
-    if (!player || player.eligibilityStatus === 'blocked') return;
-
-    const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
-    const isCurrentlySelected = player.selectionStatus === 'Selected';
-    const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
-
-    const serverMatchesIntended = (nextAction === 'select' && serverStatus) || (nextAction === 'remove' && !serverStatus);
-    if (serverMatchesIntended) {
-      setPendingDeltas(prev => prev.filter(d => d.playerId !== playerId));
-    } else {
-      updateDeltas([{ playerId, action: nextAction }]);
-    }
-  };
-
   const handleToggleAllVisible = () => {
     const eligiblePlayers = filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked');
     const allSelected = eligiblePlayers.every(p => p.selectionStatus === 'Selected');
     const action: Delta['action'] = allSelected ? 'remove' : 'select';
+
+    if (action === 'remove' && autoSelectEnabled) {
+      const affectedIds = new Set(eligiblePlayers.filter(p => priorityPlayerIds.has(p.id)).map(p => p.id));
+      if (affectedIds.size > 0) {
+        setSuppressedPlayerIds(prev => new Set([...prev, ...affectedIds]));
+      }
+    }
+    if (action === 'select') {
+      setSuppressedPlayerIds(prev => {
+        const next = new Set(prev);
+        for (const p of eligiblePlayers) next.delete(p.id);
+        return next;
+      });
+    }
+
     updateDeltas(eligiblePlayers.map(p => ({ playerId: p.id, action })));
   };
 
@@ -196,6 +405,7 @@ export default function SquadSelection() {
       toast.success('Squad synced successfully');
       setPendingDeltas([]);
       setHasChanges(false);
+      setSuppressedPlayerIds(new Set());
       queryClient.invalidateQueries({ queryKey: qk });
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
       queryClient.invalidateQueries({ queryKey: ['recommendations', matchId, side] });
@@ -241,9 +451,7 @@ export default function SquadSelection() {
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
-
       <MatchHeader match={optimisticMatch} />
-
       {optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
         <div className="container mx-auto px-4 pt-3">
           <RecommendationsPanel
@@ -254,22 +462,162 @@ export default function SquadSelection() {
           />
         </div>
       )}
-
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
 
-      <div className="container mx-auto py-2 px-4 mb-1 flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="toggle-all"
-          className="h-4 w-4 accent-primary"
-          checked={filteredPlayers.length > 0 && filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked').every(p => p.selectionStatus === 'Selected')}
-          onChange={handleToggleAllVisible}
-        />
-        <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer">Select All</label>
+      {/* ── Selection Controls ─────────────────────────────────── */}
+      <div className="container mx-auto py-2 px-4 flex flex-wrap items-center gap-3 border-b border-border/50 pb-3">
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="toggle-all"
+            className="h-4 w-4 accent-primary"
+            checked={filteredPlayers.length > 0 && filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked').every(p => p.selectionStatus === 'Selected')}
+            onChange={handleToggleAllVisible}
+          />
+          <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">Select All</label>
+        </div>
+
+        <div className="w-px h-5 bg-border/50 hidden sm:block" />
+
+        {/* Auto-Select Toggle */}
+        <button
+          onClick={() => handleToggleAutoSelect(!autoSelectEnabled)}
+          disabled={autoSelectPending}
+          className={`
+            inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium
+            transition-all duration-150 border select-none
+            ${autoSelectEnabled
+              ? 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/15'
+              : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+            }
+            ${autoSelectPending ? 'opacity-60' : ''}
+          `}
+        >
+          <Wand2 className={`h-3.5 w-3.5 ${autoSelectEnabled ? 'text-primary' : ''}`} />
+          <span>Auto-Select</span>
+          <span className={`
+            inline-flex items-center justify-center w-7 h-4 rounded-full transition-colors duration-150
+            ${autoSelectEnabled ? 'bg-primary' : 'bg-border'}
+          `}>
+            <span className={`
+              inline-block w-3 h-3 rounded-full bg-white transition-transform duration-150
+              ${autoSelectEnabled ? 'translate-x-1.5' : '-translate-x-1.5'}
+            `} />
+          </span>
+        </button>
+
+        {autoSelectEnabled && (
+          <>
+            {autoSelectedCount !== null && (
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {autoSelectedCount}/{priorityPlayerIds.size} auto-selected
+              </span>
+            )}
+            <button
+              onClick={() => setShowPriorityManager(prev => !prev)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="Edit priority player list"
+            >
+              <Settings2 className="h-3 w-3" />
+              {priorityPlayerIds.size === 0 ? 'Add priority players' : `${priorityPlayerIds.size} priority`}
+            </button>
+          </>
+        )}
+
+        {autoSelectEnabled && suppressedPlayerIds.size > 0 && (
+          <button
+            onClick={() => { setSuppressedPlayerIds(new Set()); setHasRunAutoSelect(false); }}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            <X className="inline h-3 w-3 mr-0.5" />
+            {suppressedPlayerIds.size} excluded — rescan
+          </button>
+        )}
       </div>
 
-      {/* Player list — virtualized; sorted: Selected first, then by Ability */}
-      <div ref={listRef} className="container mx-auto px-4 max-h-[70vh] overflow-y-auto">
+      {/* ── Priority Player Manager ─────────────────────────────── */}
+      {showPriorityManager && (
+        <div className="container mx-auto px-4 py-3 border-b border-border/50 bg-muted/30">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Wand2 className="h-4 w-4 text-primary" />
+              Auto-Select Priority Players
+            </h3>
+            <button
+              onClick={() => setShowPriorityManager(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            These players will be automatically selected for any {data.match.hkfcTeam} fixture if they are eligible and available.
+          </p>
+
+          {/* Current priority players */}
+          {priorityPlayers.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {priorityPlayers.map(p => (
+                <span
+                  key={p.id}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium"
+                >
+                  {p.preferredName}
+                  <button onClick={() => handleRemovePriority(p.id)} className="hover:text-destructive ml-0.5">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground italic mb-3">No priority players added yet. Search below to add your captain, goalkeeper, and key players.</p>
+          )}
+
+          {/* Search & add */}
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search players by name..."
+              value={prioritySearch}
+              onChange={e => setPrioritySearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {prioritySearch.trim() && (
+            <div className="max-h-40 overflow-y-auto border rounded-md bg-background mb-3">
+              {addablePlayers.length === 0 ? (
+                <p className="text-xs text-muted-foreground p-3 text-center">No matching players found.</p>
+              ) : (
+                addablePlayers.slice(0, 12).map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleAddPriority(p.id, p.preferredName, p.registeredTeam, p.playingPosition, p.playingAbility)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-xs border-b last:border-b-0 transition-colors"
+                  >
+                    <Plus className="h-3 w-3 text-primary shrink-0" />
+                    <span className="font-medium">{p.preferredName}</span>
+                    <span className="text-muted-foreground">{p.playingPosition}</span>
+                    <span className="text-muted-foreground ml-auto">{p.playingAbility}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={handleSavePriority}
+            disabled={savingPriority}
+            className="w-full py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {savingPriority ? 'Saving...' : `Save Priority List (${priorityPlayers.length} players)`}
+          </button>
+        </div>
+      )}
+
+      {/* Player list — virtualized */}
+      <div ref={listRef} className="container mx-auto px-4 max-h-[60vh] overflow-y-auto">
         {sortedPlayers.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
             No players match the current filters.
@@ -304,10 +652,7 @@ export default function SquadSelection() {
       </div>
 
       {hasChanges && (
-        <div
-          className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-50 items-center"
-          style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
-        >
+        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-50 items-center" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
             {pendingPlayers.slice(0, 4).map(p => (
               <span key={p.id} className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0 font-medium">
@@ -324,7 +669,6 @@ export default function SquadSelection() {
           </button>
         </div>
       )}
-
       {blocker.state === 'blocked' && (
         <ConfirmDialog
           title="Discard unsaved changes?"

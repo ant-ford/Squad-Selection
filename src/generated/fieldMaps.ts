@@ -34,6 +34,7 @@ export const TEAMS_FIELDS = {
   coach: "Coach",
   teamCaptain: "Team Captain",
   sectionCaptain: "Section Captain",
+  autoSelectPlayers: "Auto Select Players",
 } as const;
 
 export const MATCHES_FIELDS = {
@@ -50,6 +51,7 @@ export const MATCHES_FIELDS = {
   fixtureId: "Fixture Id",
   selectedPlayersHome: "Selected Players Home",
   selectedPlayersAway: "Selected Players Away",
+  autoSelectEnabled: "Auto Select Enabled",
 } as const;
 
 export const AVAILABILITYEXCEPTIONS_FIELDS = {

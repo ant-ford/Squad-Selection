@@ -10,6 +10,9 @@ import {
   removeSelection,
   getAvailabilityForMatch,
   syncSquad,
+  toggleAutoSelect,
+  getTeamAutoSelectPlayers,
+  setTeamAutoSelectPlayers,
 } from "./squad";
 import { setAvailability, setMyAvailability } from "./availability";
 import { getRecommendationsForMatch } from "./recommendations";
@@ -106,6 +109,34 @@ export default {
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
       if (method === "GET" && matchAvailabilityMatch)
         return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
+
+      // ── Auto-Select Toggle ────────────────────────────────────────
+      const autoSelectMatch = pathname.match(/^\/api\/match\/([^/]+)\/auto-select$/);
+      if (method === "POST" && autoSelectMatch) {
+        const body = await readJsonBody(request);
+        const enabled = body.enabled === true || body.enabled === 'true';
+        if (typeof enabled !== 'boolean') throw new HttpError("enabled must be a boolean", 400);
+        return json(
+          await toggleAutoSelect(env, autoSelectMatch[1], enabled, body.actingEmail),
+          200,
+          origin,
+        );
+      }
+
+      // ── Priority Player List ──────────────────────────────────────
+      if (method === "GET" && pathname === "/api/team/auto-select-players") {
+        const teamName = requireParam(url.searchParams.get("team"), "team");
+        return json(await getTeamAutoSelectPlayers(env, teamName), 200, origin);
+      }
+      if (method === "POST" && pathname === "/api/team/auto-select-players") {
+        const body = await readJsonBody(request);
+        const teamName = requireParam(body.teamName, "teamName");
+        return json(
+          await setTeamAutoSelectPlayers(env, teamName, body.playerIds || [], body.actingEmail),
+          200,
+          origin,
+        );
+      }
 
       // ── Player / Fixtures ──────────────────────────────────────────
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);

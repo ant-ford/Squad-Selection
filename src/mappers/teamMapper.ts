@@ -13,5 +13,6 @@ export function mapTeam(record: any): Team {
     coach: Array.isArray(f[TEAMS_FIELDS.coach]) ? f[TEAMS_FIELDS.coach] : (f[TEAMS_FIELDS.coach] ? [f[TEAMS_FIELDS.coach]] : []),
     teamCaptain: Array.isArray(f[TEAMS_FIELDS.teamCaptain]) ? f[TEAMS_FIELDS.teamCaptain] : (f[TEAMS_FIELDS.teamCaptain] ? [f[TEAMS_FIELDS.teamCaptain]] : []),
     sectionCaptain: Array.isArray(f[TEAMS_FIELDS.sectionCaptain]) ? f[TEAMS_FIELDS.sectionCaptain] : (f[TEAMS_FIELDS.sectionCaptain] ? [f[TEAMS_FIELDS.sectionCaptain]] : []),
+    autoSelectPlayers: Array.isArray(f[TEAMS_FIELDS.autoSelectPlayers]) ? f[TEAMS_FIELDS.autoSelectPlayers] : (f[TEAMS_FIELDS.autoSelectPlayers] ? [f[TEAMS_FIELDS.autoSelectPlayers]] : []),
   };
 }

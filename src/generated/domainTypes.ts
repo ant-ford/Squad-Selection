@@ -39,6 +39,7 @@ export interface Team {
   coach?: string[];
   teamCaptain?: string[];
   sectionCaptain?: string[];
+  autoSelectPlayers?: string[];
 }
 
 export interface Match {
@@ -56,6 +57,7 @@ export interface Match {
   fixtureId?: string;
   selectedPlayersHome?: string[];
   selectedPlayersAway?: string[];
+  autoSelectEnabled?: boolean;
 }
 
 export interface AvailabilityException {
