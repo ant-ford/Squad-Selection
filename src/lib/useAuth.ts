@@ -9,14 +9,19 @@ export function useAuth() {
   useEffect(() => {
     let isMounted = true;
 
-    // Initial load
-    supabase.auth.getUser().then(({ data }) => {
+    // 1. Initial load: getSession() parses the magic link hash and establishes the session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!isMounted) return;
-      setUser(data.user ?? null);
+      setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Safety net: manually clean up the URL hash if Supabase didn't clear it
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
     });
 
-    // Auth state listener
+    // 2. Auth state listener
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
       setUser(session?.user ?? null);
@@ -34,7 +39,6 @@ export function useAuth() {
       email,
       options: { emailRedirectTo: window.location.origin }
     });
-
     if (error) throw error;
   };
 

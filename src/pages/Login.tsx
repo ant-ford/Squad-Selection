@@ -48,7 +48,7 @@ export default function Login() {
           <img
             src="/assets/logo-animated.svg"
             alt="Eddy"
-            className="h-16 w-16 object-contain"
+            className="h-24 w-48 object-contain"
           />
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
