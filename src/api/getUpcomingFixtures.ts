@@ -15,6 +15,7 @@ export interface UpcomingFixture {
   selectedCount: number;
   selectedIds?: string[];
   selectedPlayers?: { id: string; name: string }[];
+  selectedPositionSummary?: Record<string, number>;
   selectedUnavailableNames?: string[];
   hasGoalkeeperSelected?: boolean;
   availableCount: number;

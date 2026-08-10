@@ -1,6 +1,7 @@
 name = "hkfc-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
+account_id = "c04da0bddfb69252c9f837a37305cd30"
 
 # Non-secret config. AIRTABLE_BASE_ID is not sensitive on its own (it's
 # useless without AIRTABLE_TOKEN) so it's fine to commit here.
