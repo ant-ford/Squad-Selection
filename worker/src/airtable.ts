@@ -159,13 +159,5 @@ export function escapeFormulaValue(value: string): string {
   return value.replace(/"/g, '\\"');
 }
 
-/** Airtable link fields come back as (and must be written as) string arrays. */
-export function linkId(value: unknown): string | undefined {
-  if (Array.isArray(value)) return value[0];
-  return typeof value === "string" ? value : undefined;
-}
-
-export function singleSelect(value: unknown): string | undefined {
-  if (Array.isArray(value)) return value[0];
-  return typeof value === "string" ? value : undefined;
-}
+// Re-export from the shared neutral module
+export { linkId, singleSelect } from "../../src/lib/airtableValueUtils";

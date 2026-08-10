@@ -1,5 +1,6 @@
 import { Env, AirtableError } from "./airtable";
 import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
+import { requireAuthenticatedEmail } from "./auth";
 import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
@@ -59,21 +60,22 @@ export default {
     if (method === "OPTIONS") return handleOptions(origin);
 
     try {
-      // ── Health Check ──────────────────────────────────────────────
+      // ── Health Check (Public) ──────────────────────────────────────────────
       if (method === "GET" && pathname === "/health") {
         return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
       }
 
-      // ── Eligibility operational metrics (aggregate counts only — no player data) ──
+      // ── Eligibility operational metrics ────────────────────────────────────
       if (method === "GET" && pathname === "/api/eligibility-metrics") {
         return json(getEligibilityMetrics(), 200, origin);
       }
       if (method === "POST" && pathname === "/api/eligibility-metrics/reset") {
+        await requireAuthenticatedEmail(request, env);
         resetEligibilityMetrics();
         return json({ success: true }, 200, origin);
       }
 
-      // ── Match / Squad ──────────────────────────────────────────────
+      // ── Match / Squad (Read) ───────────────────────────────────────────────
       const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
       if (method === "GET" && matchSquadMatch)
         return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
@@ -110,89 +112,99 @@ export default {
       if (method === "GET" && matchAvailabilityMatch)
         return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
 
-      // ── Auto-Select Toggle ────────────────────────────────────────
+      // ── Auto-Select Toggle (Write - Authenticated) ─────────────────────────
       const autoSelectMatch = pathname.match(/^\/api\/match\/([^/]+)\/auto-select$/);
       if (method === "POST" && autoSelectMatch) {
+        const actingEmail = await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
         const enabled = body.enabled === true || body.enabled === 'true';
         if (typeof enabled !== 'boolean') throw new HttpError("enabled must be a boolean", 400);
         return json(
-          await toggleAutoSelect(env, autoSelectMatch[1], enabled, body.actingEmail),
+          await toggleAutoSelect(env, autoSelectMatch[1], enabled, actingEmail),
           200,
           origin,
         );
       }
 
-      // ── Priority Player List ──────────────────────────────────────
+      // ── Priority Player List (Read/Write - Authenticated) ──────────────────
       if (method === "GET" && pathname === "/api/team/auto-select-players") {
+        await requireAuthenticatedEmail(request, env);
         const teamName = requireParam(url.searchParams.get("team"), "team");
         return json(await getTeamAutoSelectPlayers(env, teamName), 200, origin);
       }
       if (method === "POST" && pathname === "/api/team/auto-select-players") {
+        const actingEmail = await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
         const teamName = requireParam(body.teamName, "teamName");
         return json(
-          await setTeamAutoSelectPlayers(env, teamName, body.playerIds || [], body.actingEmail),
+          await setTeamAutoSelectPlayers(env, teamName, body.playerIds || [], actingEmail),
           200,
           origin,
         );
       }
 
-      // ── Player / Fixtures ──────────────────────────────────────────
+      // ── Player / Fixtures (Read) ───────────────────────────────────────────
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
       if (method === "GET" && playerFixturesMatch)
         return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
 
-      if (method === "GET" && pathname === "/api/players/active")
+      if (method === "GET" && pathname === "/api/players/active") {
+        await requireAuthenticatedEmail(request, env);
         return json(await getActivePlayers(env), 200, origin);
+      }
 
-      if (method === "GET" && pathname === "/api/reference-data")
+      if (method === "GET" && pathname === "/api/reference-data") {
+        await requireAuthenticatedEmail(request, env);
         return json(await getReferenceData(env), 200, origin);
+      }
 
       if (method === "GET" && pathname === "/api/player-by-email") {
+        await requireAuthenticatedEmail(request, env);
         const email = requireParam(url.searchParams.get("email"), "email");
         const player = await getPlayerByEmail(env, email);
         if (!player) throw new HttpError("Player record not found for this email", 404);
         return json(player, 200, origin);
       }
 
+      // Player-facing routes (remain unauthenticated as they rely on email param / signed links per spec)
       if (method === "GET" && pathname === "/api/my-profile") {
-        const email = url.searchParams.get("email");
-        if (!email) return json({ error: "email is required" }, 400);
+        const email = requireParam(url.searchParams.get("email"), "email");
         return json(await getMyProfile(env, email));
       }
-
       if (method === "GET" && pathname === "/api/my-fixtures") {
         const email = requireParam(url.searchParams.get("email"), "email");
         return json(await getMyFixtures(env, email), 200, origin);
       }
-
       if (method === "GET" && pathname === "/api/upcoming-fixtures") {
         const email = url.searchParams.get("email") ?? undefined;
         const team = url.searchParams.get("team") ?? undefined;
         return json(await getUpcomingFixtures(env, { email, team }), 200, origin);
       }
-
+      
+      // Dashboard metrics (Authenticated)
       if (method === "GET" && pathname === "/api/recent-changes") {
+        await requireAuthenticatedEmail(request, env);
         const days = Number(url.searchParams.get("days") ?? 7);
         return json(await getRecentChanges(env, Number.isFinite(days) && days > 0 ? days : 7), 200, origin);
       }
-
       if (method === "GET" && pathname === "/api/playup-watch") {
+        await requireAuthenticatedEmail(request, env);
         return json(await getPlayUpWatch(env), 200, origin);
       }
       if (method === "GET" && pathname === "/api/recent-availability") {
+        await requireAuthenticatedEmail(request, env);
         const days = Number(url.searchParams.get("days") ?? 7);
         return json(await getRecentAvailability(env, Number.isFinite(days) ? days : 7), 200, origin);
       }
 
-      // ── Selection writes ───────────────────────────────────────────
+      // ── Selection writes (Authenticated) ───────────────────────────────────
       if (method === "POST" && pathname === "/api/select-player") {
+        await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
         return json(await selectPlayer(env, body), 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/remove-selection") {
+        await requireAuthenticatedEmail(request, env);
         const body = (await readJsonBody(request)) as {
           matchId: string;
           playerId: string;
@@ -200,107 +212,97 @@ export default {
         };
         return json(await removeSelection(env, body), 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/set-availability") {
+        await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
         return json(await setAvailability(env, body), 200, origin);
       }
 
+      // Player self-service availability (Unauthenticated per spec)
       if (method === "POST" && pathname === "/api/set-my-availability") {
         const body = await readJsonBody(request);
         return json(await setMyAvailability(env, body), 200, origin);
       }
 
       if (method === "POST" && pathname === "/squad/sync") {
+        const actingEmail = await requireAuthenticatedEmail(request, env);
         const body = (await readJsonBody(request)) as {
           matchId: string;
           selectedIds: string[];
-          actingEmail?: string;
           side?: "home" | "away";
         };
-        await syncSquad(env, body.matchId, body.selectedIds, body.actingEmail, body.side);
+        await syncSquad(env, body.matchId, body.selectedIds, actingEmail, body.side);
         return json({ success: true }, 200, origin);
       }
 
-      // ── Ranking ────────────────────────────────────────────────────
+      // ── Ranking ────────────────────────────────────────────────────────────
       if (method === "GET" && pathname === "/api/ranking")
         return json(await getActiveRanking(env), 200, origin);
-
       if (method === "GET" && pathname === "/api/ranking/inactive")
         return json(await getInactiveRanking(env), 200, origin);
-
       if (method === "GET" && pathname === "/api/ranking/config")
         return json(await getAbilityGroupConfig(env), 200, origin);
 
       if (method === "POST" && pathname === "/api/ranking/config") {
-        const body = (await readJsonBody(request)) as {
-          config: AbilityGroupConfigMap;
-          actingEmail?: string;
-        };
-        // setAbilityGroupConfig now recomputes synchronously and returns the
-        // fully updated RankingList — no background recompute needed.
-        const rankingList = await setAbilityGroupConfig(env, body.config, body.actingEmail);
+        const actingEmail = await requireAuthenticatedEmail(request, env);
+        const body = (await readJsonBody(request)) as { config: AbilityGroupConfigMap };
+        const rankingList = await setAbilityGroupConfig(env, body.config, actingEmail);
         return json(rankingList, 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/ranking/move") {
-        const body = (await readJsonBody(request)) as { playerId: string; newRank: number; actingEmail?: string };
-        return json(await movePlayerToRank(env, body.playerId, body.newRank, body.actingEmail), 200, origin);
+        const actingEmail = await requireAuthenticatedEmail(request, env);
+        const body = (await readJsonBody(request)) as { playerId: string; newRank: number };
+        return json(await movePlayerToRank(env, body.playerId, body.newRank, actingEmail), 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/ranking/move-relative") {
+        const actingEmail = await requireAuthenticatedEmail(request, env);
         const body = (await readJsonBody(request)) as {
           sourceId: string;
           targetId: string;
           position: "above" | "below";
-          actingEmail?: string;
         };
         return json(
-          await movePlayerRelative(env, body.sourceId, body.targetId, body.position, body.actingEmail),
+          await movePlayerRelative(env, body.sourceId, body.targetId, body.position, actingEmail),
           200,
           origin,
         );
       }
-
       if (method === "POST" && pathname === "/api/ranking/reorder") {
-        const body = (await readJsonBody(request)) as { playerIds: string[]; actingEmail?: string };
-        return json(await reorderRanking(env, body.playerIds, body.actingEmail), 200, origin);
+        const actingEmail = await requireAuthenticatedEmail(request, env);
+        const body = (await readJsonBody(request)) as { playerIds: string[] };
+        return json(await reorderRanking(env, body.playerIds, actingEmail), 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/ranking/activate") {
-        const body = (await readJsonBody(request)) as { playerId: string; actingEmail?: string };
-        return json(await activatePlayer(env, body.playerId, body.actingEmail), 200, origin);
+        const actingEmail = await requireAuthenticatedEmail(request, env);
+        const body = (await readJsonBody(request)) as { playerId: string };
+        return json(await activatePlayer(env, body.playerId, actingEmail), 200, origin);
       }
-
       if (method === "POST" && pathname === "/api/ranking/deactivate") {
-        const body = (await readJsonBody(request)) as { playerId: string; actingEmail?: string };
-        return json(await deactivatePlayer(env, body.playerId, body.actingEmail), 200, origin);
+        const actingEmail = await requireAuthenticatedEmail(request, env);
+        const body = (await readJsonBody(request)) as { playerId: string };
+        return json(await deactivatePlayer(env, body.playerId, actingEmail), 200, origin);
       }
-
       if (method === "POST" && (pathname === "/api/ranking/initialize" || pathname === "/api/ranking/backfill")) {
+        await requireAuthenticatedEmail(request, env);
         return json(await initializeRanking(env), 200, origin);
       }
 
-      // ── Calendar ───────────────────────────────────────────────────
+      // ── Calendar (Link generation uses email param, Feeds are public signed URLs) ──
       if (method === "GET" && pathname === "/api/calendar/link") {
         const email = requireParam(url.searchParams.get("email"), "email");
         return json(await handleGetCalendarLink(env, email), 200, origin);
       }
-
       if (method === "GET" && pathname === "/api/calendar/feed.ics") {
         return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
       }
-
       if (method === "GET" && pathname === "/api/calendar/team.ics") {
         return handleTeamCalendarExport(env, url.searchParams.get("email"), url.searchParams.get("team"));
       }
-
       if (method === "GET" && pathname === "/api/calendar/team-link") {
         const email = requireParam(url.searchParams.get("email"), "email");
         const team = requireParam(url.searchParams.get("team"), "team");
         return json(await handleGetTeamCalendarLink(env, email, team), 200, origin);
       }
-
       if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
         return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
       }

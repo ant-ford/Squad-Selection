@@ -1,5 +1,5 @@
 import { ABILITYGROUP_CONFIG_FIELDS } from "../generated/fieldMaps";
-import { singleSelect } from "../../worker/src/airtable";
+import { singleSelect } from "../lib/airtableValueUtils";
 import type { AbilityGroupConfiguration } from "../generated/domainTypes";
 
 /**
@@ -19,7 +19,6 @@ export function mapAbilityGroupConfiguration(
   }
 
   const capacity = Number(f[ABILITYGROUP_CONFIG_FIELDS.capacity] ?? 0);
-
   return {
     id: record.id,
     group,

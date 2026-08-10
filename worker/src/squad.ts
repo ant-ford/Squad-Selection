@@ -337,6 +337,35 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
 
+    // ── Server-side eligibility revalidation (INV-003) ──────────────────
+  const currentSelectedBefore = getSelectedPlayerIds(match, ref.teamRankMap, side);
+  const newlyAddedIds = cleanIds.filter((id) => !currentSelectedBefore.includes(id));
+  
+  if (newlyAddedIds.length > 0) {
+    const teamMap = new Map<string, Team>(ref.teams.map((t) => [t.teamName || "", t]));
+    const hkfcTeam = hkfcTeamName(match, ref.teamRankMap, side);
+    if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
+    
+    const { ctx } = await buildEvaluationContext(env, match, ref.teamRankMap, teamMap, ref.players, hkfcTeam);
+    const playersById = new Map(ref.players.map((p) => [p.id, p]));
+    
+    const violations: string[] = [];
+    for (const id of newlyAddedIds) {
+      const player = playersById.get(id);
+      if (!player) { violations.push(`${id}: player not found or inactive`); continue; }
+      
+      const eligibility = evaluatePlayerEligibility(player, match, ctx);
+      if (eligibility.status === "blocked") {
+        const name = player.preferredName || player.givenNames || id;
+        violations.push(`${name}: ${eligibility.reason}`);
+      }
+    }
+    
+    if (violations.length > 0) {
+      throw new HttpError(`Selection rejected — ineligible player(s): ${violations.join("; ")}`, 422);
+    }
+  }
+
   // Derby safety: ensure a player isn't selected for BOTH sides of the same match
   const updates: Record<string, string[]> = { [fieldName]: cleanIds };
   if (side === "home" || side === "away") {
@@ -386,7 +415,7 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
     ...getSameDayMatches(allMatchesInSeason, match.matchDate || "").map((m) => m.id),
   ]);
   invalidateCache(`match:${matchId}`);
-  invalidateCachePrefix("season-index:");
+  invalidateCache(`season-index:${season}`);
   invalidateCache(`all-matches:${season}`);
   for (const id of affectedMatchIds) {
     invalidateCachePrefix(`players-for-match:${id}:`);

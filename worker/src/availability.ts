@@ -17,7 +17,7 @@ import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
-import { invalidateCachePrefix } from "../../src/lib/cache";
+import { invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
 import type { AvailabilityException } from "../../src/generated/domainTypes";
 
 type ExceptionStatus = "Maybe" | "Unavailable";
@@ -39,7 +39,6 @@ function buildExceptionFields(opts: {
   };
 }
 
-/** Airtable batch endpoints accept at most 10 records per request. */
 function chunk<T>(items: T[], size = 10): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -48,19 +47,13 @@ function chunk<T>(items: T[], size = 10): T[][] {
 
 /**
  * Find existing exceptions for a player across a set of matches.
- *
- * Queries by the Season (Matches) LOOKUP field — which returns plain text
- * and is reliable in filterByFormula — then filters by player + match in
- * code.  The old approach used FIND("recId", {Player}) which silently
- * fails because Airtable resolves linked-record fields to their primary
- * field value (the player's name), not the record ID.
+ * Returns both the exceptions map AND the seasons involved for targeted cache invalidation.
  */
 async function findPlayerExceptions(
   env: Env,
   playerId: string,
   matchIds: string[],
-): Promise<Map<string, AvailabilityException>> {
-  // Collect the seasons that cover the requested matches (parallel fetch)
+): Promise<{ exceptions: Map<string, AvailabilityException>; seasons: string[] }> {
   const matchSeasons = new Set<string>();
   const matchRecords = await Promise.all(
     matchIds.map((matchId) => airtableFindById(env, TABLES.match, matchId)),
@@ -72,9 +65,9 @@ async function findPlayerExceptions(
     }
   }
 
-  if (matchSeasons.size === 0) return new Map();
-
   const seasons = [...matchSeasons];
+  if (seasons.length === 0) return { exceptions: new Map(), seasons: [] };
+
   const formula =
     seasons.length === 1
       ? `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(seasons[0])}"`
@@ -85,28 +78,28 @@ async function findPlayerExceptions(
     .map(mapAvailability)
     .filter((e) => linkId(e.player) === playerId);
 
-  return new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
+  return {
+    exceptions: new Map(playerExceptions.map((e) => [linkId(e.match) || "", e])),
+    seasons,
+  };
 }
 
 /**
- * Invalidation fan-out for availability writes (Invariant #11):
- *   players-for-match:${matchId}:  → annotated eligibility output
- *   exceptions:                    → season exception cache in reference.ts
- *   season-index:                  → unavailablePlayerMatchKeys drives the
- *                                    same-day higher-team lockout
- *   calendar:player:               → player ICS feeds embed availability
+ * Invalidation fan-out for availability writes.
+ * Now correctly scoped to only invalidate the specific seasons involved.
  */
-function invalidateAvailabilityCaches(matchIds: string[]) {
+function invalidateAvailabilityCaches(matchIds: string[], seasons: string[]) {
   for (const matchId of matchIds) {
     invalidateCachePrefix(`players-for-match:${matchId}:`);
   }
   invalidateCachePrefix("exceptions:");
-  invalidateCachePrefix("season-index:");
+  for (const season of new Set(seasons)) {
+    invalidateCache(`season-index:${season}`);
+  }
   invalidateCachePrefix("calendar:player:");
 }
 
 // ── Bulk set (admin / coach) ────────────────────────────────────────────
-
 export interface SetAvailabilityInput {
   playerId: string;
   matchIds: string[];
@@ -118,13 +111,12 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   if (!input.playerId || !Array.isArray(input.matchIds)) {
     throw new HttpError("playerId and matchIds[] are required", 400);
   }
-
   const playerRecord = await airtableFindById(env, TABLES.player, input.playerId);
   if (!playerRecord) throw new HttpError("Player not found or inactive", 404);
   const player = mapPlayer(playerRecord);
   if (!player.active) throw new HttpError("Player not found or inactive", 404);
 
-  const exceptionByMatch = await findPlayerExceptions(env, input.playerId, input.matchIds);
+  const { exceptions: exceptionByMatch, seasons } = await findPlayerExceptions(env, input.playerId, input.matchIds);
 
   const toDelete: string[] = [];
   const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
@@ -150,22 +142,15 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     }
   }
 
-  for (const batch of chunk(toDelete)) {
-    await airtableBatchDelete(env, TABLES.availabilityException, batch);
-  }
-  for (const batch of chunk(toUpdate)) {
-    await airtableBatchUpdate(env, TABLES.availabilityException, batch);
-  }
-  for (const batch of chunk(toCreate)) {
-    await airtableBatchCreate(env, TABLES.availabilityException, batch);
-  }
+  for (const batch of chunk(toDelete)) await airtableBatchDelete(env, TABLES.availabilityException, batch);
+  for (const batch of chunk(toUpdate)) await airtableBatchUpdate(env, TABLES.availabilityException, batch);
+  for (const batch of chunk(toCreate)) await airtableBatchCreate(env, TABLES.availabilityException, batch);
 
-  invalidateAvailabilityCaches(input.matchIds);
+  invalidateAvailabilityCaches(input.matchIds, seasons);
   return { success: true, updated: toDelete.length + toUpdate.length + toCreate.length };
 }
 
 // ── Player self-service ─────────────────────────────────────────────────
-
 export interface SetMyAvailabilityInput {
   email: string;
   matchId: string;
@@ -176,32 +161,33 @@ export interface SetMyAvailabilityInput {
 
 export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
   if (!input.email || !input.matchId) throw new HttpError("email and matchId are required", 400);
-
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
 
-  // --- Locate any existing exception for this player + match ---
   let existingId: string | undefined;
+  let seasons: string[] = [];
 
-  // Strategy 1: trust the client-provided ID (fastest path)
   if (input.existingExceptionId) {
     const rec = await airtableFindById(env, TABLES.availabilityException, input.existingExceptionId);
     if (rec) existingId = input.existingExceptionId;
   }
 
-  // Strategy 2: look up by season (reliable lookup field) + filter in code
   if (!existingId) {
-    const byMatch = await findPlayerExceptions(env, user.id, [input.matchId]);
-    existingId = byMatch.get(input.matchId)?.id;
+    const result = await findPlayerExceptions(env, user.id, [input.matchId]);
+    existingId = result.exceptions.get(input.matchId)?.id;
+    seasons = result.seasons;
+  } else {
+    // If we trusted the client ID, we still need the season for cache invalidation
+    const matchRecord = await airtableFindById(env, TABLES.match, input.matchId);
+    const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
+    if (season) seasons = [season];
   }
 
-  // --- Apply the change ---
   if (input.status === "Available") {
-    // "Available" = no exception record (exception-only model, Invariant #10)
     if (existingId) {
       await airtableDelete(env, TABLES.availabilityException, existingId);
     }
-    invalidateAvailabilityCaches([input.matchId]);
+    invalidateAvailabilityCaches([input.matchId], seasons);
     return { success: true, exceptionId: null };
   }
 
@@ -222,6 +208,6 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     resultId = created.id;
   }
 
-  invalidateAvailabilityCaches([input.matchId]);
+  invalidateAvailabilityCaches([input.matchId], seasons);
   return { success: true, exceptionId: resultId };
 }

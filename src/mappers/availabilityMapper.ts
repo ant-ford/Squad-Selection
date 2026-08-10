@@ -1,6 +1,6 @@
 import { AvailabilityException } from '@/generated/domainTypes';
 import { AVAILABILITYEXCEPTIONS_FIELDS } from '@/generated/fieldMaps';
-import { singleSelect } from '@/../worker/src/airtable';
+import { singleSelect } from '@/lib/airtableValueUtils';
 
 export function mapAvailability(record: any): AvailabilityException {
   const f = record.fields;

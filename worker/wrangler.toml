@@ -1,7 +1,7 @@
 name = "hkfc-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
-account_id = "c04da0bddfb69252c9f837a37305cd30"
+account_id = "ff3db45432f5be42c0bfd08d1f65b863"
 
 # Non-secret config. AIRTABLE_BASE_ID is not sensitive on its own (it's
 # useless without AIRTABLE_TOKEN) so it's fine to commit here.
@@ -16,3 +16,6 @@ AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 #   wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml
 # For local `wrangler dev`, put it in worker/.dev.vars instead (gitignored) —
 # see worker/.dev.vars.example.
+
+SUPABASE_URL = "https://astnstiieejqtrnmxhml.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_WGk4vU-rh1HIO711CkFfDg_f0lKXX2k"

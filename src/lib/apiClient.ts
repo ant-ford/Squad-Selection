@@ -2,6 +2,8 @@
 // The browser never talks to Airtable directly and never sees an Airtable
 // token — it only ever calls this Worker.
 
+import { supabase } from './supabase';
+
 const API_URL = import.meta.env.VITE_API_URL;
 
 if (!API_URL) {
@@ -44,15 +46,23 @@ function toSearchParams(params?: QueryParams): string {
   return `?${search.toString()}`;
 }
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function apiGet<T>(path: string, params?: QueryParams): Promise<T> {
-  const response = await fetch(`${API_URL}${path}${toSearchParams(params)}`);
+  const response = await fetch(`${API_URL}${path}${toSearchParams(params)}`, {
+    headers: await getAuthHeaders(),
+  });
   return parseResponse(response) as Promise<T>;
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
     body: JSON.stringify(body),
   });
   return parseResponse(response) as Promise<T>;
