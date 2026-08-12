@@ -1,5 +1,3 @@
-//worker/src/index.ts
-
 import { Env, AirtableError } from "./airtable";
 import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
 import { requireAuthenticatedEmail } from "./auth";
