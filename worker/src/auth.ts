@@ -21,7 +21,11 @@ export async function requireAuthenticatedEmail(request: Request, env: Env): Pro
     },
   });
   
-  if (!resp.ok) throw new HttpError("Invalid or expired session", 401);
+  if (!resp.ok) {
+    const detail = await resp.text();
+    console.error("Supabase auth verification failed:", resp.status, detail);
+    throw new HttpError("Invalid or expired session", 401);
+  }
 
   const user = (await resp.json()) as { email?: string };
   if (!user.email) throw new HttpError("Session has no associated email", 401);

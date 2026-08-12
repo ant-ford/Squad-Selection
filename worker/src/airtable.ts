@@ -3,8 +3,9 @@ export interface Env {
   AIRTABLE_TOKEN: string;
   AIRTABLE_BASE_ID: string;
   CALENDAR_SECRET: string;
-  /** Optional: restrict CORS to a single origin instead of "*". */
   ALLOWED_ORIGIN?: string;
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
 }
 
 const AIRTABLE_API = "https://api.airtable.com/v0";

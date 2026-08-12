@@ -7,5 +7,5 @@ account_id = "ff3db45432f5be42c0bfd08d1f65b863"
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 ALLOWED_ORIGIN = "https://hkfc-squad-selection.squad-selections.workers.dev"
 
-SUPABASE_URL = "https://astnstiieejqtrnmxhml.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_WGk4vU-rh1HIO711CkFfDg_f0lKXX2k"
+SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"

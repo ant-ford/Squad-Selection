@@ -65,7 +65,7 @@ export default {
         return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
       }
 
-      // ── Eligibility operational metrics ────────────────────────────────────
+      // ── Eligibility Operational Metrics ────────────────────────────────────
       if (method === "GET" && pathname === "/api/eligibility-metrics") {
         return json(getEligibilityMetrics(), 200, origin);
       }
@@ -77,8 +77,9 @@ export default {
 
       // ── Match / Squad (Read) ───────────────────────────────────────────────
       const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
-      if (method === "GET" && matchSquadMatch)
+      if (method === "GET" && matchSquadMatch) {
         return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+      }
 
       const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
       if (method === "GET" && matchPlayersMatch) {
@@ -109,16 +110,28 @@ export default {
       }
 
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
-      if (method === "GET" && matchAvailabilityMatch)
+      if (method === "GET" && matchAvailabilityMatch) {
         return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
+      }
 
       // ── Auto-Select Toggle (Write - Authenticated) ─────────────────────────
       const autoSelectMatch = pathname.match(/^\/api\/match\/([^/]+)\/auto-select$/);
       if (method === "POST" && autoSelectMatch) {
         const actingEmail = await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
-        const enabled = body.enabled === true || body.enabled === 'true';
-        if (typeof enabled !== 'boolean') throw new HttpError("enabled must be a boolean", 400);
+        const enabled =
+          typeof body.enabled === "boolean"
+            ? body.enabled
+            : body.enabled === "true"
+            ? true
+            : body.enabled === "false"
+            ? false
+            : undefined;
+
+        if (typeof enabled !== "boolean") {
+          throw new HttpError("enabled must be a boolean", 400);
+        }
+
         return json(
           await toggleAutoSelect(env, autoSelectMatch[1], enabled, actingEmail),
           200,
@@ -145,8 +158,9 @@ export default {
 
       // ── Player / Fixtures (Read) ───────────────────────────────────────────
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
-      if (method === "GET" && playerFixturesMatch)
+      if (method === "GET" && playerFixturesMatch) {
         return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
+      }
 
       if (method === "GET" && pathname === "/api/players/active") {
         await requireAuthenticatedEmail(request, env);
@@ -166,10 +180,10 @@ export default {
         return json(player, 200, origin);
       }
 
-      // Player-facing routes (remain unauthenticated as they rely on email param / signed links per spec)
+      // Player-facing routes (unauthenticated as they rely on email param / signed links per spec)
       if (method === "GET" && pathname === "/api/my-profile") {
         const email = requireParam(url.searchParams.get("email"), "email");
-        return json(await getMyProfile(env, email));
+        return json(await getMyProfile(env, email), 200, origin);
       }
       if (method === "GET" && pathname === "/api/my-fixtures") {
         const email = requireParam(url.searchParams.get("email"), "email");
@@ -180,12 +194,16 @@ export default {
         const team = url.searchParams.get("team") ?? undefined;
         return json(await getUpcomingFixtures(env, { email, team }), 200, origin);
       }
-      
+
       // Dashboard metrics (Authenticated)
       if (method === "GET" && pathname === "/api/recent-changes") {
         await requireAuthenticatedEmail(request, env);
         const days = Number(url.searchParams.get("days") ?? 7);
-        return json(await getRecentChanges(env, Number.isFinite(days) && days > 0 ? days : 7), 200, origin);
+        return json(
+          await getRecentChanges(env, Number.isFinite(days) && days > 0 ? days : 7),
+          200,
+          origin,
+        );
       }
       if (method === "GET" && pathname === "/api/playup-watch") {
         await requireAuthenticatedEmail(request, env);
@@ -194,10 +212,14 @@ export default {
       if (method === "GET" && pathname === "/api/recent-availability") {
         await requireAuthenticatedEmail(request, env);
         const days = Number(url.searchParams.get("days") ?? 7);
-        return json(await getRecentAvailability(env, Number.isFinite(days) ? days : 7), 200, origin);
+        return json(
+          await getRecentAvailability(env, Number.isFinite(days) ? days : 7),
+          200,
+          origin,
+        );
       }
 
-      // ── Selection writes (Authenticated) ───────────────────────────────────
+      // ── Selection Writes (Authenticated) ───────────────────────────────────
       if (method === "POST" && pathname === "/api/select-player") {
         await requireAuthenticatedEmail(request, env);
         const body = await readJsonBody(request);
@@ -236,12 +258,15 @@ export default {
       }
 
       // ── Ranking ────────────────────────────────────────────────────────────
-      if (method === "GET" && pathname === "/api/ranking")
+      if (method === "GET" && pathname === "/api/ranking") {
         return json(await getActiveRanking(env), 200, origin);
-      if (method === "GET" && pathname === "/api/ranking/inactive")
+      }
+      if (method === "GET" && pathname === "/api/ranking/inactive") {
         return json(await getInactiveRanking(env), 200, origin);
-      if (method === "GET" && pathname === "/api/ranking/config")
+      }
+      if (method === "GET" && pathname === "/api/ranking/config") {
         return json(await getAbilityGroupConfig(env), 200, origin);
+      }
 
       if (method === "POST" && pathname === "/api/ranking/config") {
         const actingEmail = await requireAuthenticatedEmail(request, env);
@@ -282,7 +307,10 @@ export default {
         const body = (await readJsonBody(request)) as { playerId: string };
         return json(await deactivatePlayer(env, body.playerId, actingEmail), 200, origin);
       }
-      if (method === "POST" && (pathname === "/api/ranking/initialize" || pathname === "/api/ranking/backfill")) {
+      if (
+        method === "POST" &&
+        (pathname === "/api/ranking/initialize" || pathname === "/api/ranking/backfill")
+      ) {
         await requireAuthenticatedEmail(request, env);
         return json(await initializeRanking(env), 200, origin);
       }
@@ -312,6 +340,7 @@ export default {
       if (err instanceof HttpError) return errorJson(err.message, err.status, origin);
       if (err instanceof AirtableError)
         return errorJson(`Airtable: ${err.message}`, err.status >= 400 ? err.status : 502, origin);
+
       console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
       return errorJson("Internal Server Error", 500, origin);
     }
