@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
-import { getCurrentSupabaseUser } from '@/lib/auth';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
@@ -14,8 +13,9 @@ import type {
 } from '@/generated/domainTypes';
 
 async function authGet<T>(url: string, params?: Record<string, any>): Promise<T> {
-  const user = await getCurrentSupabaseUser();
-  return apiGet<T>(url, { ...params, email: user?.email });
+  // Identity is derived from the session by the Worker; the browser never
+  // supplies the email.
+  return apiGet<T>(url, params);
 }
 
 /** True while the browser tab is visible; used to pause background polling. */
@@ -107,15 +107,12 @@ export function useAbilityGroupConfig() {
 /**
  * Ranking mutations return the fully refreshed RankingList from the Worker,
  * so we write it straight into the cache instead of triggering a refetch.
- * Automatically injects the acting user's email for audit logging.
+ * The Worker derives the acting user from the session for audit logging.
  */
 function useRankingMutation<TVariables>(url: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (variables: TVariables) => {
-      const user = await getCurrentSupabaseUser();
-      return apiPost<RankingList>(url, { ...variables, actingEmail: user?.email });
-    },
+    mutationFn: (variables: TVariables) => apiPost<RankingList>(url, variables),
     onSuccess: (data) => {
       if (data?.players) {
         queryClient.setQueryData<RankingList>(['ranking'], data);
@@ -150,10 +147,8 @@ export function useInitializeRanking() {
 export function useActivatePlayer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (variables: { playerId: string }) => {
-      const user = await getCurrentSupabaseUser();
-      return apiPost<RankingList>('/api/ranking/activate', { ...variables, actingEmail: user?.email });
-    },
+    mutationFn: (variables: { playerId: string }) =>
+      apiPost<RankingList>('/api/ranking/activate', variables),
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
@@ -167,10 +162,8 @@ export function useActivatePlayer() {
 export function useDeactivatePlayer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (variables: { playerId: string }) => {
-      const user = await getCurrentSupabaseUser();
-      return apiPost<RankingList>('/api/ranking/deactivate', { ...variables, actingEmail: user?.email });
-    },
+    mutationFn: (variables: { playerId: string }) =>
+      apiPost<RankingList>('/api/ranking/deactivate', variables),
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
@@ -188,13 +181,8 @@ export function useDeactivatePlayer() {
 export function useUpdateAbilityConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (config: AbilityGroupConfigMap) => {
-      const user = await getCurrentSupabaseUser();
-      return apiPost<RankingList>('/api/ranking/config', {
-        config,
-        actingEmail: user?.email,
-      });
-    },
+    mutationFn: (config: AbilityGroupConfigMap) =>
+      apiPost<RankingList>('/api/ranking/config', { config }),
     onSuccess: (updatedRankingList) => {
       // Update config cache
       if (updatedRankingList.config) {

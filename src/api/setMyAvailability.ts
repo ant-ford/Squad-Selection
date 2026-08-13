@@ -1,5 +1,4 @@
 import { apiPost } from '@/lib/apiClient';
-import { getCurrentSupabaseUser } from '@/lib/auth';
 
 export async function setMyAvailability(
   matchId: string,
@@ -7,10 +6,9 @@ export async function setMyAvailability(
   notes?: string,
   existingExceptionId?: string
 ) {
-  const user = await getCurrentSupabaseUser();
-  if (!user?.email) throw new Error('Not authenticated');
+  // The Worker derives the player identity from the verified Supabase
+  // session; the browser never supplies the email.
   return apiPost<{ success: boolean; exceptionId: string | null }>('/api/set-my-availability', {
-    email: user.email,
     matchId,
     status,
     notes,

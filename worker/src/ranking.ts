@@ -472,6 +472,7 @@ async function recomputeDerivedFieldsFromList(
   await batchUpdatePlayers(env, fieldUpdates);
   invalidateCache(rankingCacheKey(true));
   invalidateCache("club-reference");
+  invalidateCache("team-coach-links");
   invalidateCachePrefix("players-for-match:");
   
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };

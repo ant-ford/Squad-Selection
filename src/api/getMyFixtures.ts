@@ -1,5 +1,4 @@
 import { apiGet } from '@/lib/apiClient';
-import { getCurrentSupabaseUser } from '@/lib/auth';
 
 export interface MyFixture {
   id: string;
@@ -44,11 +43,10 @@ export interface GetMyFixturesOutput {
 }
 
 /**
- * Resolves the current user's email and fetches their fixtures from the
- * Worker (GET /api/my-fixtures).
+ * Fetches the current user's fixtures from the Worker (GET /api/my-fixtures).
+ * The Worker derives the identity from the verified Supabase session — the
+ * browser never supplies the email.
  */
 export async function getMyFixtures(): Promise<GetMyFixturesOutput> {
-  const user = await getCurrentSupabaseUser();
-  if (!user?.email) throw new Error('Not authenticated');
-  return apiGet<GetMyFixturesOutput>('/api/my-fixtures', { email: user.email });
+  return apiGet<GetMyFixturesOutput>('/api/my-fixtures');
 }

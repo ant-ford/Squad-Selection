@@ -11,7 +11,6 @@ import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/lib/useAuth';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { ABILITY_RANK } from '@/lib/abilityRank';
@@ -48,7 +47,6 @@ export default function SquadSelection() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   // ── Auto-Select state ────────────────────────────────────────────────
   const [autoSelectEnabled, setAutoSelectEnabled] = useState<boolean>(false);
@@ -168,7 +166,6 @@ export default function SquadSelection() {
     try {
       await apiPost(`/api/match/${matchId}/auto-select`, {
         enabled,
-        actingEmail: user?.email,
       });
     } catch (e: any) {
       toast.error('Failed to save auto-select setting');
@@ -201,7 +198,6 @@ export default function SquadSelection() {
       await apiPost('/api/team/auto-select-players', {
         teamName: data.match.hkfcTeam,
         playerIds: ids,
-        actingEmail: user?.email,
       });
       queryClient.invalidateQueries({ queryKey: ['playersForMatch', matchId, side] });
       toast.success(`Priority list saved (${ids.length} players)`);
@@ -374,7 +370,6 @@ export default function SquadSelection() {
       await apiPost('/squad/sync', {
         matchId,
         selectedIds,
-        actingEmail: user?.email,
         side: side,
       });
       const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];

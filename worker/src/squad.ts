@@ -487,6 +487,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
 
   // Invalidate reference data cache so match-info picks up the new list
   invalidateCache("club-reference");
+  invalidateCache("team-coach-links");
   invalidateCachePrefix("players-for-match:");
 
   console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);

@@ -88,7 +88,7 @@ export default function PlayerDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {data.isCoach && (
+              {(data.isCoach || data.isSectionCaptain) && (
                 <button
                   onClick={() => navigate('/coach')}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground"

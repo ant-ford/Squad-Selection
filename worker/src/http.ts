@@ -3,10 +3,12 @@
 
 export class HttpError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  code: string;
+  constructor(message: string, status = 400, code = "BAD_REQUEST") {
     super(message);
     this.name = "HttpError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -30,8 +32,20 @@ export function json(data: unknown, status = 200, origin?: string): Response {
   });
 }
 
-export function errorJson(message: string, status = 500, origin?: string): Response {
-  return json({ error: message }, status, origin);
+/**
+ * Error responses carry a stable machine-readable `error` code plus a
+ * human-readable `message`, so the frontend can tell apart:
+ *  - UNAUTHORIZED               -> 401, sign out
+ *  - APPLICATION_ACCESS_DENIED  -> 403, sign out
+ *  - COACH_ACCESS_REQUIRED      -> 403, stay logged in
+ */
+export function errorJson(
+  message: string,
+  status = 500,
+  origin?: string,
+  code = "INTERNAL_ERROR"
+): Response {
+  return json({ error: code, message }, status, origin);
 }
 
 export function handleOptions(origin?: string): Response {

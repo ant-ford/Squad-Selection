@@ -1,16 +1,13 @@
 import CalendarSheet from "@/components/CalendarSheet";
 import { apiGet } from "@/lib/apiClient";
-import { useAuth } from "@/lib/useAuth";
 
 export function CoachCalendarExport({ activeTab }: { activeTab: string }) {
-  const { user } = useAuth();
-  const email = user?.email;
-
-  if (!activeTab || activeTab === "all" || !email) return null;
+  if (!activeTab || activeTab === "all") return null;
 
   const fetchLink = async () => {
+    // The Worker verifies coach access from the session; `team` is the only
+    // client-supplied parameter and it identifies the team, not the user.
     const link = await apiGet<{ team: string; sig: string }>("/api/calendar/team-link", {
-      email,
       team: activeTab,
     });
     const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;

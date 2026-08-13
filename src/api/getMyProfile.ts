@@ -1,5 +1,4 @@
 import { apiGet } from '@/lib/apiClient';
-import { getCurrentSupabaseUser } from '@/lib/auth';
 
 export interface ProfileData {
   preferredName: string;
@@ -18,14 +17,6 @@ export interface ProfileData {
 }
 
 export async function getMyProfile(): Promise<ProfileData> {
-  const user = await getCurrentSupabaseUser();
-
-  if (!user?.email) {
-    throw new Error('Not authenticated');
-  }
-
-  return apiGet<ProfileData>(
-    '/api/my-profile',
-    { email: user.email }
-  );
+  // The Worker derives the identity from the verified Supabase session.
+  return apiGet<ProfileData>('/api/my-profile');
 }

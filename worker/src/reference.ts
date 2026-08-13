@@ -1,7 +1,7 @@
 import { Env, airtableFindAll, escapeFormulaValue } from "./airtable";
 import { getCached, invalidateCache } from "../../src/lib/cache";
 import { TABLES } from "../../src/generated/tableNames";
-import { PEOPLE_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
+import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapTeam } from "../../src/mappers/teamMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
@@ -37,6 +37,39 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
     };
   }, 10 * 60 * 1000); // 10 minutes
 
+  return data;
+}
+
+/**
+ * Coach / Section Captain relationships across ALL team records — including
+ * teams currently marked inactive. Authorization must depend on the person's
+ * role, not on whether a team record happens to be inactive, so this lookup
+ * deliberately skips the "{Active}=TRUE()" filter used by getReferenceData().
+ */
+export async function getTeamCoachLinks(env: Env): Promise<{
+  coachIds: string[];
+  sectionCaptainIds: string[];
+}> {
+  const { data } = await getCached<{ coachIds: string[]; sectionCaptainIds: string[] }>(
+    "team-coach-links",
+    async () => {
+      const teamRecords = await airtableFindAll(env, TABLES.team);
+      const coachIds = new Set<string>();
+      const sectionCaptainIds = new Set<string>();
+      for (const record of teamRecords) {
+        const coach = record.fields?.[TEAMS_FIELDS.coach];
+        const sectionCaptain = record.fields?.[TEAMS_FIELDS.sectionCaptain];
+        for (const id of Array.isArray(coach) ? coach : []) {
+          if (typeof id === "string") coachIds.add(id);
+        }
+        for (const id of Array.isArray(sectionCaptain) ? sectionCaptain : []) {
+          if (typeof id === "string") sectionCaptainIds.add(id);
+        }
+      }
+      return { coachIds: [...coachIds], sectionCaptainIds: [...sectionCaptainIds] };
+    },
+    10 * 60 * 1000, // 10 minutes, same TTL as the club-reference cache
+  );
   return data;
 }
 
