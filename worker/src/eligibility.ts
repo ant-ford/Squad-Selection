@@ -119,7 +119,7 @@ function isLeague(match: Match | undefined | null): boolean {
 function isCup(match: Match | undefined | null): boolean {
   if (!match) return false;
   const ct = (match.competitionType || match.division || "").toLowerCase();
-  return ct.includes("cup") || ct.includes("plate") || ct.includes("bowl");
+  return ct === "knockout" || ct.includes("cup") || ct.includes("plate") || ct.includes("bowl");
 }
 
 /**

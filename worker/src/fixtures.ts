@@ -332,16 +332,11 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
         selectedUnavailableNames: selectedIds
           .filter((id) => statusByPlayer.get(id) === "Unavailable")
           .map((id) => nameOf(playerById.get(id))),
-        availableCount: 0, 
         maybeCount: maybeExcs.length, 
         unavailableCount: unavailableExcs.length, 
         maybeNames, 
         unavailableNames,
-        
-        // âŒ REMOVED THE DUPLICATED & BROKEN LINES THAT WERE HERE:
-        // selectedPlayers: ...
-        // selectedUnavailableNames: ...
-        // hasGoalkeeperSelected: ...
+
       };
     };
     if (bothCoached && !opts.team) return [makeCard(home, away, true), makeCard(away, home, false)];

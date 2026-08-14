@@ -119,4 +119,25 @@ describe("buildRecommendations", () => {
     const result = buildRecommendations(pool, 3, { "HKFC C": 3, "HKFC E": 5 });
     expect(result[0].id).toBe("near");
   });
+
+  it("uses the authoritative Team Rank when the candidate team resolves", () => {
+    const pool = [candidate({ id: "same", playingAbility: "B", registeredTeam: "HKFC C" })];
+    const result = buildRecommendations(pool, 3, { "HKFC C": 3 });
+    // B = 20 -> ability (20/24*50) + position 20 (neutral) + proximity 20 (same team) + play-up 10
+    expect(result[0].score).toBe(Math.round((20 / 24) * 50 + 20 + 20 + 10));
+    expect(result[0].score).toBe(92);
+  });
+
+  it("does not fabricate a team rank when the candidate team is unknown", () => {
+    const pool = [
+      candidate({ id: "known", playingAbility: "B", registeredTeam: "HKFC C" }),
+      candidate({ id: "unknown-team", playingAbility: "B", registeredTeam: "Unlisted 9s" }),
+    ];
+    const result = buildRecommendations(pool, 3, { "HKFC C": 3 });
+    const byId = Object.fromEntries(result.map((r) => [r.id, r]));
+    // The same-team candidate keeps its 20-point proximity credit; the
+    // unknown team is not silently treated as the target team (which would
+    // have fabricated distance 0 / full proximity points).
+    expect(byId["known"].score - byId["unknown-team"].score).toBe(20);
+  });
 });

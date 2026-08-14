@@ -158,8 +158,7 @@ beforeEach(() => {
   mocks.requireCoach.mockRejectedValue(coachDenied());
 
   mocks.getMyProfile.mockResolvedValue({
-    preferredName: "Test Player", roles: [], isCoach: false, isAdmin: false,
-    isSectionCaptain: false, captainTeams: [], coachTeams: [],
+    preferredName: "Test Player", roles: [], isCoach: false, isSectionCaptain: false, captainTeams: [], coachTeams: [],
   });
   mocks.getMyFixtures.mockResolvedValue({
     playerName: "Test Player", registeredTeam: "Men's 3s", playingPosition: "",

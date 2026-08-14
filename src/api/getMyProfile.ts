@@ -4,7 +4,7 @@ export interface ProfileData {
   preferredName: string;
   roles: string[];
   isCoach: boolean;
-  isAdmin: boolean;
+
   isSectionCaptain: boolean;
   captainTeams: string[];
 

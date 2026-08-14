@@ -41,9 +41,7 @@ export async function getMyProfile(env: Env, email: string) {
 
     isCoach: coachTeams.length > 0,
 
-    isAdmin: false,
-
-    isSectionCaptain,
+        isSectionCaptain,
 
     captainTeams,
 

@@ -1,4 +1,4 @@
-import { Env } from "./index";
+import type { Env } from "./airtable";
 import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
@@ -64,15 +64,21 @@ export function buildRecommendations(
     }
 
     // 2c. Club Proximity Score (20 points max)
-    const candidateTeamRank = teamRankMap[p.registeredTeam] ?? targetTeamRank;
-    const distance = candidateTeamRank - targetTeamRank;
+    // An unknown candidate team must not be treated as the target team: no
+    // rank is invented for it, so it gets no proximity credit (and distance
+    // stays 0, keeping the play-up logic neutral).
+    const candidateTeamRank = teamRankMap[p.registeredTeam];
     let teamDistanceScore = 0;
-    if (distance === 0) {
-      teamDistanceScore = 20; // Same team context
-    } else if (distance > 0) {
-      teamDistanceScore = Math.max(0, 20 - distance * 5); // Play-up penalty scaling
-    } else {
-      teamDistanceScore = 0; // Play-down scenario
+    let distance = 0;
+    if (candidateTeamRank !== undefined) {
+      distance = candidateTeamRank - targetTeamRank;
+      if (distance === 0) {
+        teamDistanceScore = 20; // Same team context
+      } else if (distance > 0) {
+        teamDistanceScore = Math.max(0, 20 - distance * 5); // Play-up penalty scaling
+      } else {
+        teamDistanceScore = 0; // Play-down scenario
+      }
     }
 
     // 2d. Play-Up Capacity Score (10 points max)
