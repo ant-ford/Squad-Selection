@@ -2,7 +2,7 @@
 
 **Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
 
-[![Tests](https://img.shields.io/badge/tests-159%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-259%20passed-brightgreen)](tests/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
 
 ---
@@ -14,9 +14,9 @@
 | Step | Document | Time |
 |---|---|---|
 | 1 | This README | 10 min |
-| 2 | [`docs/Implementation_Roadmap_v4.md`](docs/Implementation_Roadmap_v4.md) — Engineering Specification | 60–90 min |
-| 3 | `worker/src/eligibility.ts` — eligibility engine source | 15 min |
-| 4 | `tests/golden-eligibility.test.ts` — the critical test suite | 10 min |
+| 2 | [`docs/Implementation_Roadmap_v4.md`](docs/Implementation_Roadmap_v4.md) â€” Engineering Specification | 60â€“90 min |
+| 3 | `worker/src/eligibility.ts` â€” eligibility engine source | 15 min |
+| 4 | `tests/golden-eligibility.test.ts` â€” the critical test suite | 10 min |
 
 Then get running:
 
@@ -24,7 +24,7 @@ Then get running:
 git clone https://github.com/ant-ford/Squad-Selection.git
 cd Squad-Selection
 npm install
-npx vitest run    # 159 tests, all should pass
+npx vitest run    # 259 tests, all should pass
 npx vite dev      # opens at http://localhost:5173
 ```
 
@@ -41,7 +41,7 @@ HKFC Squad Selection enables coaches and administrators of the Hong Kong Footbal
 - **Coordinate across eight teams** with visibility into cross-team selections, same-day conflicts, and play-up compliance
 - **Sync to calendars** via ICS feed generation
 
-The application enforces HKHA competition bye-laws and HKFC-specific operational interpretations. Coaches see exactly why a player is eligible, warned, or blocked — with source-citable rule references.
+The application enforces HKHA competition bye-laws and HKFC-specific operational interpretations. Coaches see exactly why a player is eligible, warned, or blocked â€” with source-citable rule references.
 
 **Regression-first development:** The Eligibility Engine is protected by golden tests. Behavioural changes require specification updates and corresponding test updates. The test suite is part of the architecture, not an afterthought.
 
@@ -54,7 +54,7 @@ This application intentionally optimises for **coach workflow** over technical p
 | Decision | Rationale |
 |---|---|
 | **Default availability** | Players are assumed available unless they say otherwise. No one fills out forms for 30 fixtures. |
-| **Single ranking** | Section Rank is the only persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived — no sync problems, no inconsistency. |
+| **Single ranking** | Section Rank is the only persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived â€” no sync problems, no inconsistency. |
 | **Deterministic rules** | Same inputs always produce the same eligibility result. Coaches trust the output; golden tests enforce it. |
 | **Advisory recommendations** | The engine suggests; coaches decide. Automation never overrides human judgment. |
 | **Mobile-first** | Designed for a phone at the side of a pitch. Desktop is secondary. |
@@ -68,11 +68,11 @@ This application intentionally optimises for **coach workflow** over technical p
 
 **Why Cloudflare Workers?** Serverless, globally distributed, zero cold-start overhead. The Worker is close to Airtable's API, not close to a particular user's browser.
 
-**Why Supabase (auth only)?** Provides email/password auth with PKCE. No application data is stored in Supabase — it's purely an identity provider.
+**Why Supabase (auth only)?** Provides email/password auth with PKCE. No application data is stored in Supabase â€” it's purely an identity provider.
 
-**Why React Query over Redux?** The application's state is server-derived (fixtures, players, rankings). TanStack Query caches, invalidates, and refetches declaratively — no manual synchronisation.
+**Why React Query over Redux?** The application's state is server-derived (fixtures, players, rankings). TanStack Query caches, invalidates, and refetches declaratively â€” no manual synchronisation.
 
-**Why exception-based availability?** Storing "Available" for every player×match combination would create ~28,000 records per season. Exception-based storage reduces this to ~500.
+**Why exception-based availability?** Storing "Available" for every playerÃ—match combination would create ~28,000 records per season. Exception-based storage reduces this to ~500.
 
 **Why a Worker-first architecture?** Client-side eligibility evaluation could be bypassed by modifying JavaScript. Server-side revalidation on every write is non-negotiable.
 
@@ -82,19 +82,19 @@ This application intentionally optimises for **coach workflow** over technical p
 
 **Production-ready (CURRENT IMPLEMENTATION):**
 
-- ✔ Production architecture (React + Worker + Airtable)
-- ✔ Regression-tested eligibility (159 tests, 23 golden)
-- ✔ Generated Airtable types (never out of sync)
-- ✔ Mobile-first responsive layout
-- ✔ Cached Worker with targeted invalidation
-- ✔ Audit logging (rankings, selections)
+- âœ” Production architecture (React + Worker + Airtable)
+- âœ” Regression-tested eligibility (259 tests, 23 golden)
+- âœ” Generated Airtable types (never out of sync)
+- âœ” Mobile-first responsive layout
+- âœ” Cached Worker with targeted invalidation
+- âœ” Audit logging (rankings, selections)
 
 **Active development focus:**
 
-- • Observability: cache hit ratios, endpoint latency percentiles
-- • Feature flags for dark launches
-- • Structured logging with correlation IDs
-- • Automated re-registration processing
+- â€¢ Observability: cache hit ratios, endpoint latency percentiles
+- â€¢ Feature flags for dark launches
+- â€¢ Structured logging with correlation IDs
+- â€¢ Automated re-registration processing
 
 ---
 
@@ -104,24 +104,24 @@ Runtime view complementing the static architecture:
 
 ```
 Coach taps "Save Squad"
-        │
-        ▼
+        â”‚
+        â–¼
     React (POST /squad/sync)
-        │
-        ▼
+        â”‚
+        â–¼
     Cloudflare Worker
-        │
-        ├─► Eligibility Engine ──► revalidates every player
-        ├─► Recommendation Engine ──► scores shortfall candidates
-        ├─► Selection Engine ──► derby safety, fresh Airtable read
-        │
-        ▼
+        â”‚
+        â”œâ”€â–º Eligibility Engine â”€â”€â–º revalidates every player
+        â”œâ”€â–º Recommendation Engine â”€â”€â–º scores shortfall candidates
+        â”œâ”€â–º Selection Engine â”€â”€â–º derby safety, fresh Airtable read
+        â”‚
+        â–¼
     Airtable (single source of truth)
-        │
-        ▼
+        â”‚
+        â–¼
     Cache Invalidation (6+ namespaces)
-        │
-        ▼
+        â”‚
+        â–¼
     React (refetch, re-render)
 ```
 
@@ -132,37 +132,41 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
 ## High-Level Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│                  BROWSER                      │
-│  React 19 · Vite 7 · Tailwind CSS v4         │
-│  TanStack Query · TanStack Virtual · dnd-kit │
-│                                               │
-│  Pages: /  · /coach  · /coach/fixtures       │
-│         /coach/match/:id  · /coach/ranking   │
-└──────────────────┬───────────────────────────┘
-                   │ HTTPS (Worker URL)
-┌──────────────────▼───────────────────────────┐
-│           CLOUDFLARE WORKER                   │
-│                                               │
-│  Eligibility Engine · Ranking Engine          │
-│  Recommendation Engine · Selection Sync       │
-│  Fixture Queries · Availability · Calendar    │
-│                                               │
-│  Cache Layer (in-memory, TTL-based)           │
-└──────┬───────────────────────────┬───────────┘
-       │                           │
-┌──────▼──────┐           ┌───────▼────────┐
-│  Supabase   │           │    Airtable     │
-│  Auth only  │           │  7 tables       │
-│  (no data)  │           │  All app data   │
-└─────────────┘           └────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                  BROWSER                      â”‚
+â”‚  React 19 Â· Vite 7 Â· Tailwind CSS v4         â”‚
+â”‚  TanStack Query Â· TanStack Virtual Â· dnd-kit â”‚
+â”‚                                               â”‚
+â”‚  Pages: /  Â· /coach  Â· /coach/fixtures       â”‚
+â”‚         /coach/match/:id  Â· /coach/ranking   â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                   â”‚ HTTPS (Worker URL)
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚           CLOUDFLARE WORKER                   â”‚
+â”‚                                               â”‚
+â”‚  Eligibility Engine Â· Ranking Engine          â”‚
+â”‚  Recommendation Engine Â· Selection Sync       â”‚
+â”‚  Fixture Queries Â· Availability Â· Calendar    â”‚
+â”‚                                               â”‚
+â”‚  Cache Layer (in-memory, TTL-based)           â”‚
+â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+       â”‚                           â”‚
+â”Œâ”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”           â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  Supabase   â”‚           â”‚    Airtable     â”‚
+â”‚  Auth only  â”‚           â”‚  8 tables       â”‚
+â”‚  (no data)  â”‚           â”‚  All app data   â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜           â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 **React:** Presentation layer. Renders Worker-provided data, manages UI state (filters, drafts, modals), submits mutations. MUST NOT determine eligibility.
 
 **Cloudflare Worker:** The authoritative backend. MUST own all business logic. The only component with Airtable access.
 
-**Airtable:** Single source of truth — 7 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Ability Group Configuration, Selection Events).
+**Airtable:** Single source of truth â€” 8 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Ability Group Configuration, Selection Events, Ranking Events).
+
+**Ranking Events table (ranking history):** the Worker records rank changes (move / reorder / activate / deactivate) with the actor, old/new rank, an optional justification of at most 280 characters, and a server-side timestamp. The table exists in the live schema (confirmed by the 2026-08-14 schema export); if it is ever absent the ranking-history UI degrades to "no changes recorded yet" and no write ever fails. Field names must match exactly: `Player` (link to People), `Actor` (link to People), `Actor Email` (text), `Kind` (select: move / reorder / activate / deactivate), `Old Rank` (number), `New Rank` (number), `Justification` (long text), `Timestamp` (date/time). Rationale: no existing table can represent rank changes - Selection Events has no timestamp/rank fields and is a per-selection log; audit fields on People would keep only the latest change per player.
+
+**Per-request telemetry:** the Worker logs one structured JSON line per request (`perf.request`: method, path, status, totalMs, exact Airtable call count) and one per authorization (`perf.auth`: Supabase verify, player lookup, team-links lookup timings, cache flags) - queryable in Workers Logs / `wrangler tail`. Supabase token verification is deliberately NOT cached (immediate revocation latency); the browser logs per-request timings via `console.debug` in `src/lib/apiClient.ts`.
 
 **Supabase:** Authentication only. No application data stored in Supabase tables.
 
@@ -172,57 +176,64 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
 
 ```
 Squad-Selection/
-├── docs/                          # Engineering specification
-│   └── Implementation_Roadmap_v4.md   # ★ NORMATIVE SPEC
-├── src/                           # React frontend
-│   ├── pages/                     # Route-level components
-│   │   ├── PlayerDashboard.tsx        # Player fixture/availability view
-│   │   ├── CoachDashboard.tsx         # Coach landing + play-up watch
-│   │   ├── FixtureList.tsx            # Browse fixtures by team
-│   │   ├── SquadSelection.tsx         # Core squad building workflow
-│   │   └── PlayerRanking.tsx          # Section ranking management
-│   ├── components/                # Reusable UI components
-│   │   ├── AppHeader.tsx              # Coach nav header
-│   │   ├── FixtureCard.tsx            # Coach fixture card
-│   │   ├── PlayerRow.tsx              # Selection player row
-│   │   ├── PlayerFilters.tsx          # Multi-dimensional filter bar
-│   │   ├── RecommendationsPanel.tsx   # Match recommendations
-│   │   └── shared/                    # Shared presentational components
-│   ├── api/                       # Typed API client functions
-│   ├── lib/                       # Shared utilities
-│   │   ├── queries.ts                # TanStack Query hooks
-│   │   ├── apiClient.ts              # Authenticated fetch wrapper
-│   │   ├── auth.ts                   # Supabase session helpers
-│   │   ├── dateUtils.ts              # safeFormat, isPastFixture
-│   │   └── readiness.ts              # Team readiness scoring
-│   ├── mappers/                   # Airtable → domain type conversion
-│   └── generated/                 # ★ AUTO-GENERATED — DO NOT EDIT
-├── worker/                        # Cloudflare Worker backend
-│   └── src/
-│       ├── index.ts                   # HTTP router (30+ endpoints)
-│       ├── eligibility.ts             # ★ Eligibility engine (8 steps)
-│       ├── ranking.ts                 # ★ Ranking engine
-│       ├── recommendations.ts         # Recommendation scoring
-│       ├── squad.ts                   # Selection sync + season context
-│       ├── fixtures.ts                # Fixture queries
-│       ├── availability.ts            # Exception management
-│       ├── calendar.ts                # ICS feed generation
-│       ├── abilityGroup.ts            # Ability group/sub-group math
-│       ├── abilityRank.ts             # A+ = 24 → H- = 1 mapping
-│       ├── reference.ts               # Cached club reference data
-│       ├── airtable.ts                # Airtable API client
-│       └── http.ts                    # HTTP utilities
-├── tests/                         # Vitest unit tests (159 tests)
-│   ├── eligibility.test.ts            # Full rule matrix (56 tests)
-│   ├── golden-eligibility.test.ts     # ★ Frozen golden matrix (23 tests)
-│   ├── playerFilters.test.ts          # Filter serialization
-│   ├── toggleSelection.test.ts        # Binary toggle logic
-│   ├── readiness.test.ts              # Team readiness
-│   ├── recommendations.test.ts        # Recommendation engine
-│   ├── abilityGroup.test.ts           # Group/sub-group math
-│   ├── abilityRank.test.ts            # Rank constant ordering
-│   └── dateUtils.test.ts              # Date formatting
-└── public/                        # Static assets (favicon, logo)
+â”œâ”€â”€ docs/                          # Engineering specification
+â”‚   â””â”€â”€ Implementation_Roadmap_v4.md   # â˜… NORMATIVE SPEC
+â”œâ”€â”€ src/                           # React frontend
+â”‚   â”œâ”€â”€ pages/                     # Route-level components
+â”‚   â”‚   â”œâ”€â”€ PlayerDashboard.tsx        # Player fixture/availability view
+â”‚   â”‚   â”œâ”€â”€ CoachDashboard.tsx         # Coach landing + play-up watch
+â”‚   â”‚   â”œâ”€â”€ FixtureList.tsx            # Browse fixtures by team
+â”‚   â”‚   â”œâ”€â”€ SquadSelection.tsx         # Core squad building workflow
+â”‚   â”‚   â””â”€â”€ PlayerRanking.tsx          # Section ranking management
+â”‚   â”œâ”€â”€ components/                # Reusable UI components
+â”‚   â”‚   â”œâ”€â”€ AppHeader.tsx              # Coach nav header
+â”‚   â”‚   â”œâ”€â”€ FixtureCard.tsx            # Coach fixture card
+â”‚   â”‚   â”œâ”€â”€ PlayerRow.tsx              # Selection player row
+â”‚   â”‚   â”œâ”€â”€ PlayerFilters.tsx          # Multi-dimensional filter bar
+â”‚   â”‚   â”œâ”€â”€ RecommendationsPanel.tsx   # Match recommendations
+â”‚   â”‚   â””â”€â”€ shared/                    # Shared presentational components
+â”‚   â”œâ”€â”€ api/                       # Typed API client functions
+â”‚   â”œâ”€â”€ lib/                       # Shared utilities
+â”‚   â”‚   â”œâ”€â”€ queries.ts                # TanStack Query hooks
+â”‚   â”‚   â”œâ”€â”€ apiClient.ts              # Authenticated fetch wrapper
+â”‚   â”‚   â”œâ”€â”€ auth.ts                   # Supabase session helpers
+â”‚   â”‚   â”œâ”€â”€ dateUtils.ts              # safeFormat, isPastFixture
+â”‚   â”‚   â””â”€â”€ readiness.ts              # Team readiness scoring
+â”‚   â”œâ”€â”€ mappers/                   # Airtable â†’ domain type conversion
+â”‚   â””â”€â”€ generated/                 # â˜… AUTO-GENERATED â€” DO NOT EDIT
+â”œâ”€â”€ worker/                        # Cloudflare Worker backend
+â”‚   â””â”€â”€ src/
+â”‚       â”œâ”€â”€ index.ts                   # HTTP router (30+ endpoints)
+â”‚       â”œâ”€â”€ eligibility.ts             # â˜… Eligibility engine (8 steps)
+â”‚       â”œâ”€â”€ ranking.ts                 # â˜… Ranking engine
+â”‚       â”œâ”€â”€ recommendations.ts         # Recommendation scoring
+â”‚       â”œâ”€â”€ squad.ts                   # Selection sync + season context
+â”‚       â”œâ”€â”€ fixtures.ts                # Fixture queries
+â”‚       â”œâ”€â”€ availability.ts            # Exception management
+â”‚       â”œâ”€â”€ calendar.ts                # ICS feed generation
+â”‚       â”œâ”€â”€ abilityGroup.ts            # Ability group/sub-group math
+â”‚       â”œâ”€â”€ abilityRank.ts             # A+ = 24 â†’ H- = 1 mapping
+â”‚       â”œâ”€â”€ reference.ts               # Cached club reference data
+â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
+â”‚       â””â”€â”€ http.ts                    # HTTP utilities
+â”œâ”€â”€ tests/                         # Vitest unit tests (259 tests)
+â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (56 tests)
+â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (23 tests)
+â”‚   â”œâ”€â”€ playerFilters.test.ts          # Filter serialization
+â”‚   â”œâ”€â”€ toggleSelection.test.ts        # Binary toggle logic
+â”‚   â”œâ”€â”€ readiness.test.ts              # Team readiness
+â”‚   â”œâ”€â”€ recommendations.test.ts        # Recommendation engine
+â”‚   â”œâ”€â”€ abilityGroup.test.ts           # Group/sub-group math
+â”‚   â”œâ”€â”€ abilityRank.test.ts            # Rank constant ordering
+â”‚   â”œâ”€â”€ authorization.test.ts          # Supabase auth, access rules, parallel lookups
+â”‚   â”œâ”€â”€ authorization-routes.test.ts   # Route-level authorization
+â”‚   â”œâ”€â”€ cachePerf.test.ts              # Cache hits and Airtable call counts
+â”‚   â”œâ”€â”€ gkFixtures.test.ts             # H-registered GK all-fixtures view
+â”‚   â”œâ”€â”€ rankingEvents.test.ts          # Ranking event persistence
+â”‚   â”œâ”€â”€ rankingHistory.test.ts         # Advisory + age/date helpers
+â”‚   â”œâ”€â”€ perf.test.ts                   # Telemetry JSON structure
+â”‚   â””â”€â”€ dateUtils.test.ts              # Date formatting
+â””â”€â”€ public/                        # Static assets (favicon, logo)
 ```
 
 ---
@@ -240,35 +251,35 @@ The **sole authority** on whether a player can be selected. Evaluates every acti
 5. Premier Division Restrictions
 6. Play-Up Rules
 7. Cup Eligibility
-8. U21 Double-Game Limits → Generate Warnings
+8. U21 Double-Game Limits â†’ Generate Warnings
 
-Each blocked result includes an exact reason string (e.g., `"Suspended"`) and a source-citable rule tag. **MUST NOT reword these strings** — coaches and golden tests depend on them.
+Each blocked result includes an exact reason string (e.g., `"Suspended"`) and a source-citable rule tag. **MUST NOT reword these strings** â€” coaches and golden tests depend on them.
 
-→ Full specification: [`Implementation_Roadmap_v4.md §7.1`](docs/Implementation_Roadmap_v4.md)
+â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.1`](docs/Implementation_Roadmap_v4.md)
 
 ### Ranking Engine (`worker/src/ranking.ts`)
 
-Manages the **Section Ranking** — the single persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived in-memory. Drag-and-drop reordering, up/down step buttons, batch moves. Stale detection via 409 Conflict on version mismatch.
+Manages the **Section Ranking** â€” the single persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived in-memory. Drag-and-drop reordering, up/down step buttons, batch moves. Stale detection via 409 Conflict on version mismatch.
 
-→ Full specification: [`Implementation_Roadmap_v4.md §7.2`](docs/Implementation_Roadmap_v4.md)
+â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.2`](docs/Implementation_Roadmap_v4.md)
 
 ### Recommendation Engine (`worker/src/recommendations.ts`)
 
-Read-only, advisory. Consumes eligibility output. Scores candidates by ability (50%), position fit (20%), play-up capacity (10%), and team distance (20%). Maybe players penalised by −45. Each recommendation carries up to 3 reason tags. MUST NOT auto-select.
+Read-only, advisory. Consumes eligibility output. Scores candidates by ability (50%), position fit (20%), play-up capacity (10%), and team distance (20%). Maybe players penalised by âˆ’45. Each recommendation carries up to 3 reason tags. MUST NOT auto-select.
 
-→ Full specification: [`Implementation_Roadmap_v4.md §7.3`](docs/Implementation_Roadmap_v4.md)
+â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.3`](docs/Implementation_Roadmap_v4.md)
 
 ### Selection Engine (`worker/src/squad.ts`)
 
 Selections stored directly on `Matches.Selected Players Home/Away`. The `syncSquad` endpoint handles: fresh Airtable read (never cached on write path), HKFC side resolution, derby safety, Airtable update, audit logging, and cache invalidation across 6+ namespaces.
 
-→ Full specification: [`Implementation_Roadmap_v4.md §7.5`](docs/Implementation_Roadmap_v4.md)
+â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.5`](docs/Implementation_Roadmap_v4.md)
 
 ### Availability Engine (`worker/src/availability.ts`)
 
 Exception-based: no record = Available. Only "Maybe" and "Unavailable" are stored. Self-service via unauthenticated endpoints. Polled every 30 seconds on the Squad Selection page.
 
-→ Full specification: [`Implementation_Roadmap_v4.md §7.4`](docs/Implementation_Roadmap_v4.md)
+â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.4`](docs/Implementation_Roadmap_v4.md)
 
 ---
 
@@ -293,11 +304,11 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 ## Critical Invariants
 
-These MUST NOT be broken. For the complete list of 60+ invariants with stable IDs (INV-001 through INV-072), see the [Engineering Specification §3](docs/Implementation_Roadmap_v4.md#3-architectural-invariants).
+These MUST NOT be broken. For the complete list of 60+ invariants with stable IDs (INV-001 through INV-072), see the [Engineering Specification Â§3](docs/Implementation_Roadmap_v4.md#3-architectural-invariants).
 
-1. **Eligibility evaluation order is fixed.** Steps 1–8 MUST execute in sequence. Golden tests enforce this.
+1. **Eligibility evaluation order is fixed.** Steps 1â€“8 MUST execute in sequence. Golden tests enforce this.
 
-2. **Exact reason strings MUST be preserved.** `"Suspended"`, `"Visiting player — fixed to registered team"`, etc. Add only, never modify.
+2. **Exact reason strings MUST be preserved.** `"Suspended"`, `"Visiting player â€” fixed to registered team"`, etc. Add only, never modify.
 
 3. **All selection writes MUST be revalidated server-side.** Client UI cannot be trusted to enforce eligibility.
 
@@ -311,7 +322,7 @@ These MUST NOT be broken. For the complete list of 60+ invariants with stable ID
 
 8. **Generated code MUST NOT be edited manually.** Files in `src/generated/` are regenerated from the Airtable schema.
 
-9. **Play-up count MUST use `Match Cards.Goalkeeper`, not `People.Playing Position`.** The Goalkeeper field is per-appearance — the only authoritative source for the GK exemption.
+9. **Play-up count MUST use `Match Cards.Goalkeeper`, not `People.Playing Position`.** The Goalkeeper field is per-appearance â€” the only authoritative source for the GK exemption.
 
 10. **Team hierarchy MUST come from `Teams.Team Rank`.** Do not infer rank from team name.
 
@@ -331,7 +342,7 @@ These MUST NOT be broken. For the complete list of 60+ invariants with stable ID
 | **Language** | TypeScript 5.x |
 | **Backend runtime** | Cloudflare Workers |
 | **Auth** | Supabase Auth (email/password, PKCE) |
-| **Database** | Airtable (7 tables) |
+| **Database** | Airtable (8 tables) |
 | **Testing** | Vitest v4 |
 | **Data sync** | hkha-sync (GitHub Actions) |
 
@@ -361,8 +372,8 @@ Configure Worker secrets:
 
 ```bash
 cd worker
-npx wrangler secret put AIRTABLE_PAT
-npx wrangler secret put CALENDAR_SIGNING_SECRET
+npx wrangler secret put AIRTABLE_TOKEN
+npx wrangler secret put CALENDAR_SECRET
 ```
 
 ### Run Locally
@@ -377,7 +388,7 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 ```bash
 npx vite build      # Output: dist/
 npx vitest          # Watch mode
-npx vitest run      # Single pass (CI) — 159 tests across 9 files
+npx vitest run      # Single pass (CI) â€” 259 tests across 15 files
 ```
 
 ### Deploy
@@ -389,7 +400,7 @@ npx vite build && npx wrangler pages deploy dist/   # Frontend second
 
 **Deploy order:** Worker MUST be deployed before frontend when the API contract changes.
 
-**Rollback:** `npx wrangler rollback` (Worker) or Cloudflare Pages UI → Deployments → Rollback (Frontend).
+**Rollback:** `npx wrangler rollback` (Worker) or Cloudflare Pages UI â†’ Deployments â†’ Rollback (Frontend).
 
 ---
 
@@ -397,8 +408,8 @@ npx vite build && npx wrangler pages deploy dist/   # Frontend second
 
 | Document | Purpose | Authority |
 |---|---|---|
-| **README.md** | This file — onboarding and orientation | Primary entry point |
-| **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** | Complete engineering specification | **★ NORMATIVE SPEC** |
+| **README.md** | This file â€” onboarding and orientation | Primary entry point |
+| **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** | Complete engineering specification | **â˜… NORMATIVE SPEC** |
 | `tests/golden-eligibility.test.ts` | Frozen eligibility test matrix | Authoritative for expected behaviour |
 | `src/generated/` | Generated Airtable types and field maps | Authoritative for data schema |
 | `worker/src/eligibility.ts` | Eligibility engine source | Authoritative for rule implementation |
@@ -413,18 +424,18 @@ The `src/generated/` directory contains code generated from the Airtable schema.
 
 ```
 Airtable Schema
-      │
-      ▼
+      â”‚
+      â–¼
   Generator Script
-      │
-      ├──► domainTypes.ts     (TypeScript interfaces)
-      ├──► tableNames.ts      (TABLES constant)
-      └──► fieldMaps.ts       (*_FIELDS constants)
-      │
-      ▼
+      â”‚
+      â”œâ”€â”€â–º domainTypes.ts     (TypeScript interfaces)
+      â”œâ”€â”€â–º tableNames.ts      (TABLES constant)
+      â””â”€â”€â–º fieldMaps.ts       (*_FIELDS constants)
+      â”‚
+      â–¼
   Mappers / Worker Queries    (consume generated types)
-      │
-      ▼
+      â”‚
+      â–¼
   React Components             (consume via API)
 ```
 
@@ -432,7 +443,7 @@ When the Airtable schema changes:
 1. Update the generation script
 2. Re-run generation
 3. Update affected mappers and Worker queries
-4. Run the full test suite — golden eligibility tests will catch field name mismatches
+4. Run the full test suite â€” golden eligibility tests will catch field name mismatches
 
 ---
 
@@ -444,40 +455,47 @@ When the Airtable schema changes:
 
 ### Suite Overview
 
-- **159 tests** across **9 files** — all unit tests, no browser required
-- Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) — no dependency on real Airtable data
+- **259 tests** across **15 files** â€” all unit tests, no browser required
+- Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) â€” no dependency on real Airtable data
 - Run: `npx vitest run`
 
 | Test file | Tests | What it covers |
 |---|---|---|
 | `golden-eligibility.test.ts` | 23 | Frozen reason strings, rule IDs, evaluation order |
 | `eligibility.test.ts` | 56 | Full rule matrix (all 8 steps) |
+| `authorization.test.ts` | 19 | Supabase verification, access rules, parallel lookups |
+| `authorization-routes.test.ts` | 33 | Route-level authorization and error contracts |
+| `cachePerf.test.ts` | 8 | Cache hits/misses and per-request Airtable call counts |
+| `gkFixtures.test.ts` | 15 | H-registered goalkeeper all-fixtures view |
+| `rankingEvents.test.ts` | 11 | Event selection, server timestamps, fire-and-forget writes |
+| `rankingHistory.test.ts` | 12 | Advisory matching by stable player id, age/absolute dates |
+| `perf.test.ts` | 2 | Telemetry JSON structure (perf.auth, perf.request) |
 | `recommendations.test.ts` | 12 | Scoring, exclusion, penalty |
 | `abilityGroup.test.ts` | 18 | Group/sub-group assignment |
 | `dateUtils.test.ts` | 16 | safeFormat, isPastFixture |
-| `playerFilters.test.ts` | — | Filter serialization |
-| `toggleSelection.test.ts` | — | Binary toggle logic |
-| `readiness.test.ts` | — | Team readiness scoring |
+| `playerFilters.test.ts` | 12 | Filter serialization |
+| `toggleSelection.test.ts` | 6 | Binary toggle logic |
+| `readiness.test.ts` | 9 | Team readiness scoring |
 | `abilityRank.test.ts` | 7 | Rank constant ordering |
 
 ---
 
 ## AI Contributor Guide
 
-**⚠️ Read this section before making any changes.**
+**âš ï¸ Read this section before making any changes.**
 
 ### Required Reading
 
 Every AI assistant MUST read these documents **in order** before modifying code:
 
-1. **This README** — Understand the project and its boundaries
-2. **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** — Complete architecture, invariants, and business rules
+1. **This README** â€” Understand the project and its boundaries
+2. **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** â€” Complete architecture, invariants, and business rules
 
 ### What MUST NOT Change
 
 | Rule | Why |
 |---|---|
-| Eligibility evaluation order | Fixed by spec §7.1; golden tests enforce it |
+| Eligibility evaluation order | Fixed by spec Â§7.1; golden tests enforce it |
 | Exact reason strings | Coaches depend on consistent labels |
 | `RULE_IDS` constants | Stable identifiers for golden tests |
 | Section Rank as sole ranking | Everything else is derived |
@@ -488,7 +506,7 @@ Every AI assistant MUST read these documents **in order** before modifying code:
 
 ### Where Logic Belongs
 
-| If you're adding… | Put it in… |
+| If you're addingâ€¦ | Put it inâ€¦ |
 |---|---|
 | Eligibility rules | `worker/src/eligibility.ts` |
 | Ranking logic | `worker/src/ranking.ts` |
@@ -516,16 +534,16 @@ npx vitest run   # Always run the full suite before deploying
 
 ### Common Mistakes to Avoid
 
-❌ **Do not** add eligibility logic to React — display Worker-returned `eligibilityStatus` and `reason`  
-❌ **Do not** change existing reason strings — add new ones only  
-❌ **Do not** persist Playing Ability independently — always derive from Section Rank  
-❌ **Do not** read from cache on write paths — always read fresh from Airtable  
-❌ **Do not** forget cache invalidation after writes — follow the pattern in `syncSquad()`  
-❌ **Do not** use non-deterministic sorting — use alphabetical tiebreaking  
-❌ **Do not** use `People.Playing Position` for the GK exemption — use `Match Cards.Goalkeeper`  
-❌ **Do not** infer team rank from team name — use `Teams.Team Rank`  
-❌ **Do not** use Airtable rollups for play-up counts — compute in the Worker  
-❌ **Do not** edit files in `src/generated/` — regenerate from the schema  
+âŒ **Do not** add eligibility logic to React â€” display Worker-returned `eligibilityStatus` and `reason`  
+âŒ **Do not** change existing reason strings â€” add new ones only  
+âŒ **Do not** persist Playing Ability independently â€” always derive from Section Rank  
+âŒ **Do not** read from cache on write paths â€” always read fresh from Airtable  
+âŒ **Do not** forget cache invalidation after writes â€” follow the pattern in `syncSquad()`  
+âŒ **Do not** use non-deterministic sorting â€” use alphabetical tiebreaking  
+âŒ **Do not** use `People.Playing Position` for the GK exemption â€” use `Match Cards.Goalkeeper`  
+âŒ **Do not** infer team rank from team name â€” use `Teams.Team Rank`  
+âŒ **Do not** use Airtable rollups for play-up counts â€” compute in the Worker  
+âŒ **Do not** edit files in `src/generated/` â€” regenerate from the schema  
 
 ---
 
@@ -535,11 +553,11 @@ npx vitest run   # Always run the full suite before deploying
 
 1. Read this README and the [Engineering Spec](docs/Implementation_Roadmap_v4.md)
 2. Understand where your change belongs (Worker vs React)
-3. Check the [architectural invariants](docs/Implementation_Roadmap_v4.md#3-architectural-invariants) — your change MUST NOT violate any of them
+3. Check the [architectural invariants](docs/Implementation_Roadmap_v4.md#3-architectural-invariants) â€” your change MUST NOT violate any of them
 
 ### Pull Request Checklist
 
-- [ ] Architecture preserved — no invariants violated
+- [ ] Architecture preserved â€” no invariants violated
 - [ ] Business logic in the correct tier (Worker, not React)
 - [ ] No duplicated eligibility or ranking logic
 - [ ] Tests added for new behaviour
@@ -556,14 +574,14 @@ npx vitest run   # Always run the full suite before deploying
 
 ### Getting Started
 
-1. **Read this README** — You are here
-2. **Read [Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** — The normative engineering specification
-3. **Review `tests/golden-eligibility.test.ts`** — Understand the eligibility contract
-4. **Explore `worker/src/eligibility.ts`** — The eligibility engine implementation
-5. **Run `npx vitest run`** — Confirm everything passes
+1. **Read this README** â€” You are here
+2. **Read [Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** â€” The normative engineering specification
+3. **Review `tests/golden-eligibility.test.ts`** â€” Understand the eligibility contract
+4. **Explore `worker/src/eligibility.ts`** â€” The eligibility engine implementation
+5. **Run `npx vitest run`** â€” Confirm everything passes
 
 ### Key Contacts
 
 - **Section Captain:** Manages ranking configuration and has cross-team visibility
-- **Coaches:** Primary users — squad selection and player management
+- **Coaches:** Primary users â€” squad selection and player management
 - **Administrators:** Manage suspensions, visiting player flags, and data completeness

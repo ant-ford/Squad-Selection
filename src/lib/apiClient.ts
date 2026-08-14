@@ -91,15 +91,30 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/**
+ * Single choke point for app-data requests. Logs one line per request at
+ * console.debug (devtools verbose) so browser-side request counts and
+ * latency per page can be compared with the Worker's perf.request lines in
+ * Workers Logs. React Query requests all funnel through here.
+ */
+async function timedFetch(method: string, path: string, init: RequestInit): Promise<Response> {
+  const startedAt = performance.now();
+  const response = await fetch(`${API_URL}${path}`, init);
+  console.debug(
+    `[perf] ${method} ${path} ${response.status} ${Math.round(performance.now() - startedAt)}ms`,
+  );
+  return response;
+}
+
 export async function apiGet<T>(path: string, params?: QueryParams): Promise<T> {
-  const response = await fetch(`${API_URL}${path}${toSearchParams(params)}`, {
+  const response = await timedFetch('GET', `${path}${toSearchParams(params)}`, {
     headers: await getAuthHeaders(),
   });
   return parseResponse(response) as Promise<T>;
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await timedFetch('POST', path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
     body: JSON.stringify(body),

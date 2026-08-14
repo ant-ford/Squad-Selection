@@ -1,6 +1,7 @@
 import { Env, AirtableError } from "./airtable";
 import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
 import { requireAuthenticatedEmail, requireAuthorizedUser, requireCoach } from "./auth";
+import { snapshotAirtableCalls, logRequestPerf } from "./perf";
 import { getReferenceData, getActivePlayers, getPlayerByEmail } from "./reference";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
@@ -52,14 +53,38 @@ async function readJsonBody(request: Request): Promise<any> {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const origin = env.ALLOWED_ORIGIN;
+    const startedAt = Date.now();
+    const atBefore = snapshotAirtableCalls();
     const url = new URL(request.url);
-    const { pathname } = url;
-    const method = request.method;
 
-    if (method === "OPTIONS") return handleOptions(origin);
-
+    let response: Response;
     try {
+      response = await handleRequest(request, env);
+    } catch (err) {
+      console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
+      response = errorJson("Internal Server Error", 500, env.ALLOWED_ORIGIN);
+    }
+
+    logRequestPerf({
+      method: request.method,
+      path: url.pathname,
+      status: response.status,
+      totalMs: Date.now() - startedAt,
+      airtableCalls: snapshotAirtableCalls() - atBefore,
+    });
+    return response;
+  },
+};
+
+async function handleRequest(request: Request, env: Env): Promise<Response> {
+  const origin = env.ALLOWED_ORIGIN;
+  const url = new URL(request.url);
+  const { pathname } = url;
+  const method = request.method;
+
+  if (method === "OPTIONS") return handleOptions(origin);
+
+  try {
       // ── Health Check (Public) ──────────────────────────────────────────────
       if (method === "GET" && pathname === "/health") {
         return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
@@ -279,8 +304,16 @@ export default {
       }
       if (method === "POST" && pathname === "/api/ranking/move") {
         const user = await requireCoach(request, env);
-        const body = (await readJsonBody(request)) as { playerId: string; newRank: number };
-        return json(await movePlayerToRank(env, body.playerId, body.newRank, user.email), 200, origin);
+        const body = (await readJsonBody(request)) as {
+          playerId: string;
+          newRank: number;
+          justification?: string;
+        };
+        return json(
+          await movePlayerToRank(env, body.playerId, body.newRank, user.email, body.justification),
+          200,
+          origin,
+        );
       }
       if (method === "POST" && pathname === "/api/ranking/move-relative") {
         const user = await requireCoach(request, env);
@@ -288,17 +321,32 @@ export default {
           sourceId: string;
           targetId: string;
           position: "above" | "below";
+          justification?: string;
         };
         return json(
-          await movePlayerRelative(env, body.sourceId, body.targetId, body.position, user.email),
+          await movePlayerRelative(
+            env,
+            body.sourceId,
+            body.targetId,
+            body.position,
+            user.email,
+            body.justification,
+          ),
           200,
           origin,
         );
       }
       if (method === "POST" && pathname === "/api/ranking/reorder") {
         const user = await requireCoach(request, env);
-        const body = (await readJsonBody(request)) as { playerIds: string[] };
-        return json(await reorderRanking(env, body.playerIds, user.email), 200, origin);
+        const body = (await readJsonBody(request)) as {
+          playerIds: string[];
+          justification?: string;
+        };
+        return json(
+          await reorderRanking(env, body.playerIds, user.email, body.justification),
+          200,
+          origin,
+        );
       }
       if (method === "POST" && pathname === "/api/ranking/activate") {
         const user = await requireCoach(request, env);
@@ -348,5 +396,4 @@ export default {
       console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
       return errorJson("Internal Server Error", 500, origin);
     }
-  },
-};
+}

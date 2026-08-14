@@ -1,3 +1,5 @@
+import { countAirtableCall } from "./perf";
+
 // Low-level Airtable REST client for the Worker.
 export interface Env {
   AIRTABLE_TOKEN: string;
@@ -24,6 +26,7 @@ function tableUrl(env: Env, table: string) {
 }
 
 async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Promise<T | null> {
+  countAirtableCall(); // telemetry: exact per-request Airtable call count
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -57,13 +60,15 @@ export async function airtableList(env: Env, table: string, params?: Record<stri
 export async function airtableFindAll(
   env: Env,
   table: string,
-  filterByFormula?: string
+  filterByFormula?: string,
+  extraParams?: Record<string, string>
 ): Promise<any[]> {
   const records: any[] = [];
   let offset: string | undefined;
   do {
     const params: Record<string, string> = { pageSize: "100" };
     if (filterByFormula) params.filterByFormula = filterByFormula;
+    if (extraParams) Object.assign(params, extraParams);
     if (offset) params.offset = offset;
     const page = await airtableList(env, table, params);
     records.push(...(page.records ?? []));

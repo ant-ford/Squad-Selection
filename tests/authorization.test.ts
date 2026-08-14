@@ -73,7 +73,7 @@ function expectError(promise: Promise<unknown>, status: number, code: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("fetch", vi.fn());
-  mocks.getTeamCoachLinks.mockResolvedValue(teamLinks);
+  mocks.getTeamCoachLinks.mockResolvedValue({ ...teamLinks, cached: false });
 });
 
 // ---------------------------------------------------------------------------
@@ -101,8 +101,8 @@ describe("requireAuthorizedUser", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(user).toEqual({ email: "player@hkfc.com", personId: "recP1", role: "player" });
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(user).toMatchObject({ email: "player@hkfc.com", personId: "recP1", role: "player" });
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
   });
 
   it("determines coach/section-captain status from the dedicated team-links lookup (all teams, active or not)", async () => {
@@ -112,6 +112,54 @@ describe("requireAuthorizedUser", () => {
     await requireAuthorizedUser(authedRequest(), ENV);
 
     expect(mocks.getTeamCoachLinks).toHaveBeenCalledWith(ENV);
+  });
+
+  it("runs the People lookup and the team-links lookup in parallel after Supabase verification", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(JSON.stringify({ email: "player@hkfc.com" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      mocks.getPlayerByEmail.mockImplementation(async () => {
+        await delay(100);
+        return people.activePlayer;
+      });
+      mocks.getTeamCoachLinks.mockImplementation(async () => {
+        await delay(100);
+        return { ...teamLinks, cached: false };
+      });
+
+      const pending = requireAuthorizedUser(authedRequest(), ENV);
+      let settled = false;
+      pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      // One 100ms tick must suffice for BOTH lookups when they run in
+      // parallel; a sequential implementation would need a second tick.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(true);
+
+      const user = await pending;
+      expect(user.personId).toBe("recP1");
+      // Telemetry contract: the mocked team-links lookup reports its cache
+      // status, and the returned user carries the auth-phase breakdown.
+      expect(user.perf?.coachLinksFromCache).toBe(false);
+      expect(typeof user.perf?.coachLinksMs).toBe("number");
+      expect(typeof user.perf?.playerMs).toBe("number");
+      expect(typeof user.perf?.supabaseMs).toBe("number");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("allows an active coach linked via Teams.Coach with role 'coach'", async () => {
@@ -170,7 +218,7 @@ describe("requireAuthorizedUser", () => {
 
     await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
   });
 
   it("normalizes whitespace before matching against People", async () => {
@@ -179,7 +227,7 @@ describe("requireAuthorizedUser", () => {
 
     await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
   });
 
   it("rejects an expired/invalid Supabase token with 401 UNAUTHORIZED", async () => {

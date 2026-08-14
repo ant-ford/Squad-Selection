@@ -289,7 +289,59 @@ describe("coach-only routes", () => {
       jsonInit({ playerId: "recP9", newRank: 1, actingEmail: "attacker@evil.com" }),
     );
     expect(res.status).toBe(200);
-    expect(mocks.movePlayerToRank).toHaveBeenCalledWith(ENV, "recP9", 1, "coach@hkfc.com");
+    expect(mocks.movePlayerToRank).toHaveBeenCalledWith(ENV, "recP9", 1, "coach@hkfc.com", undefined);
+  });
+
+  it("passes the optional justification note through on ranking writes", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.movePlayerToRank.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    mocks.movePlayerRelative.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+
+    await call(
+      "/api/ranking/move",
+      jsonInit({ playerId: "recP9", newRank: 4, justification: "needs more game time" }),
+    );
+    expect(mocks.movePlayerToRank).toHaveBeenLastCalledWith(
+      ENV,
+      "recP9",
+      4,
+      "coach@hkfc.com",
+      "needs more game time",
+    );
+
+    await call(
+      "/api/ranking/move-relative",
+      jsonInit({ sourceId: "recP9", targetId: "recP8", position: "above", justification: "form" }),
+    );
+    expect(mocks.movePlayerRelative).toHaveBeenLastCalledWith(
+      ENV,
+      "recP9",
+      "recP8",
+      "above",
+      "coach@hkfc.com",
+      "form",
+    );
+
+    await call(
+      "/api/ranking/reorder",
+      jsonInit({ playerIds: ["recP9", "recP8"], justification: "bulk reorder" }),
+    );
+    expect(mocks.reorderRanking).toHaveBeenLastCalledWith(
+      ENV,
+      ["recP9", "recP8"],
+      "coach@hkfc.com",
+      "bulk reorder",
+    );
+
+    // Without a note the argument is simply absent.
+    await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9", "recP8"] }));
+    expect(mocks.reorderRanking).toHaveBeenLastCalledWith(
+      ENV,
+      ["recP9", "recP8"],
+      "coach@hkfc.com",
+      undefined,
+    );
   });
 
   it("allows a coach on POST /squad/sync and uses the session email, ignoring body actingEmail", async () => {

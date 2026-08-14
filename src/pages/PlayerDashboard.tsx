@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
 import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
 import { setMyAvailability } from '@/api/setMyAvailability';
+import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield, CalendarDays, Info } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
@@ -67,6 +68,21 @@ export default function PlayerDashboard() {
       toast.error('Failed to update availability');
     }
   };
+
+  // Lowest-ranked-team goalkeepers see every upcoming HKFC fixture,
+  // grouped by date.
+  const isSpecialGK = data?.specialGoalkeeperView === true;
+  const gkFixturesByDate = useMemo(() => {
+    if (!data?.specialGoalkeeperView) return null;
+    const map = new Map<string, MyFixture[]>();
+    for (const f of data.fixtures) {
+      const key = (f.date || '').split('T')[0];
+      const list = map.get(key) || [];
+      list.push(f);
+      map.set(key, list);
+    }
+    return Array.from(map.entries());
+  }, [data]);
 
   if (isLoading || !user) return <DashboardSkeleton />;
   if (loading || !data) return <DashboardSkeleton />;
@@ -137,50 +153,89 @@ export default function PlayerDashboard() {
       </div>
 
       <div className="container mx-auto px-4 pb-8">
-        <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
-        {data.fixtures.length === 0 ? (
-          <div className="text-center py-12 border border-dashed border-border rounded-xl">
-            <p className="text-muted-foreground">No upcoming fixtures for your team</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {data.fixtures.map((f) => (
-              <PlayerFixtureCard
-                key={`${f.id}-${f.hkfcTeam}`}
-                fixture={f}
-                onTap={() => setSelectedFixture(f)}
-                onAvailabilityChange={(status, exceptionId) =>
-                  handleQuickAvailability(f.id, status, exceptionId)
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {eligibleOther.length > 0 && (
+        {isSpecialGK ? (
           <>
-            <div className="mt-6">
-              <SectionHeader title="Higher Teams & Play-Ups" count={eligibleOther.length} />
-            </div>
-            <div className="mb-2 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
+            <div className="mb-3 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
               <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
               <p>
-                These higher-ranked teams play on the same day as your team. Marking yourself
-                unavailable here releases you so your registered team can select you.
+                You're registered to the lowest-ranked team as a goalkeeper. All upcoming HKFC
+                fixtures are shown below - set your availability for each match you can play.
               </p>
             </div>
-            <div className="space-y-2">
-              {eligibleOther.map((f) => (
-                <PlayerFixtureCard
-                  key={`${f.id}-${f.hkfcTeam}`}
-                  fixture={f}
-                  onTap={() => setSelectedFixture(f)}
-                  onAvailabilityChange={(status, exceptionId) =>
-                    handleQuickAvailability(f.id, status, exceptionId)
-                  }
-                />
-              ))}
-            </div>
+            {data.fixtures.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-border rounded-xl">
+                <p className="text-muted-foreground">No upcoming HKFC fixtures</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {gkFixturesByDate?.map(([date, list]) => (
+                  <div key={date}>
+                    <SectionHeader title={safeFormat(date, 'EEEE d MMM')} count={list.length} />
+                    <div className="space-y-2">
+                      {list.map((f) => (
+                        <PlayerFixtureCard
+                          key={`${f.id}-${f.hkfcTeam}`}
+                          fixture={f}
+                          onTap={() => setSelectedFixture(f)}
+                          onAvailabilityChange={(status, exceptionId) =>
+                            handleQuickAvailability(f.id, status, exceptionId)
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
+            {data.fixtures.length === 0 ? (
+              <div className="text-center py-12 border border-dashed border-border rounded-xl">
+                <p className="text-muted-foreground">No upcoming fixtures for your team</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {data.fixtures.map((f) => (
+                  <PlayerFixtureCard
+                    key={`${f.id}-${f.hkfcTeam}`}
+                    fixture={f}
+                    onTap={() => setSelectedFixture(f)}
+                    onAvailabilityChange={(status, exceptionId) =>
+                      handleQuickAvailability(f.id, status, exceptionId)
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {eligibleOther.length > 0 && (
+              <>
+                <div className="mt-6">
+                  <SectionHeader title="Higher Teams & Play-Ups" count={eligibleOther.length} />
+                </div>
+                <div className="mb-2 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
+                  <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                  <p>
+                    These higher-ranked teams play on the same day as your team. Marking yourself
+                    unavailable here releases you so your registered team can select you.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {eligibleOther.map((f) => (
+                    <PlayerFixtureCard
+                      key={`${f.id}-${f.hkfcTeam}`}
+                      fixture={f}
+                      onTap={() => setSelectedFixture(f)}
+                      onAvailabilityChange={(status, exceptionId) =>
+                        handleQuickAvailability(f.id, status, exceptionId)
+                      }
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

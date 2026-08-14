@@ -1954,6 +1954,21 @@ ADRs document intentional architectural choices. Each ADR MUST include: Decision
 
 **Consequences:** Server state is cached, invalidated, and refetched declaratively. Client state (filters, UI toggles) is component-local. There is no single global state tree.
 
+#### ADR-009: Ranking Events Table (History Metadata)
+
+**Decision:** Introduce a dedicated `Ranking Events` Airtable table that persists ranking-change history as audit metadata.
+
+**Context:** Coaches can re-move a player who was recently moved by someone else. The ranking page needs a bounded recent history (who moved whom, from/to which rank, with an optional justification) and a non-blocking advisory. `Section Rank` on People remains the sole persisted ranking source of truth and the ranking engine remains authoritative, so the history must not become a second ranking source. No existing table fits: Selection Events is a per-selection log without timestamp / old-new rank / justification fields, and it is not created in the live schema.
+
+**Alternatives Considered:**
+- Reuse Selection Events - rejected; wrong shape (no timestamp, old/new rank, or justification) and a different purpose
+- Audit fields on People (e.g. Last Changed By/At) - rejected; keeps only the latest change per player, no history
+- No persistence (derive history from Worker logs) - rejected; logs are not queryable by the application
+
+**Why Rejected:** Each alternative either cannot represent the required event shape, loses history, or is not queryable.
+
+**Consequences:** Events are recorded fire-and-forget after a successful ranking mutation and must never cause the mutation to fail. Actor identity comes from the authenticated session; timestamps are generated server-side. The coach UI reads a bounded, cached window (60 s) and is read-only. Until the table exists, history degrades to empty with no write failures. Ranking Events are metadata, never a ranking source - `Section Rank` and the ranking engine remain authoritative.
+
 ### 21.3 Decision Log (Summary)
 
 | ID | Decision | Rationale |
@@ -1968,6 +1983,7 @@ ADRs document intentional architectural choices. Each ADR MUST include: Decision
 | D-008 | Recommendations advisory only | Coaches decide |
 | D-009 | Calendar ICS feeds | Universal compatibility |
 | D-010 | v4 spec single source of truth | AI-optimised |
+| D-011 | Ranking Events as history metadata | Audit trail without touching Section Rank |
 
 ### 21.3 Ability Rank Reference
 
@@ -2180,6 +2196,64 @@ React               Worker                    Eligibility
   |                    |                          |
   | render panel       |                          |
 ```
+
+---
+
+### 22. Ranking Events (audit trail)
+
+Section Rank changes are persisted to a dedicated Airtable table **"Ranking Events"** (create manually; the Worker degrades gracefully until it exists):
+
+| Field | Type | Notes |
+|---|---|---|
+| Player | link (People) | the player whose rank changed |
+| Actor | link (People) | resolved server-side from the verified session email |
+| Actor Email | text | identity per Â§4.3 (email-as-identity) |
+| Kind | single select | move / reorder / activate / deactivate |
+| Old Rank / New Rank | number | blank when unranked / deactivated |
+| Justification | long text | optional, max 280 chars |
+| Timestamp | dateTime | server-side, stamped at commit time |
+
+Rules:
+
+- Events are recorded **after** a successful rank commit, fire-and-forget â€” a failed audit write never fails the mutation.
+- Only **materially moved** players produce events (|old - new| >= 2); adjacent +/-1 shifts are mechanical consequences. If nothing moved materially (e.g. a swap), all changed players are recorded. Capped at 10 per operation.
+- `move` / `move-relative` / `reorder` accept an optional `justification` body field; validation rejects > 280 chars (400 JUSTIFICATION_TOO_LONG).
+- `activate` / `deactivate` record single events (no note UI).
+- `GET /api/recent-changes` reads the table (newest first, `days` window, 60s worker cache) and degrades to `[]` when the table is missing.
+- The Move-to-rank sheet shows a non-blocking advisory when the player was recently moved by someone else.
+
+### 23. Performance cache map (Worker isolate)
+
+| Cache key | TTL | Invalidated by |
+|---|---|---|
+| `club-reference`, `team-coach-links` | 10 min | ranking derived-field recompute, auto-select list writes |
+| `ranking:active`, `ranking:inactive` | 30 s | every ranking write |
+| `ranking:config` | 5 min | config writes |
+| `player-by-email:{email}` | 60 s | activate / deactivate (authorization lookups bypass with `{fresh:true}`) |
+| `scheduled-matches` | 10 min | `syncSquad` (selections live in match records) |
+| `availability:{matchId}` | 25 s | `setAvailability` / `setMyAvailability` |
+| `exceptions:{season}` | 5 min | availability writes |
+| `season-index:{season}`, `all-matches:{season}`, `match-cards:{season}` | 10 min | `syncSquad`, availability writes |
+| `match:{matchId}` | 30 s | `syncSquad` (write paths always read fresh) |
+| `ranking-events:{days}` | 60 s | - (short TTL only) |
+
+Supabase token verification (`/auth/v1/user`) is deliberately **not** cached: revocation latency must stay immediate. The browser `getSession()` header path is local (no network).
+
+### 24. Lowest-ranked-team goalkeeper schedule
+
+`GET /api/my-fixtures` detects an ACTIVE goalkeeper whose `People.Playing Position = "Goalkeeper"` and whose registered team is the lowest-ranked ACTIVE team (highest `Teams.Team Rank` â€” never hardcoded). The response gains `specialGoalkeeperView: true` and the fixtures list becomes **all upcoming HKFC matches** (one card per match; derbies are a single card; sorted by date), with per-match exception-based availability and selection status. No per-fixture Airtable requests â€” exceptions are bulk-fetched by season. `People.Playing Position` is the source of truth; `Match Cards.Goalkeeper` remains historical and is never used for cohort detection. The player dashboard renders the list grouped by date.
+
+### 25. Production telemetry and parallel auth (correction pass, 2026-08-14)
+
+- **Request instrumentation.** The Worker emits one structured JSON line per request (`{"type":"perf.request", method, path, status, totalMs, airtableCalls}`) and one per authorization (`{"type":"perf.auth", supabaseMs, playerMs, coachLinksMs, coachLinksFromCache, personId, role}`), visible via Workers Logs / `wrangler tail`. `airtableCalls` is an exact per-request count (counter incremented in the Airtable client); phase timings are wall-clock and may include a few ms of interleaved concurrent requests in the same isolate. The browser logs per-request timings (method, path, status, duration) at `console.debug` in `src/lib/apiClient.ts` — React Query requests all funnel through it.
+- **Parallel auth lookups.** After Supabase token verification, `getPlayerByEmail` (fresh) and `getTeamCoachLinks` (10-min cached) run in `Promise.all`. No behavioural or security impact: both are pure reads keyed off the verified session, failures reject identically, and the denial path merely warms the team-links cache. Saves one Airtable round-trip of latency on every authenticated request (~250 ms in the probe; the slower of the two lookups now bounds the phase instead of their sum).
+- **No auth/JWT caching.** Supabase `/auth/v1/user` verification remains one deliberate round-trip per authenticated request. Caching it would trade immediate token-revocation latency for speed; measurement (below) shows the per-request cost is ~150 ms (probe) and it is not the dominant cost — Airtable reference reads are. Security assessment: do not cache.
+- **Ranking advisory matched by stable player id.** `getReversalAdvisory` matches `RankingChange.playerId` (Airtable record id) instead of the display name; names are not unique. The Worker now includes `playerId` on every `RankingChange`. Regression test covers two players sharing the same name.
+- **Timestamps.** The server-side event timestamp remains the single clock. The UI shows relative age plus the absolute UTC date; the absolute date is now visible (not hover-only) on `sm+` screens in the recent-changes list and in the advisory.
+
+### 26. Teams schema verification for the goalkeeper cohort (correction pass, 2026-08-14)
+
+`docs/Airtable Schema.json` was refreshed on 2026-08-14 and now contains 19 tables, including `Teams` (with `Team Rank` and `Active`), `Ability Group Configuration`, and the `Ranking Events` table. `Teams.Team Rank` (number) and `Teams.Active` (checkbox) are confirmed directly in the export — the fields the cohort derivation depends on — and the export's `Ranking Events` fields (Player, Actor, Actor Email, Kind with move/reorder/activate/deactivate options, Old Rank, New Rank, Justification, Timestamp) match the Worker's constants exactly. Live row data (which team holds which rank, where non-A goalkeepers are registered) is still not present anywhere in the repo, so the cohort cannot be confirmed from the repository; the rule therefore stays: an ACTIVE goalkeeper whose `People.Playing Position = "Goalkeeper"` and whose registered team is the lowest-ranked ACTIVE team (highest `Teams.Team Rank`; `getReferenceData` already fetches Teams with `{Active}=TRUE()`) is served the special all-fixtures view. Caveat: `mapTeam` defaults a missing/blank `Team Rank` to 99, so an active team without a rank would be treated as the lowest-ranked team — verify no active Teams record has a blank `Team Rank` before relying on the cohort.
 
 ---
 

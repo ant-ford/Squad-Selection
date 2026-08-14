@@ -99,8 +99,11 @@ export function useAbilityGroupConfig() {
   return useQuery({
     queryKey: ['rankingConfig'],
     queryFn: () => apiGet<AbilityGroupConfigMap>('/api/ranking/config'),
-    staleTime: 0,
-    refetchOnMount: true,
+    // The config is embedded in every /api/ranking response and the config
+    // mutation writes it straight into this cache entry, so refetching on
+    // every ranking-page mount is pure waste.
+    staleTime: 300_000,
+    refetchOnMount: false,
   });
 }
 
@@ -127,17 +130,24 @@ function useRankingMutation<TVariables>(url: string) {
 }
 
 export function useMoveRanking() {
-  return useRankingMutation<{ playerId: string; newRank: number }>('/api/ranking/move');
-}
-
-export function useMoveRankingRelative() {
-  return useRankingMutation<{ sourceId: string; targetId: string; position: 'above' | 'below' }>(
-    '/api/ranking/move-relative',
+  return useRankingMutation<{ playerId: string; newRank: number; justification?: string }>(
+    '/api/ranking/move',
   );
 }
 
+export function useMoveRankingRelative() {
+  return useRankingMutation<{
+    sourceId: string;
+    targetId: string;
+    position: 'above' | 'below';
+    justification?: string;
+  }>('/api/ranking/move-relative');
+}
+
 export function useReorderRanking() {
-  return useRankingMutation<{ playerIds: string[] }>('/api/ranking/reorder');
+  return useRankingMutation<{ playerIds: string[]; justification?: string }>(
+    '/api/ranking/reorder',
+  );
 }
 
 export function useInitializeRanking() {
@@ -205,6 +215,19 @@ export interface RecentAvailabilityChange {
   matchLabel: string; matchDate: string; updatedAt: string;
 }
 
+/** A persisted Section Rank change (see worker/src/rankingEvents.ts). */
+export interface RankingChange {
+  id: string;
+  playerId: string;
+  kind: string;
+  playerName: string;
+  actorName: string;
+  oldRank: number | null;
+  newRank: number | null;
+  note: string;
+  at: string;
+}
+
 export function usePlayUpWatch() {
   return useQuery({
     queryKey: ['playUpWatch'],
@@ -224,7 +247,7 @@ export function useRecentAvailability(days = 7) {
 export function useRecentChanges(days = 7) {
   return useQuery({
     queryKey: ['recentChanges', days],
-    queryFn: () => authGet<{ changes: RecentChange[] }>('/api/recent-changes', { days }),
+    queryFn: () => authGet<{ changes: RankingChange[] }>('/api/recent-changes', { days }),
     staleTime: 60_000,
   });
 }

@@ -417,6 +417,7 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   invalidateCache(`match:${matchId}`);
   invalidateCache(`season-index:${season}`);
   invalidateCache(`all-matches:${season}`);
+  invalidateCache("scheduled-matches");
   for (const id of affectedMatchIds) {
     invalidateCachePrefix(`players-for-match:${id}:`);
   }
@@ -507,25 +508,46 @@ export async function removeSelection(env: Env, input: { matchId: string; player
   return { success: true };
 }
 
-export async function getAvailabilityForMatch(env: Env, matchId: string) {
-  // Linked-record safe filter: {Match} is an array of IDs
-  const formula = `FIND("${matchId}", {Match}) > 0`;
-  try {
-    const exceptions = await airtableFindAll(env, TABLES.availabilityException, formula);
-    return {
-      exceptions: exceptions.map((e) => ({
-        playerId: e.fields?.[AVAILABILITYEXCEPTIONS_FIELDS.player]?.[0] || "",
-        status: e.fields?.[AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus] || "Available",
-        notes: e.fields?.[AVAILABILITYEXCEPTIONS_FIELDS.note] || "",
-      })),
-    };
-  } catch (err) {
-    // Never let the poll crash the app
-    console.error("getAvailabilityForMatch error:", err);
-    return { exceptions: [] };
-  }
-}
+/**
+ * Availability exceptions for one match, for the 30s squad-page poll.
+ *
+ * Previously this scanned the whole Availability Exceptions table with
+ * FIND("{id}", {Match}) on every poll tick. Now it resolves the match's
+ * season (30s match-record cache), reuses the season-scoped exceptions
+ * cache (5 min, invalidated by every availability write) and holds a 25s
+ * per-match cache of its own - so steady-state polling makes zero Airtable
+ * calls and the linked-field FIND fragility is gone entirely.
+ */
+const AVAILABILITY_FOR_MATCH_TTL_MS = 25 * 1000;
 
+export async function getAvailabilityForMatch(env: Env, matchId: string) {
+  const { data } = await getCached<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
+    `availability:${matchId}`,
+    async () => {
+      try {
+        const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+        const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
+        if (!season) return { exceptions: [] };
+        const allExceptions = await getExceptionsForSeasons(env, [season]);
+        return {
+          exceptions: allExceptions
+            .filter((e) => linkId(e.match) === matchId)
+            .map((e) => ({
+              playerId: linkId(e.player) || "",
+              status: e.availabilityStatus || "Available",
+              notes: e.note || "",
+            })),
+        };
+      } catch (err) {
+        // Never let the poll crash the app
+        console.error("getAvailabilityForMatch error:", err);
+        return { exceptions: [] };
+      }
+    },
+    AVAILABILITY_FOR_MATCH_TTL_MS,
+  );
+  return data;
+}
 const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
 
 export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSide) {

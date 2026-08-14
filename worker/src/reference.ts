@@ -41,7 +41,7 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 }
 
 /**
- * Coach / Section Captain relationships across ALL team records — including
+ * Coach / Section Captain relationships across ALL team records â€” including
  * teams currently marked inactive. Authorization must depend on the person's
  * role, not on whether a team record happens to be inactive, so this lookup
  * deliberately skips the "{Active}=TRUE()" filter used by getReferenceData().
@@ -49,8 +49,9 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 export async function getTeamCoachLinks(env: Env): Promise<{
   coachIds: string[];
   sectionCaptainIds: string[];
+  cached: boolean;
 }> {
-  const { data } = await getCached<{ coachIds: string[]; sectionCaptainIds: string[] }>(
+  const { data, fromCache } = await getCached<{ coachIds: string[]; sectionCaptainIds: string[] }>(
     "team-coach-links",
     async () => {
       const teamRecords = await airtableFindAll(env, TABLES.team);
@@ -70,7 +71,7 @@ export async function getTeamCoachLinks(env: Env): Promise<{
     },
     10 * 60 * 1000, // 10 minutes, same TTL as the club-reference cache
   );
-  return data;
+  return { ...data, cached: fromCache };
 }
 
 export async function getActivePlayers(env: Env): Promise<Player[]> {
@@ -78,7 +79,39 @@ export async function getActivePlayers(env: Env): Promise<Player[]> {
   return records.map(mapPlayer);
 }
 
-export async function getPlayerByEmail(env: Env, email: string): Promise<Player | null> {
+const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
+
+function playerByEmailKey(email: string): string {
+  return `player-by-email:${email.trim().toLowerCase()}`;
+}
+
+export function invalidatePlayerByEmail(email: string): void {
+  invalidateCache(playerByEmailKey(email));
+}
+
+/**
+ * People-record lookup by email, cached for 60s. The AUTHORIZATION path
+ * (worker/src/auth.ts) passes { fresh: true } so access decisions always
+ * use a live Airtable read; every other caller (fixtures, profile,
+ * availability, ranking actor resolution) reuses the short-TTL entry.
+ */
+export async function getPlayerByEmail(
+  env: Env,
+  email: string,
+  opts?: { fresh?: boolean },
+): Promise<Player | null> {
+  if (opts?.fresh) {
+    return lookupPlayerByEmail(env, email);
+  }
+  const { data } = await getCached<Player | null>(
+    playerByEmailKey(email),
+    () => lookupPlayerByEmail(env, email),
+    PLAYER_BY_EMAIL_TTL_MS,
+  );
+  return data;
+}
+
+async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
   const records = await airtableFindAll(
     env,
     TABLES.player,

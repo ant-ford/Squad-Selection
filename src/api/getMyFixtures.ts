@@ -32,6 +32,12 @@ export interface GetMyFixturesOutput {
   coachTeams: string[];
   captainTeams: string[];
   isSectionCaptain: boolean;
+  /**
+   * True when this player is a goalkeeper registered to the lowest-ranked
+   * active team - they see ALL upcoming HKFC fixtures instead of only their
+   * registered team's matches.
+   */
+  specialGoalkeeperView?: boolean;
   /** Registered-team matches plus any match the player is selected for (play-ups). */
   fixtures: MyFixture[];
   /**

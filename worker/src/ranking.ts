@@ -19,7 +19,12 @@ import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
-import { getPlayerByEmail, getReferenceData } from "./reference";
+import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./reference";
+import {
+  validateJustification,
+  selectRankingEventChanges,
+  recordRankingEvents,
+} from "./rankingEvents";
 import {
   invalidateCache,
   invalidateCachePrefix,
@@ -222,6 +227,7 @@ async function executeRankMove(
   playerId: string,
   newRank: number,
   actingEmail?: string,
+  justification?: string,
 ): Promise<RankingList> {
   const idx = players.findIndex((p) => p.id === playerId);
   if (idx === -1) throw new HttpError("Player not found in active ranking", 404);
@@ -240,7 +246,7 @@ async function executeRankMove(
     }
   }
   
-  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail);
+  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail, "move", justification);
   const rankById = new Map(sectionRankUpdates.map((u) => [u.id, u.rank]));
   const updatedPlayers = players.map((p) => ({
     ...p,
@@ -255,16 +261,18 @@ export async function movePlayerToRank(
   playerId: string,
   newRank: number,
   actingEmail?: string,
+  justification?: string,
 ): Promise<RankingList> {
   if (!Number.isInteger(newRank) || newRank < 1) {
     throw new HttpError("newRank must be a positive integer", 400);
   }
+  const note = validateJustification(justification);
   invalidateCache(rankingCacheKey(true));
   const players = await fetchActiveRankingFromAirtable(env);
   if (newRank > players.length) {
     throw new HttpError(`newRank ${newRank} exceeds active player count ${players.length}`, 400);
   }
-  return executeRankMove(env, players, playerId, newRank, actingEmail);
+  return executeRankMove(env, players, playerId, newRank, actingEmail, note);
 }
 
 export async function movePlayerRelative(
@@ -273,6 +281,7 @@ export async function movePlayerRelative(
   targetId: string,
   position: "above" | "below",
   actingEmail?: string,
+  justification?: string,
 ): Promise<RankingList> {
   if (sourceId === targetId) {
     throw new HttpError("Cannot move a player relative to themselves", 400);
@@ -290,14 +299,17 @@ export async function movePlayerRelative(
   if (oldSrcRank < newRank) newRank -= 1;
   newRank = Math.max(1, Math.min(newRank, players.length));
 
-  return executeRankMove(env, players, sourceId, newRank, actingEmail);
+  const note = validateJustification(justification);
+  return executeRankMove(env, players, sourceId, newRank, actingEmail, note);
 }
 
 export async function reorderRanking(
   env: Env,
   playerIds: string[],
   actingEmail?: string,
+  justification?: string,
 ): Promise<RankingList> {
+  const note = validateJustification(justification);
   if (!Array.isArray(playerIds) || playerIds.length === 0) {
     throw new HttpError("playerIds must be a non-empty array", 400);
   }
@@ -330,7 +342,9 @@ export async function reorderRanking(
     updatedPlayers.push({ ...p, sectionRank: newRank });
   });
 
-  if (updates.length > 0) await applySectionRankUpdates(env, updates, actingEmail);
+  if (updates.length > 0) {
+    await applySectionRankUpdates(env, updates, actingEmail, "reorder", note);
+  }
   return recomputeDerivedFieldsFromList(env, updatedPlayers);
 }
 
@@ -348,6 +362,11 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
       [PEOPLE_FIELDS.sectionRank]: newRank,
       [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
     });
+    const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
+    if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+    recordRankingEvents(env, [
+      { playerId, actorEmail: actingEmail, kind: "activate", oldRank: null, newRank },
+    ]);
   }
   
   invalidateCache(rankingCacheKey(true));
@@ -379,14 +398,20 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
     if (r > oldRank) sectionRankUpdates.push({ id: p.id, rank: r - 1, oldRank: r });
   }
   
-  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail);
+  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail, "move", undefined, false);
   await airtableUpdate(env, TABLES.player, playerId, {
     [PEOPLE_FIELDS.active]: false,
     [PEOPLE_FIELDS.sectionRank]: null,
     [PEOPLE_FIELDS.playingAbility]: null,
     [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
   });
-  
+
+  const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
+  if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+  recordRankingEvents(env, [
+    { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
+  ]);
+
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -487,6 +512,9 @@ async function applySectionRankUpdates(
   env: Env,
   updates: { id: string; rank: number; oldRank?: number }[],
   actingEmail?: string,
+  kind: "move" | "reorder" = "move",
+  justification?: string,
+  recordEvents = true,
 ): Promise<void> {
   if (updates.length === 0) return;
   const now = new Date().toISOString();
@@ -505,4 +533,18 @@ async function applySectionRankUpdates(
   
   await batchUpdatePlayers(env, stamped);
   invalidateCache(rankingCacheKey(true));
+
+  // Ranking history: fire-and-forget, after the commit succeeded. The
+  // browser never stamps time - every event gets a server timestamp here.
+  if (recordEvents && actingEmail && actingEmail !== "system") {
+    const events = selectRankingEventChanges(updates).map((u) => ({
+      playerId: u.id,
+      actorEmail: actingEmail,
+      kind,
+      oldRank: u.oldRank,
+      newRank: u.newRank,
+      justification,
+    }));
+    await recordRankingEvents(env, events);
+  }
 }

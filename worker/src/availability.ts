@@ -91,6 +91,7 @@ async function findPlayerExceptions(
 function invalidateAvailabilityCaches(matchIds: string[], seasons: string[]) {
   for (const matchId of matchIds) {
     invalidateCachePrefix(`players-for-match:${matchId}:`);
+    invalidateCache(`availability:${matchId}`);
   }
   invalidateCachePrefix("exceptions:");
   for (const season of new Set(seasons)) {

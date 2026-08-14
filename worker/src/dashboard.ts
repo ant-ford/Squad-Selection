@@ -1,6 +1,7 @@
 import { Env } from "./airtable";
 import { getReferenceData } from "./reference";
 import { getSeasonContext } from "./squad";
+import { getRankingEvents } from "./rankingEvents";
 
 /** HKHA season boundary: starts 1 July. */
 function currentSeason(d = new Date()): string {
@@ -41,9 +42,19 @@ export async function getPlayUpWatch(env: Env) {
   return { season, watch: watch.slice(0, 10) };
 }
 
-// Kept for API compatibility; currently unused by the UI.
-export async function getRecentChanges(_env: Env, _days: number) {
-  return { changes: [] as { id: string; kind: string; playerName: string; text: string; at: string }[] };
+/**
+ * Recent Section Rank changes, read from the Ranking Events table (newest
+ * first). Degrades to an empty list when the table has not been created
+ * yet - the dashboard never fails because the audit trail is missing.
+ */
+export async function getRecentChanges(env: Env, days: number) {
+  try {
+    const changes = await getRankingEvents(env, days);
+    return { changes };
+  } catch (err) {
+    console.error("[RecentChanges] ranking events unavailable:", err);
+    return { changes: [] };
+  }
 }
 
 export async function getRecentAvailability(_env: Env, _days: number) {

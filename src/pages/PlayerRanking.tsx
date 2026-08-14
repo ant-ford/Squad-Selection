@@ -10,7 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserMinus, UserPlus,
-  GripVertical, Loader2, Filter, FileText, MessageSquare,
+  GripVertical, Loader2, Filter, FileText, MessageSquare, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import ConfirmDialog from '@/components/ConfirmDialog';
 import {
   useAbilityGroupConfig, useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
-  useRanking, useReorderRanking, useUpdateAbilityConfig,
+  useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
 } from '@/lib/queries';
+import { getReversalAdvisory, formatAge, formatAbsolute } from '@/lib/rankingHistory';
 import { emptyConfig, computeAbilityAssignment } from '@/lib/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@/generated/domainTypes';
+import type { RankingChange } from '@/lib/queries';
 
 const POS_SHORT: Record<string, string> = {
   Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
@@ -95,6 +97,8 @@ export default function PlayerRanking() {
   const ranking = useRanking();
   const inactiveQuery = useInactiveRanking();
   const configQuery = useAbilityGroupConfig();
+  // Ranking history for the reversal advisory + recent-changes list.
+  const recentChangesQuery = useRecentChanges(30);
   const reorder = useReorderRanking();
   const activate = useActivatePlayer();
   const deactivate = useDeactivatePlayer();
@@ -129,6 +133,7 @@ export default function PlayerRanking() {
   }, []);
 
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
+  const [justification, setJustification] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
 
@@ -292,16 +297,19 @@ export default function PlayerRanking() {
   const handleSave = useCallback(async () => {
     if (!draftIds || modifiedCount === 0) return;
     try {
-      await reorder.mutateAsync({ playerIds: draftIds });
+      const note = justification.trim() || undefined;
+      await reorder.mutateAsync({ playerIds: draftIds, justification: note });
       setDraftIds(null);
+      setJustification('');
       toast.success(`Ranking saved (${modifiedCount} change${modifiedCount !== 1 ? 's' : ''})`);
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to save ranking');
     }
-  }, [draftIds, modifiedCount, reorder]);
+  }, [draftIds, modifiedCount, reorder, justification]);
 
   const handleDiscard = useCallback(() => {
     setDraftIds(null);
+    setJustification('');
     queryClient.invalidateQueries({ queryKey: ['ranking'] });
   }, [queryClient]);
 
@@ -505,6 +513,7 @@ export default function PlayerRanking() {
         <MoveToRankSheet
           player={moveToRankPlayer}
           activeCount={totalActive}
+          history={recentChangesQuery.data?.changes ?? []}
           onClose={() => setMoveToRankPlayer(null)}
           onSubmit={(rank) => { moveToAbsoluteRank(moveToRankPlayer.id, rank); setMoveToRankPlayer(null); }}
         />
@@ -546,20 +555,34 @@ export default function PlayerRanking() {
       )}
 
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3 z-50 items-center">
-          <div className="flex-1 text-sm text-muted-foreground">
-            {modifiedCount} unsaved change{modifiedCount !== 1 ? 's' : ''}
+        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex flex-wrap gap-3 z-50 items-center">
+          <div className="flex-1 min-w-[200px] flex items-center gap-2">
+            <input
+              value={justification}
+              onChange={(e) => setJustification(e.target.value)}
+              maxLength={280}
+              placeholder={`Optional note for this change (max 280 chars) ${modifiedCount} change${modifiedCount !== 1 ? 's' : ''}`}
+              className="flex-1 min-w-0 text-sm border border-border rounded px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+              {justification.length}/280
+            </span>
           </div>
-          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 py-3 border rounded text-sm font-medium disabled:opacity-50">
+          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 min-w-[100px] py-3 border rounded text-sm font-medium disabled:opacity-50">
             Discard
           </button>
-          <button onClick={handleSave} disabled={isSaving} className="flex-1 py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
             {reorder.isPending ? (
               <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
             ) : `Save (${modifiedCount})`}
           </button>
         </div>
       )}
+
+      <RecentChangesSection
+        changes={recentChangesQuery.data?.changes ?? []}
+        loading={recentChangesQuery.isLoading}
+      />
     </div>
   );
 }
@@ -857,17 +880,38 @@ function getAbilityTone(value: string): string {
   return 'bg-muted text-muted-foreground';
 }
 
-function MoveToRankSheet({ player, activeCount, onClose, onSubmit }: {
+function MoveToRankSheet({ player, activeCount, onClose, onSubmit, history }: {
   player: Player; activeCount: number; onClose: () => void; onSubmit: (rank: number) => void;
+  history?: RankingChange[];
 }) {
   const [value, setValue] = useState(String(player.sectionRank ?? 1));
   const [error, setError] = useState('');
   const n = Number(value);
   const isValid = Number.isInteger(n) && n >= 1 && n <= activeCount;
 
+  // Non-blocking advisory: if someone recently moved this player, say so -
+  // the coach is always free to proceed.
+  const advisory = history
+    ? getReversalAdvisory(history, player.id)
+    : null;
+
   return (
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
+        {advisory && (
+          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+            <Info className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">
+                Recently moved {advisory.oldRank != null && advisory.newRank != null && advisory.newRank < advisory.oldRank ? 'up' : 'down'} by {advisory.actorName}
+              </p>
+              <p className="text-amber-800/80 dark:text-amber-300/80">
+                {formatAge(advisory.at)} · {formatAbsolute(advisory.at)}
+                {advisory.note ? ` · "${advisory.note}"` : ''}
+              </p>
+            </div>
+          </div>
+        )}
         <p className="text-sm text-muted-foreground">
           Current rank: <span className="font-medium text-foreground">#{player.sectionRank || 'Unranked'}</span>. Allowed: 1 to {activeCount}.
         </p>
@@ -1030,6 +1074,70 @@ function ModalSheet({ title, onClose, children }: { title: string; onClose: () =
         {children}
       </div>
     </>
+  );
+}
+
+function RecentChangesSection({ changes, loading }: { changes: RankingChange[]; loading: boolean }) {
+  return (
+    <div className="container mx-auto px-4 pt-6">
+      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+        Recent Ranking Changes ({changes.length})
+      </h2>
+      {loading ? (
+        <Skeleton className="h-10 w-full" />
+      ) : changes.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">
+          No ranking changes recorded yet.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {changes.slice(0, 10).map((c) => {
+            const dir =
+              c.kind === 'activate' || c.kind === 'deactivate'
+                ? null
+                : c.oldRank != null && c.newRank != null
+                  ? c.newRank < c.oldRank
+                    ? 'up'
+                    : 'down'
+                  : null;
+            return (
+              <li key={c.id} className="flex items-center gap-2 py-1.5 px-2 bg-card border border-border rounded-lg">
+                <span
+                  className={`shrink-0 w-6 text-center text-xs font-bold ${
+                    dir === 'up' ? 'text-green-600' : dir === 'down' ? 'text-red-600' : 'text-muted-foreground'
+                  }`}
+                >
+                  {dir === 'up' ? '↑' : dir === 'down' ? '↓' : c.kind === 'activate' ? '+' : '−'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-foreground truncate">
+                    <span className="font-medium">{c.playerName}</span>
+                    {c.oldRank != null && c.newRank != null && (
+                      <span className="text-muted-foreground"> · {c.oldRank} → {c.newRank}</span>
+                    )}
+                    {c.oldRank == null && c.newRank != null && (
+                      <span className="text-muted-foreground"> · activated at #{c.newRank}</span>
+                    )}
+                    {c.newRank == null && c.oldRank != null && (
+                      <span className="text-muted-foreground"> · deactivated from #{c.oldRank}</span>
+                    )}
+                  </p>
+                  {c.note && (
+                    <p className="text-[11px] text-muted-foreground italic truncate">"{c.note}"</p>
+                  )}
+                </div>
+                <span
+                  className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap"
+                  title={formatAbsolute(c.at)}
+                >
+                  {c.actorName} · {formatAge(c.at)}<span className="hidden sm:inline"> · {formatAbsolute(c.at)}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

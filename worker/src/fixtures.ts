@@ -1,16 +1,119 @@
 import { Env, airtableFindAll, airtableFindById, linkId } from "./airtable";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons } from "./reference";
+import { getCached } from "../../src/lib/cache";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
-import type { Player } from "../../src/generated/domainTypes";
+import type { Match, Player, Team } from "../../src/generated/domainTypes";
+import type { ReferenceData } from "./reference";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
-async function getScheduledMatches(env: Env) {
-  const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
-  return records.map(mapMatch);
+/**
+ * All Scheduled matches, cached 10 minutes. Selections live inside match
+ * records (Selected Players Home/Away), so syncSquad invalidates this cache
+ * after every write - fixture views can never show stale selections.
+ */
+const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
+
+async function getScheduledMatches(env: Env): Promise<Match[]> {
+  const { data } = await getCached<Match[]>("scheduled-matches", async () => {
+    const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
+    return records.map(mapMatch);
+  }, SCHEDULED_MATCHES_TTL_MS);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Lowest-ranked team Goalkeeper schedule
+// ---------------------------------------------------------------------------
+
+/**
+ * Name of the lowest-ranked ACTIVE team: the team with the highest
+ * `Teams.Team Rank` value. Never hardcoded - derived from live data each
+ * call (reference data is itself cached 10 minutes).
+ */
+export function getLowestRankedTeamName(ref: ReferenceData): string {
+  let lowest = "";
+  let lowestRank = -Infinity;
+  for (const t of ref.teams) {
+    const rank = t.teamRank ?? 99;
+    if (rank > lowestRank) {
+      lowestRank = rank;
+      lowest = t.teamName || "";
+    }
+  }
+  return lowest;
+}
+
+/**
+ * Cohort: an ACTIVE player whose current Playing Position is Goalkeeper and
+ * who is registered to the lowest-ranked active team. People.Playing
+ * Position is the source of truth for current identity; Match Cards
+ * Goalkeeper flags are historical and never used here.
+ */
+export function isSpecialGoalkeeper(user: Player, ref: ReferenceData): boolean {
+  if (user.active !== true) return false;
+  if ((user.playingPosition || "") !== "Goalkeeper") return false;
+  const lowest = getLowestRankedTeamName(ref);
+  return lowest !== "" && (user.registeredTeam || "") === lowest;
+}
+
+function buildSpecialGoalkeeperCard(
+  m: Match,
+  playerId: string,
+  teamsByName: ReadonlyMap<string | undefined, Team>,
+  ownTeam: string,
+): {
+  id: string; date: string; homeTeam: string; awayTeam: string;
+  hkfcTeam: string; opponent: string; isHome: boolean; venue: string; division: string;
+  availabilityStatus: string; playerNotes: string; availabilityExceptionId: string;
+  selectionStatus: string; selectionNotes: string; selectedCount: number; targetSquadSize: number;
+  isPlayUp?: boolean;
+} {
+  const home = m.homeTeam || "";
+  const away = m.awayTeam || "";
+  const homeIsHkfc = teamsByName.has(home);
+  const awayIsHkfc = teamsByName.has(away);
+  let hkfcTeam: string;
+  let opponent: string;
+  let isHome: boolean;
+  let selectedIds: string[];
+  if (home === ownTeam) {
+    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
+  } else if (away === ownTeam) {
+    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
+  } else if ((m.selectedPlayersHome || []).includes(playerId)) {
+    // Player is selected for a side of a derby they are not registered to -
+    // show that side so the selection is visible.
+    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
+  } else if ((m.selectedPlayersAway || []).includes(playerId)) {
+    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
+  } else if (homeIsHkfc) {
+    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
+  } else {
+    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
+  }
+  const team = teamsByName.get(hkfcTeam);
+  return {
+    id: m.id,
+    date: m.matchDate || "",
+    homeTeam: home,
+    awayTeam: away,
+    hkfcTeam,
+    opponent,
+    isHome,
+    venue: m.venue || "",
+    division: m.division || "",
+    availabilityStatus: "Available",
+    playerNotes: "",
+    availabilityExceptionId: "",
+    selectionStatus: selectedIds.includes(playerId) ? "Selected" : "",
+    selectionNotes: "",
+    selectedCount: selectedIds.length,
+    targetSquadSize: team?.targetSquadSize || 16,
+  };
 }
 
 export async function getMyFixtures(env: Env, email: string) {
@@ -32,6 +135,38 @@ export async function getMyFixtures(env: Env, email: string) {
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const rankMap = ref.teamRankMap;
   const playerTeamRank = rankMap[teamName] ?? 99;
+
+  // Lowest-ranked team Goalkeeper: date-grouped schedule of ALL upcoming
+  // HKFC fixtures (derbies are a single card). No per-fixture Airtable
+  // requests - exceptions are bulk-fetched by season below.
+  if (isSpecialGoalkeeper(user, ref)) {
+    const allMatches = await getScheduledMatches(env);
+    const now = new Date().toISOString();
+    const upcoming = allMatches
+      .filter((m) => m.matchDate && m.matchDate >= now)
+      .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
+    const cards = upcoming
+      .filter((m) => teamNames.has(m.homeTeam || "") || teamNames.has(m.awayTeam || ""))
+      .map((m) => buildSpecialGoalkeeperCard(m, user.id, teamsByName, teamName));
+    const matchIds = cards.map((c) => c.id);
+    const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
+    const exceptionByMatch = new Map(
+      allExceptions
+        .filter((e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || ""))
+        .map((e) => [linkId(e.match) || "", e]),
+    );
+    return {
+      ...base,
+      specialGoalkeeperView: true,
+      fixtures: cards.map((c) => ({
+        ...c,
+        availabilityStatus: exceptionByMatch.get(c.id)?.availabilityStatus || "Available",
+        playerNotes: exceptionByMatch.get(c.id)?.note || "",
+        availabilityExceptionId: exceptionByMatch.get(c.id)?.id || "",
+      })),
+    };
+  }
+
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
@@ -203,7 +338,7 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
         maybeNames, 
         unavailableNames,
         
-        // ❌ REMOVED THE DUPLICATED & BROKEN LINES THAT WERE HERE:
+        // âŒ REMOVED THE DUPLICATED & BROKEN LINES THAT WERE HERE:
         // selectedPlayers: ...
         // selectedUnavailableNames: ...
         // hasGoalkeeperSelected: ...
