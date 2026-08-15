@@ -107,20 +107,21 @@ describe("validateJustification", () => {
 });
 
 describe("selectRankingEventChanges", () => {
-  it("records only materially moved players (|delta| >= 2)", () => {
+  it("records every changed player regardless of move size", () => {
     const out = selectRankingEventChanges([
       { id: "a", oldRank: 5, rank: 5 },   // unchanged -> skipped
-      { id: "b", oldRank: 5, rank: 6 },   // +1 shift -> skipped
+      { id: "b", oldRank: 5, rank: 6 },   // +1 shift -> recorded
       { id: "c", oldRank: 10, rank: 3 },  // -7 -> recorded
       { id: "d", oldRank: 3, rank: 9 },   // +6 -> recorded
     ]);
     expect(out).toEqual([
+      { id: "b", oldRank: 5, newRank: 6 },
       { id: "c", oldRank: 10, newRank: 3 },
       { id: "d", oldRank: 3, newRank: 9 },
     ]);
   });
 
-  it("falls back to all changed players when nothing moved materially (swap)", () => {
+  it("records a pure adjacent swap in full", () => {
     const out = selectRankingEventChanges([
       { id: "a", oldRank: 4, rank: 5 },
       { id: "b", oldRank: 5, rank: 4 },
@@ -129,13 +130,13 @@ describe("selectRankingEventChanges", () => {
     expect(out.map((o) => o.id)).toEqual(["a", "b"]);
   });
 
-  it("caps at 10 events per operation", () => {
+  it("returns every changed player even for a full-table reorder", () => {
     const updates = Array.from({ length: 25 }, (_, i) => ({
       id: `p${i}`,
       oldRank: i + 1,
-      rank: i + 1 + 5, // everyone moves 5 -> material
+      rank: i + 1 + 5,
     }));
-    expect(selectRankingEventChanges(updates)).toHaveLength(10);
+    expect(selectRankingEventChanges(updates)).toHaveLength(25);
   });
 });
 
@@ -192,6 +193,26 @@ describe("recordRankingEvents", () => {
     ).resolves.toBeUndefined();
     await tick();
   });
+
+  it("chunks large audits into batches of 10 create requests", async () => {
+    const { calls } = installFakeAirtable({ people: [], events: [] });
+    const events = Array.from({ length: 25 }, (_, i) => ({
+      playerId: `recP${i}`,
+      actorEmail: "coach@hkfc.com",
+      kind: "move" as const,
+      oldRank: i + 1,
+      newRank: i + 2,
+    }));
+    await recordRankingEvents(ENV, events);
+    await tick();
+    const posts = calls.filter((u) => u.includes("Ranking%20Events") && u.includes("api.airtable.com"));
+    expect(posts).toHaveLength(3); // 10 + 10 + 5
+    invalidateAll();
+    const changes = await getRankingEvents(ENV, 7);
+    // All 25 were written; the read is capped at the 20 newest (if only one
+    // batch had been written, the read would return 10, not 20).
+    expect(changes).toHaveLength(20);
+  });
 });
 
 describe("getRankingEvents", () => {
@@ -215,5 +236,21 @@ describe("getRankingEvents", () => {
     const changes = await getRankingEvents(ENV, 7);
     expect(changes.map((c) => c.id)).toEqual(["recE1"]);
     expect(changes[0]).toMatchObject({ oldRank: 1, newRank: 5, kind: "move" });
+  });
+
+  it("caps the returned list at the 20 newest changes", async () => {
+    const now = Date.now();
+    const events = Array.from({ length: 25 }, (_, i) => ({
+      id: `recE${i}`,
+      fields: {
+        "Old Rank": i,
+        "New Rank": i + 1,
+        Kind: "move",
+        Timestamp: new Date(now - i * 3600_000).toISOString(),
+      },
+    }));
+    installFakeAirtable({ events, people: [], teams: [] });
+    const changes = await getRankingEvents(ENV, 30);
+    expect(changes).toHaveLength(20);
   });
 });

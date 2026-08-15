@@ -707,6 +707,7 @@ function SortableRankingRow(props: {
   onPhotoClick: (url: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.player.id, disabled: props.disabled });
+  const [menuOpen, setMenuOpen] = useState(false);
   const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
@@ -716,8 +717,8 @@ function SortableRankingRow(props: {
         isLast={props.isLast}
         disabled={props.disabled}
         isDragging={isDragging}
-        menuOpen={false}
-        onMenuOpenChange={() => {}}
+        menuOpen={menuOpen}
+        onMenuOpenChange={setMenuOpen}
         onMoveStep={props.onMoveStep}
         onOpenMoveToRank={props.onOpenMoveToRank}
         onDeactivate={props.onDeactivate}
@@ -827,7 +828,11 @@ function RankingRowInner(props: {
       <AbilityBadge value={ability} tone={abilityTone} />
 
       <div className="relative">
-        <button onClick={() => props.onMenuOpenChange(!props.menuOpen)} className="p-1 text-muted-foreground hover:text-foreground" title="More actions">
+        <button
+          onClick={(e) => { e.stopPropagation(); props.onMenuOpenChange(!props.menuOpen); }}
+          className="p-1 text-muted-foreground hover:text-foreground"
+          title="More actions"
+        >
           <Settings2 className="h-4 w-4" />
         </button>
         {props.menuOpen && (
@@ -1091,7 +1096,7 @@ function RecentChangesSection({ changes, loading }: { changes: RankingChange[]; 
         </p>
       ) : (
         <ul className="space-y-1">
-          {changes.slice(0, 10).map((c) => {
+          {changes.slice(0, 20).map((c) => {
             const dir =
               c.kind === 'activate' || c.kind === 'deactivate'
                 ? null

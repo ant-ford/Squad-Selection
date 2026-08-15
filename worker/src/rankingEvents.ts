@@ -39,7 +39,6 @@ export const RANKING_EVENTS_FIELDS = {
 export type RankingEventKind = "move" | "reorder" | "activate" | "deactivate";
 
 export const MAX_JUSTIFICATION_CHARS = 280;
-export const MAX_EVENTS_PER_OPERATION = 10;
 
 /** Optional note for a rank change: trimmed, max 280 chars. Throws 400 when too long. */
 export function validateJustification(note?: string | null): string | undefined {
@@ -65,25 +64,21 @@ export interface RankingEventInput {
 }
 
 /**
- * Only materially moved players (|old - new| >= 2) produce events; adjacent
- * +/-1 shifts are the mechanical consequence of the same operation and would
- * drown the history in noise. If NO player moved materially (e.g. a pure
- * adjacent swap), fall back to the full changed set so the operation stays
- * visible. Capped at MAX_EVENTS_PER_OPERATION per operation.
+ * Every player whose rank actually changed produces an event - the audit is
+ * complete, with no magnitude threshold. Unchanged players are skipped.
+ * Airtable write batching (10 records per request) is handled by
+ * recordRankingEvents, so large reorders are still recorded in full.
  */
 export function selectRankingEventChanges(
   updates: { id: string; oldRank?: number | null; rank?: number | null }[],
 ): { id: string; oldRank: number | null; newRank: number | null }[] {
-  const changed = updates.filter((u) => (u.oldRank ?? null) !== (u.rank ?? null));
-  const material = changed.filter(
-    (u) => Math.abs((u.rank ?? 0) - (u.oldRank ?? 0)) >= 2,
-  );
-  const selected = material.length > 0 ? material : changed;
-  return selected.slice(0, MAX_EVENTS_PER_OPERATION).map((u) => ({
-    id: u.id,
-    oldRank: u.oldRank ?? null,
-    newRank: u.rank ?? null,
-  }));
+  return updates
+    .filter((u) => (u.oldRank ?? null) !== (u.rank ?? null))
+    .map((u) => ({
+      id: u.id,
+      oldRank: u.oldRank ?? null,
+      newRank: u.rank ?? null,
+    }));
 }
 
 /** Server-side timestamp: the Worker stamps events, never the browser. */
@@ -124,7 +119,11 @@ export async function recordRankingEvents(env: Env, events: RankingEventInput[])
           [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
         };
       });
-      await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows);
+      // Airtable accepts up to 10 records per create request - chunk so a
+      // full-table reorder (many changed players) is still audited in full.
+      for (let i = 0; i < rows.length; i += 10) {
+        await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
+      }
     } catch (err) {
       console.error("[RankingEvents] failed to record events:", err);
     }
@@ -146,10 +145,10 @@ export interface RankingChange {
 const RANKING_EVENTS_TTL_MS = 60 * 1000;
 
 /**
- * Most recent ranking events within `days`, newest first. Names are joined
- * from the club reference; players no longer in the active reference are
- * resolved individually (bounded - only the returned slice needs names).
- * Returns [] when the table does not exist yet.
+ * Most recent ranking events within `days`, newest first, capped at the 20
+ * newest. Names are joined from the club reference; players no longer in the
+ * active reference are resolved individually (bounded - only the returned
+ * slice needs names). Returns [] when the table does not exist yet.
  */
 export async function getRankingEvents(env: Env, days = 7): Promise<RankingChange[]> {
   const { data } = await getCached<RankingChange[]>(
@@ -196,7 +195,7 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
           if (!p) return "";
           return p.preferredName || p.givenNames || "Player";
         };
-        return fresh.slice(0, 50).map((r) => {
+        return fresh.slice(0, 20).map((r) => {
           const f = r.fields ?? {};
           const playerId = f[RANKING_EVENTS_FIELDS.player]?.[0] ?? "";
           const actorEmail = String(f[RANKING_EVENTS_FIELDS.actorEmail] || "").trim().toLowerCase();
