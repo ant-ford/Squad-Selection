@@ -123,6 +123,7 @@ export default function PlayerRanking() {
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ playerId: string; label: string } | null>(null);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
+  const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   
@@ -471,7 +472,7 @@ export default function PlayerRanking() {
                       key={p.id}
                       data-index={virtualRow.index}
                       ref={virtualizer.measureElement}
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)`, zIndex: openMenuPlayerId === p.id ? 50 : undefined }}
                     >
                       {showDivider && <TierDivider group={prevGrp!} />}
                       <SortableRankingRow
@@ -479,6 +480,8 @@ export default function PlayerRanking() {
                         isFirst={virtualRow.index === 0}
                         isLast={virtualRow.index === filteredPlayers.length - 1}
                         disabled={isSaving || mutatingPlayerId === p.id}
+                        menuOpen={openMenuPlayerId === p.id}
+                        onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
                         onMoveStep={moveStep}
                         onOpenMoveToRank={handleOpenMoveToRank}
                         onDeactivate={handleDeactivateById}
@@ -546,6 +549,10 @@ export default function PlayerRanking() {
           onConfirm={() => executeDeactivate(confirmDeactivate.playerId, confirmDeactivate.label)}
           onCancel={() => setConfirmDeactivate(null)}
         />
+      )}
+
+      {openMenuPlayerId !== null && (
+        <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />
       )}
 
       {expandedPhoto && (
@@ -705,9 +712,10 @@ function SortableRankingRow(props: {
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
+  menuOpen: boolean;
+  onMenuOpenChange: (v: boolean) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.player.id, disabled: props.disabled });
-  const [menuOpen, setMenuOpen] = useState(false);
   const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
@@ -717,8 +725,8 @@ function SortableRankingRow(props: {
         isLast={props.isLast}
         disabled={props.disabled}
         isDragging={isDragging}
-        menuOpen={menuOpen}
-        onMenuOpenChange={setMenuOpen}
+        menuOpen={props.menuOpen}
+        onMenuOpenChange={props.onMenuOpenChange}
         onMoveStep={props.onMoveStep}
         onOpenMoveToRank={props.onOpenMoveToRank}
         onDeactivate={props.onDeactivate}
@@ -837,7 +845,6 @@ function RankingRowInner(props: {
         </button>
         {props.menuOpen && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => props.onMenuOpenChange(false)} />
             <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
               <button
                 onClick={() => { props.onMenuOpenChange(false); props.onOpenMoveToRank(player.id); }}
