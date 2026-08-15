@@ -11,8 +11,11 @@ export async function getMyProfile(env: Env, email: string) {
 
   const ref = await getReferenceData(env);
 
+  // Section Captains get the same access as coaches (auth.ts already grants
+  // them role "coach"); include the teams they captain in coachTeams so the
+  // frontend gates and team-scoped calendar operations treat them equally.
   const coachTeams = ref.teams
-    .filter((t) => (t.coach || []).includes(user.id))
+    .filter((t) => (t.coach || []).includes(user.id) || (t.sectionCaptain || []).includes(user.id))
     .map((t) => ({
       id: t.id,
       teamName: t.teamName || "",

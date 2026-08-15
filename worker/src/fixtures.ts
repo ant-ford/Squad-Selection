@@ -122,7 +122,11 @@ export async function getMyFixtures(env: Env, email: string) {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
   const ref = await getReferenceData(env);
-  const coachTeams = ref.teams.filter((t) => (t.coach || []).includes(user.id)).map((t) => t.teamName || "");
+  // Section Captains share coach access (see auth.ts); include their teams in
+  // coachTeams so the player-profile gates and team-scoped operations match.
+  const coachTeams = ref.teams
+    .filter((t) => (t.coach || []).includes(user.id) || (t.sectionCaptain || []).includes(user.id))
+    .map((t) => t.teamName || "");
   const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
   const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
   const isCoach = coachTeams.length > 0;
