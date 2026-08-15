@@ -1,7 +1,7 @@
 import { safeFormat } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Fixture = {
   id: string;
@@ -19,6 +19,8 @@ type Fixture = {
   unavailableCount: number;
   maybeNames?: string[];
   unavailableNames?: string[];
+  selectedUnavailableNames?: string[];
+  hasGoalkeeperSelected?: boolean;
 };
 
 /** Click-toggled name popover that positions above or below based on viewport space. */
@@ -87,6 +89,7 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
 
   const maybeNames = fixture.maybeNames ?? [];
   const unavailNames = fixture.unavailableNames ?? [];
+  const nowUnavailable = fixture.selectedUnavailableNames ?? [];
 
   return (
     <div
@@ -112,8 +115,19 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
           <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
             {fixture.selectedCount} / {fixture.targetSquadSize}
           </span>
+          {fixture.maybeCount > 0 && (
+            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
+              {fixture.maybeCount} maybe
+            </span>
+          )}
           {shortfall > 0 && (
             <p className="text-xs text-destructive font-medium mt-1">{shortfall} short</p>
+          )}
+          {nowUnavailable.length > 0 && (
+            <p className="text-xs text-destructive font-semibold mt-1 flex items-center gap-1 justify-end">
+              <AlertTriangle className="h-3 w-3" />
+              {nowUnavailable.length} selected player{nowUnavailable.length > 1 ? 's' : ''} now unavailable
+            </p>
           )}
         </div>
       </div>

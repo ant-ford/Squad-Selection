@@ -215,13 +215,6 @@ export default function PlayerDashboard() {
                 <div className="mt-6">
                   <SectionHeader title="Higher Teams & Play-Ups" count={eligibleOther.length} />
                 </div>
-                <div className="mb-2 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
-                  <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                  <p>
-                    These higher-ranked teams play on the same day as your team. Marking yourself
-                    unavailable here releases you so your registered team can select you.
-                  </p>
-                </div>
                 <div className="space-y-2">
                   {eligibleOther.map((f) => (
                     <PlayerFixtureCard

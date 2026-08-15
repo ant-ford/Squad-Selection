@@ -67,8 +67,8 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
     >
       {/* Play-up callout */}
       {fixture.isPlayUp && (
-        <div className="mb-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs font-semibold">
-          <Zap className="h-3.5 w-3.5 text-amber-600 fill-amber-500" />
+        <div className="mb-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold">
+          <Zap className="h-3.5 w-3.5 text-amber-700 fill-amber-600" />
           <span>
             {isSelected
               ? `Selected to play up for ${fixture.selectionTeam || fixture.hkfcTeam}`

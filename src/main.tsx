@@ -4,6 +4,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from "./App";
 import "./index.css";
 
+window.addEventListener('vite:preloadError', () => {
+  if (sessionStorage.getItem('vite-reload-once')) return;
+  sessionStorage.setItem('vite-reload-once', '1');
+  window.location.reload();
+});
+window.addEventListener('load', () => {
+  setTimeout(() => sessionStorage.removeItem('vite-reload-once'), 10_000);
+});
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

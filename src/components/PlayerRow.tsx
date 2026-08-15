@@ -41,6 +41,8 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
   else if (isUnavailable) bgClass = 'bg-red-50/70';
 
   const dimmed = isBlocked || isUnavailable;
+  const isDoubleBooked = player.selectionStatus === 'Selected'
+    && (player.conflicts ?? []).some(c => c.type === 'selected');
 
   return (
     <div
@@ -67,7 +69,12 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
         {player.conflicts?.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1.5">
             {player.conflicts.map((c, i) => (
-              <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${c.type === 'selected' ? 'text-blue-600 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
+              <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${
+                c.type === 'selected' && isDoubleBooked ? 'text-red-700 bg-red-100 font-medium'
+                : c.type === 'selected' ? 'text-blue-600 bg-blue-50'
+                : 'text-amber-600 bg-amber-50'
+                }`}>
+                {c.type === 'selected' && isDoubleBooked && <AlertCircle className="h-3 w-3" />}
                 {c.type === 'selected' ? `Selected: ${c.team}` : `Available: ${c.team}`}
               </span>
             ))}

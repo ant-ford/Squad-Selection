@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Outlet, useRouteError } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { useAuth } from '@/lib/useAuth';
 import Login from './pages/Login';
@@ -36,9 +36,29 @@ function RouteSkeleton() {
   );
 }
 
+function RouteError() {
+  const error = useRouteError();
+  console.error(error);
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <p className="text-lg font-semibold text-foreground">Something went wrong</p>
+      <p className="text-sm text-muted-foreground max-w-sm">
+        This usually happens right after a new version has been deployed. Reloading fixes it.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+      >
+        Reload
+      </button>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     element: <AuthGate />,
+    errorElement: <RouteError />,
     children: [
       { path: '/', element: <PlayerDashboard /> },
       {
