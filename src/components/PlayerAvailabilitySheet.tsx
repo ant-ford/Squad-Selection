@@ -36,6 +36,12 @@ const POS_SHORT: Record<string, string> = {
   Goalkeeper: 'GK', Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', 'Flexible/Varies': 'FLEX'
 };
 
+// Short in-memory cache for the read-only squad list shown in this sheet, so
+// reopening a fixture does not refetch it. TTL matches the Worker's 30s
+// match-record cache; availability saves do not change the selected players.
+const squadCache = new Map<string, { players: SquadMember[]; at: number }>();
+const SQUAD_CACHE_TTL_MS = 30 * 1000;
+
 export default function PlayerAvailabilitySheet({
   fixture, onClose, onSaved,
 }: {
@@ -49,8 +55,19 @@ export default function PlayerAvailabilitySheet({
   useEffect(() => {
     let cancelled = false;
     const side = fixture.isHome ? 'home' : 'away';
+    const key = `${fixture.id}:${side}`;
+    const cached = squadCache.get(key);
+    if (cached && Date.now() - cached.at < SQUAD_CACHE_TTL_MS) {
+      setSquad(cached.players);
+      return;
+    }
     apiGet<{ players: SquadMember[] }>(`/api/match/${fixture.id}/squad?side=${side}`)
-      .then(data => { if (!cancelled) setSquad(data.players ?? []); })
+      .then(data => {
+        if (cancelled) return;
+        const players = data.players ?? [];
+        squadCache.set(key, { players, at: Date.now() });
+        setSquad(players);
+      })
       .catch(() => { if (!cancelled) setSquad([]); });
     return () => { cancelled = true; };
   }, [fixture.id, fixture.isHome]);

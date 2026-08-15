@@ -7,8 +7,7 @@ import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 import { CoachCalendarExport } from '@/components/CoachCalendarExport';
-import { detectSameDayConflicts } from '@/lib/readiness';
-import { AlertTriangle } from 'lucide-react';
+import { detectSameDayConflicts, type SameDayConflict } from '@/lib/readiness';
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
@@ -57,6 +56,15 @@ export default function FixtureList() {
   const { data, isLoading } = useUpcomingFixtures();
   const allFixtures = data?.fixtures || [];
   const sameDayConflicts = useMemo(() => detectSameDayConflicts(allFixtures), [allFixtures]);
+  const conflictsByFixture = useMemo(() => {
+    const map = new Map<string, SameDayConflict[]>();
+    for (const c of sameDayConflicts) {
+      for (const id of c.fixtureIds) {
+        map.set(id, [...(map.get(id) ?? []), c]);
+      }
+    }
+    return map;
+  }, [sameDayConflicts]);
 
   const fixtures = useMemo(() => {
     let filtered = activeTab === 'all' ? allFixtures : allFixtures.filter((f) => f.hkfcTeam === activeTab);
@@ -94,15 +102,6 @@ export default function FixtureList() {
 
   return (
     <div className="container mx-auto px-4 pb-8">
-      {sameDayConflicts.length > 0 && (
-        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2 mt-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            {sameDayConflicts.length} player{sameDayConflicts.length > 1 ? 's' : ''} selected for two teams on the same day:{' '}
-            {sameDayConflicts.map(c => `${c.playerName} (${c.teams.join(' & ')})`).join(', ')}
-          </span>
-        </div>
-      )}
       <div className="flex items-center justify-between gap-4 border-b border-border py-2">
         {tabs.length > 2 && (
           <div className="flex gap-4 overflow-x-auto flex-1">
@@ -158,7 +157,7 @@ export default function FixtureList() {
               </p>
               <div className="space-y-2">
                 {grouped[dateKey].map(f => (
-                  <FixtureCard key={f.id} fixture={f} />
+                  <FixtureCard key={f.id} fixture={f} conflicts={conflictsByFixture.get(f.id) ?? []} />
                 ))}
               </div>
             </div>

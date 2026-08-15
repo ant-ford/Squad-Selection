@@ -17,7 +17,7 @@ const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Mid
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
-async function getScheduledMatches(env: Env): Promise<Match[]> {
+export async function getScheduledMatches(env: Env): Promise<Match[]> {
   const { data } = await getCached<Match[]>("scheduled-matches", async () => {
     const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
     return records.map(mapMatch);

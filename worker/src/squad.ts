@@ -1,6 +1,7 @@
 import { Env, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId, airtableBatchCreate } from "./airtable";
 import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
 import { getReferenceData, getExceptionsForSeasons } from "./reference";
+import { getScheduledMatches } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
@@ -552,8 +553,11 @@ const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Mid
 
 export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSide) {
   if (!matchId) throw new HttpError("matchId is required", 400);
-  const matchRecord = await getMatchRecord(env, matchId);
-  const match = mapMatch(matchRecord);
+  // Scheduled matches are already cached (10 min, invalidated by syncSquad);
+  // reuse that copy to avoid an extra Airtable round-trip for the common
+  // case. Non-scheduled matches fall back to the per-match 30s cache.
+  const scheduled = (await getScheduledMatches(env)).find((m) => m.id === matchId);
+  const match = scheduled ?? mapMatch(await getMatchRecord(env, matchId));
   const ref = await getReferenceData(env);
   const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap, side);
   const players = [] as { id: string; name: string; position: string; ability: string }[];

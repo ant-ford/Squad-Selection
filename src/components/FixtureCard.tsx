@@ -2,6 +2,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import type { SameDayConflict } from '@/lib/readiness';
 
 type Fixture = {
   id: string;
@@ -78,7 +79,66 @@ function NamePopover({
   );
 }
 
-export default function FixtureCard({ fixture }: { fixture: Fixture }) {
+/** Warning icon inside the player-count badge; clicking lists the clashes for this fixture. */
+function ClashIndicator({
+  conflicts,
+  hkfcTeam,
+}: {
+  conflicts: SameDayConflict[];
+  hkfcTeam: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [showBelow, setShowBelow] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    setShowBelow(triggerRef.current.getBoundingClientRect().top < 120);
+  }, [open]);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        ref={triggerRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="ml-1 inline-flex cursor-pointer items-center"
+        title={`${conflicts.length} player${conflicts.length > 1 ? 's' : ''} selected for two teams on the same day`}
+        aria-label="Same-day clash warning"
+      >
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div
+            className={`absolute right-0 z-20 bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[160px] max-w-[240px] ${
+              showBelow ? 'top-full mt-1' : 'bottom-full mb-1'
+            }`}
+          >
+            <p className="font-medium mb-1">Same-day clash</p>
+            <ul className="space-y-0.5">
+              {conflicts.map((c, idx) => {
+                const other = c.teams.find((t) => t !== hkfcTeam) ?? c.teams.join(' & ');
+                return <li key={idx}>{c.playerName} also selected for {other}</li>;
+              })}
+            </ul>
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+
+export default function FixtureCard({
+  fixture,
+  conflicts = [],
+}: {
+  fixture: Fixture;
+  conflicts?: SameDayConflict[];
+}) {
   const navigate = useNavigate();
   const time = safeFormat(fixture.date, 'HH:mm');
   const shortfall = fixture.targetSquadSize - fixture.selectedCount;
@@ -112,16 +172,15 @@ export default function FixtureCard({ fixture }: { fixture: Fixture }) {
           </p>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+          <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
             {fixture.selectedCount} / {fixture.targetSquadSize}
+            {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
           </span>
-          {fixture.maybeCount > 0 && (
-            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
-              {fixture.maybeCount} maybe
-            </span>
-          )}
-          {shortfall > 0 && (
-            <p className="text-xs text-destructive font-medium mt-1">{shortfall} short</p>
+          {(shortfall > 0 || fixture.maybeCount > 0) && (
+            <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
+              {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
+              {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
+            </p>
           )}
           {nowUnavailable.length > 0 && (
             <p className="text-xs text-destructive font-semibold mt-1 flex items-center gap-1 justify-end">
