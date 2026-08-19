@@ -272,8 +272,8 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
     if (user) {
       coachedTeamNames = new Set(ref.teams.filter((t) => (t.coach || []).includes(user.id)).map((t) => t.teamName || ""));
       const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
-      // Section captains see the whole section on the dashboard.
-      if (isSectionCaptain && !opts.team) coachedTeamNames = new Set(ref.teams.map((t) => t.teamName || ""));
+      // Section captains see the whole section, whether or not a specific team filter is applied.
+      if (isSectionCaptain) coachedTeamNames = new Set(ref.teams.map((t) => t.teamName || ""));
     }
   }
   const allMatches = await getScheduledMatches(env);
@@ -282,7 +282,10 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    if (opts.team) return home === opts.team || away === opts.team;
+    if (opts.team) {
+      if (!coachedTeamNames.has(opts.team)) return false;
+      return home === opts.team || away === opts.team;
+    }
     return coachedTeamNames.has(home) || coachedTeamNames.has(away);
   });
   if (relevant.length === 0) return { fixtures: [] };

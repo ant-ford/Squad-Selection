@@ -170,7 +170,11 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
 
   if (input.existingExceptionId) {
     const rec = await airtableFindById(env, TABLES.availabilityException, input.existingExceptionId);
-    if (rec) existingId = input.existingExceptionId;
+    if (rec && linkId(mapAvailability(rec).player) === user.id) {
+      existingId = input.existingExceptionId;
+    }
+    // Mismatched or missing record: fall through to the season-scoped
+    // lookup below instead of trusting a client-supplied id blindly.
   }
 
   if (!existingId) {
