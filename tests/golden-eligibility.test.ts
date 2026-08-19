@@ -16,6 +16,7 @@ import {
   type VirtualSelection,
 } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
+import { computeSuspensionStates } from "../worker/src/suspension";
 import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
 
 // ── Factories ────────────────────────────────────────────────────────────
@@ -96,13 +97,34 @@ function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {})
     matchCardsByPlayer.set(pid, [...(matchCardsByPlayer.get(pid) ?? []), card]);
   }
 
+  // Automatic card suspension: run the real engine so golden tests protect the
+  // full pipeline (cards -> points -> events -> suspensionByPlayer -> Step 2).
+  const registeredTeamByPlayer = new Map<string, string>();
+  for (const card of matchCards) {
+    const pid = linkId(card.player);
+    if (pid && card.playerTeam) registeredTeamByPlayer.set(pid, card.playerTeam);
+  }
+  if (overrides.playersById) {
+    for (const [pid, player] of overrides.playersById) {
+      if (player.registeredTeam) registeredTeamByPlayer.set(pid, player.registeredTeam);
+    }
+  }
+  const suspensionByPlayer = computeSuspensionStates({
+    currentCards: matchCards,
+    previousCards: [],
+    matchesById,
+    currentSeason: overrides.currentSeason ?? "2025-2026",
+    previousSeason: null,
+    registeredTeamByPlayer,
+  });
+
   return {
     teamMap, rankMap, sameDayMatches, sameDayFixtures, allSelections,
     selectionsByPlayer, sameDaySelectionsByTeam, allExceptions,
     unavailablePlayerMatchKeys: new Set(
       allExceptions.filter((e) => e.status === "Unavailable").map((e) => `${e.playerId}:${e.matchId}`),
     ),
-    matchCards, matchCardsByPlayer, matchesById,
+    matchCards, matchCardsByPlayer, matchesById, suspensionByPlayer,
     currentSeason: overrides.currentSeason ?? "2025-2026",
     playersById: overrides.playersById ?? new Map(),
     completedLeagueMatchesByTeam: overrides.completedLeagueMatchesByTeam ??
@@ -125,6 +147,27 @@ describe("Golden: every blocked reason string and rule ID", () => {
       expect(r.reason).toBe("Suspended");
       expect(r.ruleId).toBe(RULE_IDS.SUSPENSION);
     }
+  });
+  it("SUSPENSION (automatic card accumulation)", () => {
+    // 5 yellow points purely from Match Cards (no manual isSuspended flag).
+    const cards = [
+      mc({ id: "mc-a", match: ["m1"], cards: ["Y2"] }), // 3 points
+      mc({ id: "mc-b", match: ["m2"], cards: ["Y1"] }), // +2 = 5 points
+    ];
+    const r = evaluatePlayerEligibility(
+      p(),
+      m(),
+      ctx({
+        matchCards: cards,
+        matches: [
+          m({ id: "m1", matchDate: "2026-07-05", matchStatus: "Played" }),
+          m({ id: "m2", matchDate: "2026-07-12", matchStatus: "Played" }),
+        ],
+      }),
+    );
+    expect(r.status).toBe("blocked");
+    expect(r.reason).toBe("Suspended");
+    expect(r.ruleId).toBe(RULE_IDS.SUSPENSION);
   });
   it("VISITING_FIXED_TEAM", () => {
     const r = evaluatePlayerEligibility(p({ isVisitingPlayer: true }), m({ homeTeam: "HKFC B" }), ctx());

@@ -26,6 +26,7 @@ export default function Login() {
     e.preventDefault();
     const form = e.target as HTMLFormElement | null;
     if (!form) return;
+
     setLoading(true);
     try {
       await loginWithEmail(email);
@@ -76,6 +77,12 @@ export default function Login() {
             {loading ? 'Sending...' : 'Send Magic Link'}
           </button>
         </form>
+        
+        {/* --- NEW JUNK FOLDER NOTE --- */}
+        <p className="text-xs text-muted-foreground mt-4 text-center">
+          Don't see the email? Please check your junk or spam folder.
+        </p>
+        
       </div>
     </div>
   );

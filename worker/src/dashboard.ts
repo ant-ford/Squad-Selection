@@ -11,8 +11,8 @@ function currentSeason(d = new Date()): string {
 
 /**
  * Play-Up Watch: players with 2+ adjusted play-up appearances this season.
- *   2 = approaching the limit (warning)
- *   3 = next appearance triggers re-registration (critical)
+ * 2 = approaching the limit (warning)
+ * 3 = next appearance triggers re-registration (critical)
  * Purely informational — no positional recommendations are made here.
  * Uses the same counting rules as the eligibility engine
  * (Play Up? = true, Goalkeeper excluded, current season only).
@@ -21,8 +21,8 @@ export async function getPlayUpWatch(env: Env) {
   const ref = await getReferenceData(env);
   const season = currentSeason();
   const ctx = await getSeasonContext(env, season);
-
   const watch: { id: string; name: string; registeredTeam: string; playUpCount: number }[] = [];
+  
   for (const p of ref.players) {
     if (!p.active) continue;
     const cards = ctx.matchCardsByPlayer.get(p.id) ?? [];
@@ -38,6 +38,7 @@ export async function getPlayUpWatch(env: Env) {
       });
     }
   }
+  
   watch.sort((a, b) => b.playUpCount - a.playUpCount);
   return { season, watch: watch.slice(0, 10) };
 }

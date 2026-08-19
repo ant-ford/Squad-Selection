@@ -1,5 +1,6 @@
 import { linkId } from "./airtable";
 import { recordEligibilityEvaluation } from "./metrics";
+import type { CardSuspensionState } from "./suspension";
 import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
 
 // ── Public types ────────────────────────────────────────────────────────
@@ -298,9 +299,14 @@ function checkAdminData(player: Player): string | null {
 }
 
 // ── Step 2: Suspension (§5) ─────────────────────────────────────────────
-function checkSuspension(player: Player): string | null {
+function checkSuspension(player: Player, ctx: EvaluationContext): string | null {
+  // Manual disciplinary suspension and the automatically calculated card
+  // suspension are independent - either blocks the player, neither clears
+  // the other.
   if (player.isSuspended === true) return "Suspended";
   if ((player.matchesToServe ?? 0) > 0) return "Suspended";
+  const automatic = ctx.suspensionByPlayer?.get(player.id);
+  if (automatic?.active) return "Suspended";
   return null;
 }
 
@@ -620,6 +626,7 @@ export interface EvaluationContext {
   currentSeason: string;
   playersById: Map<string, Player>;
   completedLeagueMatchesByTeam: Map<string, number>;
+  suspensionByPlayer?: Map<string, CardSuspensionState>;
 }
 
 // ── Internal evaluation (trace-aware) ───────────────────────────────────
@@ -656,7 +663,7 @@ function evaluateInternal(
   t("✓ Step 1 — Admin data complete");
 
   // ── Step 2: Suspension ──
-  const suspensionBlock = checkSuspension(player);
+  const suspensionBlock = checkSuspension(player, ctx);
   if (suspensionBlock) {
     t(`✗ Step 2 — ${suspensionBlock}`);
     return finish(blockedResult(suspensionBlock));

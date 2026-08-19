@@ -3,6 +3,7 @@ import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib
 import { getReferenceData, getExceptionsForSeasons } from "./reference";
 import { getScheduledMatches } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
+import { computeSuspensionStates } from "./suspension";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../src/generated/fieldMaps";
@@ -90,6 +91,13 @@ function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
   return allMatches.filter((m) => norm(m.matchDate) === target);
 }
 
+function previousSeason(season: string): string | null {
+  const m = season.match(/^(\d{4})-(\d{4})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  return Number.isFinite(y) ? `${y - 1}-${y}` : null;
+}
+
 // ── Season-level evaluation context (Performance Pass #3) ───────────────
 //
 // Everything that depends only on the SEASON — exceptions, match cards, the
@@ -112,14 +120,20 @@ interface SeasonContext {
   virtualSelections: VirtualSelection[];
   selectionsByPlayer: Map<string, Set<string>>;
   selectionsByMatch: Map<string, VirtualSelection[]>;
+  previousSeason: string | null;
+  previousCards: MatchCard[];
+  previousMatches: Match[];
 }
 
 export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
   const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
-    const [exceptionsRaw, matchCards, allMatches] = await Promise.all([
+    const prevSeason = previousSeason(season);
+    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches] = await Promise.all([
       getExceptionsForSeasons(env, [season]),
       getMatchCardsForSeason(env, season),
       getAllMatches(env, season),
+      prevSeason ? getMatchCardsForSeason(env, prevSeason) : Promise.resolve([] as MatchCard[]),
+      prevSeason ? getAllMatches(env, prevSeason) : Promise.resolve([] as Match[]),
     ]);
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
@@ -177,6 +191,9 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       virtualSelections,
       selectionsByPlayer,
       selectionsByMatch,
+      previousSeason: prevSeason,
+      previousCards: prevMatchCards,
+      previousMatches: prevMatches,
     };
   }, 10 * 60 * 1000);
   return data;
@@ -195,6 +212,22 @@ async function buildEvaluationContext(
   const season = await getSeasonContext(env, currentSeason);
   const playersById = new Map<string, Player>();
   for (const p of allPlayers) playersById.set(p.id, p);
+
+  // Automatic card-suspension state is computed here (not in getSeasonContext)
+  // because it needs each player's canonical Registered Team, which only
+  // `allPlayers` provides. Inputs are already in memory, so this is a pure
+  // in-memory pass with no additional Airtable queries.
+  const registeredTeamByPlayer = new Map<string, string>();
+  for (const p of allPlayers) if (p.registeredTeam) registeredTeamByPlayer.set(p.id, p.registeredTeam);
+  const combinedMatchesById = new Map<string, Match>([...season.previousMatches, ...season.allMatches].map((m) => [m.id, m]));
+  const suspensionByPlayer = computeSuspensionStates({
+    currentCards: season.matchCards,
+    previousCards: season.previousCards,
+    matchesById: combinedMatchesById,
+    currentSeason,
+    previousSeason: season.previousSeason,
+    registeredTeamByPlayer,
+  });
 
   // Same-day slice (excludes the target match).
   const sameDayMatches = getSameDayMatches(season.allMatches, matchDate).filter((m) => m.id !== match.id);
@@ -236,6 +269,7 @@ async function buildEvaluationContext(
     currentSeason,
     playersById,
     completedLeagueMatchesByTeam: season.completedLeagueMatchesByTeam,
+    suspensionByPlayer,
   };
   return { ctx, exceptionsRaw: season.exceptionsRaw };
 }

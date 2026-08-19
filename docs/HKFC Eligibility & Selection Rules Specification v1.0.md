@@ -199,9 +199,9 @@ Warnings are evaluated during the relevant rule checks and surfaced only when fi
 
 # 5. Suspension Rules
 
-Reference: Bye-Laws 16.3–16.10
+Reference: Bye-Laws 16.3-16.10
 
-A player is blocked when:
+A player is blocked when **either** of the following holds:
 
 ```text
 Is Suspended = true
@@ -213,15 +213,86 @@ or
 Matches To Serve > 0
 ```
 
+**or** the player has an automatically calculated card suspension (see 5.2 below).
+
 Reason:
 
 `Suspended`
 
-Suspensions are managed manually by administrators.
+## 5.1 Manual (disciplinary) suspension
 
-The system must not automatically calculate suspensions from cards.
+`People.Is Suspended` and `People.Matches To Serve` remain the manual
+disciplinary mechanism. Administrators set these directly for suspensions that
+are not fully derivable from Match Cards (for example red-card suspensions, or
+Disciplinary Committee outcomes).
 
-Suspensions may carry forward into future seasons where required by HKHA rulings.
+## 5.2 Automatic card suspension (HKHA Bye-Law 16.3)
+
+The system derives yellow-card suspensions automatically from **Match Cards +
+Matches** (the single source of truth). This is derived, reproducible state and
+never mutates `People.Is Suspended` or `People.Matches To Serve` during reads.
+
+Yellow-card penalty points (Bye-Law 16.3):
+
+| Code | Points |
+|------|--------|
+| Y1   | 2      |
+| Y2   | 3      |
+| Y3   | 3      |
+| Y4   | 2      |
+| Y5   | 4      |
+| Y6   | 3      |
+| Y7   | 1      |
+
+Quantity suffixes: a value such as `Y2 (2)` represents two Y2 cards and
+therefore 2 x the base points (`Y2 (2)` = 6, `Y2 (3)` = 9); two separate `Y2`
+values produce the same total.
+
+Accumulation is per season (the season boundary is 1 July, consistent with the
+existing `currentSeason()` convention). Points reset at the boundary, but an
+unserved suspension carries forward into the next season. Only cards from the
+current season contribute to current-season accumulation; cards from a future
+season are ignored.
+
+Thresholds (escalating; excess points are retained after each suspension):
+
+| Points | Suspension                |
+|--------|---------------------------|
+| 5      | 1 match                   |
+| 10     | 2 matches                 |
+| 15     | 3 matches + DC referral   |
+
+Serving (HKFC application rule): a suspension of N matches is served by the
+next N completed (`Played`) fixtures of the player's **Registered Team**, not
+by the team the player happened to be playing for when the threshold was
+crossed. This matters because HKFC players can move between teams and play
+up/down. Multiple suspension events are served **sequentially and
+non-overlapping**: each completed fixture serves exactly one outstanding
+suspension match (the earliest first), so a single fixture never satisfies two
+suspension events at once. The suspended player does not need their own Match
+Card for a team fixture to count. Future, scheduled, rescheduled and cancelled
+matches do not count.
+
+Data uncertainty: an unresolvable Match Card (missing Match link, or a Match
+with no resolvable Match Date) is never treated as a served fixture. The
+system fails closed - the player remains suspended - and records an internal
+diagnostic so an administrator can identify why the suspension has not cleared.
+
+Effective suspension = `manualSuspensionActive OR automaticCardSuspensionActive`.
+Either blocks the player; neither clears the other.
+
+> **HKHA rule vs HKFC implementation:** the yellow-card point values,
+> thresholds, escalation, excess-point retention and the 1 July season boundary
+> are taken from the HockeyHKMS Competition Bye-Laws (July 2024). The 1 July
+> boundary is an HKFC implementation decision to match the existing season
+> convention. Red cards (R1-R7) are **not** automatically calculated: their
+> serving team can differ between Club and HockeyHK representative teams
+> (Bye-Law 16.10) and their length can be modified by a Disciplinary Committee
+> investigation (Bye-Law 16.7). Red cards remain handled via the manual fields.
+> Serving against the player's Registered Team (rather than the team played
+> for) and the sequential, non-overlapping service model are HKFC application
+> implementation decisions, not claims that the bye-law itself defines this
+> automatic calculation.
 
 ---
 

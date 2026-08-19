@@ -757,10 +757,10 @@ The evaluation order is **fixed and must never change:**
 - Rule ID: `RULE_IDS.ADMIN_DATA_INCOMPLETE`
 
 **Step 2 - Suspension:**
-- Blocked if: `isSuspended === true` OR `matchesToServe > 0`
+- Blocked if: `isSuspended === true` OR `matchesToServe > 0` OR an automatic card suspension is active (see Spec 5.2)
 - Reason: `"Suspended"`
 - Rule ID: `RULE_IDS.SUSPENSION`
-- Note: Suspensions are manually entered by admins; the system does not compute them from cards
+- Note: manual fields (`Is Suspended`, `Matches To Serve`) plus an automatically calculated card suspension (derived from Match Cards + Matches per Bye-Law 16.3). Either blocks the player; neither clears the other.
 
 **Step 3 - Visiting Player Restrictions:**
 - If `isVisitingPlayer === true`:
@@ -1789,7 +1789,7 @@ Run: `npx vitest` (watch) or `npx vitest run` (CI).
 
 **Near-term:** Automated re-registration, push notifications, enhanced dashboard.
 
-**Out of scope:** AI selection automation, automatic suspension calculation, generic notifications, season rollover, mobile native apps.
+**Out of scope:** AI selection automation, generic notifications, season rollover, mobile native apps.
 
 **Extension:** New rules â†' add to eligibility engine + golden tests. New endpoints â†' add route + React Query hook. New screens â†' add route + page component.
 
