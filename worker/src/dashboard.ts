@@ -2,9 +2,10 @@ import { Env } from "./airtable";
 import { getReferenceData } from "./reference";
 import { getSeasonContext } from "./squad";
 import { getRankingEvents } from "./rankingEvents";
+import { isQualifyingPlayUpCard } from "./playUp";
 
 /** HKHA season boundary: starts 1 July. */
-function currentSeason(d = new Date()): string {
+export function currentSeason(d = new Date()): string {
   const y = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
   return `${y}-${y + 1}`;
 }
@@ -26,9 +27,7 @@ export async function getPlayUpWatch(env: Env) {
   for (const p of ref.players) {
     if (!p.active) continue;
     const cards = ctx.matchCardsByPlayer.get(p.id) ?? [];
-    const count = cards.filter(
-      (mc) => mc.playUp === true && mc.goalkeeper !== true && (mc.season ?? season) === season,
-    ).length;
+    const count = cards.filter((mc) => isQualifyingPlayUpCard(mc, season)).length;
     if (count >= 2) {
       watch.push({
         id: p.id,
@@ -49,13 +48,11 @@ export async function getPlayUpWatch(env: Env) {
  * yet - the dashboard never fails because the audit trail is missing.
  */
 export async function getRecentChanges(env: Env, days: number) {
-  try {
-    const changes = await getRankingEvents(env, days);
-    return { changes };
-  } catch (err) {
-    console.error("[RecentChanges] ranking events unavailable:", err);
-    return { changes: [] };
-  }
+  // No catch: a failed Ranking Events read must surface as an API error, not
+  // masquerade as "no changes" (spec S5). getRankingEvents logs the details
+  // server-side and degrades to [] ONLY when the table does not exist yet.
+  const changes = await getRankingEvents(env, days);
+  return { changes };
 }
 
 export async function getRecentAvailability(_env: Env, _days: number) {

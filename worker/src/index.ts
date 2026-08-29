@@ -40,6 +40,7 @@ import {
 import { getEligibilityMetrics, resetEligibilityMetrics } from "./metrics";
 import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
 import { getPlayUpWatch, getRecentAvailability, getRecentChanges } from "./dashboard";
+import { reconcileRegistrations } from "./registration";
 
 export type { Env };
 
@@ -73,6 +74,31 @@ export default {
       airtableCalls: snapshotAirtableCalls() - atBefore,
     });
     return response;
+  },
+
+  /**
+   * Scheduled reconciliation (worker/wrangler.toml [triggers] cron).
+   *
+   * Cadence: daily at 02:00 Asia/Hong_Kong (18:00 UTC).
+   * Runs in apply mode ONLY when the AUTO_REGISTRATION_ENABLED Worker var is
+   * "true"; otherwise it logs a dry-run report and performs no writes, so
+   * deploying this cron never silently enables production writes.
+   * A failed scan is logged (Workers Logs) and never thrown - the next scan
+   * is idempotent and self-heals partial runs.
+   */
+  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const mode = env.AUTO_REGISTRATION_ENABLED === "true" ? "apply" : "dry-run";
+    try {
+      const report = await reconcileRegistrations(env, { mode });
+      for (const result of report.results ?? []) {
+        console.log(`[Registration] scheduled result: ${JSON.stringify(result)}`);
+      }
+      for (const diagnostic of report.diagnostics) {
+        console.log(`[Registration] scheduled diagnostic: ${JSON.stringify(diagnostic)}`);
+      }
+    } catch (err) {
+      console.error("[Registration] scheduled reconciliation failed:", err);
+    }
   },
 };
 
@@ -385,6 +411,26 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
       if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
         return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
+      }
+
+      // Automatic re-registration reconciliation (coach / Section Captain
+      // only). POST /api/registration/reconcile { "mode": "dry-run"|"apply" }.
+      // Dry-run is the default. Apply mode performs real Airtable writes and
+      // is additionally gated by the AUTO_REGISTRATION_ENABLED Worker var.
+      // No client input can influence WHICH player or destination team is
+      // written: the scan is computed entirely server-side from Match Cards.
+      if (method === "POST" && pathname === "/api/registration/reconcile") {
+        const user = await requireCoach(request, env);
+        const body = (await request.json().catch(() => ({}))) as { mode?: string };
+        const mode = body?.mode === "apply" ? "apply" : "dry-run";
+        if (mode === "apply" && env.AUTO_REGISTRATION_ENABLED !== "true") {
+          throw new HttpError(
+            'Automatic re-registration writes are disabled. Set the AUTO_REGISTRATION_ENABLED Worker var to "true" to enable apply mode.',
+            403,
+            "AUTO_REGISTRATION_DISABLED",
+          );
+        }
+        return json(await reconcileRegistrations(env, { mode }), 200, origin);
       }
 
       return errorJson("Not Found", 404, origin, "NOT_FOUND");

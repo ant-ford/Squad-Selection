@@ -13,7 +13,9 @@ import {
   MAX_JUSTIFICATION_CHARS,
   RANKING_EVENTS_TABLE,
 } from "../worker/src/rankingEvents";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll, getCached } from "../src/lib/cache";
+import { getRecentChanges } from "../worker/src/dashboard";
+import { HttpError } from "../worker/src/http";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -35,6 +37,7 @@ function installFakeAirtable(opts: {
   teams?: any[];
   events?: any[];
   failEvents?: boolean;
+  failEventsWith?: number;
 }) {
   const calls: string[] = [];
   const people = opts.people ?? [];
@@ -53,6 +56,16 @@ function installFakeAirtable(opts: {
 
     if (table === RANKING_EVENTS_TABLE && failEvents) {
       return Promise.resolve(new Response("Table not found", { status: 404 }));
+    }
+    if (table === RANKING_EVENTS_TABLE && method === "GET" && u.includes("sort=%5B")) {
+      // Regression guard for the live root cause: Airtable rejects a single
+      // JSON-encoded `sort` parameter with HTTP 422.
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: { message: "Invalid request: parameter validation failed. Check your request data." } }), { status: 422 }),
+      );
+    }
+    if (table === RANKING_EVENTS_TABLE && method === "GET" && opts.failEventsWith) {
+      return Promise.resolve(new Response("Airtable error", { status: opts.failEventsWith }));
     }
 
     let records: any[] = [];
@@ -252,5 +265,98 @@ describe("getRankingEvents", () => {
     installFakeAirtable({ events, people: [], teams: [] });
     const changes = await getRankingEvents(ENV, 30);
     expect(changes).toHaveLength(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Read-path regression tests (Ranking Events -> Recent Ranking Changes)
+// ---------------------------------------------------------------------------
+
+describe("getRankingEvents read path", () => {
+  it("requests the sort in Airtable's bracket format (regression: the JSON-blob sort was rejected with 422)", async () => {
+    const { calls } = installFakeAirtable({
+      events: [{ id: "recE1", fields: { Kind: "move", "Old Rank": 4, "New Rank": 2, Timestamp: new Date().toISOString() } }],
+      people: [],
+      teams: [],
+    });
+    const changes = await getRankingEvents(ENV, 7);
+    expect(changes).toHaveLength(1);
+    expect(calls.some((u) => u.includes("sort%5B0%5D%5Bfield%5D=Timestamp"))).toBe(true);
+    expect(calls.some((u) => u.includes("sort%5B0%5D%5Bdirection%5D=desc"))).toBe(true);
+    // The old broken format must never be sent again.
+    expect(calls.some((u) => u.includes("sort=%5B"))).toBe(false);
+  });
+
+  it("returns [] for an existing but empty table", async () => {
+    installFakeAirtable({ events: [], people: [], teams: [] });
+    const changes = await getRankingEvents(ENV, 7);
+    expect(changes).toEqual([]);
+  });
+
+  it("propagates an Airtable read failure instead of silently returning an empty success", async () => {
+    installFakeAirtable({ events: [], failEventsWith: 500 });
+    await expect(getRankingEvents(ENV, 7)).rejects.toMatchObject({
+      code: "RANKING_EVENTS_UNAVAILABLE",
+      status: 502,
+    });
+  });
+
+  it("keeps the graceful [] degradation only for a missing table (404)", async () => {
+    installFakeAirtable({ events: [], failEvents: true });
+    await expect(getRankingEvents(ENV, 7)).resolves.toEqual([]);
+  });
+});
+
+describe("getRecentChanges API layer", () => {
+  it("returns recorded events for the API response", async () => {
+    const now = Date.now();
+    installFakeAirtable({
+      events: [
+        {
+          id: "recE1",
+          fields: {
+            Kind: "move",
+            "Old Rank": 4,
+            "New Rank": 2,
+            Timestamp: new Date(now - 3_600_000).toISOString(),
+            "Actor Email": "c@hkfc.com",
+            Player: ["recP1"],
+          },
+        },
+      ],
+      people: [{ id: "recP1", fields: { "Preferred Name": "Bob", Email: "c@hkfc.com" } }],
+      teams: [],
+    });
+    const out = await getRecentChanges(ENV, 7);
+    expect(out.changes).toHaveLength(1);
+    expect(out.changes[0]).toMatchObject({
+      playerId: "recP1",
+      kind: "move",
+      oldRank: 4,
+      newRank: 2,
+      playerName: "Bob",
+    });
+  });
+
+  it("propagates read failures to the API layer instead of returning { changes: [] }", async () => {
+    installFakeAirtable({ events: [], failEventsWith: 422 });
+    await expect(getRecentChanges(ENV, 7)).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+describe("ranking-events cache invalidation", () => {
+  it("drops the cached read after events are recorded (no 60s staleness)", async () => {
+    installFakeAirtable({
+      people: [{ id: "recCoach", fields: { Email: "coach@hkfc.com" } }],
+      events: [],
+    });
+    await getCached("ranking-events:7", async () => "STALE", 60_000);
+    await recordRankingEvents(ENV, [
+      { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 3, newRank: 2 },
+    ]);
+    await tick();
+    const { data, fromCache } = await getCached("ranking-events:7", async () => "FRESH");
+    expect(fromCache).toBe(false);
+    expect(data).toBe("FRESH");
   });
 });

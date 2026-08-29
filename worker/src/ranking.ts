@@ -23,6 +23,7 @@ import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./r
 import {
   validateJustification,
   selectRankingEventChanges,
+  invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
 import {
@@ -364,6 +365,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     });
     const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
     if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+    invalidateRankingEventsCache();
     recordRankingEvents(env, [
       { playerId, actorEmail: actingEmail, kind: "activate", oldRank: null, newRank },
     ]);
@@ -408,6 +410,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
 
   const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
   if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+  invalidateRankingEventsCache();
   recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
   ]);
@@ -545,6 +548,7 @@ async function applySectionRankUpdates(
       newRank: u.newRank,
       justification,
     }));
+    invalidateRankingEventsCache();
     await recordRankingEvents(env, events);
   }
 }

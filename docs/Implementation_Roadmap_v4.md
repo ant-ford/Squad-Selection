@@ -66,11 +66,11 @@ HKFC Squad Selection is a mobile-first web application that enables Hong Kong Fo
 - Ranking engine: section ranking, derived ranks, ability group badges, audit logging
 - Recommendation engine: weighted scoring for squad shortfalls
 - Selection sync: Airtable-persisted selections with automatic cache invalidation
+- Automatic re-registration: the 4th qualifying play-up triggers a server-side registration event that updates People.Registered Team
 - Calendar integration: ICS feed generation for coaches and players
 
 **Out of scope:**
 - WhatsApp Business integration
-- Automated re-registration processing (visibility only)
 - Generic push notification framework
 - Two-way calendar sync (Google/Outlook API)
 - Multi-club support
@@ -790,6 +790,8 @@ The evaluation order is **fixed and must never change:**
   - At 3: warning `"Third play-up appearance"`
   - At 4: blocked `"Play-up limit reached - re-registration required"` (Rule ID: `RULE_IDS.PLAYUP_LIMIT`)
 - Goalkeeper exemption: appearances where `Goalkeeper = true` are excluded (Bye-law 7.5)
+- At 4: the Automatic Re-registration Service (section 7.6) processes the threshold event and updates `People.Registered Team`; the Step 6 block above remains as a fail-safe while the registration event is pending
+- Goalkeeper status for re-registration is per Match Card (`Match Cards.Goalkeeper`): goalkeeper play-up appearances never count; a goalkeeper-positioned player's field-player play-ups count normally; the destination must be an upward move (never demotes)
 
 **Step 7 - Cup Eligibility:**
 - Only applies to Cup/Plate/Bowl fixtures (determined by `Division` or `Competition Type`)
@@ -1253,6 +1255,70 @@ The frontend uses optimistic updates for perceived responsiveness:
 
 ---
 
+### 7.6 Automatic Re-registration Service
+
+**Location:** `worker/src/registration.ts`
+**Entry points:** `reconcileRegistrations()` (scan), `POST /api/registration/reconcile` (coach-only), scheduled cron (`0 18 * * *` UTC = 02:00 Asia/Hong_Kong daily)
+**Status:** Implemented (dry-run default; apply mode gated by the `AUTO_REGISTRATION_ENABLED` Worker var)
+
+#### 7.6.1 Business Rule
+
+When a player records their **4th qualifying play-up appearance of the current season**, the system automatically re-registers the player:
+
+- Qualifying play-up = the single shared definition in `worker/src/playUp.ts` (`Play Up? = true`, `Goalkeeper = false`, current season) - the same definition the eligibility engine and the Play-Up Watch use. There is exactly one definition in the codebase.
+- Match Cards are the sole source of truth. Squad selections, availability, recommendations and intended selections never trigger re-registration.
+- Goalkeeper status is per Match Card: `Match Cards.Goalkeeper` decides each appearance (never `People.Playing Position`). Goalkeeper play-up appearances never count toward the threshold; a goalkeeper-positioned player''s field-player play-ups count normally.
+- Upward movement only: a qualifying play-up is an appearance for a team higher-ranked than the player''s current Registered Team. Play-downs never count, and a non-upward destination (or an unresolvable registration) is left for review (`NON_UPWARD_DESTINATION` / `UNRESOLVED_REGISTRATION`) instead of an automatic demotion.
+
+#### 7.6.2 Destination Algorithm
+
+> Select the team with the highest frequency among the four qualifying play-up appearances; if frequency is tied, select the lowest-ranked team using `Teams.Team Rank` (the largest rank number).
+
+| Appearances | Destination |
+|---|---|
+| B, B, B, B (4+0) | B |
+| B, B, B, C (3+1) | B |
+| B, B, C, D (2+1+1) | B |
+| B, B, C, C (2+2 tie) | C (lowest-ranked, Team Rank 3) |
+| B, C, D, E (1+1+1+1 tie) | E (lowest-ranked, Team Rank 5) |
+
+- Team names are never used to infer hierarchy; `Teams.Team Rank` is authoritative.
+- Only the four chronological triggering appearances (match date asc, Match Card id asc) determine the destination; the season-cumulative play-up count continues to grow and is never reset.
+- Historical Match Cards are never rewritten - including `Match Cards.Player Team`.
+- Fail-safe: a triggering card with no Team, an unknown Team, a missing/invalid Team Rank, a missing match date, duplicate Match Cards for the same match, two tied teams sharing one rank, or a destination that would not be an upward move produces a diagnostic and NO registration change (automatic re-registration never demotes).
+
+#### 7.6.3 Registration Events (the event ledger)
+
+The threshold is an EVENT processed once per player per season, persisted in the `Registration Events` Airtable table (created by the Section Captain / admin; same convention as Ranking Events):
+
+| Field | Type | Notes |
+|---|---|---|
+| Player | link (People) | |
+| Previous Registered Team | text | |
+| New Registered Team | text | |
+| Triggering Match Card | link (Match Cards) | the 4th chronological qualifying card |
+| Season | text | e.g. `2026-2027` |
+| Event Type | single select | `auto_reregister` |
+| Timestamp | date/time (UTC) | server-stamped |
+
+A previously processed `auto_reregister` event for the player/season prevents reprocessing: administrator overrides of `People.Registered Team` are never overwritten afterwards. Until the table exists the Worker degrades to dry-run plans and never writes.
+
+#### 7.6.4 Trigger, Dry-run and Activation
+
+- **Scheduled scan:** daily cron (`[triggers]` in `worker/wrangler.toml`, 02:00 Asia/Hong_Kong). Runs apply mode only when `AUTO_REGISTRATION_ENABLED="true"`; otherwise it logs a dry-run report and performs no writes.
+- **Manual scan:** `POST /api/registration/reconcile` with body `{"mode":"dry-run"|"apply"}` (coach / Section Captain auth; dry-run default; apply rejected with 403 `AUTO_REGISTRATION_DISABLED` while the var is off). No client input can influence which player or destination is written - the scan is computed entirely server-side from Match Cards.
+- **Dry-run report:** player, current Registered Team, qualifying count, the four triggering appearances, frequency by team, calculated destination, destination reason, diagnostics. No Airtable writes.
+- **Activation steps:** (1) create the Registration Events table in Airtable (schema above); (2) run a dry-run and review the report; (3) set `AUTO_REGISTRATION_ENABLED="true"` on the deployed Worker; (4) monitor Workers Logs for `[Registration]` lines.
+
+#### 7.6.5 Safety
+
+- Idempotent by the event ledger plus a fresh pre-write re-check of both the player record and the ledger (concurrent Worker isolates cannot double-process).
+- The People update happens BEFORE the event create: a failed update never produces an event, and a failed event create is reported as an error and self-heals on the next scan.
+- Targeted cache invalidation after each mutation: `club-reference`, `registration-events:<season>`, `season-index:<season>`, `players-for-match:*`, `player-by-email:<email>`, `ranking:active`/`ranking:inactive`, `calendar:*`.
+- The Step 6 play-up block (`Play-up limit reached - re-registration required`) is retained as a fail-safe: it still blocks selections above the registered team while a threshold event is unprocessed, and it keeps enforcing the season-cumulative limit for further play-ups above the new registration.
+
+---
+
 ## 8. Coach Portal
 
 ### 8.1 Architecture
@@ -1268,7 +1334,7 @@ The coach portal is accessed at `/coach` and is protected by the `CoachLayout` c
 - **Play-Up Watch:** Players with 2+ play-up appearances (warning or critical)
   - 2 appearances: "Approaching play-up limit"
   - 3 appearances: "Next appearance triggers re-registration"
-  - 4+ appearances: "Registration required"
+  - 4+ appearances: "Registration required" (entry retained for season-cumulative visibility while the Automatic Re-registration Service processes the event - see section 7.6)
 - **Fixture List** (embedded - shared with `/coach/fixtures`)
 
 **States:**
@@ -1787,7 +1853,7 @@ Run: `npx vitest` (watch) or `npx vitest run` (CI).
 
 ## 19. Future Roadmap
 
-**Near-term:** Automated re-registration, push notifications, enhanced dashboard.
+**Near-term:** Push notifications, enhanced dashboard. Automated re-registration shipped (section 7.6).
 
 **Out of scope:** AI selection automation, generic notifications, season rollover, mobile native apps.
 

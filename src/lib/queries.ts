@@ -122,6 +122,9 @@ function useRankingMutation<TVariables>(url: string) {
       } else {
         queryClient.invalidateQueries({ queryKey: ['ranking'] });
       }
+      // Every ranking mutation writes a Ranking Event - refresh the
+      // Recent Ranking Changes list immediately (spec S8).
+      queryClient.invalidateQueries({ queryKey: ['recentChanges'] });
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['ranking'] });
@@ -162,6 +165,7 @@ export function useActivatePlayer() {
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
+      queryClient.invalidateQueries({ queryKey: ['recentChanges'] });
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['ranking'] });
@@ -177,6 +181,7 @@ export function useDeactivatePlayer() {
     onSuccess: (data) => {
       if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
       queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
+      queryClient.invalidateQueries({ queryKey: ['recentChanges'] });
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['ranking'] });

@@ -4,6 +4,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "typecheck:worker": "npm --prefix worker run typecheck",
+    "verify": "npm run typecheck && npm run typecheck:worker && npm test && npm run build",
     "dev": "vite",
     "dev:api": "wrangler dev --config worker/wrangler.toml --port 8787",
     "build": "vite build",

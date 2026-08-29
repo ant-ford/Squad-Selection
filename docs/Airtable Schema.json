@@ -144,6 +144,10 @@
                     "id": "selDOqy6sV7Ft5fIs",
                     "name": "Temporary",
                     "color": "blueLight1"
+                }, {
+                    "id": "selE1mJthSUVIR99V",
+                    "name": "undefined",
+                    "color": "blueLight2"
                 }]
             },
             "id": "fld2xspfCgccmSwFU",
@@ -1277,6 +1281,14 @@
                     "id": "selKGi5uYcLHo7mg2",
                     "name": "Tai Kok Tsui",
                     "color": "blueLight2"
+                }, {
+                    "id": "selIDPFFqt44jnddZ",
+                    "name": "Chai Wan",
+                    "color": "blueLight2"
+                }, {
+                    "id": "selIxmIeHWrJkeq7Q",
+                    "name": "Jardine's Lookout",
+                    "color": "blueLight2"
                 }]
             },
             "id": "fldEdnOPzmvhHEQ2x",
@@ -1592,6 +1604,21 @@
             },
             "id": "fldfklQbjPO7Oh1xY",
             "name": "Qualified Umpire"
+        }, {
+            "type": "singleSelect",
+            "options": {
+                "choices": [{
+                    "id": "selI7OXNUW8fLUgth",
+                    "name": "Yes",
+                    "color": "blueLight2"
+                }, {
+                    "id": "selBB0QGYLnTNpLyT",
+                    "name": "No",
+                    "color": "cyanLight2"
+                }]
+            },
+            "id": "fldNoW5cHdbijMGLD",
+            "name": "Umpire Course Sign-Up (2026.08.24)"
         }, {
             "type": "singleSelect",
             "options": {
@@ -4595,7 +4622,19 @@
             "type": "formula",
             "options": {
                 "isValid": true,
-                "formula": "\"https://hkfchockey.fillout.com/t/pK3tggpQkMus?id=\" & RECORD_ID()",
+                "formula": "\"https://hkfchockey.fillout.com/t/hagoTXEhRZus?id=\" & RECORD_ID()",
+                "referencedFieldIds": [],
+                "result": {
+                    "type": "singleLineText"
+                }
+            },
+            "id": "fld7WFrtcC5vo9val",
+            "name": "Fillout - Umpire Course Sign-Up (2026.08.24)"
+        }, {
+            "type": "formula",
+            "options": {
+                "isValid": true,
+                "formula": "\"https://hkfchockey.fillout.com/t/7V5ZnsKkkhus?id=\" & RECORD_ID()",
                 "referencedFieldIds": [],
                 "result": {
                     "type": "singleLineText"
@@ -4610,6 +4649,44 @@
             },
             "id": "fldRZ2RTT8sqbT24g",
             "name": "Hockey Rules Quiz 1.0"
+        }, {
+            "type": "formula",
+            "options": {
+                "isValid": true,
+                "formula": "\"https://hkfchockey.fillout.com/t/bp9WxcoHSSus?id=\" & RECORD_ID()",
+                "referencedFieldIds": [],
+                "result": {
+                    "type": "singleLineText"
+                }
+            },
+            "id": "fldtrwfyasdBQ8Kwr",
+            "name": "Fillout - Hockey Rules Quiz 2.0"
+        }, {
+            "type": "number",
+            "options": {
+                "precision": 0
+            },
+            "id": "fldFUYNJuEtaODCIe",
+            "name": "Hockey Rules Quiz 2.0"
+        }, {
+            "type": "formula",
+            "options": {
+                "isValid": true,
+                "formula": "\"https://hkfchockey.fillout.com/t/29APuc7wPKus?id=\" & RECORD_ID()",
+                "referencedFieldIds": [],
+                "result": {
+                    "type": "singleLineText"
+                }
+            },
+            "id": "fldzkiu8evYBYIxMJ",
+            "name": "Fillout - Hockey Rules Quiz 3.0"
+        }, {
+            "type": "number",
+            "options": {
+                "precision": 0
+            },
+            "id": "fldIOdwoAyCm0Z44y",
+            "name": "Hockey Rules Quiz 3.0"
         }, {
             "type": "formula",
             "options": {
@@ -4902,6 +4979,41 @@
             },
             "id": "fldg0YHj4HJCxbRYT",
             "name": "Ranking Events (Player)"
+        }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblcr6NEkaOfIdpqd",
+                "isReversed": false,
+                "prefersSingleRecordLink": false,
+                "inverseLinkFieldId": "fldux99DgmVJ5jWO9"
+            },
+            "id": "fldjHEeauJJ8Wxy40",
+            "name": "Teams (Auto-Select)"
+        }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblAiqhkrtUjoiMQV",
+                "isReversed": false,
+                "prefersSingleRecordLink": false,
+                "inverseLinkFieldId": "fldQzlM7AoR2ri8mZ"
+            },
+            "id": "fldIdMxNO3b5VBvQa",
+            "name": "Registration Events"
+        }, {
+            "type": "singleSelect",
+            "options": {
+                "choices": [{
+                    "id": "selFZOUyNXKcCWg7X",
+                    "name": "Yes",
+                    "color": "blueLight2"
+                }, {
+                    "id": "selp0lGSYrLu6VV11",
+                    "name": "No",
+                    "color": "cyanLight2"
+                }]
+            },
+            "id": "fldBLBirg79MrEhfZ",
+            "name": "Umpire Course Attendance"
         }],
         "views": [{
             "id": "viwdeIpKcgSkfFMkV",
@@ -4930,6 +5042,10 @@
         }, {
             "id": "viw3tmmEs6JaAdYmc",
             "name": "Kit Summary",
+            "type": "grid"
+        }, {
+            "id": "viwRW72ruJt8Jsq78",
+            "name": "Umpire Course",
             "type": "grid"
         }]
     }, {
@@ -5982,6 +6098,29 @@
             },
             "id": "fldF7tVnNOIEHv0pg",
             "name": "Membership Officer Submission Date"
+        }, {
+            "type": "singleSelect",
+            "options": {
+                "choices": [{
+                    "id": "selnL6k94kCcQIUNt",
+                    "name": "None",
+                    "color": "blueLight2"
+                }, {
+                    "id": "seloyvYBtuM7aAZl8",
+                    "name": "1 year",
+                    "color": "cyanLight2"
+                }, {
+                    "id": "selshVRq708Dqa1Wb",
+                    "name": "1.5 years",
+                    "color": "tealLight2"
+                }, {
+                    "id": "selQ5z2bj2AXYjezX",
+                    "name": "2 years",
+                    "color": "greenLight2"
+                }]
+            },
+            "id": "fld3zqRQ2fBhLS38u",
+            "name": "Recommended Commitment Reduction"
         }],
         "views": [{
             "id": "viwIU2eIGFMCXS3nE",
@@ -6853,6 +6992,16 @@
             "name": "Play Up?",
             "description": "Checks if Player Team is lower ranked than Team played (play-up situation)."
         }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblAiqhkrtUjoiMQV",
+                "isReversed": false,
+                "prefersSingleRecordLink": false,
+                "inverseLinkFieldId": "fldw5EszyIZQWmLkN"
+            },
+            "id": "fld1D1F6hgYMT7i8e",
+            "name": "Registration Events"
+        }, {
             "type": "singleLineText",
             "id": "fldHZCrMyl4loG5Qx",
             "name": "Fixture Id"
@@ -6922,14 +7071,6 @@
             "id": "fld2gBDGgOgeYJ5Za",
             "name": "Active"
         }, {
-            "type": "checkbox",
-            "options": {
-                "icon": "check",
-                "color": "greenBright"
-            },
-            "id": "fldux99DgmVJ5jWO9",
-            "name": "Auto Select Players"
-        }, {
             "type": "number",
             "options": {
                 "precision": 0
@@ -6966,6 +7107,16 @@
             },
             "id": "fld5rH3uMG3MX0kuB",
             "name": "Coach"
+        }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblsM3GD1o3ZrWyBE",
+                "isReversed": false,
+                "prefersSingleRecordLink": false,
+                "inverseLinkFieldId": "fldjHEeauJJ8Wxy40"
+            },
+            "id": "fldux99DgmVJ5jWO9",
+            "name": "Auto Select Players"
         }],
         "views": [{
             "id": "viw6WXnuRqkmbtxvU",
@@ -7996,6 +8147,10 @@
                             "id": "selDOqy6sV7Ft5fIs",
                             "name": "Temporary",
                             "color": "blueLight1"
+                        }, {
+                            "id": "selE1mJthSUVIR99V",
+                            "name": "undefined",
+                            "color": "blueLight2"
                         }]
                     }
                 }
@@ -8921,6 +9076,79 @@
         }],
         "views": [{
             "id": "viw9G8baWzD87otYr",
+            "name": "Grid view",
+            "type": "grid"
+        }]
+    }, {
+        "id": "tblAiqhkrtUjoiMQV",
+        "name": "Registration Events",
+        "description": "Records automated team re-registrations for players reaching 4th play-up per season.",
+        "primaryFieldId": "fldySv0nH3Qob8NNv",
+        "fields": [{
+            "type": "autoNumber",
+            "id": "fldySv0nH3Qob8NNv",
+            "name": "Id"
+        }, {
+            "type": "singleLineText",
+            "id": "fld8SQ0e4fCE98jXU",
+            "name": "Previous Registered Team"
+        }, {
+            "type": "singleLineText",
+            "id": "fldVvzWoDGD6K3qqC",
+            "name": "New Registered Team"
+        }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblAfY7xhjkcKXlGq",
+                "isReversed": false,
+                "prefersSingleRecordLink": true,
+                "inverseLinkFieldId": "fld1D1F6hgYMT7i8e"
+            },
+            "id": "fldw5EszyIZQWmLkN",
+            "name": "Triggering Match Card"
+        }, {
+            "type": "singleLineText",
+            "id": "fldMTZoViiC8Ydjcd",
+            "name": "Season"
+        }, {
+            "type": "singleSelect",
+            "options": {
+                "choices": [{
+                    "id": "sellm1QiptLBF1Qkk",
+                    "name": "auto_reregister",
+                    "color": "blueLight2"
+                }]
+            },
+            "id": "fldwj1ueMoXSNbr6f",
+            "name": "Event Type"
+        }, {
+            "type": "dateTime",
+            "options": {
+                "dateFormat": {
+                    "name": "iso",
+                    "format": "YYYY-MM-DD"
+                },
+                "timeFormat": {
+                    "name": "24hour",
+                    "format": "HH:mm"
+                },
+                "timeZone": "utc"
+            },
+            "id": "fld16Z0C47lUOEQfa",
+            "name": "Timestamp"
+        }, {
+            "type": "multipleRecordLinks",
+            "options": {
+                "linkedTableId": "tblsM3GD1o3ZrWyBE",
+                "isReversed": false,
+                "prefersSingleRecordLink": true,
+                "inverseLinkFieldId": "fldIdMxNO3b5VBvQa"
+            },
+            "id": "fldQzlM7AoR2ri8mZ",
+            "name": "Player"
+        }],
+        "views": [{
+            "id": "viwkOwAxVIc8XICii",
             "name": "Grid view",
             "type": "grid"
         }]

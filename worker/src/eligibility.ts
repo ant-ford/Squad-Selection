@@ -1,5 +1,6 @@
 import { linkId } from "./airtable";
 import { recordEligibilityEvaluation } from "./metrics";
+import { isQualifyingPlayUpCard } from "./playUp";
 import type { CardSuspensionState } from "./suspension";
 import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
 
@@ -487,12 +488,11 @@ function calculatePlayUpCount(
   player: Player,
   ctx: EvaluationContext,
 ): number {
-  return cardsForPlayer(player.id, ctx).filter((mc) => {
-    if (!mc.playUp) return false;
-    if (mc.goalkeeper) return false; // GK exemption (§11)
-    if (mc.season && mc.season !== ctx.currentSeason) return false;
-    return true;
-  }).length;
+  // Single authoritative qualifying play-up definition (shared with the
+  // automatic re-registration service and the Play-Up Watch dashboard).
+  return cardsForPlayer(player.id, ctx).filter(
+    (mc) => isQualifyingPlayUpCard(mc, ctx.currentSeason),
+  ).length;
 }
 
 // ── Step 7: Cup Eligibility (§14) ──────────────────────────────────────

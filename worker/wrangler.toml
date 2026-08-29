@@ -9,3 +9,10 @@ ALLOWED_ORIGIN = "https://hkfc-squad-selection.squad-selections.workers.dev"
 
 SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
+[triggers]
+# Automatic re-registration reconciliation scan.
+# Cadence: daily at 02:00 Asia/Hong_Kong (18:00 UTC) - shortly after the
+# overnight HKHA results sync window, before coaches start selecting squads.
+# Runs in dry-run mode unless the AUTO_REGISTRATION_ENABLED Worker var is
+# set to "true"; see README "Automatic Re-registration" for activation steps.
+crons = ["0 18 * * *"]

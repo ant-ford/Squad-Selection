@@ -18,11 +18,11 @@
  * player-in-match selections, not rank changes.
  */
 
-import { Env, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import { Env, AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
-import { getCached } from "../../src/lib/cache";
+import { getCached, invalidateCachePrefix } from "../../src/lib/cache";
 
 export const RANKING_EVENTS_TABLE = "Ranking Events";
 export const RANKING_EVENTS_FIELDS = {
@@ -124,10 +124,18 @@ export async function recordRankingEvents(env: Env, events: RankingEventInput[])
       for (let i = 0; i < rows.length; i += 10) {
         await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
       }
+      // The next read must reach Airtable immediately - never serve a stale
+      // pre-write events list from the 60s cache (spec S8).
+      invalidateCachePrefix("ranking-events:");
     } catch (err) {
       console.error("[RankingEvents] failed to record events:", err);
     }
   })();
+}
+
+/** Drop every cached ranking-events read (call after a rank commit). */
+export function invalidateRankingEventsCache(): void {
+  invalidateCachePrefix("ranking-events:");
 }
 
 export interface RankingChange {
@@ -156,8 +164,11 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
     async () => {
       try {
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        // Airtable rejects a single JSON-encoded `sort` parameter with HTTP
+        // 422 - the sort must be passed as bracketed query parameters.
         const records = await airtableFindAll(env, RANKING_EVENTS_TABLE, undefined, {
-          sort: JSON.stringify([{ field: RANKING_EVENTS_FIELDS.timestamp, direction: "desc" }]),
+          "sort[0][field]": RANKING_EVENTS_FIELDS.timestamp,
+          "sort[0][direction]": "desc",
         });
         const fresh = records.filter((r) => {
           const at = r.fields?.[RANKING_EVENTS_FIELDS.timestamp];
@@ -213,9 +224,20 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
           };
         });
       } catch (err) {
-        // Table not created yet - the history degrades to empty.
-        console.error("[RankingEvents] table unavailable:", err);
-        return [];
+        // Table not created yet: keep the documented graceful degradation to
+        // an empty list. Every OTHER failure must propagate - silently
+        // returning [] would render a data/API problem in the UI as
+        // "No ranking changes recorded yet" (spec S5).
+        if (err instanceof AirtableError && err.status === 404) {
+          console.error("[RankingEvents] table not created yet (404):", err.message);
+          return [];
+        }
+        console.error("[RankingEvents] read failed:", err);
+        throw new HttpError(
+          "Ranking changes are temporarily unavailable",
+          502,
+          "RANKING_EVENTS_UNAVAILABLE",
+        );
       }
     },
     RANKING_EVENTS_TTL_MS,

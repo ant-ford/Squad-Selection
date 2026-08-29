@@ -2,7 +2,7 @@
 
 **Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
 
-[![Tests](https://img.shields.io/badge/tests-259%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-371%20passed-brightgreen)](tests/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
 
 ---
@@ -24,7 +24,7 @@ Then get running:
 git clone https://github.com/ant-ford/Squad-Selection.git
 cd Squad-Selection
 npm install
-npx vitest run    # 259 tests, all should pass
+npx vitest run    # 371 tests, all should pass
 npx vite dev      # opens at http://localhost:5173
 ```
 
@@ -83,18 +83,18 @@ This application intentionally optimises for **coach workflow** over technical p
 **Production-ready (CURRENT IMPLEMENTATION):**
 
 - âœ” Production architecture (React + Worker + Airtable)
-- âœ” Regression-tested eligibility (259 tests, 23 golden)
+- âœ” Regression-tested eligibility (371 tests, 23 golden)
 - âœ” Generated Airtable types (never out of sync)
 - âœ” Mobile-first responsive layout
 - âœ” Cached Worker with targeted invalidation
 - âœ” Audit logging (rankings, selections)
+- âœ” Automatic re-registration service (4th qualifying play-up)
 
 **Active development focus:**
 
 - â€¢ Observability: cache hit ratios, endpoint latency percentiles
 - â€¢ Feature flags for dark launches
 - â€¢ Structured logging with correlation IDs
-- â€¢ Automated re-registration processing
 
 ---
 
@@ -153,7 +153,7 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
        â”‚                           â”‚
 â”Œâ”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”           â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”
 â”‚  Supabase   â”‚           â”‚    Airtable     â”‚
-â”‚  Auth only  â”‚           â”‚  8 tables       â”‚
+â”‚  Auth only  â”‚           â”‚  9 tables       â”‚
 â”‚  (no data)  â”‚           â”‚  All app data   â”‚
 â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜           â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
@@ -162,10 +162,11 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
 
 **Cloudflare Worker:** The authoritative backend. MUST own all business logic. The only component with Airtable access.
 
-**Airtable:** Single source of truth â€” 8 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Ability Group Configuration, Selection Events, Ranking Events).
+**Airtable:** Single source of truth â€” 9 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Ability Group Configuration, Selection Events, Ranking Events, Registration Events).
 
 **Ranking Events table (ranking history):** the Worker records rank changes (move / reorder / activate / deactivate) with the actor, old/new rank, an optional justification of at most 280 characters, and a server-side timestamp. The table exists in the live schema (confirmed by the 2026-08-14 schema export); if it is ever absent the ranking-history UI degrades to "no changes recorded yet" and no write ever fails. Field names must match exactly: `Player` (link to People), `Actor` (link to People), `Actor Email` (text), `Kind` (select: move / reorder / activate / deactivate), `Old Rank` (number), `New Rank` (number), `Justification` (long text), `Timestamp` (date/time). Rationale: no existing table can represent rank changes - Selection Events has no timestamp/rank fields and is a per-selection log; audit fields on People would keep only the latest change per player.
 
+**Registration Events table (automatic re-registration ledger):** the Worker records one `auto_reregister` event when a player's 4th qualifying play-up of the season is processed: `Player` (link to People), `Previous Registered Team` (text), `New Registered Team` (text), `Triggering Match Card` (link to Match Cards), `Season` (text, e.g. "2026-2027"), `Event Type` (single select: `auto_reregister`), `Timestamp` (date/time, UTC). The table must be created by the Section Captain / admin (same convention as Ranking Events); until it exists the reconciliation runs in dry-run only and never writes. The event is the idempotency marker - it prevents reprocessing and protects later administrator overrides.
 **Per-request telemetry:** the Worker logs one structured JSON line per request (`perf.request`: method, path, status, totalMs, exact Airtable call count) and one per authorization (`perf.auth`: Supabase verify, player lookup, team-links lookup timings, cache flags) - queryable in Workers Logs / `wrangler tail`. Supabase token verification is deliberately NOT cached (immediate revocation latency); the browser logs per-request timings via `console.debug` in `src/lib/apiClient.ts`.
 
 **Supabase:** Authentication only. No application data stored in Supabase tables.
@@ -214,9 +215,11 @@ Squad-Selection/
 â”‚       â”œâ”€â”€ abilityGroup.ts            # Ability group/sub-group math
 â”‚       â”œâ”€â”€ abilityRank.ts             # A+ = 24 â†’ H- = 1 mapping
 â”‚       â”œâ”€â”€ reference.ts               # Cached club reference data
-â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
+â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
+â”‚       â”œâ”€â”€ registration.ts              # Automatic re-registration service
+â”‚       â”œâ”€â”€ playUp.ts              # Shared qualifying play-up definition
 â”‚       â””â”€â”€ http.ts                    # HTTP utilities
-â”œâ”€â”€ tests/                         # Vitest unit tests (259 tests)
+â”œâ”€â”€ tests/                         # Vitest unit tests (371 tests)
 â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (56 tests)
 â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (23 tests)
 â”‚   â”œâ”€â”€ playerFilters.test.ts          # Filter serialization
@@ -232,7 +235,9 @@ Squad-Selection/
 â”‚   â”œâ”€â”€ rankingEvents.test.ts          # Ranking event persistence
 â”‚   â”œâ”€â”€ rankingHistory.test.ts         # Advisory + age/date helpers
 â”‚   â”œâ”€â”€ perf.test.ts                   # Telemetry JSON structure
-â”‚   â””â”€â”€ dateUtils.test.ts              # Date formatting
+â”‚   â””â”€â”€ dateUtils.test.ts              # Date formatting
+â”‚   â””â”€â”€ registration.test.ts            # Automatic re-registration suite
+â”‚   â””â”€â”€ registrationRoutes.test.ts            # Reconcile endpoint auth + gating
 â””â”€â”€ public/                        # Static assets (favicon, logo)
 ```
 
@@ -275,6 +280,15 @@ Selections stored directly on `Matches.Selected Players Home/Away`. The `syncSqu
 
 â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.5`](docs/Implementation_Roadmap_v4.md)
 
+### Automatic Re-registration Service (`worker/src/registration.ts`)
+
+Watches the current season's Match Cards and, when a player records their **4th qualifying play-up appearance**, automatically re-registers the player: `People.Registered Team` becomes the destination team. Match Cards are the sole trigger - selections, availability and recommendations never cause re-registration.
+
+**Destination algorithm (single rule):** highest frequency among the four qualifying appearances wins; on a frequency tie, the lowest-ranked team (`Teams.Team Rank`, largest rank number) wins. Handles 4+0, 3+1, 2+1+1, 2+2 and 1+1+1+1 deterministically.
+
+**Event, not formula:** the fourth-play-up threshold is processed exactly once per player per season via the `Registration Events` Airtable table, so administrator edits of `People.Registered Team` are never overwritten afterwards. Historical Match Cards (including `Player Team`) are never rewritten and the season-cumulative play-up count is never reset. Goalkeeper status is per Match Card: `Match Cards.Goalkeeper` decides each appearance (never `People.Playing Position`) - goalkeeper play-up appearances never count, while a goalkeeper-positioned player's field-player play-ups count normally. The destination must also be a genuine upward move - the service never demotes.
+
+A daily scheduled scan (dry-run by default) plus a coach-only `POST /api/registration/reconcile` endpoint keep the ledger up to date. See [Automatic Re-registration](#automatic-re-registration) for the data model and activation steps.
 ### Availability Engine (`worker/src/availability.ts`)
 
 Exception-based: no record = Available. Only "Maybe" and "Unavailable" are stored. Self-service via unauthenticated endpoints. Polled every 30 seconds on the Squad Selection page.
@@ -293,6 +307,7 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 | **Ability group** | Worker (`abilityGroup.ts`) | React |
 | **Recommendations** | Worker (`recommendations.ts`) | React |
 | **Selection sync** | Worker (`squad.ts`) | React |
+| **Automatic re-registration** | Worker (`registration.ts`) | React |
 | **Caching** | Worker | React |
 | **Auth** | Supabase | Worker |
 | **Filter state** | React (`useState`) | Worker |
@@ -325,6 +340,7 @@ These MUST NOT be broken. For the complete list of 60+ invariants with stable ID
 9. **Play-up count MUST use `Match Cards.Goalkeeper`, not `People.Playing Position`.** The Goalkeeper field is per-appearance â€” the only authoritative source for the GK exemption.
 
 10. **Team hierarchy MUST come from `Teams.Team Rank`.** Do not infer rank from team name.
+11. **Automatic re-registration is an event, not a formula.** The 4th qualifying play-up is processed exactly once per player per season via Registration Events; administrator overrides of `People.Registered Team` are never overwritten. Goalkeeper status is per Match Card, and the service never demotes (the destination must be an upward move).
 
 ---
 
@@ -342,7 +358,7 @@ These MUST NOT be broken. For the complete list of 60+ invariants with stable ID
 | **Language** | TypeScript 5.x |
 | **Backend runtime** | Cloudflare Workers |
 | **Auth** | Supabase Auth (email/password, PKCE) |
-| **Database** | Airtable (8 tables) |
+| **Database** | Airtable (9 tables) |
 | **Testing** | Vitest v4 |
 | **Data sync** | hkha-sync (GitHub Actions) |
 
@@ -388,7 +404,9 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 ```bash
 npx vite build      # Output: dist/
 npx vitest          # Watch mode
-npx vitest run      # Single pass (CI) â€” 259 tests across 15 files
+npx vitest run      # Single pass (CI) - 371 tests across 20 files
+npx tsc --noEmit                             # Typecheck frontend
+npx tsc --noEmit -p worker/tsconfig.json     # Typecheck worker
 ```
 
 ### Deploy
@@ -399,6 +417,7 @@ npx vite build && npx wrangler pages deploy dist/   # Frontend second
 ```
 
 **Deploy order:** Worker MUST be deployed before frontend when the API contract changes.
+Deploying the Worker also registers the daily re-registration cron trigger (02:00 Asia/Hong_Kong). It performs no writes until `AUTO_REGISTRATION_ENABLED="true"` is set - see [Automatic Re-registration](#automatic-re-registration).
 
 **Rollback:** `npx wrangler rollback` (Worker) or Cloudflare Pages UI â†’ Deployments â†’ Rollback (Frontend).
 
@@ -455,7 +474,7 @@ When the Airtable schema changes:
 
 ### Suite Overview
 
-- **259 tests** across **15 files** â€” all unit tests, no browser required
+- **371 tests** across **20 files** â€” all unit tests, no browser required
 - Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) â€” no dependency on real Airtable data
 - Run: `npx vitest run`
 
@@ -477,9 +496,53 @@ When the Airtable schema changes:
 | `toggleSelection.test.ts` | 6 | Binary toggle logic |
 | `readiness.test.ts` | 9 | Team readiness scoring |
 | `abilityRank.test.ts` | 7 | Rank constant ordering |
+| `registration.test.ts` | 38 | Destination algorithm, qualification, triggering, Airtable mutation, idempotency, cache invalidation, eligibility integration |
+| `registrationRoutes.test.ts` | 9 | Reconcile endpoint authorization, apply-mode gating, scheduled dry-run/apply |
 
 ---
 
+## Automatic Re-registration
+
+When a player records their **4th qualifying play-up appearance of the current season**, the Worker automatically re-registers the player to a destination team derived from those appearances. This replaces the previous manual re-registration process.
+
+### Business Rule
+
+- **Trigger:** the 4th qualifying play-up Match Card of the season (ordered chronologically by match date, Match Card id as tiebreak). Match Cards are the only source of truth - selections, availability and recommendations never trigger registration changes.
+- **Qualifying play-up:** `Play Up? = true`, `Goalkeeper = false`, current season - one shared definition (`worker/src/playUp.ts`) used by the eligibility engine, the Play-Up Watch and this service.
+- **Goalkeeper status is per Match Card:** the exemption is decided by `Match Cards.Goalkeeper`, never by `People.Playing Position` - goalkeeper play-up appearances never count toward the threshold, and a goalkeeper-positioned player''s field-player play-ups count normally.
+- **Never demotes:** a qualifying play-up is an appearance for a team higher-ranked than the player''s current Registered Team. Appearances for the player''s own or a lower-ranked team are play-downs and never count. If the calculated destination would not be an upward move (or the data cannot be resolved), the case is left for review instead of changing the registration.
+- **Destination:** highest frequency among the four triggering appearances; on a tie, the lowest-ranked team by `Teams.Team Rank` (largest rank number). Examples: B,B,B,B to B; B,B,B,C to B; B,B,C,D to B; B,B,C,C to C (tie); B,C,D,E to E (tie).
+- **Event, not formula:** the threshold is processed exactly once per player per season. The event is persisted in the `Registration Events` Airtable table; a processed event prevents reprocessing, so an administrator's later manual change of `People.Registered Team` always stands.
+- **History is never rewritten:** all Match Cards (including `Player Team` and `Team`) stay untouched and the season-cumulative play-up count is never reset. The `Play-up limit reached - re-registration required` block remains as a fail-safe while an event is unprocessed, and for any further play-ups above the new registration.
+
+### Registration Events (Airtable)
+
+Create one table (Section Captain / admin, same convention as Ranking Events). The Worker degrades to dry-run-only until it exists:
+
+| Field | Type |
+|---|---|
+| Player | link to People |
+| Previous Registered Team | single line text |
+| New Registered Team | single line text |
+| Triggering Match Card | link to Match Cards |
+| Season | single line text (e.g. `2026-2027`) |
+| Event Type | single select: `auto_reregister` |
+| Timestamp | date/time (UTC) |
+
+### Trigger and Operation
+
+- **Daily scheduled scan** (deployed with `worker/wrangler.toml`): 02:00 Asia/Hong_Kong (`0 18 * * *` UTC). Dry-run unless `AUTO_REGISTRATION_ENABLED="true"`.
+- **Manual scan:** `POST /api/registration/reconcile` (coach / Section Captain) with body `{"mode": "dry-run" | "apply"}`. Dry-run is the default; apply is rejected with 403 while the var is off.
+- **Dry-run report:** player, current Registered Team, qualifying count, the four triggering appearances, frequency by team, calculated destination, reason, and fail-safe diagnostics (missing team / unknown team / missing Team Rank / missing match date / duplicate cards / ambiguous ranks). Dry-run performs no writes.
+- **Safety:** fresh pre-write re-checks, People update before event create, targeted cache invalidation (`club-reference`, `season-index`, `players-for-match:*`, `player-by-email`, ranking lists, calendar feeds), structured `[Registration]` logs in Workers Logs.
+
+### Activation Checklist
+
+1. Create the Registration Events table in Airtable (schema above).
+2. Deploy the Worker; confirm the cron trigger exists (`wrangler deploy` output / Cloudflare dashboard).
+3. Run `POST /api/registration/reconcile` (dry-run) and review the report with the Section Captain.
+4. Set `AUTO_REGISTRATION_ENABLED="true"` on the deployed Worker to enable apply mode.
+5. Monitor Workers Logs (`[Registration]`) for the daily scans.
 ## AI Contributor Guide
 
 **âš ï¸ Read this section before making any changes.**
@@ -512,6 +575,7 @@ Every AI assistant MUST read these documents **in order** before modifying code:
 | Ranking logic | `worker/src/ranking.ts` |
 | Recommendation scoring | `worker/src/recommendations.ts` |
 | New API endpoints | `worker/src/index.ts` |
+| Automatic re-registration logic | `worker/src/registration.ts` (+ shared `worker/src/playUp.ts`) |
 | React Query hooks | `src/lib/queries.ts` |
 | UI components | `src/components/` or `src/pages/` |
 | Filter controls | `src/components/PlayerFilters.tsx` |
@@ -526,6 +590,7 @@ Every AI assistant MUST read these documents **in order** before modifying code:
 | `recommendations.ts` | `recommendations.test.ts` |
 | `abilityGroup.ts` | `abilityGroup.test.ts` |
 | `dateUtils.ts` | `dateUtils.test.ts` |
+| `registration.ts` | `registration.test.ts` + `registrationRoutes.test.ts` |
 | `PlayerFilters.tsx` | `playerFilters.test.ts` |
 
 ```bash
@@ -544,6 +609,8 @@ npx vitest run   # Always run the full suite before deploying
 âŒ **Do not** infer team rank from team name â€” use `Teams.Team Rank`  
 âŒ **Do not** use Airtable rollups for play-up counts â€” compute in the Worker  
 âŒ **Do not** edit files in `src/generated/` â€” regenerate from the schema  
+- **Do not** duplicate the qualifying play-up filter - import `isQualifyingPlayUpCard` from `worker/src/playUp.ts`
+- **Do not** re-apply a processed re-registration event - check Registration Events first (goalkeeper status is per Match Card; the service never demotes)
 
 ---
 

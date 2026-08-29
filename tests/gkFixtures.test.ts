@@ -20,6 +20,11 @@ const ENV = {
   SUPABASE_ANON_KEY: "***",
 } as any;
 
+/** Date-rot-proof fixture dates: always N days in the future. */
+function futureIso(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
+
 // ---------------------------------------------------------------------------
 // Pure cohort logic
 // ---------------------------------------------------------------------------
@@ -110,9 +115,9 @@ const PLAYER_RECORDS = [
 ];
 
 const MATCH_RECORDS = [
-  { id: "recM1", fields: { Date: "2026-08-22T10:00:00.000Z", Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "Valley A", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": ["recP2"], "Selected Players Away": [] } },
-  { id: "recM4", fields: { Date: "2026-08-29T09:00:00.000Z", Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "B", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": ["recP2"] } },
-  { id: "recM6", fields: { Date: "2026-08-30T09:00:00.000Z", Season: "2026-27", Division: "Div 5", "Home Team": "Valley B", "Away Team": "Valley C", Venue: "Other", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": [] } },
+  { id: "recM1", fields: { Date: futureIso(3), Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "Valley A", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": ["recP2"], "Selected Players Away": [] } },
+  { id: "recM4", fields: { Date: futureIso(4), Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "B", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": ["recP2"] } },
+  { id: "recM6", fields: { Date: futureIso(5), Season: "2026-27", Division: "Div 5", "Home Team": "Valley B", "Away Team": "Valley C", Venue: "Other", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": [] } },
 ];
 
 const EXCEPTION_RECORDS = [

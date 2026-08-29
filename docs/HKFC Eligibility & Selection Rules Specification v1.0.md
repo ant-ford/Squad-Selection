@@ -559,48 +559,40 @@ Reference: Bye-Law 7.2
 
 ## 13.1 Threshold
 
-When a player records four qualifying play-up appearances above their registered team:
+When a player records four qualifying play-up appearances above their registered team (excluding goalkeeper appearances), the player becomes unavailable for their registered team.
 
-The player becomes unavailable for their registered team.
+## 13.2 Automatic Re-registration (implemented)
 
-## 13.2 New Effective Team
+The fourth qualifying play-up is an automatic registration EVENT, not a manual administrator step:
 
-The player's effective playing team becomes:
+- The Worker detects the 4th qualifying appearance from actual Match Cards (never from squad selections, availability or recommendations).
+- The player's `People.Registered Team` is automatically updated to the destination team (see 13.3).
+- The event is recorded exactly once per player per season in the Registration Events table (`auto_reregister`). It is never re-applied, so any later administrator override of `People.Registered Team` stands.
+- Historical Match Cards (including `Player Team` and `Team`) are never rewritten, and the season-cumulative play-up count is never reset.
+- Goalkeeper status is per Match Card: `Match Cards.Goalkeeper = true` appearances never count toward the threshold, while a goalkeeper-positioned player''s field-player play-ups (`Goalkeeper = false`) count normally.
+- Automatic re-registration never demotes: a qualifying play-up is an appearance for a team higher-ranked than the player''s current Registered Team; play-downs never count and non-upward cases are left for review.
 
-The lowest-ranked team for which they have accumulated four qualifying play-up appearances.
+## 13.3 Destination Algorithm
 
-Example:
+The destination is the team with the highest frequency among the four qualifying play-up appearances. If the frequency is tied, the lowest-ranked team (the largest `Teams.Team Rank`) wins. Team names never determine hierarchy.
 
-Registered Team:
+Examples (Team Rank: A = 1, B = 2, C = 3, D = 4, E = 5):
 
-HKFC C
+| Appearances | Destination |
+| --- | --- |
+| B, B, B, B | B |
+| B, B, B, C | B |
+| B, B, C, D | B |
+| B, B, C, C | C (tie -> lowest-ranked) |
+| B, C, D, E | E (tie -> lowest-ranked) |
 
-Appearances:
+## 13.4 Fail-safe Block
 
-* HKFC C = 8
-* HKFC B = 1
-* HKFC A = 3
+Until the automatic registration event has been safely processed, selections for a team above the player's registered team are blocked with:
 
-Player becomes unavailable for HKFC C.
+`Play-up limit reached - re-registration required`
 
-Eligible teams:
-
-* HKFC B
-* HKFC A
-
-After a fourth qualifying appearance for HKFC A:
-
-Eligible teams:
-
-* HKFC A only
-
-HKFC B becomes unavailable.
-
-This reflects HKFC operational interpretation of automatic upward re-registration.
-
-Reason:
-
-`Play-up limit reached — re-registration required`
+After the event, selection for the (new) registered team is unaffected. The block continues to enforce the season-cumulative limit for any further play-ups above the new registration.
 
 ---
 
@@ -783,7 +775,7 @@ The following interpretations are deliberate HKFC operational decisions:
 | ------------------------- | -------------------------------------------------- |
 | Team hierarchy            | Determined by Team Rank                            |
 | Higher-team conflicts     | Higher team always takes priority                  |
-| Automatic re-registration | Lowest team where fourth play-up threshold reached |
+| Automatic re-registration | 4th qualifying play-up triggers an automatic registration event; destination = highest-frequency team, lowest-ranked (Team Rank) on ties |
 | Goalkeeper exemption      | Only when actually playing as goalkeeper           |
 | U21 same-day exemption    | Registered team + higher team only                 |
 | Cup play-ups              | Count toward play-up quota                         |

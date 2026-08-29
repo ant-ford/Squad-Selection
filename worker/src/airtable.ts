@@ -6,6 +6,12 @@ export interface Env {
   AIRTABLE_BASE_ID: string;
   CALENDAR_SECRET: string;
   ALLOWED_ORIGIN?: string;
+  /**
+   * Set to "true" (deployed var/secret) to allow automatic re-registration
+   * writes in apply mode. When unset or any other value, reconciliation runs
+   * strictly as a dry-run and apply-mode API requests are rejected with 403.
+   */
+  AUTO_REGISTRATION_ENABLED?: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
 }
