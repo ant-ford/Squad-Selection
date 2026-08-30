@@ -3,6 +3,7 @@ import { getReferenceData } from "./reference";
 import { getSeasonContext } from "./squad";
 import { getRankingEvents } from "./rankingEvents";
 import { isQualifyingPlayUpCard } from "./playUp";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
 /** HKHA season boundary: starts 1 July. */
 export function currentSeason(d = new Date()): string {
@@ -32,7 +33,8 @@ export async function getPlayUpWatch(env: Env) {
       watch.push({
         id: p.id,
         name: p.preferredName || p.givenNames || "Player",
-        registeredTeam: p.registeredTeam || "",
+        // Display value (optics); the count uses the true Registered Team.
+        registeredTeam: selectedDisplayTeam(p),
         playUpCount: count,
       });
     }

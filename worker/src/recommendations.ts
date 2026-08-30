@@ -2,6 +2,7 @@ import type { Env } from "./airtable";
 import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
 export interface RecommendationCandidate {
   id: string;
@@ -124,7 +125,8 @@ export function buildRecommendations(
       playingPosition: p.playingPosition,
       playingAbility: p.playingAbility,
       playUpCount: playUpCount,
-      registeredTeam: p.registeredTeam,
+      // Display value (optics); scoring used the true Registered Team.
+      registeredTeam: selectedDisplayTeam(p),
       eligibilityStatus: p.eligibilityStatus as 'eligible' | 'warning' | 'blocked',
       score: totalScore,
       reasons: reasons.slice(0, 3),

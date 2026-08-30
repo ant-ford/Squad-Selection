@@ -2,7 +2,7 @@
 
 **Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
 
-[![Tests](https://img.shields.io/badge/tests-371%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-390%20passed-brightgreen)](tests/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
 
 ---
@@ -24,7 +24,7 @@ Then get running:
 git clone https://github.com/ant-ford/Squad-Selection.git
 cd Squad-Selection
 npm install
-npx vitest run    # 371 tests, all should pass
+npx vitest run    # 390 tests, all should pass
 npx vite dev      # opens at http://localhost:5173
 ```
 
@@ -83,7 +83,7 @@ This application intentionally optimises for **coach workflow** over technical p
 **Production-ready (CURRENT IMPLEMENTATION):**
 
 - âœ” Production architecture (React + Worker + Airtable)
-- âœ” Regression-tested eligibility (371 tests, 23 golden)
+- âœ” Regression-tested eligibility (390 tests, 23 golden)
 - âœ” Generated Airtable types (never out of sync)
 - âœ” Mobile-first responsive layout
 - âœ” Cached Worker with targeted invalidation
@@ -215,11 +215,12 @@ Squad-Selection/
 â”‚       â”œâ”€â”€ abilityGroup.ts            # Ability group/sub-group math
 â”‚       â”œâ”€â”€ abilityRank.ts             # A+ = 24 â†’ H- = 1 mapping
 â”‚       â”œâ”€â”€ reference.ts               # Cached club reference data
-â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
+â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
+
 â”‚       â”œâ”€â”€ registration.ts              # Automatic re-registration service
 â”‚       â”œâ”€â”€ playUp.ts              # Shared qualifying play-up definition
 â”‚       â””â”€â”€ http.ts                    # HTTP utilities
-â”œâ”€â”€ tests/                         # Vitest unit tests (371 tests)
+â”œâ”€â”€ tests/                         # Vitest unit tests (390 tests)
 â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (56 tests)
 â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (23 tests)
 â”‚   â”œâ”€â”€ playerFilters.test.ts          # Filter serialization
@@ -235,7 +236,8 @@ Squad-Selection/
 â”‚   â”œâ”€â”€ rankingEvents.test.ts          # Ranking event persistence
 â”‚   â”œâ”€â”€ rankingHistory.test.ts         # Advisory + age/date helpers
 â”‚   â”œâ”€â”€ perf.test.ts                   # Telemetry JSON structure
-â”‚   â””â”€â”€ dateUtils.test.ts              # Date formatting
+â”‚   â””â”€â”€ dateUtils.test.ts              # Date formatting
+
 â”‚   â””â”€â”€ registration.test.ts            # Automatic re-registration suite
 â”‚   â””â”€â”€ registrationRoutes.test.ts            # Reconcile endpoint auth + gating
 â””â”€â”€ public/                        # Static assets (favicon, logo)
@@ -341,6 +343,7 @@ These MUST NOT be broken. For the complete list of 60+ invariants with stable ID
 
 10. **Team hierarchy MUST come from `Teams.Team Rank`.** Do not infer rank from team name.
 11. **Automatic re-registration is an event, not a formula.** The 4th qualifying play-up is processed exactly once per player per season via Registration Events; administrator overrides of `People.Registered Team` are never overwritten. Goalkeeper status is per Match Card, and the service never demotes (the destination must be an upward move).
+12. **Displayed team is optics.** Team payloads show `Selected Team EOS` (then SOS, then Registered Team); all business rules keep using the true `People.Registered Team`.
 
 ---
 
@@ -404,7 +407,7 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 ```bash
 npx vite build      # Output: dist/
 npx vitest          # Watch mode
-npx vitest run      # Single pass (CI) - 371 tests across 20 files
+npx vitest run      # Single pass (CI) - 390 tests across 21 files
 npx tsc --noEmit                             # Typecheck frontend
 npx tsc --noEmit -p worker/tsconfig.json     # Typecheck worker
 ```
@@ -474,7 +477,7 @@ When the Airtable schema changes:
 
 ### Suite Overview
 
-- **371 tests** across **20 files** â€” all unit tests, no browser required
+- **390 tests** across **21 files** â€” all unit tests, no browser required
 - Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) â€” no dependency on real Airtable data
 - Run: `npx vitest run`
 
@@ -496,8 +499,9 @@ When the Airtable schema changes:
 | `toggleSelection.test.ts` | 6 | Binary toggle logic |
 | `readiness.test.ts` | 9 | Team readiness scoring |
 | `abilityRank.test.ts` | 7 | Rank constant ordering |
-| `registration.test.ts` | 38 | Destination algorithm, qualification, triggering, Airtable mutation, idempotency, cache invalidation, eligibility integration |
-| `registrationRoutes.test.ts` | 9 | Reconcile endpoint authorization, apply-mode gating, scheduled dry-run/apply |
+| `registration.test.ts` | 39 | Destination algorithm, qualification, triggering, Airtable mutation, idempotency, cache invalidation, eligibility integration |
+| `registrationRoutes.test.ts` | 9 |
+| `displayTeam.test.ts` | 6 | Selected Team display substitution (fallbacks, ranking payload, player portal) | Reconcile endpoint authorization, apply-mode gating, scheduled dry-run/apply |
 
 ---
 
@@ -543,6 +547,16 @@ Create one table (Section Captain / admin, same convention as Ranking Events). T
 3. Run `POST /api/registration/reconcile` (dry-run) and review the report with the Section Captain.
 4. Set `AUTO_REGISTRATION_ENABLED="true"` on the deployed Worker to enable apply mode.
 5. Monitor Workers Logs (`[Registration]`) for the daily scans.
+## Selected Team Display (optics)
+
+The app **displays** a player''s team as `People."Selected Team EOS"`, falling back to `People."Selected Team SOS"`, then the true `People.Registered Team`. The Section Captain manages both fields directly in Airtable: SOS stays static for the season; EOS may be adjusted to change the optics mid-season.
+
+- **Display only.** Every business rule - eligibility (play-up limits, higher-to-lower blocks, Premier restrictions), suspensions, recommendation scoring, play-up counting and automatic re-registration - keeps using the true `People.Registered Team`.
+- The substitution happens server-side at the API response boundary (squad selection rows, ranking lists, play-up watch, player portal, recommendations, active players/reference data), so the true registration never reaches the browser.
+- `T#` / team blocks in the ranking view are grouped by the displayed team so ordering stays consistent with the optics.
+- Fixtures and selection legality are always computed against the true registration - a player displayed in a higher team still needs legitimate play-up eligibility to be selected there.
+- Automatic re-registration never writes the Selected Team fields; the captain controls them.
+
 ## AI Contributor Guide
 
 **âš ï¸ Read this section before making any changes.**

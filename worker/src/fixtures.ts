@@ -7,6 +7,7 @@ import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import type { Match, Player, Team } from "../../src/generated/domainTypes";
 import type { ReferenceData } from "./reference";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -132,7 +133,9 @@ export async function getMyFixtures(env: Env, email: string) {
   const isCoach = coachTeams.length > 0;
   const base = {
     playerName: user.preferredName || user.givenNames || "Player",
-    registeredTeam: teamName, playingPosition: user.playingPosition || "",
+    // Display value (optics). Fixture categorisation below keeps using the
+    // true Registered Team so legality and conflicts stay accurate.
+    registeredTeam: selectedDisplayTeam(user) || teamName, playingPosition: user.playingPosition || "",
     shirtNoValue: user.shirtNoValue || "", isCoach, coachTeams, captainTeams, isSectionCaptain,
   };
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
@@ -258,7 +261,8 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
       return { id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away, hkfcTeam: sideTeam, opponent: sideTeam === home ? away : home, isHome, venue: m.venue || "", division: m.division || "", availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "", selectionStatus: isSelected ? "Selected" : "" };
     });
   });
-  return { playerName: player.preferredName || player.givenNames || "Player", registeredTeam: teamName, fixtures };
+  // Display value (optics); the fixture list itself stays on the true team.
+  return { playerName: player.preferredName || player.givenNames || "Player", registeredTeam: selectedDisplayTeam(player) || teamName, fixtures };
 }
 
 export async function getUpcomingFixtures(env: Env, opts: { email?: string; team?: string }) {

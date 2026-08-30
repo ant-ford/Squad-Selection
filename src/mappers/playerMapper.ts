@@ -26,6 +26,8 @@ export function mapPlayer(record: any): Player {
     email: f[PEOPLE_FIELDS.email],
     active: f[PEOPLE_FIELDS.active],
     registeredTeam: f[PEOPLE_FIELDS.registeredTeam],
+    selectedTeamSos: f[PEOPLE_FIELDS.selectedTeamSos],
+    selectedTeamEos: f[PEOPLE_FIELDS.selectedTeamEos],
     playingPosition: f[PEOPLE_FIELDS.playingPosition],
     playingAbility: f[PEOPLE_FIELDS.playingAbility] || undefined,
     isVisitingPlayer: f[PEOPLE_FIELDS.isVisitingPlayer],

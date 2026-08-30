@@ -6,6 +6,8 @@ export const PEOPLE_FIELDS = {
   email: "Email",
   active: "Active",
   registeredTeam: "Registered Team",
+  selectedTeamSos: "Selected Team SOS",
+  selectedTeamEos: "Selected Team EOS",
   playingPosition: "Playing Position",
   playingAbility: "Playing Ability",
   isVisitingPlayer: "Is Visiting Player",

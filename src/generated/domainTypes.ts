@@ -7,6 +7,10 @@ export interface Player {
   email?: string;
   active?: boolean;
   registeredTeam?: string;
+  /** People."Selected Team SOS" - season-start selected team (static for the season). */
+  selectedTeamSos?: string;
+  /** People."Selected Team EOS" - the team the app displays (captain may adjust mid-season). */
+  selectedTeamEos?: string;
   playingPosition?: string;
   playingAbility?: string;
   isVisitingPlayer?: boolean;

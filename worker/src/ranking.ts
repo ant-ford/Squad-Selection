@@ -19,6 +19,7 @@ import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./reference";
 import {
   validateJustification,
@@ -43,7 +44,10 @@ function annotateWithDerivedRanks(players: Player[]): Player[] {
   const teamCounters = new Map<string, number>();
   const posCounters = new Map<string, number>();
   return players.map((p) => {
-    const tk = p.registeredTeam ?? "";
+    // Team blocks are grouped by the DISPLAYED team (Selected Team EOS ->
+    // SOS -> Registered) so T# stays consistent with the optics. The cached
+    // player object keeps the true Registered Team for business rules.
+    const tk = selectedDisplayTeam(p);
     const pk = p.playingPosition ?? "";
     const tr = (teamCounters.get(tk) ?? 0) + 1;
     teamCounters.set(tk, tr);
@@ -88,7 +92,8 @@ async function fetchInactiveRankingFromAirtable(
       preferredName: p.preferredName,
       surname: p.surname,
       givenNames: p.givenNames,
-      registeredTeam: p.registeredTeam,
+      // Display-only list: show the Selected Team (optics).
+      registeredTeam: selectedDisplayTeam(p),
       playingPosition: p.playingPosition,
       lastSectionRank: p.sectionRank,
       status: p.status,
@@ -209,7 +214,9 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
     },
     RANKING_CACHE_TTL_MS,
   );
-  return data;
+  // Display substitution at the response boundary: the cache keeps the true
+  // Registered Team for business rules; clients see the Selected Team.
+  return { ...data, players: data.players.map((p) => ({ ...p, registeredTeam: selectedDisplayTeam(p) })) };
 }
 
 export async function getInactiveRanking(env: Env): Promise<InactiveRankingEntry[]> {
@@ -468,7 +475,8 @@ async function recomputeDerivedFieldsFromList(
       continue;
     }
     
-    const teamKey = p.registeredTeam ?? "";
+    // Same display-team grouping as annotateWithDerivedRanks (optics).
+    const teamKey = selectedDisplayTeam(p);
     const positionKey = p.playingPosition ?? "";
     const teamRank = (teamCounters.get(teamKey) ?? 0) + 1;
     teamCounters.set(teamKey, teamRank);

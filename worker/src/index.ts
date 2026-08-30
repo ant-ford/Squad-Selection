@@ -41,6 +41,8 @@ import { getEligibilityMetrics, resetEligibilityMetrics } from "./metrics";
 import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
 import { getPlayUpWatch, getRecentAvailability, getRecentChanges } from "./dashboard";
 import { reconcileRegistrations } from "./registration";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import type { Player } from "../../src/generated/domainTypes";
 
 export type { Env };
 
@@ -213,14 +215,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
       }
 
+      // Display substitution at the response boundary: clients see the
+      // Selected Team (EOS -> SOS -> Registered); the true Registered Team
+      // stays server-side for all business rules (optics requirement).
+      const displayPlayers = (players: Player[]) =>
+        players.map((p) => ({ ...p, registeredTeam: selectedDisplayTeam(p) }));
+
       if (method === "GET" && pathname === "/api/players/active") {
         await requireAuthorizedUser(request, env);
-        return json(await getActivePlayers(env), 200, origin);
+        return json(displayPlayers(await getActivePlayers(env)), 200, origin);
       }
 
       if (method === "GET" && pathname === "/api/reference-data") {
         await requireAuthorizedUser(request, env);
-        return json(await getReferenceData(env), 200, origin);
+        const ref = await getReferenceData(env);
+        return json({ ...ref, players: displayPlayers(ref.players) }, 200, origin);
       }
 
       if (method === "GET" && pathname === "/api/player-by-email") {
@@ -228,7 +237,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const email = requireParam(url.searchParams.get("email"), "email");
         const player = await getPlayerByEmail(env, email);
         if (!player) throw new HttpError("Player record not found for this email", 404);
-        return json(player, 200, origin);
+        return json({ ...player, registeredTeam: selectedDisplayTeam(player) }, 200, origin);
       }
 
       // Player-facing routes: identity always comes from the verified Supabase

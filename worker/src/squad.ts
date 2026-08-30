@@ -11,6 +11,7 @@ import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
 import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
 type MatchSide = "home" | "away";
 
@@ -317,7 +318,9 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     return {
       id: p.id,
       preferredName: name,
-      registeredTeam: p.registeredTeam || "",
+      // Display value: Selected Team EOS -> SOS -> Registered Team (optics).
+      // Eligibility above was computed from the true Registered Team.
+      registeredTeam: selectedDisplayTeam(p),
       playingPosition: p.playingPosition || "",
       playingAbility: p.playingAbility || "",
       availabilityStatus,
@@ -498,7 +501,7 @@ export async function getTeamAutoSelectPlayers(env: Env, teamName: string) {
     .map(p => ({
       id: p.id,
       preferredName: [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player",
-      registeredTeam: p.registeredTeam || "",
+      registeredTeam: selectedDisplayTeam(p),
       playingPosition: p.playingPosition || "",
       playingAbility: p.playingAbility || "",
       active: p.active ?? true,
