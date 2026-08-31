@@ -188,6 +188,7 @@ describe("getMyFixtures - special goalkeeper view", () => {
   it("returns every upcoming HKFC fixture (one card per match, derbies single)", async () => {
     const out = await getMyFixtures(ENV, "bob@hkfc.com");
     expect(out.specialGoalkeeperView).toBe(true);
+    expect(out.displayTeam).toBe("H"); // banner copy uses the team name, never "lowest ranked"
     expect(out.fixtures.map((f: any) => f.id)).toEqual(["recM1", "recM4"]);
     // Derby A vs B is a single card, not two.
     expect(out.fixtures.filter((f: any) => f.id === "recM4")).toHaveLength(1);

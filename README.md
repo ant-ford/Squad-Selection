@@ -2,7 +2,7 @@
 
 **Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
 
-[![Tests](https://img.shields.io/badge/tests-390%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-397%20passed-brightgreen)](tests/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
 
 ---
@@ -24,7 +24,7 @@ Then get running:
 git clone https://github.com/ant-ford/Squad-Selection.git
 cd Squad-Selection
 npm install
-npx vitest run    # 390 tests, all should pass
+npx vitest run    # 397 tests, all should pass
 npx vite dev      # opens at http://localhost:5173
 ```
 
@@ -83,7 +83,7 @@ This application intentionally optimises for **coach workflow** over technical p
 **Production-ready (CURRENT IMPLEMENTATION):**
 
 - âœ” Production architecture (React + Worker + Airtable)
-- âœ” Regression-tested eligibility (390 tests, 23 golden)
+- âœ” Regression-tested eligibility (397 tests, 23 golden)
 - âœ” Generated Airtable types (never out of sync)
 - âœ” Mobile-first responsive layout
 - âœ” Cached Worker with targeted invalidation
@@ -220,7 +220,7 @@ Squad-Selection/
 â”‚       â”œâ”€â”€ registration.ts              # Automatic re-registration service
 â”‚       â”œâ”€â”€ playUp.ts              # Shared qualifying play-up definition
 â”‚       â””â”€â”€ http.ts                    # HTTP utilities
-â”œâ”€â”€ tests/                         # Vitest unit tests (390 tests)
+â”œâ”€â”€ tests/                         # Vitest unit tests (397 tests)
 â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (56 tests)
 â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (23 tests)
 â”‚   â”œâ”€â”€ playerFilters.test.ts          # Filter serialization
@@ -407,7 +407,7 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 ```bash
 npx vite build      # Output: dist/
 npx vitest          # Watch mode
-npx vitest run      # Single pass (CI) - 390 tests across 21 files
+npx vitest run      # Single pass (CI) - 397 tests across 22 files
 npx tsc --noEmit                             # Typecheck frontend
 npx tsc --noEmit -p worker/tsconfig.json     # Typecheck worker
 ```
@@ -477,7 +477,7 @@ When the Airtable schema changes:
 
 ### Suite Overview
 
-- **390 tests** across **21 files** â€” all unit tests, no browser required
+- **397 tests** across **22 files** â€” all unit tests, no browser required
 - Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) â€” no dependency on real Airtable data
 - Run: `npx vitest run`
 
@@ -501,7 +501,8 @@ When the Airtable schema changes:
 | `abilityRank.test.ts` | 7 | Rank constant ordering |
 | `registration.test.ts` | 39 | Destination algorithm, qualification, triggering, Airtable mutation, idempotency, cache invalidation, eligibility integration |
 | `registrationRoutes.test.ts` | 9 |
-| `displayTeam.test.ts` | 6 | Selected Team display substitution (fallbacks, ranking payload, player portal) | Reconcile endpoint authorization, apply-mode gating, scheduled dry-run/apply |
+| `displayTeam.test.ts` | 6 | Selected Team display substitution (fallbacks, ranking payload, player portal) |
+| `bulkAvailability.test.ts` | 7 | Goalkeeper date-level bulk availability (exception model preserved, no Available records) | Reconcile endpoint authorization, apply-mode gating, scheduled dry-run/apply |
 
 ---
 
@@ -556,6 +557,8 @@ The app **displays** a player''s team as `People."Selected Team EOS"`, falling b
 - `T#` / team blocks in the ranking view are grouped by the displayed team so ordering stays consistent with the optics.
 - Fixtures and selection legality are always computed against the true registration - a player displayed in a higher team still needs legitimate play-up eligibility to be selected there.
 - Automatic re-registration never writes the Selected Team fields; the captain controls them.
+- The player dashboard presents fixtures against the display team via `fixtureCategory` (Team Rank): **My Team** (display team, never labelled a play-up), **Play-Up Opportunities** (only the team immediately above the display team - actual selections for any higher team still appear) and **Support Fixtures** (lower-ranked, collapsed for availability planning). Selection legality is always computed from the true Registered Team - coaches can still pick players from teams further below, those selections are just not advertised to everyone.
+- The special goalkeeper view keeps its bulk-fetched exception model; the new date-level bulk control is a UX shortcut that performs the existing match-level updates ("Available" deletes exceptions - no Available records are created).
 
 ## AI Contributor Guide
 

@@ -19,6 +19,8 @@ type Player = {
   selectionId: string;
   isU21?: boolean;
   isVisitingPlayer?: boolean;
+  /** Soft signal: available for this fixture but Unavailable for same-day lower-team fixtures. */
+  supportUnavailable?: string[];
 };
 
 const POS_SHORT: Record<string, string> = {
@@ -64,6 +66,12 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
         <p className="text-[11px] text-muted-foreground">
           {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
         </p>
+        {player.supportUnavailable && player.supportUnavailable.length > 0 && (
+          <p className='text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
+            <AlertCircle className='h-3 w-3 shrink-0' />
+            Available here - unavailable for {player.supportUnavailable.join(', ')}
+          </p>
+        )}
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
 
         {player.conflicts?.length > 0 && (

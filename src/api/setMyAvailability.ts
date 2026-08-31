@@ -15,3 +15,21 @@ export async function setMyAvailability(
     existingExceptionId,
   });
 }
+
+/**
+ * Date-level bulk availability for the special goalkeeper view. A UX
+ * shortcut: the Worker performs the existing match-level updates for every
+ * HKFC fixture on that date ("Available" deletes exceptions - no Available
+ * records are created). Individual fixtures remain overridable afterwards.
+ */
+export async function setMyAvailabilityForDate(
+  date: string,
+  status: 'Available' | 'Maybe' | 'Unavailable',
+  notes?: string
+) {
+  return apiPost<{
+    success: boolean;
+    updated: number;
+    results: { matchId: string; exceptionId: string | null }[];
+  }>('/api/set-my-availability-for-date', { date, status, notes });
+}

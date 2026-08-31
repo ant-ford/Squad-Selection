@@ -1,12 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Selected Team display (optics)
-//
-// The app displays People."Selected Team EOS" (fallback "Selected Team SOS",
-// then the true Registered Team). All business rules keep using the true
-// People.Registered Team. These tests pin the substitution at the payload
-// boundaries and the fallback chain.
+// Selected Team display (optics) + player dashboard fixture categories
 // ---------------------------------------------------------------------------
 
 import { selectedDisplayTeam } from "../src/lib/displayTeam";
@@ -128,28 +123,53 @@ describe("ranking payload displays the Selected Team", () => {
   });
 });
 
-describe("player portal displays the Selected Team", () => {
-  it("shows the Selected Team while fixtures stay categorised by the true team", async () => {
-    const future = new Date(Date.now() + 7 * 86_400_000).toISOString();
+describe("player portal fixture categories (display team = D, true team = F)", () => {
+  async function portal() {
+    const day1 = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    const day2 = new Date(Date.now() + 8 * 86_400_000).toISOString();
     installFakeAirtable({
       People: [
-        fakeRecord("player", { id: "recP1", preferredName: "Alpha", email: "p1@hkfc.com", registeredTeam: "D", selectedTeamEos: "B" }),
+        fakeRecord("player", { id: "recP1", preferredName: "Alpha", email: "p1@hkfc.com", registeredTeam: "F", selectedTeamEos: "D" }),
       ],
       Teams: [
-        fakeRecord("team", { id: "recT_D", teamName: "D", teamRank: 4 }),
+        fakeRecord("team", { id: "recT_A", teamName: "A", teamRank: 1 }),
         fakeRecord("team", { id: "recT_B", teamName: "B", teamRank: 2 }),
+        fakeRecord("team", { id: "recT_C", teamName: "C", teamRank: 3 }),
+        fakeRecord("team", { id: "recT_D", teamName: "D", teamRank: 4 }),
+        fakeRecord("team", { id: "recT_F", teamName: "F", teamRank: 6 }),
       ],
-      Matches: [fakeRecord("match", { id: "recM1", matchDate: future, homeTeam: "D" })],
+      Matches: [
+        fakeRecord("match", { id: "recM_D", matchDate: day1, homeTeam: "D" }), // My Team
+        fakeRecord("match", { id: "recM_B", matchDate: day1, homeTeam: "B" }), // 2 above -> NOT advertised
+        fakeRecord("match", { id: "recM_C", matchDate: day2, homeTeam: "C" }), // next team up -> play-up (no date requirement)
+        fakeRecord("match", { id: "recM_A", matchDate: day2, homeTeam: "A" }), // 3 above -> NOT advertised
+        fakeRecord("match", { id: "recM_F", matchDate: day2, homeTeam: "F" }), // true team, lower -> support
+      ],
       "Availability Exceptions": [],
     });
+    return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
+  }
 
-    const out = await getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
-
-    // Header shows the optics team...
-    expect(out.registeredTeam).toBe("B");
-    // ...while the fixture list is still the TRUE team's fixtures (own, not a play-up).
-    expect(out.fixtures).toHaveLength(1);
-    expect(out.fixtures[0].hkfcTeam).toBe("D");
-    expect(out.fixtures[0].isPlayUp).toBeFalsy();
+  it("shows the Selected Team as My Team and classifies by Team Rank", async () => {
+    const out = await portal();
+    expect(out.displayTeam).toBe("D");
+    expect(out.registeredTeam).toBe("D");
+    // My Team: fixtures for the displayed team only.
+    expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["D"]);
+    expect(out.fixtures[0].fixtureCategory).toBe("own");
+    expect(out.fixtures[0].isPlayUp).toBeFalsy(); // own fixture is NEVER a play-up
+    // Play-Up Opportunities: ONLY the team immediately above the display team.
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["C"]);
+    expect(out.playUpOpportunities![0].isPlayUp).toBe(true);
+    // Distant higher teams (B, A) are not advertised.
+    expect(out.playUpOpportunities?.some((f) => f.hkfcTeam === "B")).toBe(false);
+    expect(out.playUpOpportunities?.some((f) => f.hkfcTeam === "A")).toBe(false);
+    // Support Fixtures: lower-ranked teams (includes the true Registered Team).
+    expect(out.supportFixtures?.map((f) => f.hkfcTeam)).toEqual(["F"]);
+    expect(out.supportFixtures![0].isPlayUp).toBeFalsy();
+    // Regression: C is advertised even though D has NO fixture on that date.
+    const cFixture = out.playUpOpportunities![0];
+    const dDates = out.fixtures.map((f) => f.date.split("T")[0]);
+    expect(dDates.includes(cFixture.date.split("T")[0])).toBe(false);
   });
 });

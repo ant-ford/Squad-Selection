@@ -17,7 +17,13 @@ export interface MyFixture {
   selectionNotes: string;
   selectedCount: number;
   targetSquadSize: number;
-  /** True when this fixture is for a team other than the player's registered team. */
+  /**
+   * Presentation category vs the player's displayed team (Team Rank):
+   * "own" = My Team, "play-up" = higher-ranked team, "support" = lower team.
+   * Presentation only - eligibility is unchanged.
+   */
+  fixtureCategory?: "own" | "play-up" | "support";
+  /** True only for fixtures of teams ranked ABOVE the displayed team. */
   isPlayUp?: boolean;
   /** The HKFC team this fixture/selection belongs to (set when isPlayUp). */
   selectionTeam?: string;
@@ -25,6 +31,8 @@ export interface MyFixture {
 
 export interface GetMyFixturesOutput {
   playerName: string;
+  /** The team the app displays for this player (Selected Team EOS -> SOS -> Registered). */
+  displayTeam?: string;
   registeredTeam: string;
   playingPosition: string;
   shirtNoValue: string;
@@ -41,11 +49,15 @@ export interface GetMyFixturesOutput {
   /** Registered-team matches plus any match the player is selected for (play-ups). */
   fixtures: MyFixture[];
   /**
-   * Same-day higher-ranked team matches the player is eligible for but not
-   * selected in — surfaced so the player can mark themselves unavailable and
-   * release the same-day conflict for their registered team.
+   * Higher-ranked team fixtures the player could help with (selected or
+   * eligible same-day) - presented as Play-Up Opportunities.
    */
-  eligibleOtherFixtures?: MyFixture[];
+  playUpOpportunities?: MyFixture[];
+  /**
+   * Lower-ranked team fixtures - presented as Support Fixtures for
+   * availability planning.
+   */
+  supportFixtures?: MyFixture[];
 }
 
 /**

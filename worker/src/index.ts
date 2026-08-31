@@ -16,7 +16,7 @@ import {
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
-import { setAvailability, setMyAvailability } from "./availability";
+import { setAvailability, setMyAvailability, setMyAvailabilityForDate } from "./availability";
 import { getRecommendationsForMatch } from "./recommendations";
 import {
   handleGetCalendarLink,
@@ -303,10 +303,49 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
       // Player self-service availability: identity comes from the session, so a
       // caller cannot update another person's availability via body.email.
+      // Date-level bulk availability (special goalkeeper view UX shortcut):
+      // performs the existing match-level updates for every HKFC fixture on
+      // the date. Identity comes from the verified Supabase session.
+      if (method === "POST" && pathname === "/api/set-my-availability-for-date") {
+        const user = await requireAuthorizedUser(request, env);
+        const body = (await readJsonBody(request)) as { date?: string; status?: string; notes?: string };
+        return json(
+          await setMyAvailabilityForDate(env, {
+            email: user.email,
+            date: body.date || "",
+            status: (body.status || "") as "Available" | "Maybe" | "Unavailable",
+            notes: body.notes,
+          }),
+          200,
+          origin,
+        );
+      }
+
       if (method === "POST" && pathname === "/api/set-my-availability") {
         const user = await requireAuthorizedUser(request, env);
-        const body = await readJsonBody(request);
-        return json(await setMyAvailability(env, { ...body, email: user.email }), 200, origin);
+        const body = (await readJsonBody(request)) as {
+          matchId?: string;
+          status?: string;
+          notes?: string;
+          existingExceptionId?: string;
+          email?: string;
+          playerId?: string;
+        };
+        // SECURITY: the player identity comes ONLY from the verified Supabase
+        // session. Client-supplied email/playerId fields are deliberately
+        // dropped - the browser never tells the Worker who is making a
+        // "my availability" request.
+        return json(
+          await setMyAvailability(env, {
+            email: user.email,
+            matchId: body.matchId || "",
+            status: (body.status || "") as "Available" | "Maybe" | "Unavailable",
+            notes: body.notes,
+            existingExceptionId: body.existingExceptionId,
+          }),
+          200,
+          origin,
+        );
       }
 
       if (method === "POST" && pathname === "/squad/sync") {

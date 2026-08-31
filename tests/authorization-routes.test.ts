@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
     setTeamAutoSelectPlayers: vi.fn(),
     setAvailability: vi.fn(),
     setMyAvailability: vi.fn(),
+    setMyAvailabilityForDate: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     handleGetCalendarLink: vi.fn(),
     handlePlayerCalendarFeed: vi.fn(),
@@ -89,6 +90,7 @@ vi.mock("../worker/src/squad", () => ({
 vi.mock("../worker/src/availability", () => ({
   setAvailability: mocks.setAvailability,
   setMyAvailability: mocks.setMyAvailability,
+  setMyAvailabilityForDate: mocks.setMyAvailabilityForDate,
 }));
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
@@ -149,6 +151,54 @@ function jsonInit(body: unknown, token = "valid.jwt.token"): RequestInit {
 
 const coachDenied = () =>
   new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+
+// ---------------------------------------------------------------------------
+// Availability identity boundary - the browser never controls the identity of
+// a "my availability" write. The Worker derives it from the verified session.
+// ---------------------------------------------------------------------------
+
+describe("availability identity boundary", () => {
+  it("ignores client-supplied email/playerId - identity comes from the session", async () => {
+    mocks.requireAuthorizedUser.mockResolvedValue({ email: "player@hkfc.com", personId: "recP1", role: "player" });
+    mocks.setMyAvailability.mockResolvedValue({ success: true, exceptionId: null });
+
+    const response = await call("/api/set-my-availability", jsonInit({
+      matchId: "recM1",
+      status: "Unavailable",
+      email: "attacker@example.com",
+      playerId: "recAttacker",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.setMyAvailability).toHaveBeenCalledTimes(1);
+    const input = mocks.setMyAvailability.mock.calls[0][1];
+    expect(input.email).toBe("player@hkfc.com"); // session email, never the attacker's
+    expect(input.playerId).toBeUndefined(); // client identity fields are dropped
+  });
+
+  it("rejects unauthenticated availability writes with 401", async () => {
+    mocks.requireAuthorizedUser.mockRejectedValue(new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"));
+    const response = await call("/api/set-my-availability", jsonInit({ matchId: "recM1", status: "Unavailable" }));
+    expect(response.status).toBe(401);
+    expect(mocks.setMyAvailability).not.toHaveBeenCalled();
+  });
+
+  it("bulk date-level endpoint also ignores client-supplied identity", async () => {
+    mocks.requireAuthorizedUser.mockResolvedValue({ email: "gk-a@example.com", personId: "recGKA", role: "player" });
+    mocks.setMyAvailabilityForDate.mockResolvedValue({ success: true, updated: 0, results: [] });
+
+    const response = await call("/api/set-my-availability-for-date", jsonInit({
+      date: "2026-09-05",
+      status: "Available",
+      email: "someone-else@example.com",
+    }));
+
+    expect(response.status).toBe(200);
+    const input = mocks.setMyAvailabilityForDate.mock.calls[0][1];
+    expect(input.email).toBe("gk-a@example.com"); // session identity only
+    expect(input.date).toBe("2026-09-05");
+  });
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

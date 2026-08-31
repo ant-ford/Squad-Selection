@@ -2,10 +2,10 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
 import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
-import { setMyAvailability } from '@/api/setMyAvailability';
+import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -13,13 +13,21 @@ import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
 
+type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
+
+const dateKey = (d: string) => (d || '').split('T')[0];
+
 export default function PlayerDashboard() {
   const { user, isLoading, logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<GetMyFixturesOutput | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
+  const [conflictHint, setConflictHint] = useState<string | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
+  const [showPlayUps, setShowPlayUps] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     if (!user) return;
@@ -34,39 +42,79 @@ export default function PlayerDashboard() {
     loadData();
   }, [loadData]);
 
+  const applyPatch = (fixtureId: string, patch: Partial<MyFixture>) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const upd = (f: MyFixture) => (f.id === fixtureId ? { ...f, ...patch } : f);
+      return {
+        ...prev,
+        fixtures: prev.fixtures.map(upd),
+        playUpOpportunities: prev.playUpOpportunities?.map(upd),
+        supportFixtures: prev.supportFixtures?.map(upd),
+      };
+    });
+  };
+
   const handleQuickAvailability = async (
     fixtureId: string,
-    status: 'Available' | 'Maybe' | 'Unavailable',
+    status: AvailabilityStatus,
     exceptionId?: string
   ) => {
     const previousData = data;
-    setData((prev) => {
-      if (!prev) return prev;
-      const update = (f: MyFixture) =>
-        f.id === fixtureId ? { ...f, availabilityStatus: status, playerNotes: f.playerNotes || '' } : f;
-      return {
-        ...prev,
-        fixtures: prev.fixtures.map(update),
-        eligibleOtherFixtures: prev.eligibleOtherFixtures?.map(update),
-      };
-    });
+    applyPatch(fixtureId, { availabilityStatus: status });
     try {
       const result = await setMyAvailability(fixtureId, status, undefined, exceptionId);
-      setData((prev) => {
-        if (!prev) return prev;
-        const setExcId = (f: MyFixture) =>
-          f.id === fixtureId ? { ...f, availabilityExceptionId: result.exceptionId || '' } : f;
-        return {
-          ...prev,
-          fixtures: prev.fixtures.map(setExcId),
-          eligibleOtherFixtures: prev.eligibleOtherFixtures?.map(setExcId),
-        };
-      });
+      applyPatch(fixtureId, { availabilityExceptionId: result.exceptionId || '' });
       toast.success('Availability updated');
     } catch (err) {
       if (previousData) setData(previousData);
       toast.error('Failed to update availability');
     }
+  };
+
+  // Date-level bulk availability (special goalkeeper view): a UX shortcut
+  // that performs the existing match-level updates for every fixture on the
+  // date. "Available" removes exceptions; individual cards stay overridable.
+  const handleBulkAvailability = async (date: string, status: AvailabilityStatus) => {
+    const previousData = data;
+    setBulkBusy(date + status);
+    setData((prev) => {
+      if (!prev) return prev;
+      const upd = (f: MyFixture) => (dateKey(f.date) === date ? { ...f, availabilityStatus: status } : f);
+      return { ...prev, fixtures: prev.fixtures.map(upd) };
+    });
+    try {
+      const result = await setMyAvailabilityForDate(date, status);
+      setData((prev) => {
+        if (!prev) return prev;
+        const upd = (f: MyFixture) => {
+          if (dateKey(f.date) !== date) return f;
+          const r = result.results.find((x) => x.matchId === f.id);
+          return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || '' };
+        };
+        return { ...prev, fixtures: prev.fixtures.map(upd) };
+      });
+      toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`);
+    } catch (err) {
+      if (previousData) setData(previousData);
+      toast.error('Failed to update availability');
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  // Opening a Support Fixture: if the player is Available for their My Team
+  // fixture on the same date, pass a soft hint to the availability sheet.
+  const openFixture = (f: MyFixture) => {
+    let hint: string | null = null;
+    if (f.fixtureCategory === 'support') {
+      const ownAvailable = (data?.fixtures ?? []).some(
+        (x) => dateKey(x.date) === dateKey(f.date) && x.availabilityStatus === 'Available'
+      );
+      if (ownAvailable) hint = data?.displayTeam || data?.registeredTeam || '';
+    }
+    setConflictHint(hint);
+    setSelectedFixture(f);
   };
 
   // Lowest-ranked-team goalkeepers see every upcoming HKFC fixture,
@@ -76,7 +124,7 @@ export default function PlayerDashboard() {
     if (!data?.specialGoalkeeperView) return null;
     const map = new Map<string, MyFixture[]>();
     for (const f of data.fixtures) {
-      const key = (f.date || '').split('T')[0];
+      const key = dateKey(f.date);
       const list = map.get(key) || [];
       list.push(f);
       map.set(key, list);
@@ -87,7 +135,20 @@ export default function PlayerDashboard() {
   if (isLoading || !user) return <DashboardSkeleton />;
   if (loading || !data) return <DashboardSkeleton />;
 
-  const eligibleOther = data.eligibleOtherFixtures ?? [];
+  const playUps = data.playUpOpportunities ?? [];
+  const support = data.supportFixtures ?? [];
+  const displayTeam = data.displayTeam || data.registeredTeam;
+
+  const renderCard = (f: MyFixture) => (
+    <PlayerFixtureCard
+      key={`${f.id}-${f.hkfcTeam}`}
+      fixture={f}
+      onTap={() => openFixture(f)}
+      onAvailabilityChange={(status, exceptionId) =>
+        handleQuickAvailability(f.id, status, exceptionId)
+      }
+    />
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -131,7 +192,7 @@ export default function PlayerDashboard() {
         </div>
       </header>
 
-      {/* Player identity card (compact — stat boxes removed) */}
+      {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
@@ -143,9 +204,9 @@ export default function PlayerDashboard() {
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
               <p className="text-sm text-muted-foreground">
-                {data.registeredTeam || 'No team'}
-                {data.playingPosition ? ` · ${data.playingPosition}` : ''}
-                {data.shirtNoValue ? ` · #${data.shirtNoValue}` : ''}
+                {displayTeam || 'No team'}
+                {data.playingPosition ? ` - ${data.playingPosition}` : ''}
+                {data.shirtNoValue ? ` - #${data.shirtNoValue}` : ''}
               </p>
             </div>
           </div>
@@ -155,11 +216,14 @@ export default function PlayerDashboard() {
       <div className="container mx-auto px-4 pb-8">
         {isSpecialGK ? (
           <>
-            <div className="mb-3 p-3 rounded-lg bg-muted/60 border border-border flex items-start gap-2 text-xs text-muted-foreground">
-              <Info className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <p>
-                You're registered to the lowest-ranked team as a goalkeeper. All upcoming HKFC
-                fixtures are shown below - set your availability for each match you can play.
+            <div className="mb-3 p-3 rounded-lg bg-muted/60 border border-border">
+              <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Info className="h-4 w-4 text-primary shrink-0" />
+                Goalkeeper availability
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                All {displayTeam} goalkeepers can support any HKFC team. Let us know which
+                matches you can play.
               </p>
             </div>
             {data.fixtures.length === 0 ? (
@@ -171,17 +235,25 @@ export default function PlayerDashboard() {
                 {gkFixturesByDate?.map(([date, list]) => (
                   <div key={date}>
                     <SectionHeader title={safeFormat(date, 'EEEE d MMM')} count={list.length} />
-                    <div className="space-y-2">
-                      {list.map((f) => (
-                        <PlayerFixtureCard
-                          key={`${f.id}-${f.hkfcTeam}`}
-                          fixture={f}
-                          onTap={() => setSelectedFixture(f)}
-                          onAvailabilityChange={(status, exceptionId) =>
-                            handleQuickAvailability(f.id, status, exceptionId)
-                          }
-                        />
+                    <div className="flex items-center gap-1.5 py-1.5">
+                      <span className="text-[11px] text-muted-foreground">Set availability for the day:</span>
+                      {(['Available', 'Maybe', 'Unavailable'] as AvailabilityStatus[]).map((s) => (
+                        <button
+                          key={s}
+                          disabled={bulkBusy !== null}
+                          onClick={() => handleBulkAvailability(date, s)}
+                          className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors disabled:opacity-50 ${
+                            bulkBusy === date + s
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'border-border text-muted-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {s === 'Available' ? 'All going' : s === 'Maybe' ? 'All maybe' : 'All out'}
+                        </button>
                       ))}
+                    </div>
+                    <div className="space-y-2">
+                      {list.map((f) => renderCard(f))}
                     </div>
                   </div>
                 ))}
@@ -190,44 +262,47 @@ export default function PlayerDashboard() {
           </>
         ) : (
           <>
-            <SectionHeader title="Upcoming Fixtures" count={data.fixtures.length} />
+            <SectionHeader title="My Team" count={data.fixtures.length} />
             {data.fixtures.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border rounded-xl">
                 <p className="text-muted-foreground">No upcoming fixtures for your team</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {data.fixtures.map((f) => (
-                  <PlayerFixtureCard
-                    key={`${f.id}-${f.hkfcTeam}`}
-                    fixture={f}
-                    onTap={() => setSelectedFixture(f)}
-                    onAvailabilityChange={(status, exceptionId) =>
-                      handleQuickAvailability(f.id, status, exceptionId)
-                    }
-                  />
-                ))}
+                {data.fixtures.map((f) => renderCard(f))}
               </div>
             )}
 
-            {eligibleOther.length > 0 && (
-              <>
-                <div className="mt-6">
-                  <SectionHeader title="Higher Teams & Play-Ups" count={eligibleOther.length} />
-                </div>
-                <div className="space-y-2">
-                  {eligibleOther.map((f) => (
-                    <PlayerFixtureCard
-                      key={`${f.id}-${f.hkfcTeam}`}
-                      fixture={f}
-                      onTap={() => setSelectedFixture(f)}
-                      onAvailabilityChange={(status, exceptionId) =>
-                        handleQuickAvailability(f.id, status, exceptionId)
-                      }
-                    />
-                  ))}
-                </div>
-              </>
+            {playUps.length > 0 && (
+              <div className="mt-6">
+                <button
+                  className="w-full flex items-center justify-between"
+                  onClick={() => setShowPlayUps((v) => !v)}
+                  aria-expanded={showPlayUps}
+                >
+                  <SectionHeader title="Play-Up Opportunities" count={playUps.length} />
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${showPlayUps ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {showPlayUps && <div className="space-y-2 mt-2">{playUps.map((f) => renderCard(f))}</div>}
+              </div>
+            )}
+
+            {support.length > 0 && (
+              <div className="mt-6">
+                <button
+                  className="w-full flex items-center justify-between"
+                  onClick={() => setShowSupport((v) => !v)}
+                  aria-expanded={showSupport}
+                >
+                  <SectionHeader title="Support Fixtures" count={support.length} />
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${showSupport ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {showSupport && <div className="space-y-2 mt-2">{support.map((f) => renderCard(f))}</div>}
+              </div>
             )}
           </>
         )}
@@ -236,6 +311,7 @@ export default function PlayerDashboard() {
       {selectedFixture && (
         <PlayerAvailabilitySheet
           fixture={selectedFixture}
+          conflictHint={conflictHint ?? undefined}
           onClose={() => setSelectedFixture(null)}
           onSaved={() => {
             setSelectedFixture(null);

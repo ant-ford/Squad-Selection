@@ -51,7 +51,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
 
   return (
     <div
-      className={`w-full border rounded-xl p-4 text-left transition-all hover:shadow-sm cursor-pointer ${
+      className={`w-full border rounded-xl p-3 text-left transition-all hover:shadow-sm cursor-pointer ${
         isSelected
           ? 'border-primary bg-primary/5'
           : isUnavailable
@@ -65,9 +65,9 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       onClick={onTap}
       onKeyDown={handleKeyDown}
     >
-      {/* Play-up callout */}
+      {/* Play-up callout (only for fixtures ABOVE the displayed team) */}
       {fixture.isPlayUp && (
-        <div className="mb-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold">
+        <div className="mb-2 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold">
           <Zap className="h-3.5 w-3.5 text-amber-700 fill-amber-600" />
           <span>
             {isSelected
@@ -85,13 +85,12 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
             <span className="text-muted-foreground font-normal"> vs </span>
             {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
           </p>
-          <p className="text-xs text-muted-foreground mt-0.5">Division: {fixture.division}</p>
         </div>
         <StatusBadge status={fixture.selectionStatus} />
       </div>
 
       {/* Meta & squad size + availability segmented control */}
-      <div className="mt-2.5 flex justify-between items-start">
+      <div className="mt-2 flex justify-between items-start">
         <div>
           <MetaLine date={fixture.date} venue={fixture.venue} />
           <span className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
@@ -129,7 +128,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       </div>
 
       {fixture.playerNotes && (
-        <div className="mt-2.5 text-xs text-muted-foreground italic truncate">“{fixture.playerNotes}”</div>
+        <div className="mt-2 text-xs text-muted-foreground italic truncate">“{fixture.playerNotes}”</div>
       )}
       {fixture.selectionNotes && (
         <p className="text-xs text-primary mt-1.5">Coach: {fixture.selectionNotes}</p>

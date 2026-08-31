@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CheckCircle2, HelpCircle, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import { apiGet } from '@/lib/apiClient';
 
 type Fixture = {
@@ -43,9 +43,12 @@ const squadCache = new Map<string, { players: SquadMember[]; at: number }>();
 const SQUAD_CACHE_TTL_MS = 30 * 1000;
 
 export default function PlayerAvailabilitySheet({
-  fixture, onClose, onSaved,
+  fixture, conflictHint, onClose, onSaved,
 }: {
-  fixture: Fixture; onClose: () => void; onSaved: () => void;
+  fixture: Fixture;
+  /** Soft hint: the player is Available for their My Team fixture on this date. */
+  conflictHint?: string;
+  onClose: () => void; onSaved: () => void;
 }) {
   const [status, setStatus] = useState<string>(fixture.availabilityStatus);
   const [notes, setNotes] = useState(fixture.playerNotes);
@@ -116,6 +119,16 @@ export default function PlayerAvailabilitySheet({
               </p>
             )}
           </div>
+
+          {conflictHint && status === 'Unavailable' && (
+            <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                You're available for your {conflictHint} fixture but unavailable for this support
+                fixture. Adding a note helps the coaches understand (optional).
+              </span>
+            </div>
+          )}
 
           <div className="space-y-2 py-3">
             {OPTIONS.map(opt => (

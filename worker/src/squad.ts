@@ -315,6 +315,22 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     const conflicts: { type: string; team: string; matchId: string }[] = [];
     if (eligibility.selectedByTeam) conflicts.push({ type: "selected", team: eligibility.selectedByTeam, matchId: "" });
     if (eligibility.sameDayHigherTeam) conflicts.push({ type: "available", team: eligibility.sameDayHigherTeam, matchId: "" });
+    // Soft coach signal: available for THIS fixture but marked Unavailable
+    // for a same-day LOWER-ranked HKFC fixture (support duty). Presentation
+    // only - computed from existing exceptions, no extra Airtable reads.
+    const supportUnavailable: string[] = [];
+    if (availabilityStatus !== "Unavailable") {
+      const thisTeamRank = teamRankMap[hkfcTeam] ?? 99;
+      const seenTeams = new Set<string>();
+      for (const fx of ctx.sameDayFixtures) {
+        if ((teamRankMap[fx.teamName] ?? 99) <= thisTeamRank) continue;
+        if (seenTeams.has(fx.teamName)) continue;
+        if (ctx.unavailablePlayerMatchKeys.has(`${p.id}:${fx.matchId}`)) {
+          supportUnavailable.push(fx.teamName);
+          seenTeams.add(fx.teamName);
+        }
+      }
+    }
     return {
       id: p.id,
       preferredName: name,
@@ -324,6 +340,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       playingPosition: p.playingPosition || "",
       playingAbility: p.playingAbility || "",
       availabilityStatus,
+      supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,
       eligibilityStatus: eligibility.status,
