@@ -46,6 +46,7 @@ function fakeRecord(kind: "player" | "team" | "match", domain: any): any {
         "Registered Team": domain.registeredTeam,
         "Selected Team SOS": domain.selectedTeamSos,
         "Selected Team EOS": domain.selectedTeamEos,
+        "Is Suspended": domain.suspended ?? false,
         "Playing Position": domain.playingPosition ?? "Midfielder",
         "Playing Ability": domain.playingAbility ?? "B",
         "Section Rank": domain.sectionRank,
@@ -77,6 +78,7 @@ function fakeRecord(kind: "player" | "team" | "match", domain: any): any {
       "Competition Type": "League",
       "Home Team": domain.homeTeam,
       "Away Team": "Opponent",
+        "Selected Players Home": domain.selectedHome ?? [],
       "Home Score": 0,
       "Away Score": 0,
       "Match Status": "Scheduled",
@@ -123,53 +125,112 @@ describe("ranking payload displays the Selected Team", () => {
   });
 });
 
-describe("player portal fixture categories (display team = D, true team = F)", () => {
-  async function portal() {
-    const day1 = new Date(Date.now() + 7 * 86_400_000).toISOString();
-    const day2 = new Date(Date.now() + 8 * 86_400_000).toISOString();
+describe("player portal fixture categories", () => {
+  const TEAMS = [
+    fakeRecord("team", { id: "recT_A", teamName: "A", teamRank: 1 }),
+    fakeRecord("team", { id: "recT_B", teamName: "B", teamRank: 2 }),
+    fakeRecord("team", { id: "recT_C", teamName: "C", teamRank: 3 }),
+    fakeRecord("team", { id: "recT_D", teamName: "D", teamRank: 4 }),
+    fakeRecord("team", { id: "recT_E", teamName: "E", teamRank: 5 }),
+    fakeRecord("team", { id: "recT_F", teamName: "F", teamRank: 6 }),
+  ];
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+
+  async function portal(opts: {
+    registeredTeam: string;
+    selectedTeamEos?: string;
+    suspended?: boolean;
+    matches: { id: string; homeTeam: string; day: number; selectedHome?: string[] }[];
+  }) {
     installFakeAirtable({
       People: [
-        fakeRecord("player", { id: "recP1", preferredName: "Alpha", email: "p1@hkfc.com", registeredTeam: "F", selectedTeamEos: "D" }),
+        fakeRecord("player", {
+          id: "recP1",
+          preferredName: "Alpha",
+          email: "p1@hkfc.com",
+          registeredTeam: opts.registeredTeam,
+          selectedTeamEos: opts.selectedTeamEos,
+          suspended: opts.suspended,
+        }),
       ],
-      Teams: [
-        fakeRecord("team", { id: "recT_A", teamName: "A", teamRank: 1 }),
-        fakeRecord("team", { id: "recT_B", teamName: "B", teamRank: 2 }),
-        fakeRecord("team", { id: "recT_C", teamName: "C", teamRank: 3 }),
-        fakeRecord("team", { id: "recT_D", teamName: "D", teamRank: 4 }),
-        fakeRecord("team", { id: "recT_F", teamName: "F", teamRank: 6 }),
-      ],
-      Matches: [
-        fakeRecord("match", { id: "recM_D", matchDate: day1, homeTeam: "D" }), // My Team
-        fakeRecord("match", { id: "recM_B", matchDate: day1, homeTeam: "B" }), // 2 above -> NOT advertised
-        fakeRecord("match", { id: "recM_C", matchDate: day2, homeTeam: "C" }), // next team up -> play-up (no date requirement)
-        fakeRecord("match", { id: "recM_A", matchDate: day2, homeTeam: "A" }), // 3 above -> NOT advertised
-        fakeRecord("match", { id: "recM_F", matchDate: day2, homeTeam: "F" }), // true team, lower -> support
-      ],
+      Teams: TEAMS,
+      Matches: opts.matches.map((m) =>
+        fakeRecord("match", { id: m.id, matchDate: day(m.day), homeTeam: m.homeTeam, selectedHome: m.selectedHome }),
+      ),
       "Availability Exceptions": [],
     });
     return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
   }
 
-  it("shows the Selected Team as My Team and classifies by Team Rank", async () => {
-    const out = await portal();
+  it("registered F, display D: My Team = D; play-ups = E and C; support = F", async () => {
+    const out = await portal({
+      registeredTeam: "F",
+      selectedTeamEos: "D",
+      matches: [
+        { id: "recM_D", homeTeam: "D", day: 1 },
+        { id: "recM_B", homeTeam: "B", day: 1 }, // 2 above -> not advertised
+        { id: "recM_C", homeTeam: "C", day: 2 }, // 3 above -> play-up team (after D is skipped)
+        { id: "recM_E", homeTeam: "E", day: 3 }, // 1 above -> play-up team
+        { id: "recM_F", homeTeam: "F", day: 4 }, // true team, below display -> support
+      ],
+    });
     expect(out.displayTeam).toBe("D");
-    expect(out.registeredTeam).toBe("D");
-    // My Team: fixtures for the displayed team only.
     expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["D"]);
     expect(out.fixtures[0].fixtureCategory).toBe("own");
-    expect(out.fixtures[0].isPlayUp).toBeFalsy(); // own fixture is NEVER a play-up
-    // Play-Up Opportunities: ONLY the team immediately above the display team.
-    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["C"]);
-    expect(out.playUpOpportunities![0].isPlayUp).toBe(true);
-    // Distant higher teams (B, A) are not advertised.
-    expect(out.playUpOpportunities?.some((f) => f.hkfcTeam === "B")).toBe(false);
-    expect(out.playUpOpportunities?.some((f) => f.hkfcTeam === "A")).toBe(false);
-    // Support Fixtures: lower-ranked teams (includes the true Registered Team).
+    expect(out.fixtures[0].isPlayUp).toBeFalsy();
+    // Play-up teams: E (1 above F) and C (after the display team D is skipped).
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["C", "E"]);
+    expect(out.playUpOpportunities?.every((f) => f.isPlayUp)).toBe(true);
     expect(out.supportFixtures?.map((f) => f.hkfcTeam)).toEqual(["F"]);
-    expect(out.supportFixtures![0].isPlayUp).toBeFalsy();
-    // Regression: C is advertised even though D has NO fixture on that date.
-    const cFixture = out.playUpOpportunities![0];
-    const dDates = out.fixtures.map((f) => f.date.split("T")[0]);
-    expect(dDates.includes(cFixture.date.split("T")[0])).toBe(false);
+    expect(out.supportFixtures?.every((f) => f.isPlayUp)).toBe(false);
+  });
+
+  it("already selected for the first team above: skip it and move further up", async () => {
+    const out = await portal({
+      registeredTeam: "F",
+      selectedTeamEos: "E",
+      matches: [
+        { id: "recM_E", homeTeam: "E", day: 1, selectedHome: ["recP1"] }, // My Team + already selected
+        { id: "recM_D", homeTeam: "D", day: 2 }, // play-up team 1
+        { id: "recM_C", homeTeam: "C", day: 3 }, // play-up team 2
+        { id: "recM_F", homeTeam: "F", day: 4 }, // support
+      ],
+    });
+    expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["E"]);
+    // E is skipped (already selected / My Team) -> D and C are the two teams.
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["D", "C"]);
+    expect(out.supportFixtures?.map((f) => f.hkfcTeam)).toEqual(["F"]);
+  });
+
+  it("same-day conflict with the My Team fixture removes the support fixture", async () => {
+    const out = await portal({
+      registeredTeam: "F",
+      selectedTeamEos: "E",
+      matches: [
+        { id: "recM_E", homeTeam: "E", day: 1, selectedHome: ["recP1"] },
+        { id: "recM_D", homeTeam: "D", day: 2 }, // play-up
+        { id: "recM_F", homeTeam: "F", day: 2 }, // support candidate, same day as D
+      ],
+    });
+    // The player is Available for their E fixture on the same day -> the F
+    // support fixture is ineligible ("Available for E on same day") -> hidden.
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["D"]);
+    expect(out.supportFixtures ?? []).toHaveLength(0);
+  });
+
+  it("suspension removes play-up and support fixtures (My Team still shown)", async () => {
+    const out = await portal({
+      registeredTeam: "F",
+      selectedTeamEos: "D",
+      suspended: true,
+      matches: [
+        { id: "recM_D", homeTeam: "D", day: 1 },
+        { id: "recM_C", homeTeam: "C", day: 2 },
+        { id: "recM_F", homeTeam: "F", day: 3 },
+      ],
+    });
+    expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["D"]); // My Team unaffected
+    expect(out.playUpOpportunities ?? []).toHaveLength(0); // suspended -> blocked everywhere
+    expect(out.supportFixtures ?? []).toHaveLength(0);
   });
 });

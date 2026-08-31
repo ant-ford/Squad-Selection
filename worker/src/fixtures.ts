@@ -8,6 +8,8 @@ import { mapPlayer } from "../../src/mappers/playerMapper";
 import type { Match, Player, Team } from "../../src/generated/domainTypes";
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { buildEvaluationContext } from "./seasonContext";
+import { evaluatePlayerEligibility } from "./eligibility";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -182,46 +184,96 @@ export async function getMyFixtures(env: Env, email: string) {
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
-  // The next team UP is computed globally from all club teams, so a match
-  // involving only a distant higher team can never masquerade as the next
-  // step up. There is NO date requirement: the next-up fixture is always
-  // advertised, whether or not the display team plays that day.
-  const higherTeamRanks = Object.values(rankMap).filter((r) => r > 0 && r < 99 && r < displayRank);
-  const nextUpRank = higherTeamRanks.length ? Math.max(...higherTeamRanks) : undefined;
+  // ---------------------------------------------------------------------
+  // Fixture categories (presentation only - the eligibility engine remains
+  // the sole authority on whether a fixture is actually playable):
+  //   My Team   - fixtures for the display team (always shown)
+  //   Play-Up   - fixtures for the two teams immediately above the player's
+  //               REGISTERED team, skipping teams they are already selected
+  //               for (and the display team), closest first
+  //   Support   - fixtures for teams below the display team
+  // Play-up and support candidates must pass evaluatePlayerEligibility for
+  // that specific team+fixture before they are shown to the player.
+  // ---------------------------------------------------------------------
+  const trueRank = rankMap[teamName] ?? 99;
+  const selectedTeams = new Set<string>();
+  for (const m of upcoming) {
+    if ((m.selectedPlayersHome || []).includes(playerId)) selectedTeams.add(m.homeTeam || "");
+    if ((m.selectedPlayersAway || []).includes(playerId)) selectedTeams.add(m.awayTeam || "");
+  }
+  const aboveTeams = Object.entries(rankMap)
+    .filter(([name, rank]) => name && rank > 0 && rank < 99 && rank < trueRank)
+    .sort((a, b) => b[1] - a[1]) // closest above the Registered Team first
+    .map(([name]) => name);
+  const playUpTeams: string[] = [];
+  for (const name of aboveTeams) {
+    if (name === displayTeam || selectedTeams.has(name)) continue;
+    playUpTeams.push(name);
+    if (playUpTeams.length >= 2) break;
+  }
+  const playUpTeamSet = new Set(playUpTeams);
+
   type FixtureCategory = "own" | "play-up" | "support";
   type Categorized = { match: any; hkfcTeam: string; opponent: string; isHome: boolean; selectedIds: string[]; category: FixtureCategory };
   const categorized: Categorized[] = [];
   for (const m of upcoming) {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    const matchInvolvesDisplayTeam = home === displayTeam || away === displayTeam;
     const sides: { team: string; isHome: boolean; selectedIds: string[] }[] = [];
     if (teamNames.has(home)) sides.push({ team: home, isHome: true, selectedIds: m.selectedPlayersHome || [] });
     if (teamNames.has(away)) sides.push({ team: away, isHome: false, selectedIds: m.selectedPlayersAway || [] });
-    const ownSide = sides.find((s) => s.team === displayTeam);
-    const selectedSide = sides.find((s) => s.selectedIds.includes(playerId));
-    const rankOf = (team: string) => rankMap[team] ?? 99;
-    const lowerSides = sides.filter((s) => rankOf(s.team) > displayRank);
-    const nextUpSides = sides.filter((s) => rankOf(s.team) === nextUpRank);
     const buildEntry = (s: { team: string; isHome: boolean; selectedIds: string[] }, category: FixtureCategory): Categorized => ({
       match: m, hkfcTeam: s.team, opponent: s.isHome ? away : home, isHome: s.isHome, selectedIds: s.selectedIds, category,
     });
-    // Presentation classification by Team Rank vs the DISPLAY team (never by
-    // team name; never overrides the eligibility engine). The player's own
-    // display-team fixture is "own" - never labelled a play-up.
-    let entry: Categorized | null = null;
-    if (ownSide) entry = buildEntry(ownSide, "own");
-    else if (selectedSide && rankOf(selectedSide.team) < displayRank) entry = buildEntry(selectedSide, "play-up");
-    else if (selectedSide) entry = buildEntry(selectedSide, "support");
-    // The !matchInvolvesDisplayTeam check is a per-match de-duplication (the
-    // display team's own side of that fixture is already shown as My Team) -
-    // not a date rule.
-    else if (nextUpSides.length && !matchInvolvesDisplayTeam) entry = buildEntry(nextUpSides[0], "play-up");
-    else if (lowerSides.length) entry = buildEntry(lowerSides[0], "support");
-    if (entry) categorized.push(entry);
+    // One card per match, priority: My Team > play-up > support.
+    const ownSide = sides.find((s) => s.team === displayTeam);
+    const playUpSide = sides.find((s) => playUpTeamSet.has(s.team));
+    const supportSide = sides.find((s) => (rankMap[s.team] ?? 99) > displayRank && !playUpTeamSet.has(s.team));
+    if (ownSide) categorized.push(buildEntry(ownSide, "own"));
+    else if (playUpSide) categorized.push(buildEntry(playUpSide, "play-up"));
+    else if (supportSide) categorized.push(buildEntry(supportSide, "support"));
   }
-  if (categorized.length === 0) return { ...base, fixtures: [], playUpOpportunities: [], supportFixtures: [] };
-  const relevantMatchIds = categorized.map((c) => c.match.id);
-  const allExceptions = await getExceptionsForSeasons(env, categorized.map((c) => c.match.season || ""));
+  if (categorized.length === 0) return { ...base, displayTeam, fixtures: [], playUpOpportunities: [], supportFixtures: [] };
+
+  // Eligibility gating: play-up and support candidates must pass the existing
+  // eligibility engine (evaluatePlayerEligibility) for that team+fixture.
+  // My Team fixtures are shown unconditionally. Contexts come from the
+  // shared season context (cached - no extra Airtable requests per fixture
+  // beyond the season-wide reads).
+  const teamMap = new Map(ref.teams.map((t) => [t.teamName || "", t]));
+  const gateCache = new Map<string, boolean>();
+  const isEligibleFor = async (cand: Categorized): Promise<boolean> => {
+    const key = `${cand.match.id}:${cand.hkfcTeam}`;
+    const cached = gateCache.get(key);
+    if (cached !== undefined) return cached;
+    let eligible = false;
+    try {
+      const { ctx } = await buildEvaluationContext(env, cand.match, rankMap, teamMap, ref.players, cand.hkfcTeam);
+      const result = evaluatePlayerEligibility(user, cand.match, ctx);
+      eligible = result.status !== "blocked";
+    } catch (err) {
+      console.error("[MyFixtures] eligibility evaluation failed:", err);
+      eligible = false;
+    }
+    gateCache.set(key, eligible);
+    return eligible;
+  };
+
+  const gatedPlayUp: Categorized[] = [];
+  for (const cand of categorized.filter((x) => x.category === "play-up")) {
+    if (await isEligibleFor(cand)) gatedPlayUp.push(cand);
+  }
+  const gatedSupport: Categorized[] = [];
+  for (const cand of categorized.filter((x) => x.category === "support")) {
+    if (await isEligibleFor(cand)) gatedSupport.push(cand);
+  }
+
+  const relevantCategorized = [
+    ...categorized.filter((x) => x.category === "own"),
+    ...gatedPlayUp,
+    ...gatedSupport,
+  ];
+  const relevantMatchIds = relevantCategorized.map((c) => c.match.id);
+  const allExceptions = await getExceptionsForSeasons(env, relevantCategorized.map((c) => c.match.season || ""));
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   const buildCard = (c: Categorized) => {
@@ -233,8 +285,8 @@ export async function getMyFixtures(env: Env, email: string) {
       availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: c.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: c.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
-      // fixtureCategory is presentation only (display team vs Team Rank);
-      // "play-up" is used exclusively for teams ABOVE the display team.
+      // fixtureCategory is presentation only; "play-up" is used exclusively
+      // for the two teams above the Registered Team (per the skip rules).
       fixtureCategory: c.category,
       isPlayUp: c.category === "play-up",
       selectionTeam: c.category !== "own" ? c.hkfcTeam : undefined,
@@ -242,9 +294,10 @@ export async function getMyFixtures(env: Env, email: string) {
   };
   return {
     ...base,
+    displayTeam,
     fixtures: categorized.filter((c) => c.category === "own").map(buildCard),
-    playUpOpportunities: categorized.filter((c) => c.category === "play-up").map(buildCard),
-    supportFixtures: categorized.filter((c) => c.category === "support").map(buildCard),
+    playUpOpportunities: gatedPlayUp.map(buildCard),
+    supportFixtures: gatedSupport.map(buildCard),
   };
 }
 

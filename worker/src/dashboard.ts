@@ -1,6 +1,6 @@
 import { Env } from "./airtable";
 import { getReferenceData } from "./reference";
-import { getSeasonContext } from "./squad";
+import { getSeasonContext } from "./seasonContext";
 import { getRankingEvents } from "./rankingEvents";
 import { isQualifyingPlayUpCard } from "./playUp";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";

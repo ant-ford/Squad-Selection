@@ -55,7 +55,7 @@ import {
 } from "./airtable";
 import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
 import { getReferenceData, invalidatePlayerByEmail } from "./reference";
-import { getSeasonContext } from "./squad";
+import { getSeasonContext } from "./seasonContext";
 import { currentSeason } from "./dashboard";
 import { isQualifyingPlayUpCard } from "./playUp";
 import { TABLES } from "../../src/generated/tableNames";
