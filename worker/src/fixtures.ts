@@ -241,13 +241,25 @@ export async function getMyFixtures(env: Env, email: string) {
   // beyond the season-wide reads).
   const teamMap = new Map(ref.teams.map((t) => [t.teamName || "", t]));
   const gateCache = new Map<string, boolean>();
-  const isEligibleFor = async (cand: Categorized): Promise<boolean> => {
+  const isEligibleFor = async (cand: Categorized, neutraliseSameDay: boolean): Promise<boolean> => {
     const key = `${cand.match.id}:${cand.hkfcTeam}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
     let eligible = false;
     try {
       const { ctx } = await buildEvaluationContext(env, cand.match, rankMap, teamMap, ref.players, cand.hkfcTeam);
+      if (neutraliseSameDay) {
+        // The portal shows opportunities the player can PLAN around, so the
+        // same-day availability dimension (which depends on other fixtures'
+        // scheduling and availability choices the player has not made yet) is
+        // neutralised for PRESENTATION only. Every inherent rule - suspension,
+        // play-up limit, movement/Premier restrictions, U21, cup - still
+        // applies, and the selection-time evaluation (coach view, same-day
+        // blocks) is unchanged.
+        ctx.sameDayMatches = [];
+        ctx.sameDayFixtures = [];
+        ctx.sameDaySelectionsByTeam = new Map();
+      }
       const result = evaluatePlayerEligibility(user, cand.match, ctx);
       eligible = result.status !== "blocked";
     } catch (err) {
@@ -260,11 +272,11 @@ export async function getMyFixtures(env: Env, email: string) {
 
   const gatedPlayUp: Categorized[] = [];
   for (const cand of categorized.filter((x) => x.category === "play-up")) {
-    if (await isEligibleFor(cand)) gatedPlayUp.push(cand);
+    if (await isEligibleFor(cand, true)) gatedPlayUp.push(cand);
   }
   const gatedSupport: Categorized[] = [];
   for (const cand of categorized.filter((x) => x.category === "support")) {
-    if (await isEligibleFor(cand)) gatedSupport.push(cand);
+    if (await isEligibleFor(cand, false)) gatedSupport.push(cand);
   }
 
   const relevantCategorized = [

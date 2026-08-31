@@ -185,6 +185,24 @@ describe("player portal fixture categories", () => {
     expect(out.supportFixtures?.every((f) => f.isPlayUp)).toBe(false);
   });
 
+  it("registered D: B and C play-ups show even when every team plays the same day", async () => {
+    // Live report: a D-registered/D-selected player saw no play-ups because
+    // the same-day availability rule blocked C (available for B) and B
+    // (available for A). For presentation, same-day is neutralised.
+    const out = await portal({
+      registeredTeam: "D",
+      matches: [
+        { id: "recM_D", homeTeam: "D", day: 1 },
+        { id: "recM_C", homeTeam: "C", day: 1 }, // same day as D
+        { id: "recM_B", homeTeam: "B", day: 1 }, // same day as D
+        { id: "recM_A", homeTeam: "A", day: 1 }, // same day as D (not advertised)
+      ],
+    });
+    expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["D"]);
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["C", "B"]);
+    expect(out.supportFixtures ?? []).toHaveLength(0);
+  });
+
   it("already selected for the first team above: skip it and move further up", async () => {
     const out = await portal({
       registeredTeam: "F",
