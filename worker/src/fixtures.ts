@@ -185,82 +185,110 @@ export async function getMyFixtures(env: Env, email: string) {
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
   // ---------------------------------------------------------------------
-  // Fixture categories (presentation only - the eligibility engine remains
-  // the sole authority on whether a fixture is actually playable):
-  //   My Team   - fixtures for the display team (always shown)
-  //   Play-Up   - fixtures for the two teams immediately above the player's
-  //               REGISTERED team, skipping teams they are already selected
-  //               for (and the display team), closest first
-  //   Support   - fixtures for teams below the display team
-  // Play-up and support candidates must pass evaluatePlayerEligibility for
-  // that specific team+fixture before they are shown to the player.
   // ---------------------------------------------------------------------
-  const trueRank = rankMap[teamName] ?? 99;
-  const selectedTeams = new Set<string>();
-  for (const m of upcoming) {
-    if ((m.selectedPlayersHome || []).includes(playerId)) selectedTeams.add(m.homeTeam || "");
-    if ((m.selectedPlayersAway || []).includes(playerId)) selectedTeams.add(m.awayTeam || "");
-  }
-  const aboveTeams = Object.entries(rankMap)
-    .filter(([name, rank]) => name && rank > 0 && rank < 99 && rank < trueRank)
-    .sort((a, b) => b[1] - a[1]) // closest above the Registered Team first
-    .map(([name]) => name);
-  const playUpTeams: string[] = [];
-  for (const name of aboveTeams) {
-    if (name === displayTeam || selectedTeams.has(name)) continue;
-    playUpTeams.push(name);
-    if (playUpTeams.length >= 2) break;
-  }
-  const playUpTeamSet = new Set(playUpTeams);
-
+  // Fixture categories (presentation only - the eligibility engine remains
+  // the sole authority on whether a fixture is actually playable).
+  //
+  // Per-day model: on any given date the player sees AT MOST THREE fixture
+  // options, prioritised:
+  //   1. Upcoming Fixture  - the fixture they are selected for (their
+  //      current selected team), else their Selected Team (EOS) fixture
+  //      if it plays that day;
+  //   2. Support Fixture   - their Registered Team's fixture, when the
+  //      Registered Team is below the relevant selected/EOS team;
+  //   3. Play-Up fills     - teams immediately above the relevant team
+  //      (closest first, Registered Team excluded), subject to eligibility,
+  //      filling the remaining places up to three.
+  // The same-day availability dimension is neutralised for this portal
+  // presentation (players plan availability here); selection-time
+  // evaluation keeps every rule including same-day blocks.
+  // ---------------------------------------------------------------------
   type FixtureCategory = "own" | "play-up" | "support";
-  type Categorized = { match: any; hkfcTeam: string; opponent: string; isHome: boolean; selectedIds: string[]; category: FixtureCategory };
-  const categorized: Categorized[] = [];
+  type Side = { match: any; team: string; opponent: string; isHome: boolean; selectedIds: string[]; dateKey: string };
+  const sidesByDate = new Map<string, Side[]>();
   for (const m of upcoming) {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    const sides: { team: string; isHome: boolean; selectedIds: string[] }[] = [];
-    if (teamNames.has(home)) sides.push({ team: home, isHome: true, selectedIds: m.selectedPlayersHome || [] });
-    if (teamNames.has(away)) sides.push({ team: away, isHome: false, selectedIds: m.selectedPlayersAway || [] });
-    const buildEntry = (s: { team: string; isHome: boolean; selectedIds: string[] }, category: FixtureCategory): Categorized => ({
-      match: m, hkfcTeam: s.team, opponent: s.isHome ? away : home, isHome: s.isHome, selectedIds: s.selectedIds, category,
-    });
-    // One card per match, priority: My Team > play-up > support.
-    const ownSide = sides.find((s) => s.team === displayTeam);
-    const playUpSide = sides.find((s) => playUpTeamSet.has(s.team));
-    const supportSide = sides.find((s) => (rankMap[s.team] ?? 99) > displayRank && !playUpTeamSet.has(s.team));
-    if (ownSide) categorized.push(buildEntry(ownSide, "own"));
-    else if (playUpSide) categorized.push(buildEntry(playUpSide, "play-up"));
-    else if (supportSide) categorized.push(buildEntry(supportSide, "support"));
+    const dateKey = (m.matchDate || "").split("T")[0];
+    const opponentFor = (isHome: boolean) => (isHome ? away : home);
+    if (teamNames.has(home)) {
+      const side = { match: m, team: home, opponent: opponentFor(true), isHome: true, selectedIds: m.selectedPlayersHome || [], dateKey };
+      const list = sidesByDate.get(dateKey) || [];
+      list.push(side);
+      sidesByDate.set(dateKey, list);
+    }
+    if (teamNames.has(away)) {
+      const side = { match: m, team: away, opponent: opponentFor(false), isHome: false, selectedIds: m.selectedPlayersAway || [], dateKey };
+      const list = sidesByDate.get(dateKey) || [];
+      list.push(side);
+      sidesByDate.set(dateKey, list);
+    }
   }
+
+  const isSquadSelected = (s: Side) => s.selectedIds.includes(playerId);
+  const categorized: { side: Side; category: FixtureCategory }[] = [];
+
+  for (const [, entries] of sidesByDate) {
+    let carded = 0;
+    const takenMatches = new Set<string>();
+    const card = (s: Side, category: FixtureCategory) => {
+      categorized.push({ side: s, category });
+      takenMatches.add(s.match.id);
+      carded++;
+    };
+
+    // 1. Upcoming Fixture: the fixture the player is selected for.
+    const selectedSide = entries.find((s) => isSquadSelected(s));
+    if (selectedSide) card(selectedSide, "own");
+
+    // 2. The Selected Team (EOS) fixture, when it is a different match.
+    const eosSide = entries.find((s) => s.team === displayTeam && !takenMatches.has(s.match.id));
+    if (eosSide) card(eosSide, "own");
+
+    // 3. Support Fixture: the Registered Team's fixture, when the
+    //    Registered Team is below the relevant selected/EOS team.
+    const primaryTeam = selectedSide?.team ?? eosSide?.team ?? displayTeam;
+    const primaryRank = rankMap[primaryTeam] ?? 99;
+    const registeredRank = rankMap[teamName] ?? 99;
+    const registeredSide = entries.find((s) => s.team === teamName && !takenMatches.has(s.match.id));
+    if (registeredSide && registeredRank > primaryRank) card(registeredSide, "support");
+
+    // 4. Play-ups: teams immediately above the relevant team (closest
+    //    first, Registered Team excluded), filling the remaining places,
+    //    subject to eligibility (gated below).
+    const aboveTeams = Object.entries(rankMap)
+      .filter(([name, rank]) => name && rank > 0 && rank < 99 && rank < primaryRank && name !== teamName)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name);
+    for (const name of aboveTeams) {
+      if (carded >= 3) break;
+      const entry = entries.find((s) => s.team === name && !takenMatches.has(s.match.id));
+      if (!entry) continue;
+      card(entry, "play-up");
+    }
+  }
+
   if (categorized.length === 0) return { ...base, displayTeam, fixtures: [], playUpOpportunities: [], supportFixtures: [] };
 
   // Eligibility gating: play-up and support candidates must pass the existing
   // eligibility engine (evaluatePlayerEligibility) for that team+fixture.
-  // My Team fixtures are shown unconditionally. Contexts come from the
-  // shared season context (cached - no extra Airtable requests per fixture
-  // beyond the season-wide reads).
+  // My Team fixtures (selected/EOS) are shown unconditionally. Contexts come
+  // from the shared season context (cached - no extra Airtable requests per
+  // fixture beyond the season-wide reads).
   const teamMap = new Map(ref.teams.map((t) => [t.teamName || "", t]));
   const gateCache = new Map<string, boolean>();
-  const isEligibleFor = async (cand: Categorized, neutraliseSameDay: boolean): Promise<boolean> => {
-    const key = `${cand.match.id}:${cand.hkfcTeam}`;
+  const isEligibleFor = async (side: Side): Promise<boolean> => {
+    const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
     let eligible = false;
     try {
-      const { ctx } = await buildEvaluationContext(env, cand.match, rankMap, teamMap, ref.players, cand.hkfcTeam);
-      if (neutraliseSameDay) {
-        // The portal shows opportunities the player can PLAN around, so the
-        // same-day availability dimension (which depends on other fixtures'
-        // scheduling and availability choices the player has not made yet) is
-        // neutralised for PRESENTATION only. Every inherent rule - suspension,
-        // play-up limit, movement/Premier restrictions, U21, cup - still
-        // applies, and the selection-time evaluation (coach view, same-day
-        // blocks) is unchanged.
-        ctx.sameDayMatches = [];
-        ctx.sameDayFixtures = [];
-        ctx.sameDaySelectionsByTeam = new Map();
-      }
-      const result = evaluatePlayerEligibility(user, cand.match, ctx);
+      const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+      // Same-day is neutralised for portal presentation (players plan
+      // availability here); selection-time evaluation keeps every rule.
+      ctx.sameDayMatches = [];
+      ctx.sameDayFixtures = [];
+      ctx.sameDaySelectionsByTeam = new Map();
+      const result = evaluatePlayerEligibility(user, side.match, ctx);
       eligible = result.status !== "blocked";
     } catch (err) {
       console.error("[MyFixtures] eligibility evaluation failed:", err);
@@ -270,46 +298,40 @@ export async function getMyFixtures(env: Env, email: string) {
     return eligible;
   };
 
-  const gatedPlayUp: Categorized[] = [];
-  for (const cand of categorized.filter((x) => x.category === "play-up")) {
-    if (await isEligibleFor(cand, true)) gatedPlayUp.push(cand);
-  }
-  const gatedSupport: Categorized[] = [];
-  for (const cand of categorized.filter((x) => x.category === "support")) {
-    if (await isEligibleFor(cand, false)) gatedSupport.push(cand);
+  const gated: { side: Side; category: FixtureCategory }[] = [];
+  for (const cand of categorized.filter((x) => x.category !== "own")) {
+    if (await isEligibleFor(cand.side)) gated.push(cand);
   }
 
-  const relevantCategorized = [
-    ...categorized.filter((x) => x.category === "own"),
-    ...gatedPlayUp,
-    ...gatedSupport,
-  ];
-  const relevantMatchIds = relevantCategorized.map((c) => c.match.id);
-  const allExceptions = await getExceptionsForSeasons(env, relevantCategorized.map((c) => c.match.season || ""));
+  const ownCards = categorized.filter((x) => x.category === "own");
+  const relevantCategorized = [...ownCards, ...gated];
+  const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
+  const allExceptions = await getExceptionsForSeasons(env, relevantCategorized.map((x) => x.side.match.season || ""));
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
-  const buildCard = (c: Categorized) => {
-    const team = teamsByName.get(c.hkfcTeam);
-    const exc = exceptionByMatch.get(c.match.id);
+  const buildCard = (x: { side: Side; category: FixtureCategory }) => {
+    const s = x.side;
+    const team = teamsByName.get(s.team);
+    const exc = exceptionByMatch.get(s.match.id);
     return {
-      id: c.match.id, date: c.match.matchDate || "", homeTeam: c.match.homeTeam || "", awayTeam: c.match.awayTeam || "",
-      hkfcTeam: c.hkfcTeam, opponent: c.opponent, isHome: c.isHome, venue: c.match.venue || "", division: c.match.division || "",
+      id: s.match.id, date: s.match.matchDate || "", homeTeam: s.match.homeTeam || "", awayTeam: s.match.awayTeam || "",
+      hkfcTeam: s.team, opponent: s.opponent, isHome: s.isHome, venue: s.match.venue || "", division: s.match.division || "",
       availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "",
-      availabilityExceptionId: exc?.id || "", selectionStatus: c.selectedIds.includes(playerId) ? "Selected" : "",
-      selectionNotes: "", selectedCount: c.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
+      availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
+      selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
       // fixtureCategory is presentation only; "play-up" is used exclusively
-      // for the two teams above the Registered Team (per the skip rules).
-      fixtureCategory: c.category,
-      isPlayUp: c.category === "play-up",
-      selectionTeam: c.category !== "own" ? c.hkfcTeam : undefined,
+      // for the higher-team fillers above the relevant team.
+      fixtureCategory: x.category,
+      isPlayUp: x.category === "play-up",
+      selectionTeam: x.category !== "own" ? s.team : undefined,
     };
   };
   return {
     ...base,
     displayTeam,
-    fixtures: categorized.filter((c) => c.category === "own").map(buildCard),
-    playUpOpportunities: gatedPlayUp.map(buildCard),
-    supportFixtures: gatedSupport.map(buildCard),
+    fixtures: ownCards.map(buildCard),
+    playUpOpportunities: gated.filter((x) => x.category === "play-up").map(buildCard),
+    supportFixtures: gated.filter((x) => x.category === "support").map(buildCard),
   };
 }
 
