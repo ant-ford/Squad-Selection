@@ -122,11 +122,7 @@ function buildSpecialGoalkeeperCard(
 export async function getMyFixtures(env: Env, email: string) {
   const user = await getPlayerByEmail(env, email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
-  const playerId = user.id;
   const teamName = user.registeredTeam || "";
-  // Display team (optics): Selected Team EOS -> SOS -> Registered Team. The
-  // player experiences THIS team as "My Team"; every business rule (play-up
-  // legality, same-day priority, suspension) keeps using the true team.
   const displayTeam = selectedDisplayTeam(user) || teamName;
   const ref = await getReferenceData(env);
   // Section Captains share coach access (see auth.ts); include their teams in
@@ -139,15 +135,50 @@ export async function getMyFixtures(env: Env, email: string) {
   const isCoach = coachTeams.length > 0;
   const base = {
     playerName: user.preferredName || user.givenNames || "Player",
-    // Display value (optics). Fixture categorisation below keeps using the
-    // true Registered Team so legality and conflicts stay accurate.
-    registeredTeam: selectedDisplayTeam(user) || teamName, displayTeam, playingPosition: user.playingPosition || "",
+    registeredTeam: displayTeam, displayTeam, playingPosition: user.playingPosition || "",
     shirtNoValue: user.shirtNoValue || "", isCoach, coachTeams, captainTeams, isSectionCaptain,
   };
-  const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
+  const view = await buildPlayerFixtureView(env, user);
+  return {
+    ...base,
+    displayTeam: view.displayTeam,
+    specialGoalkeeperView: view.specialGoalkeeperView,
+    fixtures: view.myTeam,
+    playUpOpportunities: view.playUpOpportunities,
+    supportFixtures: view.supportFixtures,
+  };
+}
+
+export interface PlayerFixtureView {
+  displayTeam: string;
+  /** True for the special goalkeeper planning view. */
+  specialGoalkeeperView?: boolean;
+  /** My Team / Upcoming Fixture cards (selected or Selected Team EOS fixtures; GK planning list). */
+  myTeam: any[];
+  playUpOpportunities: any[];
+  supportFixtures: any[];
+}
+
+/**
+ * THE authoritative player fixture view - shared by the player dashboard
+ * (getMyFixtures) and the player calendar feed (getPlayerFixtures) so the
+ * two can never drift apart. Categorisation: per-day, at most three options
+ * (selected/EOS fixture -> registered-team support -> play-up fill), with
+ * play-up and support candidates gated by the eligibility engine using the
+ * true Registered Team.
+ */
+export async function buildPlayerFixtureView(env: Env, user: Player): Promise<PlayerFixtureView> {
+  const playerId = user.id;
+  const teamName = user.registeredTeam || "";
+  // Display team (optics): Selected Team EOS -> SOS -> Registered Team. The
+  // player experiences THIS team as "My Team"; every business rule (play-up
+  // legality, same-day priority, suspension) keeps using the true team.
+  const displayTeam = selectedDisplayTeam(user) || teamName;
+  const ref = await getReferenceData(env);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const rankMap = ref.teamRankMap;
   const displayRank = rankMap[displayTeam] ?? 99;
+  const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
 
   // Lowest-ranked team Goalkeeper: date-grouped schedule of ALL upcoming
   // HKFC fixtures (derbies are a single card). No per-fixture Airtable
@@ -169,14 +200,17 @@ export async function getMyFixtures(env: Env, email: string) {
         .map((e) => [linkId(e.match) || "", e]),
     );
     return {
-      ...base,
+      displayTeam,
       specialGoalkeeperView: true,
-      fixtures: cards.map((c) => ({
+      myTeam: cards.map((c) => ({
         ...c,
+        fixtureCategory: "own" as const,
         availabilityStatus: exceptionByMatch.get(c.id)?.availabilityStatus || "Available",
         playerNotes: exceptionByMatch.get(c.id)?.note || "",
         availabilityExceptionId: exceptionByMatch.get(c.id)?.id || "",
       })),
+      playUpOpportunities: [],
+      supportFixtures: [],
     };
   }
 
@@ -267,7 +301,7 @@ export async function getMyFixtures(env: Env, email: string) {
     }
   }
 
-  if (categorized.length === 0) return { ...base, displayTeam, fixtures: [], playUpOpportunities: [], supportFixtures: [] };
+  if (categorized.length === 0) return { displayTeam, myTeam: [], playUpOpportunities: [], supportFixtures: [] };
 
   // Eligibility gating: play-up and support candidates must pass the existing
   // eligibility engine (evaluatePlayerEligibility) for that team+fixture.
@@ -327,12 +361,25 @@ export async function getMyFixtures(env: Env, email: string) {
     };
   };
   return {
-    ...base,
     displayTeam,
-    fixtures: ownCards.map(buildCard),
+    myTeam: ownCards.map(buildCard),
     playUpOpportunities: gated.filter((x) => x.category === "play-up").map(buildCard),
     supportFixtures: gated.filter((x) => x.category === "support").map(buildCard),
   };
+}
+
+
+/**
+ * Calendar-facing fixture list: the SAME categorised view as the player
+ * dashboard (My Team + Play-Up Opportunities + Support Fixtures), flattened.
+ * Identity comes from the signed calendar token's player id.
+ */
+/** The display team for a player record id (Selected Team EOS -> SOS -> Registered). */
+export async function getPlayerDisplayTeam(env: Env, playerId: string): Promise<string> {
+  const record = await airtableFindById(env, TABLES.player, playerId);
+  if (!record) return "";
+  const player = mapPlayer(record);
+  return selectedDisplayTeam(player) || player.registeredTeam || "";
 }
 
 export async function getPlayerFixtures(env: Env, playerId: string) {
@@ -340,37 +387,14 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   if (!record) throw new HttpError("Player not found or inactive", 404);
   const player = mapPlayer(record);
   if (!player.active) throw new HttpError("Player not found or inactive", 404);
-  const ref = await getReferenceData(env);
-  const teamNames = new Set(ref.teams.map((t) => t.teamName));
-  const teamName = player.registeredTeam || "";
-  const allMatches = await getScheduledMatches(env);
-  const now = new Date().toISOString();
-  const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
-    .filter((m) => (m.homeTeam || "") === teamName || (m.awayTeam || "") === teamName)
-    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
-  const matchIds = upcoming.map((m) => m.id);
-  const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
-  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && matchIds.includes(linkId(e.match) || ""));
-  const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
-  const fixtures = upcoming.flatMap((m) => {
-    const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    const isDerby = teamNames.has(home) && teamNames.has(away);
-    if (!isDerby) {
-      const isHome = home === teamName;
-      const hkfcTeam = teamNames.has(home) ? home : away;
-      const exc = exceptionByMatch.get(m.id);
-      const isSelected = (m.selectedPlayersHome || []).includes(playerId) || (m.selectedPlayersAway || []).includes(playerId);
-      return [{ id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away, hkfcTeam, opponent: hkfcTeam === home ? away : home, isHome, venue: m.venue || "", division: m.division || "", availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "", selectionStatus: isSelected ? "Selected" : "" }];
-    }
-    return [home, away].filter((s) => s === teamName).map((sideTeam) => {
-      const isHome = sideTeam === home;
-      const exc = exceptionByMatch.get(m.id);
-      const isSelected = isHome ? (m.selectedPlayersHome || []).includes(playerId) : (m.selectedPlayersAway || []).includes(playerId);
-      return { id: m.id, date: m.matchDate || "", homeTeam: home, awayTeam: away, hkfcTeam: sideTeam, opponent: sideTeam === home ? away : home, isHome, venue: m.venue || "", division: m.division || "", availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "", availabilityExceptionId: exc?.id || "", selectionStatus: isSelected ? "Selected" : "" };
-    });
-  });
-  // Display value (optics); the fixture list itself stays on the true team.
-  return { playerName: player.preferredName || player.givenNames || "Player", registeredTeam: selectedDisplayTeam(player) || teamName, fixtures };
+  const view = await buildPlayerFixtureView(env, player);
+  const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
+  return {
+    playerName: player.preferredName || player.givenNames || "Player",
+    displayTeam: view.displayTeam,
+    registeredTeam: view.displayTeam,
+    fixtures,
+  };
 }
 
 export async function getUpcomingFixtures(env: Env, opts: { email?: string; team?: string }) {
@@ -395,7 +419,10 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
     if (opts.team) {
-      if (!coachedTeamNames.has(opts.team)) return false;
+      // An email-bearing call (coach export) must be scoped to teams the
+      // coach manages; the signed no-email team-feed path is already
+      // authorised by its HMAC signature, so it must not be gated here.
+      if (opts.email && !coachedTeamNames.has(opts.team)) return false;
       return home === opts.team || away === opts.team;
     }
     return coachedTeamNames.has(home) || coachedTeamNames.has(away);

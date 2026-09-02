@@ -1,6 +1,6 @@
 import { Env } from "./airtable";
 import { getPlayerByEmail, getReferenceData } from "./reference";
-import { getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
+import { getPlayerDisplayTeam, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
 import { getMyProfile } from "./profile";
 import { getCached } from "../../src/lib/cache";
 import { HttpError } from "./http";
@@ -117,7 +117,17 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
     const availability = fixture.availabilityStatus === "Available" ? "Going" : (fixture.availabilityStatus || "Going");
-    description = `Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
+    // Category mirrors the player dashboard (My Team / Play-Up Opportunity /
+    // Support Fixture) so the calendar matches what the player sees.
+    const categoryLabels: Record<string, string> = {
+      own: "My Team",
+      "play-up": "Play-Up Opportunity",
+      support: "Support Fixture",
+    };
+    const categoryLine = fixture.fixtureCategory && categoryLabels[fixture.fixtureCategory]
+      ? `Category: ${categoryLabels[fixture.fixtureCategory]}\n`
+      : "";
+    description = `${categoryLine}Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
   } else {
     description = `Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} Selected\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
     if (squadNames.length > 0) {
@@ -166,7 +176,12 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   const expectedSig = await hmacSign(env.CALENDAR_SECRET, `player:${id}`);
   if (sig !== expectedSig) return new Response("Unauthorized", { status: 401 });
 
-  const cacheKey = `calendar:player:${id}`;
+  // Cache key includes the player's display team: changing Selected Team
+  // EOS/SOS in Airtable rotates the key (once the 10-minute reference cache
+  // refreshes), so a subscribed calendar always reflects the current
+  // dashboard fixture view.
+  const displayTeam = await getPlayerDisplayTeam(env, id);
+  const cacheKey = `calendar:player:${id}:${displayTeam}`;
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
     const events = fixtures.map((f: any) => formatVEvent(f, true));
