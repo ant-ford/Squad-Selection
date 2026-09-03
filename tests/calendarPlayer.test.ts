@@ -86,7 +86,12 @@ function installFakeAirtable() {
       const formula = decodeURIComponent(q.get("filterByFormula") || "");
       const m = formula.match(/"([^"]+)"/);
       const needle = m ? m[1].toLowerCase() : "";
-      const filtered = store().filter((r) => (r.fields?.Email || "").toLowerCase() === needle);
+      // Only an {Email} lookup filters; other People formulas (e.g.
+      // {Active}=TRUE()) return every record.
+      const isEmailLookup = u.includes("%7BEmail%7D");
+      const filtered = isEmailLookup
+        ? store().filter((r) => (r.fields?.Email || "").toLowerCase() === needle)
+        : store();
       return Promise.resolve(new Response(JSON.stringify({ records: filtered }), { status: 200 }));
     }
 

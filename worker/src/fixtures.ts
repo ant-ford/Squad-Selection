@@ -442,9 +442,17 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       const matchExceptions = exceptionsByMatch.get(m.id) || [];
       const statusByPlayer = new Map<string, string>();
       for (const e of matchExceptions) { const pid = linkId(e.player); if (pid) statusByPlayer.set(pid, e.availabilityStatus); }
-      
-      const unavailableExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Unavailable");
-      const maybeExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Maybe");
+
+      // Tile counts/lists consider only players whose SELECTED (display)
+      // team is this fixture's team - Maybe/Unavailable marks from players
+      // of other teams who are merely cross-team eligible are excluded
+      // (product decision 2026-09-04). Recommendation scoring is unaffected.
+      const isThisTeamsPlayer = (e: any): boolean => {
+        const player = playerById.get(linkId(e.player) || "");
+        return !!player && selectedDisplayTeam(player) === hkfcTeam;
+      };
+      const unavailableExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Unavailable" && isThisTeamsPlayer(e));
+      const maybeExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Maybe" && isThisTeamsPlayer(e));
       const unavailableNames = unavailableExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
       const maybeNames = maybeExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
       
