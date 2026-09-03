@@ -150,7 +150,7 @@ afterEach(() => {
 });
 
 describe("player calendar (Selected Team view)", () => {
-  it("registered F + Selected E: E = My Team, D = Play-Up Opportunity, F = Support, nothing else", async () => {
+  it("registered F + Selected E: E = My Team, D = Play-Up Opportunity, F hidden (selected for E same day)", async () => {
     seedPeople({ selectedTeamEos: "E" });
     state.matches = [
       match("recM_E", "E", 1, ["recP1"]), // Jonny selected for E
@@ -169,12 +169,31 @@ describe("player calendar (Selected Team view)", () => {
     // Play-Up Opportunity: the D fixture (one team above the display team).
     expect(eventsWith(ics, "D vs")).toHaveLength(1);
     expect(categoriesFor(ics, "D vs")).toEqual(["Play-Up Opportunity"]);
-    // Support: the F fixture (Registered Team, below display).
-    expect(eventsWith(ics, "F vs")).toHaveLength(1);
-    expect(categoriesFor(ics, "F vs")).toEqual(["Support Fixture"]);
+    // Jonny is SELECTED for the higher E fixture on the same day -> his own
+    // F team's fixture is ineligible that day (same-day rule).
+    expect(eventsWith(ics, "F vs")).toHaveLength(0);
     // G/H are engine-blocked (Committee approval) -> absent.
     expect(eventsWith(ics, "G vs")).toHaveLength(0);
     expect(eventsWith(ics, "H vs")).toHaveLength(0);
+  });
+
+  it("registered F + merely available for E (not selected): F support remains visible", async () => {
+    // Product decision 2026-09-03: availability for a higher team does not
+    // make the player unavailable for their own team. Same fixtures as the
+    // Jonny case, but Jonny is NOT selected for the E squad.
+    seedPeople({ selectedTeamEos: "E" });
+    state.matches = [
+      match("recM_E", "E", 1),
+      match("recM_D", "D", 1),
+      match("recM_F", "F", 1),
+    ];
+    const sig = await sign(`player:recP1`);
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
+    const ics = await res.text();
+    expect(eventsWith(ics, "E vs")).toHaveLength(1);
+    expect(eventsWith(ics, "D vs")).toHaveLength(1);
+    expect(eventsWith(ics, "F vs")).toHaveLength(1);
+    expect(categoriesFor(ics, "F vs")).toEqual(["Support Fixture"]);
   });
 
   it("registered F with no Selected Team falls back to F as My Team", async () => {

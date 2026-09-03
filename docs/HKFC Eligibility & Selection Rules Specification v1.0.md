@@ -355,31 +355,25 @@ Exception:
 
 U21 double-game rules.
 
-## 7.2 Availability Lock
+## 7.2 Selection Lock (updated 2026-09-03)
 
-A lower-ranked team may not select a player if:
-
-* Player is available for a higher-ranked team fixture on the same day
-
-or
+A lower-ranked team may not select a player who has already been selected by a higher-ranked team on the same day:
 
 * Player has already been selected by a higher-ranked team on the same day
 
 Reason:
 
-`Available for [Team] on same day`
-
-or
-
 `Selected for [Team] on same day`
-
-Availability means:
-
-No Unavailable exception exists for the higher team's fixture.
 
 Kick-off times are ignored.
 
 The restriction applies to the entire calendar day.
+
+Mere AVAILABILITY for a higher-ranked team fixture (no Unavailable exception) no longer blocks lower-team fixtures - product decision 2026-09-03. Being available for a higher team keeps the player selectable by their own team; the situation is surfaced as a warning:
+
+`Available for [Team] on same day`
+
+The availability exception model itself (Available = no exception, Maybe/Unavailable = exception) is unchanged.
 
 ## 7.3 Higher Team Priority
 

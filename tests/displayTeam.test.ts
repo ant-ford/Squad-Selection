@@ -164,7 +164,7 @@ describe("player portal fixture categories (per-day, max three)", () => {
     return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
   }
 
-  it("Jonny (registered F, selected/display E, everything same day): E upcoming, D play-up, F support", async () => {
+  it("Jonny (registered F, selected/display E, everything same day): E upcoming, D play-up, F support hidden (selected for E)", async () => {
     const out = await portal({
       registeredTeam: "F",
       selectedTeamEos: "E",
@@ -182,8 +182,26 @@ describe("player portal fixture categories (per-day, max three)", () => {
     expect(out.fixtures[0].isPlayUp).toBeFalsy();
     expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["D"]);
     expect(out.playUpOpportunities?.every((f) => f.isPlayUp)).toBe(true);
+    // Jonny is SELECTED for the higher E fixture on the same day -> per the
+    // same-day rule he is ineligible for his own F team's fixture that day.
+    expect(out.supportFixtures ?? []).toHaveLength(0);
+  });
+
+  it("registered F, display E, NOT selected for E: availability does not hide the F support fixture", async () => {
+    // Same fixtures, but Jonny is merely available for E (not selected) ->
+    // he remains selectable by his own F team (product decision 2026-09-03).
+    const out = await portal({
+      registeredTeam: "F",
+      selectedTeamEos: "E",
+      matches: [
+        { id: "recM_E", homeTeam: "E", day: 1 },
+        { id: "recM_D", homeTeam: "D", day: 1 },
+        { id: "recM_F", homeTeam: "F", day: 1 },
+      ],
+    });
+    expect(out.fixtures.map((f) => f.hkfcTeam)).toEqual(["E"]);
+    expect(out.playUpOpportunities?.map((f) => f.hkfcTeam)).toEqual(["D"]);
     expect(out.supportFixtures?.map((f) => f.hkfcTeam)).toEqual(["F"]);
-    expect(out.supportFixtures?.every((f) => f.isPlayUp)).toBe(false);
   });
 
   it("registered D player: D upcoming, C and B fill the play-up places, A capped out", async () => {

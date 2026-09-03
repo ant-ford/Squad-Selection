@@ -193,7 +193,7 @@ const REASON_TAGS: Record<string, EligibilityReasonTag> = {
   "Available for [Team] on same day": {
     ruleId: RULE_IDS.SAME_DAY_AVAILABLE,
     source: "Bye-Law 7.1 & HKFC Spec §7.2",
-    text: "Players may not represent more than one team on the same calendar day. A lower-ranked team may not select a player who is available for a higher-ranked team fixture on the same day. Kick-off times are ignored — the restriction applies to the entire calendar day.",
+    text: "Players may not represent more than one team on the same calendar day. Only an actual selection for a higher-ranked team makes a player unavailable for lower-team fixtures that day - mere availability for the higher team is surfaced as a warning and does not block (product decision 2026-09-03). Kick-off times are ignored — the restriction applies to the entire calendar day.",
     isHkfcOverride: false,
   },
   "Selected for [Team] on same day": {
@@ -375,6 +375,8 @@ function checkSameDayMovement(
     sameDayHigherTeam = sdmTeam;
 
     if (isSelected) {
+      // An actual selection for a higher team makes the player unavailable
+      // for lower-team fixtures that day (§7.2).
       return {
         blockReason: `Selected for ${sdmTeam} on same day`,
         selectedByTeam: sdmTeam,
@@ -382,17 +384,13 @@ function checkSameDayMovement(
         warnings,
       };
     }
-    // Availability lock: no Unavailable exception = available (§7.2).
-    const hasException = ctx.unavailablePlayerMatchKeys.has(
-      `${player.id}:${fixture.matchId}`,
-    );
-    if (!hasException) {
-      return {
-        blockReason: `Available for ${sdmTeam} on same day`,
-        selectedByTeam,
-        sameDayHigherTeam: sdmTeam,
-        warnings,
-      };
+    // Product decision 2026-09-03: mere AVAILABILITY for a higher team no
+    // longer locks the player out of lower-team fixtures - the player remains
+    // selectable by their own team. Surfaced as a planning warning instead;
+    // the exception model and selection-time rules are unchanged.
+    const availabilityWarning = `Available for ${sdmTeam} on same day`;
+    if (!warnings.includes(availabilityWarning)) {
+      warnings.push(availabilityWarning);
     }
     // Unavailable exception for the higher fixture releases the lock.
   }

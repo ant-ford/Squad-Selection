@@ -317,11 +317,9 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
     let eligible = false;
     try {
       const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
-      // Same-day is neutralised for portal presentation (players plan
-      // availability here); selection-time evaluation keeps every rule.
-      ctx.sameDayMatches = [];
-      ctx.sameDayFixtures = [];
-      ctx.sameDaySelectionsByTeam = new Map();
+      // Portal gate = the engine itself (no neutralisation): mere availability
+      // for a higher team no longer blocks (product decision 2026-09-03),
+      // while an actual selection for a higher team still does.
       const result = evaluatePlayerEligibility(user, side.match, ctx);
       eligible = result.status !== "blocked";
     } catch (err) {

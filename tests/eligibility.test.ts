@@ -9,7 +9,7 @@ vi.mock("../worker/src/airtable", () => ({
   escapeFormulaValue: (v: string) => v,
 }));
 
-import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type EligibilityReasonTag, type VirtualSelection } from "../worker/src/eligibility";
+import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type EligibilityReasonTag, type VirtualSelection } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
 import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
 
@@ -364,7 +364,7 @@ describe("evaluatePlayerEligibility", () => {
   // ─── Step 4: Same-Day Movement ────────────────────────────────────
 
   describe("Step 4: Same-Day Movement (§7)", () => {
-    it("blocks lower team when player is available for higher team same day", () => {
+    it("warns (does not block) when player is available for higher team same day", () => {
       const sameDayMatches = [
         m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
       ];
@@ -373,10 +373,13 @@ describe("evaluatePlayerEligibility", () => {
         m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
         ctx({ sameDayMatches })
       );
-      expect(r.status).toBe("blocked");
-      expect(r.reason).toBe("Available for HKFC A on same day");
+      // Product decision 2026-09-03: availability for a higher team no longer
+      // locks the player out of lower-team fixtures.
+      expect(r.status).toBe("warning");
+      expect(r.reason).toBeNull();
+      expect(r.warnings).toContain("Available for HKFC A on same day");
       expect(r.sameDayHigherTeam).toBe("HKFC A");
-      expect(r.reasonTag?.source).toBe("Bye-Law 7.1 & HKFC Spec §7.2");
+      expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     });
 
     it("allows lower team when player has Unavailable exception for higher team", () => {

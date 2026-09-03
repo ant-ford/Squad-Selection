@@ -741,7 +741,7 @@ The evaluation order is **fixed and must never change:**
 | 1 | Admin Data Validation (§2.2) | Blocked: "Admin data incomplete" |
 | 2 | Suspension (§5) | Blocked: "Suspended" |
 | 3 | Visiting Player Restrictions (§6) | Blocked: varies |
-| 4 | Same-Day Team Movement (§7) | Blocked: "Available for [Team] on same day" / "Selected for [Team] on same day" |
+| 4 | Same-Day Team Movement (§7) | Blocked: "Selected for [Team] on same day". Warning (no block): "Available for [Team] on same day" |
 | 5 | Premier Division Restrictions (§8) | Blocked: "Premier movement restriction - team has not completed 3 matches" |
 | 6 | Play-Up Rules (§9-11) | Blocked: "Higher-to-lower movement requires Committee approval" or "Play-up limit reached - re-registration required" |
 | 7 | Cup Eligibility (§14) | Blocked: varies (Premier ban, min appearances, cross-cup) |
@@ -772,7 +772,7 @@ The evaluation order is **fixed and must never change:**
 **Step 4 - Same-Day Movement:**
 - For each same-day match involving a higher-ranked HKFC team:
   - If player is already Selected for that team: `"Selected for [Team] on same day"` (blocked)
-  - If player has no Unavailable exception for that team: `"Available for [Team] on same day"` (blocked)
+  - If player merely has no Unavailable exception for that team: `"Available for [Team] on same day"` (warning - product decision 2026-09-03: availability no longer locks lower-team fixtures)
 - Rule IDs: `RULE_IDS.SAME_DAY_AVAILABLE`, `RULE_IDS.SAME_DAY_SELECTED`
 - Entire calendar day, kick-off times ignored
 
@@ -812,7 +812,7 @@ The evaluation order is **fixed and must never change:**
 | U21 movement | Immediate next higher-ranked team only | Any higher-ranked team permitted |
 | U21 timing | No timing restriction in text, but some interpret as "higher team plays after" | Kick-off sequence ignored |
 | Goalkeeper exemption | Bye-law 7.5 ambiguously drafted | Non-A-team GKs exempt when playing as GK; `Match Cards.Goalkeeper` is authoritative |
-| Availability lock | - | No Unavailable exception = player is available; same-day lock applies |
+| Availability lock | - | Only an actual selection for a higher team locks the same-day slot; mere availability is a warning (2026-09-03) |
 | Play-up count | - | Single counter for league + cup; 4th triggers re-registration |
 | Higher-team priority | - | If higher team selects a player already selected by lower team, lower selection is auto-removed |
 

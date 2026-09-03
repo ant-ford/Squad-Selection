@@ -195,13 +195,14 @@ describe("Golden: every blocked reason string and rule ID", () => {
     expect(r.reason).toBe("Visiting player — fewer than 5 appearances for registered team");
     expect(r.ruleId).toBe(RULE_IDS.VISITING_CUP_APPEARANCES);
   });
-  it("SAME_DAY_AVAILABLE (availability lock, calendar-day)", () => {
+  it("SAME_DAY_AVAILABLE (availability surfaced as a warning, calendar-day)", () => {
     const r = evaluatePlayerEligibility(
       p(), m({ homeTeam: "HKFC C" }),
       ctx({ sameDayMatches: [m({ id: "m2", homeTeam: "HKFC A" })] }),
     );
-    expect(r.reason).toBe("Available for HKFC A on same day");
-    expect(r.ruleId).toBe(RULE_IDS.SAME_DAY_AVAILABLE);
+    expect(r.status).toBe("warning");
+    expect(r.warnings).toContain("Available for HKFC A on same day");
+    expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     expect(r.sameDayHigherTeam).toBe("HKFC A");
   });
   it("SAME_DAY_SELECTED", () => {
