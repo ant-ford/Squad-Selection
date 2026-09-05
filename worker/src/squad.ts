@@ -9,7 +9,7 @@ import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../src/generated/fieldMaps";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapMatchCard } from "../../src/mappers/matchCardMapper";
-import type { Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
+import type { KitColour, Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
 import {
   buildEvaluationContext,
@@ -163,6 +163,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   });
 
   const teamsByName = new Map(teams.map((t) => [t.teamName || "", t]));
+  const resolvedSide = resolveHkfcSide(match, teamRankMap, side);
   const matchInfo = {
     hkfcTeam,
     date: match.matchDate || "",
@@ -175,6 +176,11 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     selectedCount: selectedPlayerIds.size,
     autoSelectEnabled: match.autoSelectEnabled ?? false,
     autoSelectPlayerIds: teamsByName.get(hkfcTeam)?.autoSelectPlayers || [],
+    // Which side this screen is selecting, so the kit toggle writes the
+    // right field. Uses the same resolver as the selection write path, so a
+    // derby cannot end up reading one side's kit while writing the other's.
+    side: resolvedSide,
+    kit: ((resolvedSide === "away" ? match.awayKit : match.homeKit) || "") as KitColour,
   };
   return { match: matchInfo, players };
 }
@@ -301,6 +307,44 @@ export async function toggleAutoSelect(env: Env, matchId: string, enabled: boole
   invalidateCachePrefix(`players-for-match:${matchId}:`);
   console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
   return { success: true, autoSelectEnabled: enabled };
+}
+
+const KIT_COLOURS: readonly string[] = ["Blue", "White", ""];
+
+/**
+ * Set the shirt colour for one side of a fixture.
+ *
+ * Home and Away are separate fields so a derby (HKFC B v HKFC C) can have a
+ * different colour per side; the caller says which side it is setting. An
+ * empty string clears the choice back to "not yet decided".
+ */
+export async function setMatchKit(
+  env: Env,
+  matchId: string,
+  side: "home" | "away",
+  kit: string,
+  actingEmail?: string,
+) {
+  if (side !== "home" && side !== "away") {
+    throw new HttpError('side must be "home" or "away"', 400);
+  }
+  if (!KIT_COLOURS.includes(kit)) {
+    throw new HttpError('kit must be "Blue", "White" or empty', 400);
+  }
+  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+  if (!matchRecord) throw new HttpError("Match not found", 404);
+
+  const field = side === "home" ? MATCHES_FIELDS.homeKit : MATCHES_FIELDS.awayKit;
+  await airtableUpdate(env, TABLES.match, matchId, { [field]: kit });
+
+  // Same invalidation set as the auto-select toggle: the fixture views and
+  // the calendar feeds all read the kit off the cached match records.
+  invalidateCache(`match:${matchId}`);
+  invalidateCache("scheduled-matches");
+  invalidateCachePrefix(`players-for-match:${matchId}:`);
+  invalidateCachePrefix("calendar:");
+  console.log(`[Kit Audit] matchId=${matchId} side=${side} kit=${kit || "(cleared)"} actor=${actingEmail || "unknown"}`);
+  return { success: true, side, kit };
 }
 
 // ── Priority Player List Management ─────────────────────────────────────

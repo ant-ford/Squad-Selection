@@ -433,7 +433,7 @@ export default function SquadSelection() {
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>
-      <MatchHeader match={optimisticMatch} />
+      <MatchHeader match={optimisticMatch} matchId={matchId} />
 
       {optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
         <div className="container mx-auto px-4 pt-3">

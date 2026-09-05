@@ -18,5 +18,10 @@ export function mapMatch(record: any): Match {
     fixtureId: f[MATCHES_FIELDS.fixtureId] || '',
     selectedPlayersHome: f[MATCHES_FIELDS.selectedPlayersHome] || [],
     selectedPlayersAway: f[MATCHES_FIELDS.selectedPlayersAway] || [],
+    // Was missing: squad.ts reads match.autoSelectEnabled, so without this
+    // the coach's auto-select toggle always read back as off.
+    autoSelectEnabled: f[MATCHES_FIELDS.autoSelectEnabled] === true,
+    homeKit: f[MATCHES_FIELDS.homeKit] || '',
+    awayKit: f[MATCHES_FIELDS.awayKit] || '',
   };
 }

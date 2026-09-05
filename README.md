@@ -301,6 +301,12 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 **Date-level availability** (`POST /api/set-my-availability-for-date`) applies one status to every HKFC fixture on a date, so "I'm away this Saturday" is a single tap rather than one per card — including the play-up and support pools. It began as a goalkeeper-cohort shortcut and is now open to every authorized player; the player dashboard surfaces the control on any date where the player has more than one fixture in play. Individual fixtures stay independently overridable afterwards.
 
+### Kit Colour
+
+`Matches.Home Kit` and `Matches.Away Kit` are single-selects (`Blue` / `White`, blank = undecided). **Two fields, not one**, so a derby (HKFC B v HKFC C) gives each side its own colour. Coaches set it from the squad-selection header via `POST /api/match/:id/kit` (coach-only); the screen writes whichever side it is currently selecting, resolved with the same `resolveHkfcSide` helper the selection write uses, so a derby can never read one side's kit while writing the other's.
+
+Players see it as a coloured dot on their fixture card, and the calendar feeds carry it as a 🔵/⚪ in the event title plus a `Kit:` line in the description. The iCalendar `COLOR` property (RFC 7986) is deliberately **not** used: few clients honour it, and a white event on a white calendar grid is invisible in the ones that do.
+
 **Endpoint access levels.** Every `/api` route requires a verified session. Reads that back the coach screens (squad selection, availability polling, recommendations, the ability ranking and eligibility metrics) additionally require coach rights; `GET /api/player-fixtures/:id` is restricted to the player themselves or a coach. Only three routes are deliberately public: `/health`, and the two HMAC-signed `.ics` calendar feeds, which calendar clients subscribe to without being able to send an `Authorization` header. `tests/authorization-routes.test.ts` locks this down.
 
 â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.4`](docs/Implementation_Roadmap_v4.md)

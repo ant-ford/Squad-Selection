@@ -1,4 +1,4 @@
-import { apiGet } from '@/lib/apiClient';
+import { apiGet, apiPost } from '@/lib/apiClient';
 
 export interface EligibilityIssue {
   rule: string;
@@ -39,6 +39,22 @@ export interface MatchInfo {
   hkfcTeam?: string;
   autoSelectEnabled?: boolean;
   autoSelectPlayerIds?: string[];
+  /** Side this screen is selecting; the kit toggle writes that side's field. */
+  side?: 'home' | 'away';
+  /** Shirt colour for that side. '' until a coach picks one. */
+  kit?: KitColour;
+}
+
+/** Shirt colour options. '' means not yet decided. */
+export type KitColour = 'Blue' | 'White' | '';
+
+/** Set the shirt colour for one side of a fixture (coach only). */
+export async function setMatchKit(
+  matchId: string,
+  side: 'home' | 'away',
+  kit: KitColour,
+): Promise<{ success: boolean; side: string; kit: string }> {
+  return apiPost(`/api/match/${encodeURIComponent(matchId)}/kit`, { side, kit });
 }
 
 export interface GetPlayersForMatchOutput {

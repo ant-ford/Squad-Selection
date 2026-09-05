@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     removeSelection: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
+    setMatchKit: vi.fn(),
     toggleAutoSelect: vi.fn(),
     getTeamAutoSelectPlayers: vi.fn(),
     setTeamAutoSelectPlayers: vi.fn(),
@@ -83,6 +84,7 @@ vi.mock("../worker/src/squad", () => ({
   removeSelection: mocks.removeSelection,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
+  setMatchKit: mocks.setMatchKit,
   toggleAutoSelect: mocks.toggleAutoSelect,
   getTeamAutoSelectPlayers: mocks.getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers: mocks.setTeamAutoSelectPlayers,
@@ -524,6 +526,40 @@ describe("read routes require authentication", () => {
     const res = await call("/api/ranking");
     expect(res.status).toBe(200);
     expect(mocks.getActiveRanking).toHaveBeenCalled();
+  });
+});
+
+describe("kit colour is coach-only", () => {
+  it("denies a non-coach", async () => {
+    const res = await call("/api/match/recM1/kit", jsonInit({ side: "home", kit: "Blue" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(mocks.setMatchKit).not.toHaveBeenCalled();
+  });
+
+  it("passes the side and colour through for a coach", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.setMatchKit.mockResolvedValue({ success: true, side: "away", kit: "White" });
+
+    const res = await call("/api/match/recM1/kit", jsonInit({ side: "away", kit: "White" }));
+
+    expect(res.status).toBe(200);
+    expect(mocks.setMatchKit).toHaveBeenCalledWith(ENV, "recM1", "away", "White", "coach@hkfc.com");
+  });
+
+  it("rejects a side that is neither home nor away", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    const res = await call("/api/match/recM1/kit", jsonInit({ side: "sideways", kit: "Blue" }));
+    expect(res.status).toBe(400);
+    expect(mocks.setMatchKit).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing colour as clearing the choice", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.setMatchKit.mockResolvedValue({ success: true, side: "home", kit: "" });
+    const res = await call("/api/match/recM1/kit", jsonInit({ side: "home" }));
+    expect(res.status).toBe(200);
+    expect(mocks.setMatchKit).toHaveBeenCalledWith(ENV, "recM1", "home", "", "coach@hkfc.com");
   });
 });
 

@@ -20,6 +20,8 @@ type Fixture = {
   availabilityExceptionId?: string;
   isPlayUp?: boolean;
   selectionTeam?: string;
+  /** Shirt colour for this fixture; '' until a coach sets it. */
+  kit?: 'Blue' | 'White' | '';
 };
 
 interface Props {
@@ -80,10 +82,24 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       {/* Top row: title + StatusBadge */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-foreground">
-            {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
-            <span className="text-muted-foreground font-normal"> vs </span>
-            {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
+          <p className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+            <span className="truncate">
+              {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
+              <span className="text-muted-foreground font-normal"> vs </span>
+              {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
+            </span>
+            {/* Which shirt to bring. Hidden until a coach has decided. */}
+            {fixture.kit && (
+              <span
+                title={`${fixture.kit} kit`}
+                aria-label={`${fixture.kit} kit`}
+                className={`h-3 w-3 rounded-full border shrink-0 ${
+                  fixture.kit === 'Blue'
+                    ? 'bg-blue-600 border-blue-700'
+                    : 'bg-white border-neutral-400'
+                }`}
+              />
+            )}
           </p>
         </div>
         <StatusBadge status={fixture.selectionStatus} />

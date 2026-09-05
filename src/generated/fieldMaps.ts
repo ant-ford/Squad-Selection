@@ -54,6 +54,8 @@ export const MATCHES_FIELDS = {
   selectedPlayersHome: "Selected Players Home",
   selectedPlayersAway: "Selected Players Away",
   autoSelectEnabled: "Auto Select Enabled",
+  homeKit: "Home Kit",
+  awayKit: "Away Kit",
 } as const;
 
 export const AVAILABILITYEXCEPTIONS_FIELDS = {

@@ -111,7 +111,13 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
     }
   }
 
-  const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}`;
+  // Kit is shown as a coloured circle in the title rather than the iCalendar
+  // COLOR property: COLOR (RFC 7986) is honoured by very few clients, and a
+  // white event on a white grid is invisible in the ones that do. The emoji
+  // renders everywhere and survives the text-only views.
+  const kitIcon = fixture.kit === "Blue" ? " 🔵" : fixture.kit === "White" ? " ⚪" : "";
+  const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}${kitIcon}`;
+  const kitLine = fixture.kit ? `Kit: ${fixture.kit}\n` : "";
 
   let description = "";
   if (isPlayerFeed) {
@@ -127,9 +133,9 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
     const categoryLine = fixture.fixtureCategory && categoryLabels[fixture.fixtureCategory]
       ? `Category: ${categoryLabels[fixture.fixtureCategory]}\n`
       : "";
-    description = `${categoryLine}Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
+    description = `${categoryLine}${kitLine}Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
   } else {
-    description = `Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} Selected\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
+    description = `${kitLine}Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} Selected\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
     if (squadNames.length > 0) {
       description += `\n\nSelected Players:\n${squadNames.join("\n")}`;
     }

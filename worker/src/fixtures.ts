@@ -5,7 +5,7 @@ import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { mapMatch } from "../../src/mappers/matchMapper";
 import { mapPlayer } from "../../src/mappers/playerMapper";
-import type { Match, Player, Team } from "../../src/generated/domainTypes";
+import type { KitColour, Match, Player, Team } from "../../src/generated/domainTypes";
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 import { buildEvaluationContext } from "./seasonContext";
@@ -74,6 +74,8 @@ function buildSpecialGoalkeeperCard(
   availabilityStatus: string; playerNotes: string; availabilityExceptionId: string;
   selectionStatus: string; selectionNotes: string; selectedCount: number; targetSquadSize: number;
   isPlayUp?: boolean;
+  /** Shirt colour for the HKFC side this fixture is shown from. */
+  kit: KitColour;
 } {
   const home = m.homeTeam || "";
   const away = m.awayTeam || "";
@@ -116,6 +118,9 @@ function buildSpecialGoalkeeperCard(
     selectionNotes: "",
     selectedCount: selectedIds.length,
     targetSquadSize: team?.targetSquadSize || 16,
+    // Resolved to the side being shown, so a derby gives each team its own
+    // colour rather than one kit for the fixture.
+    kit: (isHome ? m.homeKit : m.awayKit) || "",
   };
 }
 
@@ -351,6 +356,9 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
       availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
+      // Kit follows the side being shown, so each half of a derby keeps its
+      // own colour.
+      kit: ((s.isHome ? s.match.homeKit : s.match.awayKit) || "") as KitColour,
       // fixtureCategory is presentation only; "play-up" is used exclusively
       // for the higher-team fillers above the relevant team.
       fixtureCategory: x.category,
@@ -473,8 +481,9 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
         hkfcTeam, 
         opponent, 
         isHome,
-        division: m.division || "", 
-        venue: m.venue || "", 
+        division: m.division || "",
+        venue: m.venue || "",
+        kit: ((isHome ? m.homeKit : m.awayKit) || "") as KitColour,
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount: selectedIds.length, 
         selectedIds, 

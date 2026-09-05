@@ -12,6 +12,7 @@ import {
   removeSelection,
   getAvailabilityForMatch,
   syncSquad,
+  setMatchKit,
   toggleAutoSelect,
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
@@ -195,6 +196,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
         return json(
           await toggleAutoSelect(env, autoSelectMatch[1], enabled, user.email),
+          200,
+          origin,
+        );
+      }
+
+      // ── Kit Colour (Write - Coach) ─────────────────────────────────────────
+      const matchKitMatch = pathname.match(/^\/api\/match\/([^/]+)\/kit$/);
+      if (method === "POST" && matchKitMatch) {
+        const user = await requireCoach(request, env);
+        const body = await readJsonBody(request);
+        const side = body.side === "away" ? "away" : body.side === "home" ? "home" : undefined;
+        if (!side) throw new HttpError('side must be "home" or "away"', 400);
+        const kit = typeof body.kit === "string" ? body.kit : "";
+        return json(
+          await setMatchKit(env, matchKitMatch[1], side, kit, user.email),
           200,
           origin,
         );

@@ -62,7 +62,14 @@ export interface Match {
   selectedPlayersHome?: string[];
   selectedPlayersAway?: string[];
   autoSelectEnabled?: boolean;
+  /** Shirt colour for each side. Blank until a coach sets it. Two fields
+   *  rather than one so a derby (HKFC B v HKFC C) can differ per side. */
+  homeKit?: KitColour;
+  awayKit?: KitColour;
 }
+
+/** Shirt colour options on Matches.Home Kit / Away Kit. "" = not yet set. */
+export type KitColour = "Blue" | "White" | "";
 
 export interface AvailabilityException {
   id: string;
