@@ -34,10 +34,27 @@ export function useAuth() {
     };
   }, []);
 
+  // Sends the sign-in email. The Supabase template carries BOTH a magic link
+  // and a 6-digit code, so either route signs the same person in. The code
+  // exists because corporate mail scanners (Outlook Safe Links, Mimecast,
+  // Proofpoint) pre-fetch links to inspect them, which burns the single-use
+  // magic-link token before the recipient ever clicks it.
   const loginWithEmail = async (email: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: window.location.origin }
+    });
+    if (error) throw error;
+  };
+
+  // Code path of the same sign-in. On success Supabase persists the session
+  // and fires onAuthStateChange, so the listener above picks the user up and
+  // callers don't need to set any state themselves.
+  const verifyEmailOtp = async (email: string, token: string): Promise<void> => {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email'
     });
     if (error) throw error;
   };
@@ -51,6 +68,7 @@ export function useAuth() {
     user,
     isLoading: loading,
     loginWithEmail,
+    verifyEmailOtp,
     logout
   };
 }

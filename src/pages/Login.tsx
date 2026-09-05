@@ -4,10 +4,17 @@ import { useMyProfile } from '@/lib/queries';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
+const CODE_LENGTH = 6;
+
 export default function Login() {
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { loginWithEmail, user } = useAuth();
+  const [code, setCode] = useState('');
+  // 'request' collects the email; 'verify' is shown once the email is on its
+  // way, and accepts the code for anyone whose link was eaten by a scanner.
+  const [step, setStep] = useState<'request' | 'verify'>('request');
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const { loginWithEmail, verifyEmailOtp, user } = useAuth();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const navigate = useNavigate();
 
@@ -22,22 +29,52 @@ export default function Login() {
     }
   }, [user, profile, profileLoading, navigate]);
 
-  const handleSubmit = async (e: SubmitEvent) => {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement | null;
-    if (!form) return;
-
-    setLoading(true);
+  const sendEmail = async (): Promise<boolean> => {
+    setSending(true);
     try {
       await loginWithEmail(email);
-      toast.success('Magic link sent! Check your email.');
+      toast.success('Email sent! Use the link or enter the code below.');
+      return true;
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : 'Failed to send link';
+        err instanceof Error ? err.message : 'Failed to send email';
       toast.error(message);
+      return false;
     } finally {
-      setLoading(false);
+      setSending(false);
     }
+  };
+
+  const handleRequest = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (await sendEmail()) setStep('verify');
+  };
+
+  const handleResend = async () => {
+    setCode('');
+    await sendEmail();
+  };
+
+  const handleVerify = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setVerifying(true);
+    try {
+      // On success the auth listener picks up the session and the redirect
+      // effect above takes over.
+      await verifyEmailOtp(email, code.trim());
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Invalid or expired code';
+      toast.error(message);
+      setCode('');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const startOver = () => {
+    setStep('request');
+    setCode('');
   };
 
   if (user) return null;
@@ -55,34 +92,91 @@ export default function Login() {
         <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
           HKFC Squad Manager
         </h1>
-        <p className="text-muted-foreground mb-6 text-center">
-          Enter your email to receive a magic link
-        </p>
-        <form onSubmit={(e) => handleSubmit(e as unknown as SubmitEvent)}>
-          <input
-            type="email"
-            value={email}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setEmail(e.target.value)
-            }
-            placeholder="your@email.com"
-            required
-            className="w-full p-2 border border-border rounded mb-4 bg-background text-foreground"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors"
-          >
-            {loading ? 'Sending...' : 'Send Magic Link'}
-          </button>
-        </form>
-        
-        {/* --- NEW JUNK FOLDER NOTE --- */}
+
+        {step === 'request' ? (
+          <>
+            <p className="text-muted-foreground mb-6 text-center">
+              Enter your email to sign in
+            </p>
+            <form onSubmit={handleRequest}>
+              <input
+                type="email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setEmail(e.target.value)
+                }
+                placeholder="your@email.com"
+                autoComplete="email"
+                required
+                className="w-full p-2 border border-border rounded mb-4 bg-background text-foreground"
+              />
+              <button
+                type="submit"
+                disabled={sending}
+                className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
+              >
+                {sending ? 'Sending...' : 'Send Sign-In Email'}
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            <p className="text-muted-foreground mb-2 text-center">
+              We sent an email to <span className="font-medium text-foreground">{email}</span>
+            </p>
+            <p className="text-muted-foreground mb-6 text-center text-sm">
+              Click the link in that email, or enter the {CODE_LENGTH}-digit code
+              below if the link doesn't work.
+            </p>
+            <form onSubmit={handleVerify}>
+              <input
+                type="text"
+                value={code}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setCode(e.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH))
+                }
+                placeholder={'0'.repeat(CODE_LENGTH)}
+                // one-time-code lets iOS/Android offer the code straight from
+                // the notification instead of making people switch apps.
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                pattern={`\\d{${CODE_LENGTH}}`}
+                maxLength={CODE_LENGTH}
+                autoFocus
+                required
+                className="w-full p-2 border border-border rounded mb-4 bg-background text-foreground text-center text-2xl tracking-[0.4em] font-mono"
+              />
+              <button
+                type="submit"
+                disabled={verifying || code.length !== CODE_LENGTH}
+                className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
+              >
+                {verifying ? 'Verifying...' : 'Sign In'}
+              </button>
+            </form>
+            <div className="flex justify-between mt-4 text-xs">
+              <button
+                type="button"
+                onClick={startOver}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Use a different email
+              </button>
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={sending}
+                className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
+              >
+                {sending ? 'Sending...' : 'Resend email'}
+              </button>
+            </div>
+          </>
+        )}
+
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Don't see the email? Please check your junk or spam folder.
         </p>
-        
       </div>
     </div>
   );
