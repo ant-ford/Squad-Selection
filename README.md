@@ -262,6 +262,8 @@ The **sole authority** on whether a player can be selected. Evaluates every acti
 
 Each blocked result includes an exact reason string (e.g., `"Suspended"`) and a source-citable rule tag. **MUST NOT reword these strings** â€” coaches and golden tests depend on them.
 
+Same-day availability is reported as **one** warning naming every higher team, ordered by team rank: `"Available for HKFC A, HKFC B, HKFC C on same day"`. A player registered to a low team can be available for most of the club on a busy Saturday, and one warning per team buried the rest of their row on the selection screen. With a single team the string is byte-identical to the original wording, which is what the golden matrix pins.
+
 â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.1`](docs/Implementation_Roadmap_v4.md)
 
 ### Ranking Engine (`worker/src/ranking.ts`)

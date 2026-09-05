@@ -382,6 +382,28 @@ describe("evaluatePlayerEligibility", () => {
       expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     });
 
+    // A low-ranked player can be available for most of the club on a busy
+    // Saturday. That must read as ONE warning naming the teams, not one
+    // warning per team - the coach's row was drowning in chips.
+    it("collapses availability for several higher teams into one warning", () => {
+      const sameDayMatches = [
+        m({ id: "m2", homeTeam: "HKFC C", matchDate: "2026-07-05" }),
+        m({ id: "m3", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
+        m({ id: "m4", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
+      ];
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC E" }),
+        m({ homeTeam: "HKFC E", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches })
+      );
+
+      const sameDayWarnings = r.warnings.filter((w) => w.endsWith("on same day"));
+      expect(sameDayWarnings).toHaveLength(1);
+      // Ordered by team rank, strongest first - not fixture order.
+      expect(sameDayWarnings[0]).toBe("Available for HKFC A, HKFC B, HKFC C on same day");
+      expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
+    });
+
     it("allows lower team when player has Unavailable exception for higher team", () => {
       const sameDayMatches = [
         m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),

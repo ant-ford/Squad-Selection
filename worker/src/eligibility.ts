@@ -354,8 +354,27 @@ function checkSameDayMovement(
   let selectedByTeam: string | null = null;
   let sameDayHigherTeam: string | null = null;
   const warnings: string[] = [];
+  const availableForTeams: string[] = [];
   const playerSelections = ctx.selectionsByPlayer.get(player.id);
   const playerRank = playerRanks(player, rankMap).playerRank;
+
+  /**
+   * Same-day availability is reported as ONE warning naming every higher
+   * team, not one warning per team. A player registered to a low team can be
+   * available for most of the club on a busy Saturday, and a chip per team
+   * buried everything else on their row.
+   *
+   * Teams are ordered by rank so the strongest side reads first. With a
+   * single team the string is byte-identical to the previous wording, which
+   * is what the golden matrix pins.
+   */
+  const withAvailabilityWarning = (): string[] => {
+    if (availableForTeams.length === 0) return warnings;
+    const ordered = [...availableForTeams].sort(
+      (a, b) => (rankMap[a] ?? 99) - (rankMap[b] ?? 99),
+    );
+    return [...warnings, `Available for ${ordered.join(", ")} on same day`];
+  };
 
   for (const fixture of ctx.sameDayFixtures) {
     const sdmTeam = fixture.teamName;
@@ -383,21 +402,25 @@ function checkSameDayMovement(
         blockReason: `Selected for ${sdmTeam} on same day`,
         selectedByTeam: sdmTeam,
         sameDayHigherTeam: sdmTeam,
-        warnings,
+        warnings: withAvailabilityWarning(),
       };
     }
     // Product decision 2026-09-03: mere AVAILABILITY for a higher team no
     // longer locks the player out of lower-team fixtures - the player remains
     // selectable by their own team. Surfaced as a planning warning instead;
     // the exception model and selection-time rules are unchanged.
-    const availabilityWarning = `Available for ${sdmTeam} on same day`;
-    if (!warnings.includes(availabilityWarning)) {
-      warnings.push(availabilityWarning);
+    if (!availableForTeams.includes(sdmTeam)) {
+      availableForTeams.push(sdmTeam);
     }
     // Unavailable exception for the higher fixture releases the lock.
   }
 
-  return { blockReason: null, selectedByTeam, sameDayHigherTeam, warnings };
+  return {
+    blockReason: null,
+    selectedByTeam,
+    sameDayHigherTeam,
+    warnings: withAvailabilityWarning(),
+  };
 }
 
 // ── Step 5: Premier Division Restrictions (§8) ──────────────────────────
