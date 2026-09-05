@@ -475,3 +475,78 @@ describe("misc routing", () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Read-route auth gates.
+//
+// These GETs shipped unauthenticated: the Worker is on a public URL and CORS
+// only constrains browsers, so anyone could curl squad lists, availability,
+// recommendations and the whole ability ranking. The default mocks make the
+// caller an ordinary authorized player and reject requireCoach, so a route
+// that loses its gate turns these assertions red.
+// ---------------------------------------------------------------------------
+
+describe("read routes require authentication", () => {
+  it("lets an authorized player read a match squad", async () => {
+    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
+    const res = await call("/api/match/recM1/squad");
+    expect(res.status).toBe(200);
+    expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
+  });
+
+  it("rejects an unauthenticated match squad read", async () => {
+    mocks.requireAuthorizedUser.mockRejectedValue(
+      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
+    );
+    const res = await call("/api/match/recM1/squad");
+    expect(res.status).toBe(401);
+    expect(mocks.getSquadForMatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["/api/match/recM1/players", () => mocks.getPlayersForMatch],
+    ["/api/match/recM1/recommendations", () => mocks.getRecommendationsForMatch],
+    ["/api/match/recM1/availability", () => mocks.getAvailabilityForMatch],
+    ["/api/ranking", () => mocks.getActiveRanking],
+    ["/api/ranking/inactive", () => mocks.getInactiveRanking],
+    ["/api/ranking/config", () => mocks.getAbilityGroupConfig],
+    ["/api/eligibility-metrics", () => mocks.getEligibilityMetrics],
+  ])("denies %s to a non-coach", async (path, handler) => {
+    const res = await call(path);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(handler()).not.toHaveBeenCalled();
+  });
+
+  it("allows a coach through to the ranking", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.getActiveRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    const res = await call("/api/ranking");
+    expect(res.status).toBe(200);
+    expect(mocks.getActiveRanking).toHaveBeenCalled();
+  });
+});
+
+describe("player-fixtures is restricted to self or coach", () => {
+  it("lets a player read their own fixtures", async () => {
+    mocks.getPlayerFixtures.mockResolvedValue({ fixtures: [] });
+    const res = await call(`/api/player-fixtures/${mocks.authorizedPlayer.personId}`);
+    expect(res.status).toBe(200);
+    expect(mocks.getPlayerFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer.personId);
+  });
+
+  it("stops a player reading someone else's fixtures", async () => {
+    const res = await call("/api/player-fixtures/recSomeoneElse");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(mocks.getPlayerFixtures).not.toHaveBeenCalled();
+  });
+
+  it("lets a coach read any player's fixtures", async () => {
+    mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedCoach);
+    mocks.getPlayerFixtures.mockResolvedValue({ fixtures: [] });
+    const res = await call("/api/player-fixtures/recSomeoneElse");
+    expect(res.status).toBe(200);
+    expect(mocks.getPlayerFixtures).toHaveBeenCalledWith(ENV, "recSomeoneElse");
+  });
+});

@@ -118,8 +118,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
       }
 
-      // ── Eligibility Operational Metrics ────────────────────────────────────
+      // ── Eligibility Operational Metrics (Coach) ────────────────────────────
       if (method === "GET" && pathname === "/api/eligibility-metrics") {
+        await requireCoach(request, env);
         return json(getEligibilityMetrics(), 200, origin);
       }
       if (method === "POST" && pathname === "/api/eligibility-metrics/reset") {
@@ -128,14 +129,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         return json({ success: true }, 200, origin);
       }
 
-      // ── Match / Squad (Read) ───────────────────────────────────────────────
+      // ── Match / Squad (Read - Authenticated) ───────────────────────────────
+      // The squad list is player-facing: PlayerAvailabilitySheet shows a player
+      // who else is in the squad before they set their own availability.
       const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
       if (method === "GET" && matchSquadMatch) {
+        await requireAuthorizedUser(request, env);
         return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
       }
 
+      // The remaining match reads back the coach-only selection screens.
       const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
       if (method === "GET" && matchPlayersMatch) {
+        await requireCoach(request, env);
         const side = url.searchParams.get("side") as "home" | "away" | null;
         return json(
           await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined),
@@ -146,6 +152,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
       const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
       if (method === "GET" && matchRecsMatch) {
+        await requireCoach(request, env);
         const side = url.searchParams.get("side") as "home" | "away" | null;
         const position = url.searchParams.get("position") ?? undefined;
         const limitParam = url.searchParams.get("limit");
@@ -164,6 +171,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
       const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
       if (method === "GET" && matchAvailabilityMatch) {
+        await requireCoach(request, env);
         return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
       }
 
@@ -209,9 +217,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         );
       }
 
-      // ── Player / Fixtures (Read) ───────────────────────────────────────────
+      // ── Player / Fixtures (Read - Self or Coach) ───────────────────────────
+      // The player id is client-supplied, so it is checked against the caller:
+      // a player may only read their own fixtures, coaches may read anyone's.
       const playerFixturesMatch = pathname.match(/^\/api\/player-fixtures\/([^/]+)$/);
       if (method === "GET" && playerFixturesMatch) {
+        const user = await requireAuthorizedUser(request, env);
+        if (user.role !== "coach" && user.personId !== playerFixturesMatch[1]) {
+          throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+        }
         return json(await getPlayerFixtures(env, playerFixturesMatch[1]), 200, origin);
       }
 
@@ -360,13 +374,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
 
       // ── Ranking ────────────────────────────────────────────────────────────
+      // Ranking reads are coach-only: they expose every player's ability
+      // ranking, and the ranking screen lives under /coach. The matching
+      // writes below are already gated the same way.
       if (method === "GET" && pathname === "/api/ranking") {
+        await requireCoach(request, env);
         return json(await getActiveRanking(env), 200, origin);
       }
       if (method === "GET" && pathname === "/api/ranking/inactive") {
+        await requireCoach(request, env);
         return json(await getInactiveRanking(env), 200, origin);
       }
       if (method === "GET" && pathname === "/api/ranking/config") {
+        await requireCoach(request, env);
         return json(await getAbilityGroupConfig(env), 200, origin);
       }
 

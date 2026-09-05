@@ -2,7 +2,7 @@
 
 **Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
 
-[![Tests](https://img.shields.io/badge/tests-397%20passed-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-434%20passed-brightgreen)](tests/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
 
 ---
@@ -24,7 +24,7 @@ Then get running:
 git clone https://github.com/ant-ford/Squad-Selection.git
 cd Squad-Selection
 npm install
-npx vitest run    # 397 tests, all should pass
+npx vitest run    # 434 tests, all should pass
 npx vite dev      # opens at http://localhost:5173
 ```
 
@@ -83,7 +83,7 @@ This application intentionally optimises for **coach workflow** over technical p
 **Production-ready (CURRENT IMPLEMENTATION):**
 
 - âœ” Production architecture (React + Worker + Airtable)
-- âœ” Regression-tested eligibility (397 tests, 23 golden)
+- âœ” Regression-tested eligibility (434 tests, 24 golden)
 - âœ” Generated Airtable types (never out of sync)
 - âœ” Mobile-first responsive layout
 - âœ” Cached Worker with targeted invalidation
@@ -220,9 +220,9 @@ Squad-Selection/
 â”‚       â”œâ”€â”€ registration.ts              # Automatic re-registration service
 â”‚       â”œâ”€â”€ playUp.ts              # Shared qualifying play-up definition
 â”‚       â””â”€â”€ http.ts                    # HTTP utilities
-â”œâ”€â”€ tests/                         # Vitest unit tests (397 tests)
+â”œâ”€â”€ tests/                         # Vitest unit tests (434 tests)
 â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (56 tests)
-â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (23 tests)
+â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix (24 tests)
 â”‚   â”œâ”€â”€ playerFilters.test.ts          # Filter serialization
 â”‚   â”œâ”€â”€ toggleSelection.test.ts        # Binary toggle logic
 â”‚   â”œâ”€â”€ readiness.test.ts              # Team readiness
@@ -293,7 +293,9 @@ Watches the current season's Match Cards and, when a player records their **4th 
 A daily scheduled scan (dry-run by default) plus a coach-only `POST /api/registration/reconcile` endpoint keep the ledger up to date. See [Automatic Re-registration](#automatic-re-registration) for the data model and activation steps.
 ### Availability Engine (`worker/src/availability.ts`)
 
-Exception-based: no record = Available. Only "Maybe" and "Unavailable" are stored. Self-service via unauthenticated endpoints. Polled every 30 seconds on the Squad Selection page.
+Exception-based: no record = Available. Only "Maybe" and "Unavailable" are stored. Self-service writes derive the player's identity from the verified Supabase session, never from a client-supplied email or player id. Polled every 30 seconds on the Squad Selection page.
+
+**Endpoint access levels.** Every `/api` route requires a verified session. Reads that back the coach screens (squad selection, availability polling, recommendations, the ability ranking and eligibility metrics) additionally require coach rights; `GET /api/player-fixtures/:id` is restricted to the player themselves or a coach. Only three routes are deliberately public: `/health`, and the two HMAC-signed `.ics` calendar feeds, which calendar clients subscribe to without being able to send an `Authorization` header. `tests/authorization-routes.test.ts` locks this down.
 
 â†’ Full specification: [`Implementation_Roadmap_v4.md Â§7.4`](docs/Implementation_Roadmap_v4.md)
 
@@ -407,7 +409,7 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 ```bash
 npx vite build      # Output: dist/
 npx vitest          # Watch mode
-npx vitest run      # Single pass (CI) - 397 tests across 22 files
+npx vitest run      # Single pass (CI) - 434 tests across 25 files
 npx tsc --noEmit                             # Typecheck frontend
 npx tsc --noEmit -p worker/tsconfig.json     # Typecheck worker
 ```
@@ -477,7 +479,7 @@ When the Airtable schema changes:
 
 ### Suite Overview
 
-- **397 tests** across **22 files** â€” all unit tests, no browser required
+- **434 tests** across **25 files** â€” all unit tests, no browser required
 - Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()`) â€” no dependency on real Airtable data
 - Run: `npx vitest run`
 
