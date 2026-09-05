@@ -28,7 +28,7 @@ export async function getPlayUpWatch(env: Env) {
   for (const p of ref.players) {
     if (!p.active) continue;
     const cards = ctx.matchCardsByPlayer.get(p.id) ?? [];
-    const count = cards.filter((mc) => isQualifyingPlayUpCard(mc, season)).length;
+    const count = cards.filter((mc) => isQualifyingPlayUpCard(mc, season, ctx.matchesById)).length;
     if (count >= 2) {
       watch.push({
         id: p.id,

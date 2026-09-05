@@ -16,7 +16,7 @@ import {
   REGISTRATION_EVENTS_TABLE,
   type ReconciliationInput,
 } from "../worker/src/registration";
-import { isQualifyingPlayUpCard } from "../worker/src/playUp";
+import { isFriendly, isQualifyingPlayUpCard } from "../worker/src/playUp";
 import { evaluatePlayerEligibility, type EvaluationContext } from "../worker/src/eligibility";
 import { invalidateAll, getCached } from "../src/lib/cache";
 import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
@@ -911,9 +911,39 @@ describe("single authoritative play-up definition", () => {
       card({ matchId: "recM5", team: "B", playUp: true }),
       card({ matchId: "recM6", team: "B", playUp: true }),
     ];
-    const engineCount = evaluatePlayerEligibility(player(), matchesFor(6)[0], countCtx(cards)).playUpCount;
-    const helperCount = cards.filter((c) => isQualifyingPlayUpCard(c, SEASON)).length;
+    const ctx = countCtx(cards);
+    const engineCount = evaluatePlayerEligibility(player(), matchesFor(6)[0], ctx).playUpCount;
+    const helperCount = cards.filter((c) => isQualifyingPlayUpCard(c, SEASON, ctx.matchesById)).length;
     expect(engineCount).toBe(3);
     expect(helperCount).toBe(engineCount);
+  });
+
+  // Friendlies are not competitive fixtures. Four qualifying play-ups force
+  // automatic re-registration, so counting a friendly could move a player to
+  // a higher team off the back of a warm-up game.
+  it("excludes friendlies from the play-up count, in the engine and the helper", () => {
+    const cards = [
+      card({ matchId: "recM1", team: "B", playUp: true }),
+      card({ matchId: "recM2", team: "B", playUp: true }),
+    ];
+    const ctx = countCtx(cards);
+    const friendly = ctx.matchesById.get("recM2");
+    expect(friendly).toBeDefined();
+    friendly!.competitionType = "FRIENDLY";
+
+    const engineCount = evaluatePlayerEligibility(player(), matchesFor(6)[0], ctx).playUpCount;
+    const helperCount = cards.filter((c) => isQualifyingPlayUpCard(c, SEASON, ctx.matchesById)).length;
+    expect(helperCount).toBe(1);
+    expect(engineCount).toBe(1);
+  });
+
+  it("recognises only FRIENDLY as a friendly, whatever the casing", () => {
+    const match = (competitionType: string) => ({ ...matchesFor(1)[0], competitionType });
+    expect(isFriendly(match("FRIENDLY"))).toBe(true);
+    expect(isFriendly(match("friendly"))).toBe(true); // formula output is upper-case; be tolerant
+    expect(isFriendly(match("LEAGUE"))).toBe(false);
+    expect(isFriendly(match("KNOCKOUT"))).toBe(false);
+    expect(isFriendly(match(""))).toBe(false); // unmapped division: not assumed friendly
+    expect(isFriendly(undefined)).toBe(false);
   });
 });

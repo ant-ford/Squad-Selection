@@ -1,6 +1,6 @@
 import { linkId } from "./airtable";
 import { recordEligibilityEvaluation } from "./metrics";
-import { isQualifyingPlayUpCard } from "./playUp";
+import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
 import type { CardSuspensionState } from "./suspension";
 import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
 
@@ -324,10 +324,12 @@ function checkVisitingPlayer(
   }
   if (isCup(match)) {
     // Spec §6.3: five appearances FOR THE REGISTERED TEAM.
+    // Friendlies are not appearances and never count towards the threshold.
     const appearances = cardsForPlayer(player.id, ctx).filter(
       (card) =>
         card.season === ctx.currentSeason &&
-        card.team === player.registeredTeam,
+        card.team === player.registeredTeam &&
+        !isFriendly(matchForCard(card, ctx)),
     ).length;
     if (appearances < 5) {
       return "Visiting player — fewer than 5 appearances for registered team";
@@ -489,7 +491,7 @@ function calculatePlayUpCount(
   // Single authoritative qualifying play-up definition (shared with the
   // automatic re-registration service and the Play-Up Watch dashboard).
   return cardsForPlayer(player.id, ctx).filter(
-    (mc) => isQualifyingPlayUpCard(mc, ctx.currentSeason),
+    (mc) => isQualifyingPlayUpCard(mc, ctx.currentSeason, ctx.matchesById),
   ).length;
 }
 
@@ -544,6 +546,7 @@ function generateWarnings(
   currentSeason: string,
   targetHkfcTeam: string,
   u21DoubleGameCount: number,
+  matchesById: Map<string, Match>,
 ): string[] {
   const warnings: string[] = [];
   if (playUpCount === 2) {
@@ -557,7 +560,9 @@ function generateWarnings(
       return (
         pId === player.id &&
         mc.team === player.registeredTeam &&
-        mc.season === currentSeason
+        mc.season === currentSeason &&
+        // Mirrors the blocking check above: friendlies are not appearances.
+        !isFriendly(matchesById.get(safeLinkId(mc.match) ?? ""))
       );
     }).length;
     if (apps < 5) {
@@ -746,7 +751,7 @@ function evaluateInternal(
   // ── Generate Warnings ──
   const warnings = generateWarnings(
     player, playUpResult.playUpCount, ctx.matchCards, ctx.currentSeason,
-    targetHkfcTeam, u21DoubleGameCount,
+    targetHkfcTeam, u21DoubleGameCount, ctx.matchesById,
   );
   for (const w of sameDayWarnings) {
     if (!warnings.includes(w)) warnings.push(w);

@@ -211,7 +211,7 @@ export function planAutomaticReRegistrations(input: ReconciliationInput): Reconc
     // Card - never People.Playing Position - so a goalkeeper-positioned
     // player's field-player play-ups count normally.
     const shapeCards = (cardsByPlayer.get(player.id) ?? []).filter((card) =>
-      isQualifyingPlayUpCard(card, season),
+      isQualifyingPlayUpCard(card, season, matchesById),
     );
     if (shapeCards.length < RE_REGISTRATION_THRESHOLD) continue;
 
