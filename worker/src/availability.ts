@@ -12,7 +12,7 @@ import {
   linkId,
 } from "./airtable";
 import { getPlayerByEmail, getReferenceData } from "./reference";
-import { getScheduledMatches, isSpecialGoalkeeper } from "./fixtures";
+import { getScheduledMatches } from "./fixtures";
 import { HttpError } from "./http";
 import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
@@ -250,11 +250,18 @@ export interface SetMyAvailabilityForDateInput {
 }
 
 /**
- * Bulk-apply availability for every HKFC fixture on one date. This is a UX
- * shortcut for the special goalkeeper view: underneath it performs the
- * existing match-level updates (exceptions upserted, "Available" deletes
- * exceptions - no Available records are ever created). Individual fixtures
- * remain independently overridable afterwards.
+ * Bulk-apply availability for every HKFC fixture on one date.
+ *
+ * Originally a shortcut for the special goalkeeper view, now open to every
+ * authorized player: "I'm away this Saturday" is the single most common
+ * thing a player needs to say, and doing it one card at a time is the most
+ * common complaint. The date deliberately covers EVERY HKFC fixture that
+ * day, not just the player's own team - marking yourself out should also
+ * take you out of the play-up and support pools without further taps.
+ *
+ * Underneath it performs the existing match-level updates (exceptions
+ * upserted, "Available" deletes exceptions - no Available records are ever
+ * created). Individual fixtures remain independently overridable afterwards.
  */
 export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilityForDateInput) {
   if (!input.email || !input.date || !input.status) {
@@ -267,13 +274,6 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
   const ref = await getReferenceData(env);
-  if (!isSpecialGoalkeeper(user, ref)) {
-    throw new HttpError(
-      "Date-level availability is only available to the goalkeeper cohort",
-      403,
-      "NOT_SPECIAL_GOALKEEPER",
-    );
-  }
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const matchIds = (await getScheduledMatches(env))
     .filter((m) => (m.matchDate || "").split("T")[0] === input.date)

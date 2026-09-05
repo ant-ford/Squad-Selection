@@ -204,10 +204,22 @@ describe("setMyAvailabilityForDate", () => {
     expect(state.exceptions).toHaveLength(0);
   });
 
-  it("rejects non-goalkeeper-cohort players with 403", async () => {
+  // Date-level availability used to be restricted to the goalkeeper cohort.
+  // It is now open to every authorized player: "I'm away this Saturday" is
+  // the most common thing a player needs to say, and it should not take one
+  // tap per fixture.
+  it("allows an outfield player to clear a whole date", async () => {
+    const out = await setMyAvailabilityForDate(ENV, { email: "dave@hkfc.com", date: DATE_KEY, status: "Unavailable" });
+    expect(out.success).toBe(true);
+    expect(out.updated).toBe(2); // recM1 + recM2; the no-HKFC-side match is excluded
+    expect(state.exceptions).toHaveLength(2);
+    expect(state.exceptions.every((e) => e.fields["Availability Status"] === "Unavailable")).toBe(true);
+  });
+
+  it("still refuses an email with no People record", async () => {
     await expect(
-      setMyAvailabilityForDate(ENV, { email: "dave@hkfc.com", date: DATE_KEY, status: "Unavailable" }),
-    ).rejects.toMatchObject({ status: 403, code: "NOT_SPECIAL_GOALKEEPER" });
+      setMyAvailabilityForDate(ENV, { email: "nobody@example.com", date: DATE_KEY, status: "Unavailable" }),
+    ).rejects.toMatchObject({ status: 404 });
     expect(state.exceptions).toHaveLength(0);
   });
 

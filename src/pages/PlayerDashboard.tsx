@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/useAuth';
 import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
@@ -16,6 +16,42 @@ import AppFooter from '@/components/AppFooter';
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
 const dateKey = (d: string) => (d || '').split('T')[0];
+
+/**
+ * One-tap availability for a whole day. Shown to the goalkeeper cohort for
+ * every date, and to everyone else on dates where they have more than one
+ * fixture in play (own team, play-up or support) - the case where setting
+ * each card individually is the most tedious.
+ */
+function DayAvailabilityControl({
+  date,
+  busy,
+  onSet,
+}: {
+  date: string;
+  busy: string | null;
+  onSet: (date: string, status: AvailabilityStatus) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 py-1.5 flex-wrap">
+      <span className="text-[11px] text-muted-foreground">Set availability for the day:</span>
+      {(['Available', 'Maybe', 'Unavailable'] as AvailabilityStatus[]).map((s) => (
+        <button
+          key={s}
+          disabled={busy !== null}
+          onClick={() => onSet(date, s)}
+          className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors disabled:opacity-50 ${
+            busy === date + s
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'border-border text-muted-foreground hover:bg-muted/50'
+          }`}
+        >
+          {s === 'Available' ? 'All going' : s === 'Maybe' ? 'All maybe' : 'All out'}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function PlayerDashboard() {
   const { user, isLoading, logout } = useAuth();
@@ -72,28 +108,43 @@ export default function PlayerDashboard() {
     }
   };
 
-  // Date-level bulk availability (special goalkeeper view): a UX shortcut
-  // that performs the existing match-level updates for every fixture on the
-  // date. "Available" removes exceptions; individual cards stay overridable.
+  // Date-level bulk availability: a UX shortcut that performs the existing
+  // match-level updates for every fixture on the date. "Available" removes
+  // exceptions; individual cards stay overridable.
+  //
+  // The Worker applies this to every HKFC fixture that day, so the play-up
+  // and support lists have to be patched alongside "My Team" - otherwise a
+  // player marks themselves out and the play-up cards still read Available.
   const handleBulkAvailability = async (date: string, status: AvailabilityStatus) => {
     const previousData = data;
     setBulkBusy(date + status);
-    setData((prev) => {
-      if (!prev) return prev;
-      const upd = (f: MyFixture) => (dateKey(f.date) === date ? { ...f, availabilityStatus: status } : f);
-      return { ...prev, fixtures: prev.fixtures.map(upd) };
-    });
+    const patchAllSections = (
+      prev: GetMyFixturesOutput | null,
+      upd: (f: MyFixture) => MyFixture,
+    ) =>
+      prev
+        ? {
+            ...prev,
+            fixtures: prev.fixtures.map(upd),
+            playUpOpportunities: prev.playUpOpportunities?.map(upd),
+            supportFixtures: prev.supportFixtures?.map(upd),
+          }
+        : prev;
+
+    setData((prev) =>
+      patchAllSections(prev, (f) =>
+        dateKey(f.date) === date ? { ...f, availabilityStatus: status } : f,
+      ),
+    );
     try {
       const result = await setMyAvailabilityForDate(date, status);
-      setData((prev) => {
-        if (!prev) return prev;
-        const upd = (f: MyFixture) => {
+      setData((prev) =>
+        patchAllSections(prev, (f) => {
           if (dateKey(f.date) !== date) return f;
           const r = result.results.find((x) => x.matchId === f.id);
           return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || '' };
-        };
-        return { ...prev, fixtures: prev.fixtures.map(upd) };
-      });
+        }),
+      );
       toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`);
     } catch (err) {
       if (previousData) setData(previousData);
@@ -130,6 +181,24 @@ export default function PlayerDashboard() {
       map.set(key, list);
     }
     return Array.from(map.entries());
+  }, [data]);
+
+  // How many fixtures the player could act on per date, across all three
+  // lists. Drives whether a day is worth a one-tap control: on a date with a
+  // single fixture the card's own buttons already do the job.
+  const relevantCountByDate = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!data) return counts;
+    const all = [
+      ...data.fixtures,
+      ...(data.playUpOpportunities ?? []),
+      ...(data.supportFixtures ?? []),
+    ];
+    for (const f of all) {
+      const key = dateKey(f.date);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
   }, [data]);
 
   if (isLoading || !user) return <DashboardSkeleton />;
@@ -235,23 +304,11 @@ export default function PlayerDashboard() {
                 {gkFixturesByDate?.map(([date, list]) => (
                   <div key={date}>
                     <SectionHeader title={safeFormat(date, 'EEEE d MMM')} count={list.length} />
-                    <div className="flex items-center gap-1.5 py-1.5">
-                      <span className="text-[11px] text-muted-foreground">Set availability for the day:</span>
-                      {(['Available', 'Maybe', 'Unavailable'] as AvailabilityStatus[]).map((s) => (
-                        <button
-                          key={s}
-                          disabled={bulkBusy !== null}
-                          onClick={() => handleBulkAvailability(date, s)}
-                          className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors disabled:opacity-50 ${
-                            bulkBusy === date + s
-                              ? 'bg-primary text-primary-foreground border-primary'
-                              : 'border-border text-muted-foreground hover:bg-muted/50'
-                          }`}
-                        >
-                          {s === 'Available' ? 'All going' : s === 'Maybe' ? 'All maybe' : 'All out'}
-                        </button>
-                      ))}
-                    </div>
+                    <DayAvailabilityControl
+                      date={date}
+                      busy={bulkBusy}
+                      onSet={handleBulkAvailability}
+                    />
                     <div className="space-y-2">
                       {list.map((f) => renderCard(f))}
                     </div>
@@ -269,7 +326,24 @@ export default function PlayerDashboard() {
               </div>
             ) : (
               <div className="space-y-2">
-                {data.fixtures.map((f) => renderCard(f))}
+                {data.fixtures.map((f, i) => {
+                  const key = dateKey(f.date);
+                  const isFirstOfDate =
+                    data.fixtures.findIndex((x) => dateKey(x.date) === key) === i;
+                  const worthADayControl = (relevantCountByDate.get(key) ?? 0) > 1;
+                  return (
+                    <Fragment key={`${f.id}-${f.hkfcTeam}`}>
+                      {isFirstOfDate && worthADayControl && (
+                        <DayAvailabilityControl
+                          date={key}
+                          busy={bulkBusy}
+                          onSet={handleBulkAvailability}
+                        />
+                      )}
+                      {renderCard(f)}
+                    </Fragment>
+                  );
+                })}
               </div>
             )}
 
