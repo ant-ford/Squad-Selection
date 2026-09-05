@@ -30,6 +30,7 @@ export interface MyFixture {
 }
 
 export interface GetMyFixturesOutput {
+  playerId: string;
   playerName: string;
   /** The team the app displays for this player (Selected Team EOS -> SOS -> Registered). */
   displayTeam?: string;

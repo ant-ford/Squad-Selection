@@ -301,6 +301,18 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 **Date-level availability** (`POST /api/set-my-availability-for-date`) applies one status to every HKFC fixture on a date, so "I'm away this Saturday" is a single tap rather than one per card — including the play-up and support pools. It began as a goalkeeper-cohort shortcut and is now open to every authorized player; the player dashboard surfaces the control on any date where the player has more than one fixture in play. Individual fixtures stay independently overridable afterwards.
 
+### Season Statistics (`worker/src/playerStats.ts`)
+
+`GET /api/player-stats/:playerId` (self or coach) backs the panel on the player dashboard and the coach drill-in from the ranking row menu. It reads entirely off the cached season context, so it costs no extra Airtable calls.
+
+- **Form** — last five results as coloured tiles (green win, white draw, red loss). Tapping one shows that game's score, goals and cards. A fixture without a recorded score is left out of the form rather than shown as a 0–0 draw.
+- **Appearances** come from Match Cards: the card *is* the appearance record, so selections are never used to infer that someone played.
+- **Card points** reuse `yellowPointsFor()` from the suspension engine, so the Bye-Law 16.3 scale (including `"Y2 (2)"` quantity suffixes) has exactly one implementation. Red cards are shown but carry no yellow points.
+- **Participation** is `gamesPlayed / teamGames`, with `(gamesPlayed + gamesAvailableNotSelected) / teamGames` in brackets. `teamGames` counts only fixtures with `Match Status = Played`. "Maybe" is treated as available, not a refusal.
+- **Friendlies are excluded** throughout, consistent with the eligibility counts — a warm-up game must not move a participation percentage.
+
+Participation can exceed 100%: appearances for other teams (play-ups and support games) count towards `gamesPlayed`, while `teamGames` only counts the player's own team's fixtures. That is deliberate — it reads as "turned out more often than their own team played".
+
 ### Notifying the Squad (WhatsApp click-to-chat)
 
 Coaches open **Notify** on the squad-selection screen to tell the selected squad they are playing. No WhatsApp Business account, API or approval is involved — a `wa.me` link opens WhatsApp on the coach's own device with the message pre-filled and **the coach presses send**. The app never sends anything.

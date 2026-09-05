@@ -12,6 +12,7 @@ import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
+import SeasonStats from '@/components/SeasonStats';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -283,6 +284,12 @@ export default function PlayerDashboard() {
       </div>
 
       <div className="container mx-auto px-4 pb-8">
+        {data.playerId && (
+          <div className="mb-4">
+            <SeasonStats playerId={data.playerId} />
+          </div>
+        )}
+
         {isSpecialGK ? (
           <>
             <div className="mb-3 p-3 rounded-lg bg-muted/60 border border-border">

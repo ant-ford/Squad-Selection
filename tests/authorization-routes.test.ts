@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     removeSelection: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
+    getPlayerSeasonStats: vi.fn(),
     setMatchKit: vi.fn(),
     toggleAutoSelect: vi.fn(),
     getTeamAutoSelectPlayers: vi.fn(),
@@ -120,6 +121,7 @@ vi.mock("../worker/src/metrics", () => ({
   getEligibilityMetrics: mocks.getEligibilityMetrics,
   resetEligibilityMetrics: mocks.resetEligibilityMetrics,
 }));
+vi.mock("../worker/src/playerStats", () => ({ getPlayerSeasonStats: mocks.getPlayerSeasonStats }));
 vi.mock("../worker/src/dashboard", () => ({
   getPlayUpWatch: mocks.getPlayUpWatch,
   getRecentAvailability: mocks.getRecentAvailability,
@@ -560,6 +562,41 @@ describe("kit colour is coach-only", () => {
     const res = await call("/api/match/recM1/kit", jsonInit({ side: "home" }));
     expect(res.status).toBe(200);
     expect(mocks.setMatchKit).toHaveBeenCalledWith(ENV, "recM1", "home", "", "coach@hkfc.com");
+  });
+});
+
+// Season stats back both the player's own dashboard panel and the coach
+// drill-in, so they use the same self-or-coach gate as player-fixtures.
+describe("player season stats are restricted to self or coach", () => {
+  it("lets a player read their own stats", async () => {
+    mocks.getPlayerSeasonStats.mockResolvedValue({ gamesPlayed: 3 });
+    const res = await call(`/api/player-stats/${mocks.authorizedPlayer.personId}`);
+    expect(res.status).toBe(200);
+    expect(mocks.getPlayerSeasonStats).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer.personId);
+  });
+
+  it("stops a player reading another player's stats", async () => {
+    const res = await call("/api/player-stats/recSomeoneElse");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(mocks.getPlayerSeasonStats).not.toHaveBeenCalled();
+  });
+
+  it("lets a coach drill into any player", async () => {
+    mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedCoach);
+    mocks.getPlayerSeasonStats.mockResolvedValue({ gamesPlayed: 9 });
+    const res = await call("/api/player-stats/recSomeoneElse");
+    expect(res.status).toBe(200);
+    expect(mocks.getPlayerSeasonStats).toHaveBeenCalledWith(ENV, "recSomeoneElse");
+  });
+
+  it("rejects an unauthenticated read", async () => {
+    mocks.requireAuthorizedUser.mockRejectedValue(
+      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
+    );
+    const res = await call("/api/player-stats/recP1");
+    expect(res.status).toBe(401);
+    expect(mocks.getPlayerSeasonStats).not.toHaveBeenCalled();
   });
 });
 

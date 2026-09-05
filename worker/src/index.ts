@@ -41,6 +41,7 @@ import {
 import { getEligibilityMetrics, resetEligibilityMetrics } from "./metrics";
 import type { AbilityGroupConfigMap } from "../../src/generated/domainTypes";
 import { getPlayUpWatch, getRecentAvailability, getRecentChanges } from "./dashboard";
+import { getPlayerSeasonStats } from "./playerStats";
 import { reconcileRegistrations } from "./registration";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 import type { Player } from "../../src/generated/domainTypes";
@@ -231,6 +232,18 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           200,
           origin,
         );
+      }
+
+      // ── Player Season Stats (Read - Self or Coach) ─────────────────────────
+      // Backs the player's own stats panel and the coach drill-in from the
+      // ranking / selection screens, so the same gate as player-fixtures.
+      const playerStatsMatch = pathname.match(/^\/api\/player-stats\/([^/]+)$/);
+      if (method === "GET" && playerStatsMatch) {
+        const user = await requireAuthorizedUser(request, env);
+        if (user.role !== "coach" && user.personId !== playerStatsMatch[1]) {
+          throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+        }
+        return json(await getPlayerSeasonStats(env, playerStatsMatch[1]), 200, origin);
       }
 
       // ── Player / Fixtures (Read - Self or Coach) ───────────────────────────

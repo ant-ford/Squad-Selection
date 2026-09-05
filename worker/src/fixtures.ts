@@ -139,6 +139,8 @@ export async function getMyFixtures(env: Env, email: string) {
   const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
   const isCoach = coachTeams.length > 0;
   const base = {
+    // The dashboard's season-stats panel reads stats for this id.
+    playerId: user.id,
     playerName: user.preferredName || user.givenNames || "Player",
     registeredTeam: displayTeam, displayTeam, playingPosition: user.playingPosition || "",
     shirtNoValue: user.shirtNoValue || "", isCoach, coachTeams, captainTeams, isSectionCaptain,
