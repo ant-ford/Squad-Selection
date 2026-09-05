@@ -3,12 +3,14 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
 import { toast } from 'sonner';
-import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { apiPost, apiGet } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
+import NotifySquadSheet from '@/components/NotifySquadSheet';
+import type { FixtureBrief } from '@/lib/whatsapp';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -55,6 +57,7 @@ export default function SquadSelection() {
   const [hasRunAutoSelect, setHasRunAutoSelect] = useState(false);
   const [priorityPlayers, setPriorityPlayers] = useState<PriorityPlayer[]>([]);
   const [showPriorityManager, setShowPriorityManager] = useState(false);
+  const [showNotify, setShowNotify] = useState(false);
   const [prioritySearch, setPrioritySearch] = useState('');
   const [savingPriority, setSavingPriority] = useState(false);
 
@@ -320,6 +323,25 @@ export default function SquadSelection() {
     [mergedPlayers]
   );
 
+  // Squad to notify, in the order shown on screen. Uses the merged list so a
+  // just-selected player is included without waiting for a refetch.
+  const selectedPlayers = useMemo(
+    () => mergedPlayers.filter(p => p.selectionStatus === 'Selected'),
+    [mergedPlayers]
+  );
+
+  const notifyFixture: FixtureBrief | null = useMemo(() => {
+    const m = data?.match;
+    if (!m) return null;
+    return {
+      hkfcTeam: m.hkfcTeam || m.homeTeam,
+      opponent: m.hkfcTeam === m.awayTeam ? m.homeTeam : m.awayTeam,
+      date: m.date,
+      venue: m.venue,
+      kit: m.kit ?? '',
+    };
+  }, [data?.match]);
+
   const pendingPlayers = useMemo(
     () => mergedPlayers.filter(p => pendingDeltas.some(d => d.playerId === p.id)),
     [mergedPlayers, pendingDeltas]
@@ -486,6 +508,17 @@ export default function SquadSelection() {
             `} />
           </span>
         </button>
+
+        {selectedPlayers.length > 0 && notifyFixture && (
+          <button
+            onClick={() => setShowNotify(true)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title="Message the selected squad on WhatsApp"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            Notify ({selectedPlayers.length})
+          </button>
+        )}
 
         {autoSelectEnabled && (
           <>
@@ -656,6 +689,18 @@ export default function SquadSelection() {
           destructive
           onConfirm={() => blocker.proceed()}
           onCancel={() => blocker.reset()}
+        />
+      )}
+
+      {showNotify && notifyFixture && (
+        <NotifySquadSheet
+          fixture={notifyFixture}
+          players={selectedPlayers.map(p => ({
+            id: p.id,
+            preferredName: p.preferredName,
+            mobile: p.mobile,
+          }))}
+          onClose={() => setShowNotify(false)}
         />
       )}
     </div>

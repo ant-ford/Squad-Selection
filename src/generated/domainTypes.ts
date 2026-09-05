@@ -5,6 +5,8 @@ export interface Player {
   surname?: string;
   shirtNoValue?: string;
   email?: string;
+  /** People."Mobile No." - used only to build coach WhatsApp links. */
+  mobileNo?: string;
   active?: boolean;
   registeredTeam?: string;
   /** People."Selected Team SOS" - season-start selected team (static for the season). */

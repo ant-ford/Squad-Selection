@@ -25,6 +25,7 @@ export const PEOPLE_FIELDS = {
   photo: "Photo",
   sportsBackground: "Sports Background / Involvement",
   selectionComments: "Selection Comments/Coach Requests",
+  mobileNo: "Mobile No.",
 } as const;
 
 export const TEAMS_FIELDS = {

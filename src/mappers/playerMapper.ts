@@ -24,6 +24,7 @@ export function mapPlayer(record: any): Player {
     surname: f[PEOPLE_FIELDS.surname],
     shirtNoValue: f[PEOPLE_FIELDS.shirtNoValue],
     email: f[PEOPLE_FIELDS.email],
+    mobileNo: f[PEOPLE_FIELDS.mobileNo],
     active: f[PEOPLE_FIELDS.active],
     registeredTeam: f[PEOPLE_FIELDS.registeredTeam],
     selectedTeamSos: f[PEOPLE_FIELDS.selectedTeamSos],

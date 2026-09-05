@@ -8,6 +8,8 @@ export interface EligibilityIssue {
 export interface MatchPlayer {
   id: string;
   preferredName: string;
+  /** Raw stored mobile number; coach-only payload. May be blank or malformed. */
+  mobile?: string;
   registeredTeam: string;
   playingPosition: string;
   playingAbility: string;

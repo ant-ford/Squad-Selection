@@ -132,6 +132,10 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     return {
       id: p.id,
       preferredName: name,
+      // Coaches build WhatsApp click-to-chat links in the browser, so the
+      // number has to reach the client. This endpoint is coach-only; the
+      // player-facing squad list (getSquadForMatch) never includes it.
+      mobile: p.mobileNo || "",
       // Display value: Selected Team EOS -> SOS -> Registered Team (optics).
       // Eligibility above was computed from the true Registered Team.
       registeredTeam: selectedDisplayTeam(p),

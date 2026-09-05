@@ -301,6 +301,14 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 **Date-level availability** (`POST /api/set-my-availability-for-date`) applies one status to every HKFC fixture on a date, so "I'm away this Saturday" is a single tap rather than one per card — including the play-up and support pools. It began as a goalkeeper-cohort shortcut and is now open to every authorized player; the player dashboard surfaces the control on any date where the player has more than one fixture in play. Individual fixtures stay independently overridable afterwards.
 
+### Notifying the Squad (WhatsApp click-to-chat)
+
+Coaches open **Notify** on the squad-selection screen to tell the selected squad they are playing. No WhatsApp Business account, API or approval is involved — a `wa.me` link opens WhatsApp on the coach's own device with the message pre-filled and **the coach presses send**. The app never sends anything.
+
+`wa.me` addresses exactly one recipient, so there is no link that messages a whole squad. The sheet therefore offers both routes: one tap per player, and a copyable announcement to paste into the team's existing group chat.
+
+Numbers come from `People.Mobile No.` on the coach-only match payload (the player-facing squad list never includes them). `toWhatsAppNumber()` in [`src/lib/whatsapp.ts`](src/lib/whatsapp.ts) normalises them and **returns null rather than guessing** — bare 8-digit numbers are assumed Hong Kong, `+`/`00` prefixes are treated as international, and anything else is refused. That strictness is deliberate: `wa.me` opens happily with an unusable recipient, so a bad number would look to the coach exactly like a message that sent. Players whose number cannot be normalised are listed as unreachable with a pointer to fix the Airtable field.
+
 ### Kit Colour
 
 `Matches.Home Kit` and `Matches.Away Kit` are single-selects (`Blue` / `White`, blank = undecided). **Two fields, not one**, so a derby (HKFC B v HKFC C) gives each side its own colour. Coaches set it from the squad-selection header via `POST /api/match/:id/kit` (coach-only); the screen writes whichever side it is currently selecting, resolved with the same `resolveHkfcSide` helper the selection write uses, so a derby can never read one side's kit while writing the other's.
