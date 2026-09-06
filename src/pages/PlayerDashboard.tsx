@@ -286,7 +286,7 @@ export default function PlayerDashboard() {
       <div className="container mx-auto px-4 pb-8">
         {data.playerId && (
           <div className="mb-4">
-            <SeasonStats playerId={data.playerId} />
+            <SeasonStats playerId={data.playerId} defaultOpen={false} />
           </div>
         )}
 

@@ -6,12 +6,37 @@ import { useNavigate } from 'react-router-dom';
 
 const CODE_LENGTH = 6;
 
+// Which address we last sent a code to. Checking email means leaving the
+// app - switching to the mail app on a phone, or reloading - and without
+// this the player came back to the email form with a code and nowhere to
+// type it. Session-scoped: it is a convenience, not a credential.
+const PENDING_EMAIL_KEY = 'login:pendingEmail';
+
+function readPendingEmail(): string {
+  try {
+    return sessionStorage.getItem(PENDING_EMAIL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writePendingEmail(value: string | null) {
+  try {
+    if (value) sessionStorage.setItem(PENDING_EMAIL_KEY, value);
+    else sessionStorage.removeItem(PENDING_EMAIL_KEY);
+  } catch {
+    // Blocked storage just means we lose the resume; the flow still works.
+  }
+}
+
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => readPendingEmail());
   const [code, setCode] = useState('');
-  // 'request' collects the email; 'verify' is shown once the email is on its
-  // way, and accepts the code for anyone whose link was eaten by a scanner.
-  const [step, setStep] = useState<'request' | 'verify'>('request');
+  // 'request' collects the email; 'verify' accepts the code. We resume
+  // straight into 'verify' when a send is already outstanding.
+  const [step, setStep] = useState<'request' | 'verify'>(() =>
+    readPendingEmail() ? 'verify' : 'request',
+  );
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const { loginWithEmail, verifyEmailOtp, user } = useAuth();
@@ -47,7 +72,16 @@ export default function Login() {
 
   const handleRequest = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (await sendEmail()) setStep('verify');
+    if (await sendEmail()) {
+      writePendingEmail(email);
+      setStep('verify');
+    }
+  };
+
+  /** Cross-device case: the code arrived on a phone, the app is on a laptop. */
+  const haveACode = () => {
+    if (email.trim()) writePendingEmail(email.trim());
+    setStep('verify');
   };
 
   const handleResend = async () => {
@@ -62,6 +96,7 @@ export default function Login() {
       // On success the auth listener picks up the session and the redirect
       // effect above takes over.
       await verifyEmailOtp(email, code.trim());
+      writePendingEmail(null); // signed in; nothing outstanding to resume
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Invalid or expired code';
@@ -73,6 +108,7 @@ export default function Login() {
   };
 
   const startOver = () => {
+    writePendingEmail(null);
     setStep('request');
     setCode('');
   };
@@ -118,16 +154,36 @@ export default function Login() {
                 {sending ? 'Sending...' : 'Send Sign-In Email'}
               </button>
             </form>
+            {/* Someone who already has a code — read on another device, or
+                after this tab reloaded — needs a way back to the code box. */}
+            <button
+              type="button"
+              onClick={haveACode}
+              className="mt-3 w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              I already have a code
+            </button>
           </>
         ) : (
           <>
             <p className="text-muted-foreground mb-2 text-center">
-              We sent an email to <span className="font-medium text-foreground">{email}</span>
+              We sent an email to{' '}
+              <span className="font-medium text-foreground">{email || 'your address'}</span>
             </p>
-            <p className="text-muted-foreground mb-6 text-center text-sm">
-              Click the link in that email, or enter the {CODE_LENGTH}-digit code
-              below if the link doesn't work.
+            <p className="text-muted-foreground mb-4 text-center text-sm">
+              Tap the link in that email, or type its {CODE_LENGTH}-digit code here.
             </p>
+            {!email && (
+              <input
+                type="email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                autoComplete="email"
+                required
+                className="w-full p-2 border border-border rounded mb-3 bg-background text-foreground"
+              />
+            )}
             <form onSubmit={handleVerify}>
               <input
                 type="text"
