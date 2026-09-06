@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { setMyAvailabilityForDate, setMyAvailability } from "../worker/src/availability";
 import { invalidateAll } from "../worker/src/cache";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -66,7 +67,6 @@ function match(id: string, homeTeam: string, hkfc = true): any {
 }
 
 let state: { people: any[]; teams: any[]; matches: any[]; exceptions: any[] };
-let nextId: number;
 
 function seed() {
   state = {
@@ -79,68 +79,18 @@ function seed() {
     ],
     exceptions: [],
   };
-  nextId = 1;
 }
 
 function installFakeAirtable() {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    const method = init?.method ?? "GET";
-    const store = (): any[] =>
-      table === "People" ? state.people : table === "Teams" ? state.teams : table === "Matches" ? state.matches : table === "Availability Exceptions" ? state.exceptions : [];
-
-    if (method === "POST") {
-      const body = JSON.parse(init.body);
-      if (body.records) {
-        // Batch create -> returns the created records array.
-        const created = body.records.map((r: any, i: number) => ({ id: `recNew${nextId++}`, fields: r.fields }));
-        store().push(...created);
-        return Promise.resolve(new Response(JSON.stringify({ records: created }), { status: 200 }));
-      }
-      // Single create -> returns the record object itself.
-      const created = { id: `recNew${nextId++}`, fields: body.fields };
-      store().push(created);
-      return Promise.resolve(new Response(JSON.stringify(created), { status: 200 }));
-    }
-    if (method === "PATCH") {
-      const id = (u.match(/\/rec[A-Za-z0-9]+$/) ?? [])[0]?.slice(1);
-      const body = JSON.parse(init.body);
-      const target = store().find((r) => r.id === id);
-      if (target) target.fields = { ...target.fields, ...body.fields };
-      return Promise.resolve(new Response(JSON.stringify(target ?? {}), { status: 200 }));
-    }
-    if (method === "DELETE") {
-      const body = JSON.parse(init.body);
-      const ids: string[] = body.records ?? [body];
-      for (const id of ids) {
-        const idx = store().findIndex((r) => r.id === id);
-        if (idx >= 0) store().splice(idx, 1);
-      }
-      return Promise.resolve(new Response(JSON.stringify({ records: [] }), { status: 200 }));
-    }
-
-    // Honest filterByFormula emulation for People email lookups.
-    if (table === "People" && u.includes("filterByFormula")) {
-      const q = new URLSearchParams(u.split("?")[1] ?? "");
-      const formula = decodeURIComponent(q.get("filterByFormula") || "");
-      const m = formula.match(/"([^"]+)"/);
-      const needle = m ? m[1].toLowerCase() : "";
-      const filtered = store().filter((r) => (r.fields?.Email || "").toLowerCase() === needle);
-      return Promise.resolve(new Response(JSON.stringify({ records: filtered }), { status: 200 }));
-    }
-
-    // GET list / by id
-    const byId = u.match(/\/rec[A-Za-z0-9]+$/);
-    if (byId) {
-      const found = store().find((r) => r.id === byId[0].slice(1));
-      if (!found) return Promise.resolve(new Response("Not found", { status: 404 }));
-      return Promise.resolve(new Response(JSON.stringify(found), { status: 200 }));
-    }
-    return Promise.resolve(new Response(JSON.stringify({ records: store() }), { status: 200 }));
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
+  // Getters, not a snapshot: some tests reassign state.exceptions etc.
+  // directly, and the fake must see the live array.
+  const tables: FakeTables = {
+    get People() { return state.people; },
+    get Teams() { return state.teams; },
+    get Matches() { return state.matches; },
+    get "Availability Exceptions"() { return state.exceptions; },
+  };
+  fakeAirtable(tables);
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 10));

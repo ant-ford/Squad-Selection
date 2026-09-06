@@ -17,58 +17,12 @@ import {
   type CardSuspensionState,
 } from "../worker/src/suspension";
 import { evaluatePlayerEligibility, type EvaluationContext } from "../worker/src/eligibility";
-import type { Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
+import type { Match, MatchCard, Team } from "../shared/schema/domainTypes";
+import { p, m, mc } from "./helpers/factories";
 
 // ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
-
-function p(overrides: Partial<Player> = {}): Player {
-  return {
-    id: "p1",
-    active: true,
-    registeredTeam: "HKFC C",
-    playingPosition: "Defender",
-    playingAbility: "B",
-    isVisitingPlayer: false,
-    isSuspended: false,
-    matchesToServe: 0,
-    everRegisteredToPremier: false,
-    u21Eligible: false,
-    preferredName: "Test Player",
-    ...overrides,
-  };
-}
-
-function m(overrides: Partial<Match> = {}): Match {
-  return {
-    id: "m1",
-    matchDate: "2026-07-05",
-    season: "2025-2026",
-    homeTeam: "HKFC C",
-    awayTeam: "Opponent",
-    homeTeamScore: 0,
-    awayTeamScore: 0,
-    division: "Division 2",
-    competitionType: "League",
-    matchStatus: "Scheduled",
-    ...overrides,
-  };
-}
-
-function mc(overrides: Partial<MatchCard> = {}): MatchCard {
-  return {
-    id: "mc1",
-    player: ["p1"],
-    match: ["m1"],
-    team: "HKFC C",
-    playerTeam: "HKFC C",
-    playUp: false,
-    goalkeeper: false,
-    season: "2025-2026",
-    ...overrides,
-  };
-}
 
 function stateFor(
   cards: MatchCard[],

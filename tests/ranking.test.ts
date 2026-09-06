@@ -9,8 +9,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // past the end of the list.
 // ---------------------------------------------------------------------------
 
-import { activatePlayer } from "../worker/src/ranking";
+import { activatePlayer, deactivatePlayer, reorderRanking, setAbilityGroupConfig } from "../worker/src/ranking";
 import { invalidateAll } from "../worker/src/cache";
+import type { AuthorizedUser } from "../worker/src/auth";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -137,5 +138,90 @@ describe("activatePlayer", () => {
     const newPlayer = state.people.find((p) => p.id === "recNewPlayer")!;
     expect(newPlayer.fields.Active).toBe(true);
     expect(newPlayer.fields["Section Rank"]).toBe(3);
+  });
+});
+
+function sectionCaptain(): AuthorizedUser {
+  return { email: "captain@hkfc.com", personId: "recCaptain", role: "coach", coachTeams: [], isSectionCaptain: true };
+}
+
+function ranksOf(): { id: string; rank: number }[] {
+  return state.people
+    .filter((p) => p.fields.Active === true)
+    .map((p) => ({ id: p.id, rank: p.fields["Section Rank"] }))
+    .sort((a, b) => a.rank - b.rank);
+}
+
+describe("reorderRanking", () => {
+  beforeEach(() => {
+    state.people = [
+      person("recA1", { Active: true, "Section Rank": 1 }),
+      person("recA2", { Active: true, "Section Rank": 2 }),
+      person("recA3", { Active: true, "Section Rank": 3 }),
+    ];
+  });
+
+  it("keeps ranks contiguous after a reorder", async () => {
+    await reorderRanking(ENV, ["recA3", "recA1", "recA2"], "coach@hkfc.com");
+    expect(ranksOf()).toEqual([
+      { id: "recA3", rank: 1 },
+      { id: "recA1", rank: 2 },
+      { id: "recA2", rank: 3 },
+    ]);
+  });
+
+  it("rejects a stale playerIds list (wrong count) with 409", async () => {
+    await expect(
+      reorderRanking(ENV, ["recA1", "recA2"], "coach@hkfc.com"),
+    ).rejects.toMatchObject({ status: 409 });
+    // Nothing was written - the stale request never reaches the batch update.
+    expect(ranksOf()).toEqual([
+      { id: "recA1", rank: 1 },
+      { id: "recA2", rank: 2 },
+      { id: "recA3", rank: 3 },
+    ]);
+  });
+});
+
+describe("deactivatePlayer", () => {
+  it("keeps the remaining ranks contiguous 1..N after removing a middle player", async () => {
+    state.people = [
+      person("recA1", { Active: true, "Section Rank": 1 }),
+      person("recA2", { Active: true, "Section Rank": 2 }),
+      person("recA3", { Active: true, "Section Rank": 3 }),
+    ];
+
+    await deactivatePlayer(ENV, "recA2", "coach@hkfc.com");
+
+    const recA2 = state.people.find((p) => p.id === "recA2")!;
+    expect(recA2.fields.Active).toBe(false);
+    expect(recA2.fields["Section Rank"]).toBeNull();
+    expect(ranksOf()).toEqual([
+      { id: "recA1", rank: 1 },
+      { id: "recA3", rank: 2 },
+    ]);
+  });
+});
+
+describe("setAbilityGroupConfig", () => {
+  it("rejects a total capacity greater than the active player count", async () => {
+    state.people = [
+      person("recA1", { Active: true, "Section Rank": 1 }),
+      person("recA2", { Active: true, "Section Rank": 2 }),
+    ];
+    const config = { A: 1, B: 1, C: 1, D: 0, E: 0, F: 0, G: 0 }; // totals 3, only 2 active
+
+    await expect(
+      setAbilityGroupConfig(ENV, config, sectionCaptain()),
+    ).rejects.toMatchObject({ status: 400 });
+    // Rejected before any config write.
+    expect(state.abilityConfig).toEqual([]);
+  });
+
+  it("rejects a non-Section-Captain caller", async () => {
+    const notCaptain: AuthorizedUser = { email: "coach@hkfc.com", personId: "recCoach", role: "coach", coachTeams: ["A"], isSectionCaptain: false };
+    await expect(
+      setAbilityGroupConfig(ENV, { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 }, notCaptain),
+    ).rejects.toMatchObject({ status: 403 });
   });
 });

@@ -10,6 +10,7 @@ import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../worker/src/cache";
 import type { Player } from "../shared/schema/domainTypes";
 import type { AuthorizedUser } from "../worker/src/auth";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 function authUser(email: string): AuthorizedUser {
   return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
@@ -91,19 +92,8 @@ function fakeRecord(kind: "player" | "team" | "match", domain: any): any {
   };
 }
 
-function installFakeAirtable(tables: Record<string, any[]>) {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    if (!u.includes("api.airtable.com")) {
-      return Promise.resolve(new Response("{}", { status: 404 }));
-    }
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    return Promise.resolve(
-      new Response(JSON.stringify({ records: tables[table] ?? [] }), { status: 200 }),
-    );
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
-  return { fetchMock };
+function installFakeAirtable(tables: FakeTables) {
+  return fakeAirtable(tables);
 }
 
 describe("ranking payload displays the Selected Team", () => {

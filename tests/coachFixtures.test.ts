@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { getUpcomingFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../worker/src/cache";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -57,29 +58,13 @@ function seed() {
 }
 
 function installFakeAirtable() {
-  vi.stubGlobal("fetch", vi.fn((url: any) => {
-    const u = String(url);
-    if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    const store: any[] = table === "People" ? state.people : table === "Teams" ? state.teams : table === "Matches" ? state.matches : table === "Availability Exceptions" ? state.exceptions : [];
-    if (table === "People" && u.includes("filterByFormula")) {
-      const formula = decodeURIComponent(new URLSearchParams(u.split("?")[1]).get("filterByFormula") || "");
-      const needle = (formula.match(/"([^"]+)"/) || [])[1]?.toLowerCase() || "";
-      // Only an {Email} lookup filters; other People formulas (e.g.
-      // {Active}=TRUE()) return every record.
-      const isEmailLookup = u.includes("%7BEmail%7D");
-      const matched = isEmailLookup
-        ? store.filter((r) => (r.fields?.Email || "").toLowerCase() === needle)
-        : store;
-      return Promise.resolve(new Response(JSON.stringify({ records: matched }), { status: 200 }));
-    }
-    const byId = u.match(/\/rec[A-Za-z0-9]+$/);
-    if (byId) {
-      const found = store.find((r) => r.id === byId[0].slice(1));
-      return Promise.resolve(new Response(JSON.stringify(found ?? {}), { status: found ? 200 : 404 }));
-    }
-    return Promise.resolve(new Response(JSON.stringify({ records: store }), { status: 200 }));
-  }) as any);
+  const tables: FakeTables = {
+    get People() { return state.people; },
+    get Teams() { return state.teams; },
+    get Matches() { return state.matches; },
+    get "Availability Exceptions"() { return state.exceptions; },
+  };
+  fakeAirtable(tables);
 }
 
 beforeEach(() => {

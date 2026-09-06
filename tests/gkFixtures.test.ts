@@ -12,6 +12,7 @@ import {
 import { invalidateAll } from "../worker/src/cache";
 import type { ReferenceData } from "../worker/src/reference";
 import type { AuthorizedUser } from "../worker/src/auth";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 function authUser(email: string): AuthorizedUser {
   return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
@@ -136,44 +137,14 @@ function tableOf(u: string): string {
 }
 
 function installFakeAirtable() {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    fetchCalls.push({ url: u, method: init?.method ?? "GET" });
-    if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-    const table = tableOf(u);
-    let records: any[] = [];
-    if (table === "People") {
-      records = PLAYER_RECORDS;
-      // Honest filterByFormula emulation: {Email}="..."
-      const q = new URLSearchParams(u.split("?")[1] ?? "");
-      const formula = decodeURIComponent(q.get("filterByFormula") || "");
-      const m = formula.match(/"([^"]+)"/);
-      if (m) {
-        const needle = m[1].toLowerCase();
-        records = records.filter((r) => (r.fields?.["Email"] || "").toLowerCase() === needle);
-      }
-    } else if (table === "Teams") records = TEAM_RECORDS;
-    else if (table === "Matches") records = MATCH_RECORDS;
-    else if (table === "Availability Exceptions") records = EXCEPTION_RECORDS;
-    else records = [];
-    const byId = u.match(/\/rec[A-Z0-9]+/);
-    if (byId) {
-      const found = records.find((r) => u.includes(r.id));
-      return Promise.resolve(
-        new Response(JSON.stringify(found ?? { id: "x", fields: {} }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-    return Promise.resolve(
-      new Response(JSON.stringify({ records }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
+  const tables: FakeTables = {
+    People: PLAYER_RECORDS,
+    Teams: TEAM_RECORDS,
+    Matches: MATCH_RECORDS,
+    "Availability Exceptions": EXCEPTION_RECORDS,
+  };
+  const { calls } = fakeAirtable(tables);
+  fetchCalls = calls;
 }
 
 beforeEach(() => {

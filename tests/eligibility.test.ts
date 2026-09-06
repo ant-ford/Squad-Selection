@@ -11,16 +11,13 @@ vi.mock("../worker/src/airtable", () => ({
 
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
-import type { Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
+import type { Match, MatchCard, Team } from "../shared/schema/domainTypes";
+import { t, p, m, mc } from "./helpers/factories";
 
 // ── Test Data Factory ───────────────────────────────────────────────────
 
 type TeamMap = Map<string, Team>;
 type RankMap = Record<string, number>;
-
-function t(name: string, rank: number, isPremier = false): Team {
-  return { id: `team_${name.toLowerCase()}`, teamName: name, teamRank: rank, isPremier, active: true };
-}
 
 function buildMaps(teams: Team[]): { teamMap: TeamMap; rankMap: RankMap } {
   const teamMap = new Map<string, Team>();
@@ -32,53 +29,6 @@ function buildMaps(teams: Team[]): { teamMap: TeamMap; rankMap: RankMap } {
     }
   }
   return { teamMap, rankMap };
-}
-
-function p(overrides: Partial<Player> = {}): Player {
-  return {
-    id: "p1",
-    active: true,
-    registeredTeam: "HKFC C",
-    playingPosition: "Defender",
-    playingAbility: "B",
-    isVisitingPlayer: false,
-    isSuspended: false,
-    matchesToServe: 0,
-    everRegisteredToPremier: false,
-    u21Eligible: false,
-    preferredName: "Test Player",
-    ...overrides,
-  };
-}
-
-function m(overrides: Partial<Match> = {}): Match {
-  return {
-    id: "m1",
-    matchDate: "2026-07-05",
-    season: "2025-2026",
-    homeTeam: "HKFC C",
-    awayTeam: "Opponent C",
-    homeTeamScore: 0,
-    awayTeamScore: 0,
-    division: "Division 2",
-    competitionType: "League",
-    matchStatus: "Scheduled",
-    ...overrides,
-  };
-}
-
-function mc(overrides: Partial<MatchCard> = {}): MatchCard {
-  return {
-    id: "mc1",
-    player: ["p1"],
-    match: ["m1"],
-    team: "HKFC C",
-    playerTeam: "HKFC C",
-    playUp: false,
-    goalkeeper: false,
-    season: "2025-2026",
-    ...overrides,
-  };
 }
 
 type TestSelection = VirtualSelection & { id?: string; selectionStatus?: string };
