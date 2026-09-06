@@ -1,34 +1,13 @@
 import React from 'react';
 import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react';
-
-type Player = {
-  id: string;
-  preferredName: string;
-  registeredTeam: string;
-  playingPosition: string;
-  playingAbility: string;
-  availabilityStatus: string;
-  playerNotes: string;
-  playUpCount: number;
-  eligibilityStatus: string;
-  reason: string | null;
-  blocks: { rule: string; reason: string }[];
-  warnings: string[];
-  conflicts: { type: string; team: string; matchId: string }[];
-  selectionStatus: string;
-  selectionId: string;
-  isU21?: boolean;
-  isVisitingPlayer?: boolean;
-  /** Soft signal: available for this fixture but Unavailable for same-day lower-team fixtures. */
-  supportUnavailable?: string[];
-};
+import type { MatchPlayer } from '@/api/getPlayersForMatch';
 
 const POS_SHORT: Record<string, string> = {
   Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
 };
 
 interface PlayerRowProps {
-  player: Player;
+  player: MatchPlayer;
   selected: boolean;
   onToggleSelection: () => void;
   /** Optional drill-in to this player's season stats (coach screens). */

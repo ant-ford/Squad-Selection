@@ -8,9 +8,11 @@ import { mapPlayer } from "../../src/mappers/playerMapper";
 import type { KitColour, Match, Player, Team } from "../../src/generated/domainTypes";
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { hkDateKey } from "../../src/lib/hkDateKey";
 import { buildEvaluationContext } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
+import type { AuthorizedUser } from "./auth";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -125,26 +127,25 @@ function buildSpecialGoalkeeperCard(
   };
 }
 
-export async function getMyFixtures(env: Env, email: string) {
-  const user = await getPlayerByEmail(env, email);
+export async function getMyFixtures(env: Env, authUser: AuthorizedUser) {
+  const user = await getPlayerByEmail(env, authUser.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
   const teamName = user.registeredTeam || "";
   const displayTeam = selectedDisplayTeam(user) || teamName;
   const ref = await getReferenceData(env);
-  // Section Captains share coach access (see auth.ts); include their teams in
-  // coachTeams so the player-profile gates and team-scoped operations match.
-  const coachTeams = ref.teams
-    .filter((t) => (t.coach || []).includes(user.id) || (t.sectionCaptain || []).includes(user.id))
-    .map((t) => t.teamName || "");
+  // coachTeams/isSectionCaptain come from the single authorization
+  // derivation (auth.ts), not re-derived from Teams links here.
   const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
-  const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
-  const isCoach = coachTeams.length > 0;
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
     playerId: user.id,
     playerName: user.preferredName || user.givenNames || "Player",
     registeredTeam: displayTeam, displayTeam, playingPosition: user.playingPosition || "",
-    shirtNoValue: user.shirtNoValue || "", isCoach, coachTeams, captainTeams, isSectionCaptain,
+    shirtNoValue: user.shirtNoValue || "",
+    isCoach: authUser.role === "coach",
+    coachTeams: authUser.coachTeams,
+    captainTeams,
+    isSectionCaptain: authUser.isSectionCaptain,
   };
   const view = await buildPlayerFixtureView(env, user);
   return {
@@ -250,7 +251,7 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const sidesByDate = new Map<string, Side[]>();
   for (const m of upcoming) {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    const dateKey = (m.matchDate || "").split("T")[0];
+    const dateKey = hkDateKey(m.matchDate);
     const opponentFor = (isHome: boolean) => (isHome ? away : home);
     if (teamNames.has(home)) {
       const side = { match: m, team: home, opponent: opponentFor(true), isHome: true, selectedIds: m.selectedPlayersHome || [], dateKey };
@@ -322,18 +323,12 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    let eligible = false;
-    try {
-      const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
-      // Portal gate = the engine itself (no neutralisation): mere availability
-      // for a higher team no longer blocks (product decision 2026-09-03),
-      // while an actual selection for a higher team still does.
-      const result = evaluatePlayerEligibility(user, side.match, ctx);
-      eligible = result.status !== "blocked";
-    } catch (err) {
-      console.error("[MyFixtures] eligibility evaluation failed:", err);
-      eligible = false;
-    }
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    // Portal gate = the engine itself (no neutralisation): mere availability
+    // for a higher team no longer blocks (product decision 2026-09-03),
+    // while an actual selection for a higher team still does.
+    const result = evaluatePlayerEligibility(user, side.match, ctx);
+    const eligible = result.status !== "blocked";
     gateCache.set(key, eligible);
     return eligible;
   };
@@ -357,7 +352,7 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
     // A standing rule supplies the default for a fixture the player has not
     // answered; an explicit exception always wins.
     const effective = effectiveAvailability(exc?.availabilityStatus, playerRules, {
-      date: (s.match.matchDate || "").split("T")[0],
+      date: hkDateKey(s.match.matchDate),
       isPlayUp: x.category === "play-up",
       isSupport: x.category === "support",
     });
@@ -388,20 +383,11 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   };
 }
 
-
 /**
  * Calendar-facing fixture list: the SAME categorised view as the player
  * dashboard (My Team + Play-Up Opportunities + Support Fixtures), flattened.
  * Identity comes from the signed calendar token's player id.
  */
-/** The display team for a player record id (Selected Team EOS -> SOS -> Registered). */
-export async function getPlayerDisplayTeam(env: Env, playerId: string): Promise<string> {
-  const record = await airtableFindById(env, TABLES.player, playerId);
-  if (!record) return "";
-  const player = mapPlayer(record);
-  return selectedDisplayTeam(player) || player.registeredTeam || "";
-}
-
 export async function getPlayerFixtures(env: Env, playerId: string) {
   const record = await airtableFindById(env, TABLES.player, playerId);
   if (!record) throw new HttpError("Player not found or inactive", 404);
@@ -417,21 +403,14 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   };
 }
 
-export async function getUpcomingFixtures(env: Env, opts: { email?: string; team?: string }) {
+export async function getUpcomingFixtures(env: Env, opts: { user?: AuthorizedUser; team?: string }) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
   const playerById = new Map(ref.players.map((p) => [p.id, p]));
   const nameOf = (p?: Player) => (p ? p.preferredName || p.givenNames || "Player" : "");
-  let coachedTeamNames = new Set<string>();
-  if (opts.email) {
-    const user = await getPlayerByEmail(env, opts.email);
-    if (user) {
-      coachedTeamNames = new Set(ref.teams.filter((t) => (t.coach || []).includes(user.id)).map((t) => t.teamName || ""));
-      const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
-      // Section captains see the whole section, whether or not a specific team filter is applied.
-      if (isSectionCaptain) coachedTeamNames = new Set(ref.teams.map((t) => t.teamName || ""));
-    }
-  }
+  // coachTeams already includes every team name when the user is a Section
+  // Captain (see auth.ts) - no separate derivation needed here.
+  const coachedTeamNames = new Set(opts.user?.coachTeams ?? []);
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
@@ -439,10 +418,10 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
     if (opts.team) {
-      // An email-bearing call (coach export) must be scoped to teams the
-      // coach manages; the signed no-email team-feed path is already
+      // An authenticated call (coach export) must be scoped to teams the
+      // coach manages; the signed no-user team-feed path is already
       // authorised by its HMAC signature, so it must not be gated here.
-      if (opts.email && !coachedTeamNames.has(opts.team)) return false;
+      if (opts.user && !coachedTeamNames.has(opts.team)) return false;
       return home === opts.team || away === opts.team;
     }
     return coachedTeamNames.has(home) || coachedTeamNames.has(away);

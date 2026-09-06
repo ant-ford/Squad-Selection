@@ -482,6 +482,7 @@ export default function PlayerRanking() {
                         isFirst={virtualRow.index === 0}
                         isLast={virtualRow.index === filteredPlayers.length - 1}
                         disabled={isSaving || mutatingPlayerId === p.id}
+                        draftPending={draftIds !== null}
                         menuOpen={openMenuPlayerId === p.id}
                         onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
                         onMoveStep={moveStep}
@@ -512,7 +513,7 @@ export default function PlayerRanking() {
       </div>
 
       {showInactive && (
-        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} />
+        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} draftPending={draftIds !== null} />
       )}
 
       {moveToRankPlayer && (
@@ -721,6 +722,8 @@ function SortableRankingRow(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
+  /** An unsaved reorder draft exists - Activate/Deactivate would silently discard it. */
+  draftPending: boolean;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
@@ -738,6 +741,7 @@ function SortableRankingRow(props: {
         isFirst={props.isFirst}
         isLast={props.isLast}
         disabled={props.disabled}
+        draftPending={props.draftPending}
         isDragging={isDragging}
         menuOpen={props.menuOpen}
         onMenuOpenChange={props.onMenuOpenChange}
@@ -757,6 +761,7 @@ function RankingRowInner(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
+  draftPending?: boolean;
   isDragging: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (v: boolean) => void;
@@ -876,8 +881,10 @@ function RankingRowInner(props: {
                 <BarChart3 className="h-3.5 w-3.5 mr-2" /> Season stats
               </button>
               <button
-                onClick={() => { props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive"
+                onClick={() => { if (props.draftPending) return; props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
+                disabled={props.draftPending}
+                title={props.draftPending ? 'Save or discard your reorder first' : undefined}
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <UserMinus className="h-3.5 w-3.5 mr-2" /> Deactivate
               </button>
@@ -1053,8 +1060,10 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
   );
 }
 
-function InactiveSection({ entries, loading, onReactivate }: {
+function InactiveSection({ entries, loading, onReactivate, draftPending }: {
   entries: InactiveRankingEntry[]; loading: boolean; onReactivate: (entry: InactiveRankingEntry) => void;
+  /** An unsaved reorder draft exists - reactivating would silently discard it. */
+  draftPending: boolean;
 }) {
   return (
     <div className="container mx-auto px-4 pt-6">
@@ -1082,8 +1091,10 @@ function InactiveSection({ entries, loading, onReactivate }: {
                 </p>
               </div>
               <button
-                onClick={() => onReactivate(e)}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap"
+                onClick={() => { if (draftPending) return; onReactivate(e); }}
+                disabled={draftPending}
+                title={draftPending ? 'Save or discard your reorder first' : undefined}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}

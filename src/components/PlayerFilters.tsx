@@ -22,24 +22,31 @@ export const EMPTY_FILTERS: FilterState = {
   name: '',
 };
 
-export function filtersToParams(f: FilterState): string {
-  const parts: string[] = [];
+/**
+ * Returns a URLSearchParams, not a string: callers merge it into the page's
+ * search params via URLSearchParams methods (params.set(k, v)), so a value
+ * is only ever percent-encoded once. Building a string here and re-parsing
+ * it with string.split('&'/'=') downstream double-encodes anything with a
+ * space or an ampersand in it (e.g. a name filter).
+ */
+export function filtersToParams(f: FilterState): URLSearchParams {
+  const params = new URLSearchParams();
   for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
     const vals = [...(f[cat] ?? [])];
-    if (vals.length) parts.push(`${cat}=${vals.sort().join(',')}`);
+    if (vals.length) params.set(cat, vals.sort().join(','));
   }
-  if (f.name) parts.push(`name=${encodeURIComponent(f.name)}`);
-  return parts.join('&');
+  if (f.name) params.set('name', f.name);
+  return params;
 }
 
-export function paramsToFilters(search: string): FilterState {
-  const params = new URLSearchParams(search);
+export function paramsToFilters(params: string | URLSearchParams): FilterState {
+  const sp = typeof params === 'string' ? new URLSearchParams(params) : params;
   const f: FilterState = { position: new Set(), eligibility: new Set(), selection: new Set(), availability: new Set(), ability: new Set(), name: '' };
   for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
-    const raw = params.get(cat);
+    const raw = sp.get(cat);
     if (raw) f[cat] = new Set(raw.split(',').filter(Boolean));
   }
-  f.name = params.get('name') || '';
+  f.name = sp.get('name') || '';
   return f;
 }
 

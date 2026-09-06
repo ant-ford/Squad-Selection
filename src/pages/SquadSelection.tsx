@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { ABILITY_RANK } from '@/lib/abilityRank';
+import { computeAutoSelectIds } from '@/lib/autoSelect';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
@@ -46,10 +47,25 @@ export default function SquadSelection() {
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
-  const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(window.location.search));
+  const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(searchParams));
   const [saving, setSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
   const queryClient = useQueryClient();
+
+  const mergedPlayers = useMemo<MatchPlayer[]>(() => {
+    if (!data?.players) return [];
+    const map = new Map(data.players.map(p => [p.id, { ...p }]));
+    if (pollData?.exceptions) {
+      for (const exc of pollData.exceptions) {
+        const p = map.get(exc.playerId);
+        if (p) { p.availabilityStatus = exc.status; p.playerNotes = exc.notes || ''; }
+      }
+    }
+    for (const delta of pendingDeltas) {
+      const p = map.get(delta.playerId);
+      if (p) p.selectionStatus = delta.action === 'select' ? 'Selected' : '';
+    }
+    return Array.from(map.values());
+  }, [data, pollData, pendingDeltas]);
 
   // ── Auto-Select state ────────────────────────────────────────────────
   const [autoSelectEnabled, setAutoSelectEnabled] = useState<boolean>(false);
@@ -76,15 +92,7 @@ export default function SquadSelection() {
 
   const applyAutoSelect = useCallback((players: MatchPlayer[]) => {
     if (priorityPlayerIds.size === 0) return;
-    const autoIds = players
-      .filter(p =>
-        priorityPlayerIds.has(p.id) &&
-        (p.eligibilityStatus === 'eligible' || p.eligibilityStatus === 'warning') &&
-        p.availabilityStatus === 'Available' &&
-        p.selectionStatus !== 'Selected' &&
-        !suppressedPlayerIds.has(p.id)
-      )
-      .map(p => p.id);
+    const autoIds = computeAutoSelectIds(players, priorityPlayerIds, suppressedPlayerIds);
 
     if (autoIds.length === 0) return;
 
@@ -101,18 +109,18 @@ export default function SquadSelection() {
   }, [priorityPlayerIds, suppressedPlayerIds]);
 
   useEffect(() => {
-    if (!autoSelectEnabled || !data?.players || data.players.length === 0) return;
+    if (!autoSelectEnabled || mergedPlayers.length === 0) return;
     if (!hasRunAutoSelect) {
-      applyAutoSelect(data.players);
+      applyAutoSelect(mergedPlayers);
       setHasRunAutoSelect(true);
     }
-  }, [autoSelectEnabled, data?.players, hasRunAutoSelect, applyAutoSelect]);
+  }, [autoSelectEnabled, mergedPlayers, hasRunAutoSelect, applyAutoSelect]);
 
   useEffect(() => {
     if (!autoSelectEnabled || !pollData?.exceptions || pollData.exceptions.length === 0) return;
-    if (!data?.players) return;
-    applyAutoSelect(data.players);
-  }, [pollData?.exceptions, autoSelectEnabled, data?.players, applyAutoSelect]);
+    if (mergedPlayers.length === 0) return;
+    applyAutoSelect(mergedPlayers);
+  }, [pollData?.exceptions, autoSelectEnabled, mergedPlayers, applyAutoSelect]);
 
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
@@ -147,15 +155,11 @@ export default function SquadSelection() {
     if (enabled) {
       setSuppressedPlayerIds(new Set());
       setHasRunAutoSelect(false);
-      if (data?.players && priorityPlayerIds.size > 0) {
-        const autoIds = data.players
-          .filter(p =>
-            priorityPlayerIds.has(p.id) &&
-            (p.eligibilityStatus === 'eligible' || p.eligibilityStatus === 'warning') &&
-            p.availabilityStatus === 'Available' &&
-            p.selectionStatus !== 'Selected'
-          )
-          .map(p => p.id);
+      if (priorityPlayerIds.size > 0) {
+        // Suppression was just reset above, so compute against an explicit
+        // empty set here rather than through applyAutoSelect's memoized
+        // closure, which would still see this render's (pre-reset) value.
+        const autoIds = computeAutoSelectIds(mergedPlayers, priorityPlayerIds, new Set());
         if (autoIds.length > 0) {
           setPendingDeltas(prev => {
             const existingIds = new Set(prev.map(d => d.playerId));
@@ -236,9 +240,7 @@ export default function SquadSelection() {
       .sort((a, b) => a.preferredName.localeCompare(b.preferredName));
   }, [data?.players, priorityPlayers, prioritySearch]);
 
-  useEffect(() => {
-    setHasChanges(pendingDeltas.length > 0);
-  }, [pendingDeltas]);
+  const hasChanges = pendingDeltas.length > 0;
 
   useEffect(() => {
     if (!hasChanges) return;
@@ -251,33 +253,13 @@ export default function SquadSelection() {
 
   const handleFilterChange = useCallback((f: FilterState) => {
     setFilters(f);
-    const params = new URLSearchParams(window.location.search);
-    ['position', 'eligibility', 'selection', 'availability', 'ability', 'name'].forEach(k => params.delete(k));
-    const filterStr = filtersToParams(f);
-    if (filterStr) {
-      filterStr.split('&').forEach(pair => {
-        const [k, v] = pair.split('=');
-        if (k && v) params.set(k, v);
-      });
-    }
-    setSearchParams(params, { replace: true });
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      ['position', 'eligibility', 'selection', 'availability', 'ability', 'name'].forEach(k => params.delete(k));
+      for (const [k, v] of filtersToParams(f)) params.set(k, v);
+      return params;
+    }, { replace: true });
   }, [setSearchParams]);
-
-  const mergedPlayers = useMemo<MatchPlayer[]>(() => {
-    if (!data?.players) return [];
-    const map = new Map(data.players.map(p => [p.id, { ...p }]));
-    if (pollData?.exceptions) {
-      for (const exc of pollData.exceptions) {
-        const p = map.get(exc.playerId);
-        if (p) { p.availabilityStatus = exc.status; p.playerNotes = exc.notes || ''; }
-      }
-    }
-    for (const delta of pendingDeltas) {
-      const p = map.get(delta.playerId);
-      if (p) p.selectionStatus = delta.action === 'select' ? 'Selected' : '';
-    }
-    return Array.from(map.values());
-  }, [data, pollData, pendingDeltas]);
 
   const filteredPlayers = useMemo(() => {
     const nameQuery = (filters.name ?? '').trim().toLowerCase();
@@ -391,7 +373,7 @@ export default function SquadSelection() {
     setSaving(true);
     try {
       const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
-      await apiPost('/squad/sync', {
+      await apiPost('/api/squad/sync', {
         matchId,
         selectedIds,
         side: side,
@@ -410,7 +392,6 @@ export default function SquadSelection() {
       });
       toast.success('Squad synced successfully');
       setPendingDeltas([]);
-      setHasChanges(false);
       setSuppressedPlayerIds(new Set());
       queryClient.invalidateQueries({ queryKey: qk });
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });

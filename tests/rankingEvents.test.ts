@@ -94,8 +94,6 @@ function installFakeAirtable(opts: {
   return { calls, fetchMock };
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 10));
-
 beforeEach(() => {
   invalidateAll();
 });
@@ -179,7 +177,6 @@ describe("recordRankingEvents", () => {
     await recordRankingEvents(ENV, [
       { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 10, newRank: 3, justification: "new form" },
     ]);
-    await tick();
     expect(calls.some((u) => u.includes("Ranking%20Events") && u.includes("api.airtable.com"))).toBe(true);
     const { getRankingEvents: read } = await import("../worker/src/rankingEvents");
     invalidateAll();
@@ -197,14 +194,30 @@ describe("recordRankingEvents", () => {
     expect(typeof changes[0].at).toBe("string");
   });
 
-  it("never throws when the table is missing (fire-and-forget)", async () => {
+  it("propagates a failed write instead of swallowing it (no more fire-and-forget)", async () => {
     installFakeAirtable({ events: [], failEvents: true });
     await expect(
       recordRankingEvents(ENV, [
         { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
       ]),
-    ).resolves.toBeUndefined();
-    await tick();
+    ).rejects.toBeInstanceOf(Error);
+  });
+
+  it("commits the event batch before the call resolves (no background write)", async () => {
+    const { fetchMock } = installFakeAirtable({
+      people: [{ id: "recCoach", fields: { Email: "coach@hkfc.com" } }],
+      events: [],
+    });
+    await recordRankingEvents(ENV, [
+      { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 5, newRank: 1 },
+    ]);
+    // If the write were still fire-and-forget, the POST would still be
+    // in flight (or not yet issued) the instant recordRankingEvents resolves.
+    const posted = fetchMock.mock.calls.some(
+      ([url, init]: [string, any]) =>
+        String(url).includes("Ranking%20Events") && init?.method === "POST",
+    );
+    expect(posted).toBe(true);
   });
 
   it("chunks large audits into batches of 10 create requests", async () => {
@@ -217,7 +230,6 @@ describe("recordRankingEvents", () => {
       newRank: i + 2,
     }));
     await recordRankingEvents(ENV, events);
-    await tick();
     const posts = calls.filter((u) => u.includes("Ranking%20Events") && u.includes("api.airtable.com"));
     expect(posts).toHaveLength(3); // 10 + 10 + 5
     invalidateAll();
@@ -354,7 +366,6 @@ describe("ranking-events cache invalidation", () => {
     await recordRankingEvents(ENV, [
       { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 3, newRank: 2 },
     ]);
-    await tick();
     const { data, fromCache } = await getCached("ranking-events:7", async () => "FRESH");
     expect(fromCache).toBe(false);
     expect(data).toBe("FRESH");

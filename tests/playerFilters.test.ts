@@ -8,18 +8,22 @@ import {
 
 describe('PlayerFilters', () => {
   describe('filtersToParams', () => {
-    it('returns empty string for empty filters', () => {
-      expect(filtersToParams(EMPTY_FILTERS)).toBe('');
+    it('returns an empty URLSearchParams for empty filters', () => {
+      expect(filtersToParams(EMPTY_FILTERS).toString()).toBe('');
+    });
+
+    it('returns a URLSearchParams, not a string', () => {
+      expect(filtersToParams(EMPTY_FILTERS)).toBeInstanceOf(URLSearchParams);
     });
 
     it('serializes a single position', () => {
       const f: FilterState = { ...EMPTY_FILTERS, position: new Set(['GK']) };
-      expect(filtersToParams(f)).toBe('position=GK');
+      expect(filtersToParams(f).get('position')).toBe('GK');
     });
 
     it('serializes multiple positions with AND/OR grouping', () => {
       const f: FilterState = { ...EMPTY_FILTERS, position: new Set(['GK', 'DEF']) };
-      expect(filtersToParams(f)).toBe('position=DEF,GK');
+      expect(filtersToParams(f).get('position')).toBe('DEF,GK');
     });
 
     it('serializes multiple categories', () => {
@@ -31,10 +35,10 @@ describe('PlayerFilters', () => {
         ability: new Set(),
       };
       const params = filtersToParams(f);
-      expect(params).toContain('position=MID');
-      expect(params).toContain('eligibility=blocked');
-      expect(params).toContain('availability=Unavailable');
-      expect(params).not.toContain('selection');
+      expect(params.get('position')).toBe('MID');
+      expect(params.get('eligibility')).toBe('blocked');
+      expect(params.get('availability')).toBe('Unavailable');
+      expect(params.has('selection')).toBe(false);
     });
   });
 
@@ -87,6 +91,30 @@ describe('PlayerFilters', () => {
       for (const cat of ['position','eligibility','selection','availability'] as const) {
         expect([...rt[cat]].sort()).toEqual([...original[cat]].sort());
       }
+    });
+
+    it('round-trips a name filter containing a space and an ampersand without double-encoding', () => {
+      // Regression (bug F2): filtersToParams used to return a joined string
+      // (name already percent-encoded), which handleFilterChange then split
+      // on '&'/'=' and re-inserted via URLSearchParams.set - encoding the
+      // already-encoded value a second time.
+      const original: FilterState = { ...EMPTY_FILTERS, name: 'Smith & Jones' };
+      const asParams = filtersToParams(original);
+      // The name must appear exactly once, percent-encoded exactly once, in
+      // the serialized query string - not double-encoded (%2520, %2526...).
+      const serialized = asParams.toString();
+      expect(serialized).not.toContain('%2520');
+      expect(serialized).not.toContain('%2526');
+
+      const rt = paramsToFilters(asParams);
+      expect(rt.name).toBe('Smith & Jones');
+
+      // Also prove it survives a real URLSearchParams merge, exactly as
+      // handleFilterChange does it (no string splitting anywhere).
+      const merged = new URLSearchParams();
+      for (const [k, v] of asParams) merged.set(k, v);
+      const rtFromMerged = paramsToFilters(merged);
+      expect(rtFromMerged.name).toBe('Smith & Jones');
     });
   });
 

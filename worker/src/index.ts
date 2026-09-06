@@ -49,6 +49,13 @@ async function readJsonBody(request: Request): Promise<any> {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (!env.ALLOWED_ORIGIN) {
+      console.error("Server misconfigured: ALLOWED_ORIGIN is not set");
+      return new Response(
+        JSON.stringify({ error: "SERVER_MISCONFIGURED", message: "Server misconfigured: ALLOWED_ORIGIN is not set" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
     try {
       return await handleRequest(request, env);
     } catch (err) {
@@ -78,7 +85,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
       if (method === "GET" && matchSquadMatch) {
         await requireAuthorizedUser(request, env);
-        return json(await getSquadForMatch(env, matchSquadMatch[1]), 200, origin);
+        const side = url.searchParams.get("side") as "home" | "away" | null;
+        return json(await getSquadForMatch(env, matchSquadMatch[1], side ?? undefined), 200, origin);
       }
 
       // The remaining match reads back the coach-only selection screens.
@@ -223,21 +231,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // session, never from client-supplied email query parameters.
       if (method === "GET" && pathname === "/api/my-profile") {
         const user = await requireAuthorizedUser(request, env);
-        return json(await getMyProfile(env, user.email), 200, origin);
+        return json(await getMyProfile(env, user), 200, origin);
       }
       if (method === "GET" && pathname === "/api/my-fixtures") {
         const user = await requireAuthorizedUser(request, env);
-        return json(await getMyFixtures(env, user.email), 200, origin);
+        return json(await getMyFixtures(env, user), 200, origin);
       }
       if (method === "GET" && pathname === "/api/upcoming-fixtures") {
         const user = await requireAuthorizedUser(request, env);
         const team = url.searchParams.get("team") ?? undefined;
-        return json(await getUpcomingFixtures(env, { email: user.email, team }), 200, origin);
+        return json(await getUpcomingFixtures(env, { user, team }), 200, origin);
       }
 
-      // Dashboard metrics (Authenticated)
+      // Dashboard metrics (Coach) - expose every player's rank moves / play-up counts.
       if (method === "GET" && pathname === "/api/recent-changes") {
-        await requireAuthorizedUser(request, env);
+        await requireCoach(request, env);
         const days = Number(url.searchParams.get("days") ?? 7);
         return json(
           await getRecentChanges(env, Number.isFinite(days) && days > 0 ? days : 7),
@@ -246,7 +254,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         );
       }
       if (method === "GET" && pathname === "/api/playup-watch") {
-        await requireAuthorizedUser(request, env);
+        await requireCoach(request, env);
         return json(await getPlayUpWatch(env), 200, origin);
       }
 
@@ -297,7 +305,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         );
       }
 
-      if (method === "POST" && pathname === "/squad/sync") {
+      if (method === "POST" && pathname === "/api/squad/sync") {
         const user = await requireCoach(request, env);
         const body = (await readJsonBody(request)) as {
           matchId: string;
@@ -328,7 +336,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "POST" && pathname === "/api/ranking/config") {
         const user = await requireCoach(request, env);
         const body = (await readJsonBody(request)) as { config: AbilityGroupConfigMap };
-        const rankingList = await setAbilityGroupConfig(env, body.config, user.email);
+        const rankingList = await setAbilityGroupConfig(env, body.config, user);
         return json(rankingList, 200, origin);
       }
       if (method === "POST" && pathname === "/api/ranking/move") {
@@ -398,7 +406,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "GET" && pathname === "/api/calendar/team-link") {
         const user = await requireAuthorizedUser(request, env);
         const team = requireParam(url.searchParams.get("team"), "team");
-        return json(await handleGetTeamCalendarLink(env, user.email, team), 200, origin);
+        return json(await handleGetTeamCalendarLink(env, user, team), 200, origin);
       }
       if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
         return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
@@ -407,8 +415,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return errorJson("Not Found", 404, origin, "NOT_FOUND");
     } catch (err) {
       if (err instanceof HttpError) return errorJson(err.message, err.status, origin, err.code);
-      if (err instanceof AirtableError)
-        return errorJson(`Airtable: ${err.message}`, err.status >= 400 ? err.status : 502, origin);
+      if (err instanceof AirtableError) {
+        // Never return the Airtable URL, base id or response body to the
+        // client - only the detail goes to Workers Logs.
+        console.error("Airtable error:", err.message);
+        return errorJson("Upstream data service error", 502, origin, "UPSTREAM_ERROR");
+      }
 
       console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
       return errorJson("Internal Server Error", 500, origin);

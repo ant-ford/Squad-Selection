@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { useUpcomingFixtures } from '@/lib/queries';
 import { safeFormat, isPastFixture } from '@/lib/dateUtils';
+import { hkDateKey } from '@/lib/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
 import type { ProfileData } from '@/api/getMyProfile';
@@ -13,12 +14,10 @@ export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const teamFromUrl = searchParams.get('team') || 'all';
-  const [activeTab, setActiveTab] = useState(teamFromUrl);
-  const [showPast, setShowPast] = useState(searchParams.get('past') === '1');
+  const activeTab = searchParams.get('team') || 'all';
+  const showPast = searchParams.get('past') === '1';
 
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
     const newParams = new URLSearchParams(searchParams);
     if (tab === 'all') {
       newParams.delete('team');
@@ -29,29 +28,14 @@ export default function FixtureList() {
   };
 
   const handleTogglePast = () => {
-    setShowPast(prev => {
-      const next = !prev;
-      const newParams = new URLSearchParams(searchParams);
-      if (next) {
-        newParams.set('past', '1');
-      } else {
-        newParams.delete('past');
-      }
-      setSearchParams(newParams, { replace: true });
-      return next;
-    });
+    const newParams = new URLSearchParams(searchParams);
+    if (!showPast) {
+      newParams.set('past', '1');
+    } else {
+      newParams.delete('past');
+    }
+    setSearchParams(newParams, { replace: true });
   };
-
-  useEffect(() => {
-    const tabFromUrl = searchParams.get('team') || 'all';
-    if (tabFromUrl !== activeTab) {
-      setActiveTab(tabFromUrl);
-    }
-    const pastFromUrl = searchParams.get('past') === '1';
-    if (pastFromUrl !== showPast) {
-      setShowPast(pastFromUrl);
-    }
-  }, [searchParams, activeTab, showPast]);
 
   const { data, isLoading } = useUpcomingFixtures();
   const allFixtures = data?.fixtures || [];
@@ -92,7 +76,7 @@ export default function FixtureList() {
 
   const grouped = useMemo(() => {
     return fixtures.reduce<Record<string, UpcomingFixture[]>>((acc, f) => {
-      const dateKey = safeFormat(f.date, 'yyyy-MM-dd', 'unknown');
+      const dateKey = hkDateKey(f.date) || 'unknown';
       (acc[dateKey] ||= []).push(f);
       return acc;
     }, {});

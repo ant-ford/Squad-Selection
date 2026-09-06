@@ -18,6 +18,7 @@ import { TABLES } from "../../src/generated/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAvailability } from "../../src/mappers/availabilityMapper";
+import { hkDateKey } from "../../src/lib/hkDateKey";
 import { invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
 import type { AvailabilityException } from "../../src/generated/domainTypes";
 
@@ -276,7 +277,7 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
   const ref = await getReferenceData(env);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const matchIds = (await getScheduledMatches(env))
-    .filter((m) => (m.matchDate || "").split("T")[0] === input.date)
+    .filter((m) => hkDateKey(m.matchDate) === input.date)
     .filter((m) => teamNames.has(m.homeTeam || "") || teamNames.has(m.awayTeam || ""))
     .map((m) => m.id);
   if (matchIds.length === 0) {

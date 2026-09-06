@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // the right error codes.
 
 const mocks = vi.hoisted(() => {
-  const authorizedPlayer = { email: "player@hkfc.com", personId: "recP1", role: "player" as const };
-  const authorizedCoach = { email: "coach@hkfc.com", personId: "recCoach", role: "coach" as const };
+  const authorizedPlayer = { email: "player@hkfc.com", personId: "recP1", role: "player" as const, coachTeams: [], isSectionCaptain: false };
+  const authorizedCoach = { email: "coach@hkfc.com", personId: "recCoach", role: "coach" as const, coachTeams: ["Men's 1s"], isSectionCaptain: false };
   return {
     authorizedPlayer,
     authorizedCoach,
@@ -99,11 +99,13 @@ vi.mock("../worker/src/dashboard", () => ({
 
 import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
+import { AirtableError } from "../worker/src/airtable";
 
 const ENV = {
   AIRTABLE_TOKEN: "test-token",
   AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
+  ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "test-anon-key",
 } as any;
@@ -226,6 +228,23 @@ describe("error codes", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
+
+  it("maps an AirtableError to a generic 502 without leaking the Airtable URL or response body", async () => {
+    mocks.getMyProfile.mockRejectedValue(
+      new AirtableError(
+        "Airtable GET https://api.airtable.com/v0/appSecretBase123/People?filterByFormula=... failed (500): {\"error\":{\"message\":\"internal\"}}",
+        500,
+      ),
+    );
+
+    const res = await call("/api/my-profile");
+    const body = await res.json();
+    expect(res.status).toBe(502);
+    expect(body).toMatchObject({ error: "UPSTREAM_ERROR" });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("api.airtable.com");
+    expect(serialized).not.toContain("appSecretBase123");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -236,20 +255,20 @@ describe("session-derived identity (IDOR prevention)", () => {
   it("GET /api/my-profile ignores a ?email= query param", async () => {
     const res = await call("/api/my-profile?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
   });
 
   it("GET /api/my-fixtures ignores a ?email= query param", async () => {
     const res = await call("/api/my-fixtures?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
   });
 
   it("GET /api/upcoming-fixtures scopes by the session email, ignoring ?email=", async () => {
     const res = await call("/api/upcoming-fixtures?email=attacker@evil.com&team=Men's%201s");
     expect(res.status).toBe(200);
     expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
-      email: "player@hkfc.com",
+      user: mocks.authorizedPlayer,
       team: "Men's 1s",
     });
   });
@@ -286,7 +305,7 @@ describe("coach-only routes", () => {
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
     { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
-    { path: "/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
+    { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
     { path: "/api/match/recM1/auto-select", init: jsonInit({ enabled: true }) },
   ];
@@ -360,11 +379,11 @@ describe("coach-only routes", () => {
     );
   });
 
-  it("allows a coach on POST /squad/sync and uses the session email, ignoring body actingEmail", async () => {
+  it("allows a coach on POST /api/squad/sync and uses the session email, ignoring body actingEmail", async () => {
     mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
 
     const res = await call(
-      "/squad/sync",
+      "/api/squad/sync",
       jsonInit({ matchId: "recM1", selectedIds: ["a", "b"], actingEmail: "attacker@evil.com", side: "home" }),
     );
     expect(res.status).toBe(200);
@@ -409,7 +428,7 @@ describe("authorized-user reads", () => {
     mocks.handleGetTeamCalendarLink.mockResolvedValue({ team: "Men's 1s", sig: "abc" });
     const res = await call("/api/calendar/team-link?team=Men's%201s");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com", "Men's 1s");
+    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, "Men's 1s");
   });
 });
 
@@ -427,6 +446,25 @@ describe("misc routing", () => {
   it("keeps /health public", async () => {
     const res = await call("/health");
     expect(res.status).toBe(200);
+  });
+
+  it("fails closed with 500 when ALLOWED_ORIGIN is not configured, even for /health", async () => {
+    const misconfiguredEnv = { ...ENV, ALLOWED_ORIGIN: "" };
+    const res = await worker.fetch(
+      new Request("https://hkfc-api.test/health"),
+      misconfiguredEnv,
+      CTX,
+    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: "SERVER_MISCONFIGURED" });
+  });
+
+  it("does not fall back to a wildcard CORS origin, and no longer advertises apikey/x-client-info", async () => {
+    const res = await call("/health");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ENV.ALLOWED_ORIGIN);
+    expect(res.headers.get("Access-Control-Allow-Origin")).not.toBe("*");
+    expect(res.headers.get("Access-Control-Allow-Headers")).not.toContain("apikey");
+    expect(res.headers.get("Access-Control-Allow-Headers")).not.toContain("x-client-info");
   });
 });
 
@@ -448,6 +486,12 @@ describe("read routes require authentication", () => {
     expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
   });
 
+  it("forwards ?side= on a derby squad read (regression: the route used to ignore it)", async () => {
+    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
+    await call("/api/match/recM1/squad?side=away");
+    expect(mocks.getSquadForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
+  });
+
   it("rejects an unauthenticated match squad read", async () => {
     mocks.requireAuthorizedUser.mockRejectedValue(
       new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
@@ -464,6 +508,8 @@ describe("read routes require authentication", () => {
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
     ["/api/ranking/config", () => mocks.getAbilityGroupConfig],
+    ["/api/recent-changes", () => mocks.getRecentChanges],
+    ["/api/playup-watch", () => mocks.getPlayUpWatch],
   ])("denies %s to a non-coach", async (path, handler) => {
     const res = await call(path);
     expect(res.status).toBe(403);
@@ -477,6 +523,18 @@ describe("read routes require authentication", () => {
     const res = await call("/api/ranking");
     expect(res.status).toBe(200);
     expect(mocks.getActiveRanking).toHaveBeenCalled();
+  });
+
+  it("allows a coach through to recent-changes and playup-watch", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.getRecentChanges.mockResolvedValue({ changes: [] });
+    mocks.getPlayUpWatch.mockResolvedValue({ season: "2025-2026", watch: [] });
+    const changesRes = await call("/api/recent-changes");
+    expect(changesRes.status).toBe(200);
+    expect(mocks.getRecentChanges).toHaveBeenCalled();
+    const watchRes = await call("/api/playup-watch");
+    expect(watchRes.status).toBe(200);
+    expect(mocks.getPlayUpWatch).toHaveBeenCalled();
   });
 });
 

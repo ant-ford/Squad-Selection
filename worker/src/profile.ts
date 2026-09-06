@@ -1,9 +1,10 @@
 import { Env } from "./airtable";
 import { getPlayerByEmail, getReferenceData } from "./reference";
 import { HttpError } from "./http";
+import type { AuthorizedUser } from "./auth";
 
-export async function getMyProfile(env: Env, email: string) {
-  const user = await getPlayerByEmail(env, email);
+export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
+  const user = await getPlayerByEmail(env, authUser.email);
 
   if (!user) {
     throw new HttpError("Player record not found for this email", 404);
@@ -11,11 +12,12 @@ export async function getMyProfile(env: Env, email: string) {
 
   const ref = await getReferenceData(env);
 
-  // Section Captains get the same access as coaches (auth.ts already grants
-  // them role "coach"); include the teams they captain in coachTeams so the
+  // coachTeams/isSectionCaptain come from the single authorization derivation
+  // (auth.ts) - Section Captains already see every team name there, so the
   // frontend gates and team-scoped calendar operations treat them equally.
+  const coachTeamSet = new Set(authUser.coachTeams);
   const coachTeams = ref.teams
-    .filter((t) => (t.coach || []).includes(user.id) || (t.sectionCaptain || []).includes(user.id))
+    .filter((t) => coachTeamSet.has(t.teamName || ""))
     .map((t) => ({
       id: t.id,
       teamName: t.teamName || "",
@@ -28,10 +30,6 @@ export async function getMyProfile(env: Env, email: string) {
     .filter((t) => (t.teamCaptain || []).includes(user.id))
     .map((t) => t.teamName || "");
 
-  const isSectionCaptain = ref.teams.some(
-    (t) => (t.sectionCaptain || []).includes(user.id)
-  );
-
   return {
     preferredName:
       user.preferredName ||
@@ -42,9 +40,9 @@ export async function getMyProfile(env: Env, email: string) {
       ? user.playerCoach
       : [],
 
-    isCoach: coachTeams.length > 0,
+    isCoach: authUser.role === "coach",
 
-        isSectionCaptain,
+    isSectionCaptain: authUser.isSectionCaptain,
 
     captainTeams,
 

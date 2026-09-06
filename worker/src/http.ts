@@ -12,17 +12,17 @@ export class HttpError extends Error {
   }
 }
 
-export function corsHeaders(origin?: string): Record<string, string> {
+export function corsHeaders(origin: string): Record<string, string> {
   return {
-    "Access-Control-Allow-Origin": origin || "*",
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
 }
 
-export function json(data: unknown, status = 200, origin?: string): Response {
+export function json(data: unknown, status = 200, origin: string): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -42,13 +42,13 @@ export function json(data: unknown, status = 200, origin?: string): Response {
 export function errorJson(
   message: string,
   status = 500,
-  origin?: string,
+  origin: string,
   code = "INTERNAL_ERROR"
 ): Response {
   return json({ error: code, message }, status, origin);
 }
 
-export function handleOptions(origin?: string): Response {
+export function handleOptions(origin: string): Response {
   return new Response(null, { status: 204, headers: corsHeaders(origin) });
 }
 

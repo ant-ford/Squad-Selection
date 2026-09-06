@@ -105,7 +105,7 @@ Runtime view complementing the static architecture:
 Coach taps "Save Squad"
         â”‚
         â–¼
-    React (POST /squad/sync)
+    React (POST /api/squad/sync)
         â”‚
         â–¼
     Cloudflare Worker
@@ -163,7 +163,7 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
 
 **Airtable:** Single source of truth â€” 8 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Ability Group Configuration, Selection Events, Ranking Events).
 
-**Ranking Events table (ranking history):** the Worker records rank changes (move / reorder / activate / deactivate) with the actor, old/new rank, an optional justification of at most 280 characters, and a server-side timestamp. The table exists in the live schema (confirmed by the 2026-08-14 schema export); if it is ever absent the ranking-history UI degrades to "no changes recorded yet" and no write ever fails. Field names must match exactly: `Player` (link to People), `Actor` (link to People), `Actor Email` (text), `Kind` (select: move / reorder / activate / deactivate), `Old Rank` (number), `New Rank` (number), `Justification` (long text), `Timestamp` (date/time). Rationale: no existing table can represent rank changes - Selection Events has no timestamp/rank fields and is a per-selection log; audit fields on People would keep only the latest change per player.
+**Ranking Events table (ranking history):** the Worker records rank changes (move / reorder / activate / deactivate) with the actor, old/new rank, an optional justification of at most 280 characters, and a server-side timestamp, awaited as part of the same write - a failed audit write now fails the mutation (502) rather than being silently dropped. Reads degrade gracefully to "no changes recorded yet" only when the table itself does not exist (404); any other read failure still propagates. Field names must match exactly: `Player` (link to People), `Actor` (link to People), `Actor Email` (text), `Kind` (select: move / reorder / activate / deactivate), `Old Rank` (number), `New Rank` (number), `Justification` (long text), `Timestamp` (date/time). Rationale: no existing table can represent rank changes - Selection Events has no timestamp/rank fields and is a per-selection log; audit fields on People would keep only the latest change per player.
 
 **Supabase:** Authentication only. No application data stored in Supabase tables.
 

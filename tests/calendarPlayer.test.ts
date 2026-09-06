@@ -72,9 +72,12 @@ function seed() {
   };
 }
 
+let fetchCalls: { url: string }[] = [];
+
 function installFakeAirtable() {
   const fetchMock = vi.fn((url: any, init?: any) => {
     const u = String(url);
+    fetchCalls.push({ url: u });
     if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
     const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
     const store = (): any[] =>
@@ -147,6 +150,7 @@ beforeEach(() => {
   invalidateAll();
   seed();
   seedPeople();
+  fetchCalls = [];
   installFakeAirtable();
 });
 
@@ -253,6 +257,40 @@ describe("player calendar (Selected Team view)", () => {
     expect(eventsWith(ics, "E vs")).toHaveLength(1); // My Team unaffected
     expect(eventsWith(ics, "D vs")).toHaveLength(0); // suspended -> play-up hidden
     expect(eventsWith(ics, "F vs")).toHaveLength(0); // suspended -> support hidden
+  });
+});
+
+describe("player calendar feed signature and caching", () => {
+  it("rejects a mismatched signature with 401", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", "0".repeat(64));
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a signature of the wrong length with 401 (constant-time compare rejects on length too)", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", "abcd");
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts the correctly signed request", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    const sig = await sign(`player:recP1`);
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
+    expect(res.status).toBe(200);
+  });
+
+  it("a cache hit makes zero Airtable calls (display team is read from cached reference data, not a fresh lookup)", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    const sig = await sign(`player:recP1`);
+    await handlePlayerCalendarFeed(ENV, "recP1", sig); // cold: populates both club-reference and the ICS cache
+    const callsAfterFirst = fetchCalls.length;
+    expect(callsAfterFirst).toBeGreaterThan(0);
+
+    fetchCalls = [];
+    const res2 = await handlePlayerCalendarFeed(ENV, "recP1", sig); // warm: must not hit Airtable at all
+    expect(res2.status).toBe(200);
+    expect(fetchCalls).toHaveLength(0);
   });
 });
 

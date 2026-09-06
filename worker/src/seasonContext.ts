@@ -15,6 +15,7 @@
 
 import { Env, airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
 import { getCached } from "../../src/lib/cache";
+import { hkDateKey } from "../../src/lib/hkDateKey";
 import { getExceptionsForSeasons } from "./reference";
 import { computeSuspensionStates } from "./suspension";
 import {
@@ -58,9 +59,8 @@ async function getMatchCardsForSeason(env: Env, season: string): Promise<MatchCa
 }
 
 export function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
-  const norm = (d: string) => d.split("T")[0];
-  const target = norm(targetDate);
-  return allMatches.filter((m) => norm(m.matchDate) === target);
+  const target = hkDateKey(targetDate);
+  return allMatches.filter((m) => hkDateKey(m.matchDate) === target);
 }
 
 function previousSeason(season: string): string | null {

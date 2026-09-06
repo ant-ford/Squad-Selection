@@ -27,6 +27,8 @@ export interface MatchPlayer {
   selectionId: string;
   isU21?: boolean;
   isVisitingPlayer?: boolean;
+  /** Soft signal: available for this fixture but Unavailable for same-day lower-team fixtures. */
+  supportUnavailable?: string[];
 }
 
 export interface MatchInfo {

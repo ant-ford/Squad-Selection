@@ -1,26 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Unit tests proving Section Captains (Teams."Section Captain" field) get the
-// same coach-level profile as coaches - the frontend gates (CoachLayout,
-// AppHeader, calendar team operations) read isCoach / coachTeams.
+// Section Captains share coach access (Teams."Section Captain" field). That
+// determination is made exactly once, in worker/src/auth.ts's
+// requireAuthorizedUser (see tests/authorization.test.ts for coverage of the
+// derivation itself: isSectionCaptain -> coachTeams = every team name).
+// These tests prove getMyProfile / getMyFixtures surface what the
+// AuthorizedUser says, rather than re-deriving it from Teams links.
 
 const mocks = vi.hoisted(() => ({
   getPlayerByEmail: vi.fn(),
   getReferenceData: vi.fn(),
   getExceptionsForSeasons: vi.fn(),
-  getTeamCoachLinks: vi.fn(),
 }));
 
 vi.mock("../worker/src/reference", () => ({
   getPlayerByEmail: mocks.getPlayerByEmail,
   getReferenceData: mocks.getReferenceData,
   getExceptionsForSeasons: mocks.getExceptionsForSeasons,
-  getTeamCoachLinks: mocks.getTeamCoachLinks,
 }));
 
 import { getMyProfile } from "../worker/src/profile";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../src/lib/cache";
+import type { AuthorizedUser } from "../worker/src/auth";
 
 const ENV = { AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "test-base" } as any;
 
@@ -56,17 +58,22 @@ const ref = {
   teamRankMap: { "HKFC A": 1, "HKFC B": 2 },
 };
 
+// The AuthorizedUser auth.ts would produce for Ada: Section Captain, so
+// coachTeams is every team name (see B7 - the single source of coach truth).
+const captainAuthUser: AuthorizedUser = {
+  email: "ada@hkfc.com",
+  personId: "recCap",
+  role: "coach",
+  coachTeams: ["HKFC A", "HKFC B"],
+  isSectionCaptain: true,
+};
+
 beforeEach(() => {
   invalidateAll();
   vi.clearAllMocks();
   mocks.getPlayerByEmail.mockResolvedValue(captain);
   mocks.getReferenceData.mockResolvedValue(ref);
   mocks.getExceptionsForSeasons.mockResolvedValue([]);
-  mocks.getTeamCoachLinks.mockResolvedValue({
-    coachIds: [],
-    sectionCaptainIds: ["recCap"],
-    cached: false,
-  });
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
@@ -82,14 +89,15 @@ beforeEach(() => {
 
 describe("Section Captains share coach access", () => {
   it("getMyProfile reports the captain as a coach with their teams in coachTeams", async () => {
-    const profile = await getMyProfile(ENV, "ada@hkfc.com");
+    const profile = await getMyProfile(ENV, captainAuthUser);
     expect(profile.isCoach).toBe(true);
     expect(profile.isSectionCaptain).toBe(true);
     expect(profile.coachTeams.map((t) => t.teamName)).toContain("HKFC A");
+    expect(profile.coachTeams.map((t) => t.teamName)).toContain("HKFC B");
   });
 
   it("getMyFixtures reports the captain as a coach", async () => {
-    const data = await getMyFixtures(ENV, "ada@hkfc.com");
+    const data = await getMyFixtures(ENV, captainAuthUser);
     expect(data.isCoach).toBe(true);
     expect(data.coachTeams).toContain("HKFC A");
   });

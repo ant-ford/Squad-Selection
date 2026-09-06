@@ -46,28 +46,48 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
  * role, not on whether a team record happens to be inactive, so this lookup
  * deliberately skips the "{Active}=TRUE()" filter used by getReferenceData().
  */
-export async function getTeamCoachLinks(env: Env): Promise<{
+export interface TeamCoachLinks {
   coachIds: string[];
   sectionCaptainIds: string[];
-  cached: boolean;
-}> {
-  const { data, fromCache } = await getCached<{ coachIds: string[]; sectionCaptainIds: string[] }>(
+  /** Team names each person coaches (Teams.Coach link), keyed by People record id. */
+  coachTeamNamesByPersonId: Map<string, string[]>;
+  /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
+  allTeamNames: string[];
+}
+
+export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks & { cached: boolean }> {
+  const { data, fromCache } = await getCached<TeamCoachLinks>(
     "team-coach-links",
     async () => {
       const teamRecords = await airtableFindAll(env, TABLES.team);
       const coachIds = new Set<string>();
       const sectionCaptainIds = new Set<string>();
+      const coachTeamNamesByPersonId = new Map<string, string[]>();
+      const allTeamNames: string[] = [];
       for (const record of teamRecords) {
+        const teamName = record.fields?.[TEAMS_FIELDS.teamName] || "";
+        if (teamName) allTeamNames.push(teamName);
         const coach = record.fields?.[TEAMS_FIELDS.coach];
         const sectionCaptain = record.fields?.[TEAMS_FIELDS.sectionCaptain];
         for (const id of Array.isArray(coach) ? coach : []) {
-          if (typeof id === "string") coachIds.add(id);
+          if (typeof id !== "string") continue;
+          coachIds.add(id);
+          if (teamName) {
+            const names = coachTeamNamesByPersonId.get(id) ?? [];
+            names.push(teamName);
+            coachTeamNamesByPersonId.set(id, names);
+          }
         }
         for (const id of Array.isArray(sectionCaptain) ? sectionCaptain : []) {
           if (typeof id === "string") sectionCaptainIds.add(id);
         }
       }
-      return { coachIds: [...coachIds], sectionCaptainIds: [...sectionCaptainIds] };
+      return {
+        coachIds: [...coachIds],
+        sectionCaptainIds: [...sectionCaptainIds],
+        coachTeamNamesByPersonId,
+        allTeamNames,
+      };
     },
     10 * 60 * 1000, // 10 minutes, same TTL as the club-reference cache
   );

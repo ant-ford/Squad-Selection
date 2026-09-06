@@ -19,7 +19,8 @@ import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./reference";
+import { invalidatePlayerByEmail } from "./reference";
+import type { AuthorizedUser } from "./auth";
 import {
   validateJustification,
   selectRankingEventChanges,
@@ -59,7 +60,9 @@ function annotateWithDerivedRanks(players: Player[]): Player[] {
 // ── Caching ──────────────────────────────────────────────────────────────
 const RANKING_CACHE_TTL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
-const AIRTABLE_WRITE_CONCURRENCY = 4;
+// Sequential writes: 4 parallel PATCH streams per reorder was tripping
+// Airtable's rate limit (see airtable.ts's 429 retry).
+const AIRTABLE_WRITE_CONCURRENCY = 1;
 
 // ── Internal helpers ─────────────────────────────────────────────────────
 function rankingCacheKey(active: boolean): string {
@@ -148,17 +151,9 @@ export async function getAbilityGroupConfig(
 export async function setAbilityGroupConfig(
   env: Env,
   config: AbilityGroupConfigMap,
-  actingEmail?: string,
+  user: AuthorizedUser,
 ): Promise<RankingList> {
-  if (!actingEmail) throw new HttpError("actingEmail is required", 400);
-  const actor = await getPlayerByEmail(env, actingEmail);
-  if (!actor) throw new HttpError("Player record not found for this email", 404);
-  
-  const ref = await getReferenceData(env);
-  const isSectionCaptain = ref.teams.some((t) =>
-    (t.sectionCaptain || []).includes(actor.id),
-  );
-  if (!isSectionCaptain) {
+  if (!user.isSectionCaptain) {
     throw new HttpError("Only the Section Captain can modify the ranking configuration", 403);
   }
 
@@ -359,10 +354,18 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
   const record = await airtableFindById(env, TABLES.player, playerId);
   if (!record) throw new HttpError("Player not found", 404);
   const player = mapPlayer(record);
-  
+
   if (player.active !== true) {
     const activePlayers = await fetchActiveRankingFromAirtable(env);
-    const newRank = activePlayers.length + 1;
+    // An Applicant can already appear in this pool with a Section Rank of
+    // their own (fetchActiveRankingFromAirtable includes non-rejected
+    // Applicants alongside Active players). Keep that rank - appending at
+    // length+1 would leave a hole at their old rank and push them past the
+    // end of the list.
+    const existing = activePlayers.find((p) => p.id === playerId);
+    const hasExistingRank = typeof existing?.sectionRank === "number" && existing.sectionRank > 0;
+    const newRank = hasExistingRank ? existing!.sectionRank! : activePlayers.length + 1;
+
     console.log(`[Ranking Audit] ${new Date().toISOString()} | User: ${actingEmail || 'system'} | Player: ${playerId} | Old Rank: N/A | New Rank: ${newRank} (Activated)`);
     await airtableUpdate(env, TABLES.player, playerId, {
       [PEOPLE_FIELDS.active]: true,
@@ -372,11 +375,27 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
     if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
     invalidateRankingEventsCache();
-    recordRankingEvents(env, [
-      { playerId, actorEmail: actingEmail, kind: "activate", oldRank: null, newRank },
+    await recordRankingEvents(env, [
+      { playerId, actorEmail: actingEmail, kind: "activate", oldRank: hasExistingRank ? newRank : null, newRank },
     ]);
+
+    // Safety net: renumber the whole pool to a contiguous 1..N, the same
+    // batch-update machinery reorderRanking uses. A no-op when already
+    // contiguous (the common case after the fix above).
+    invalidateCache(rankingCacheKey(true));
+    const afterActivation = await fetchActiveRankingFromAirtable(env);
+    const contiguousUpdates: { id: string; rank: number; oldRank: number }[] = [];
+    afterActivation.forEach((p, i) => {
+      const wantRank = i + 1;
+      if ((p.sectionRank ?? 0) !== wantRank) {
+        contiguousUpdates.push({ id: p.id, rank: wantRank, oldRank: p.sectionRank ?? 0 });
+      }
+    });
+    if (contiguousUpdates.length > 0) {
+      await applySectionRankUpdates(env, contiguousUpdates, actingEmail, "reorder", undefined, false);
+    }
   }
-  
+
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -417,7 +436,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
   if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
   invalidateRankingEventsCache();
-  recordRankingEvents(env, [
+  await recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
   ]);
 

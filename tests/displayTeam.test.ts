@@ -9,6 +9,11 @@ import { getActiveRanking } from "../worker/src/ranking";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../src/lib/cache";
 import type { Player } from "../src/generated/domainTypes";
+import type { AuthorizedUser } from "../worker/src/auth";
+
+function authUser(email: string): AuthorizedUser {
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+}
 
 beforeEach(() => {
   invalidateAll();
@@ -161,7 +166,7 @@ describe("player portal fixture categories (per-day, max three)", () => {
       ),
       "Availability Exceptions": [],
     });
-    return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
+    return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, authUser("p1@hkfc.com"));
   }
 
   it("Jonny (registered F, selected/display E, everything same day): E upcoming, D play-up, F support hidden (selected for E)", async () => {

@@ -23,6 +23,7 @@
     "../src/lib/cache.ts",
     "../src/lib/displayTeam.ts",
     "../src/lib/abilityGroup.ts",
-    "../src/lib/abilityRank.ts"
+    "../src/lib/abilityRank.ts",
+    "../src/lib/hkDateKey.ts"
   ]
 }

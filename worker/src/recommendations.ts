@@ -1,6 +1,7 @@
 import type { Env } from "./airtable";
 import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
+import { HttpError } from "./http";
 import { ABILITY_RANK } from "../../src/lib/abilityRank";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
@@ -157,11 +158,14 @@ export async function getRecommendationsForMatch(
     throw new Error("Match environment data could not be computed.");
   }
   const match = playerData.match;
-  const targetTeamName = side === "away" ? match.awayTeam : match.homeTeam;
+  const targetTeamName = match.hkfcTeam;
 
   const ref = await getReferenceData(env);
   const teamRankMap = ref.teamRankMap || {};
-  const targetTeamRank = teamRankMap[targetTeamName] ?? 12;
+  const targetTeamRank = teamRankMap[targetTeamName];
+  if (targetTeamRank === undefined) {
+    throw new HttpError(`Cannot determine team rank for "${targetTeamName}"`, 400);
+  }
 
   const recommendations = buildRecommendations(playerData.players, targetTeamRank, teamRankMap, {
     neededPosition: position,

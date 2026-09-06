@@ -91,46 +91,41 @@ export function buildRankingEventRecords(
 }
 
 /**
- * Fire-and-forget: records the events after a successful rank commit and
- * never blocks or fails the mutation. Actor link is resolved from the
- * verified session email via the People table (never client-supplied).
+ * Records the events after a successful rank commit. Awaited by the caller:
+ * a failed write must surface as an error, not a silently missing audit
+ * entry. Actor link is resolved from the verified session email via the
+ * People table (never client-supplied).
  */
 export async function recordRankingEvents(env: Env, events: RankingEventInput[]): Promise<void> {
   if (events.length === 0) return;
-  void (async () => {
-    try {
-      const stamped = buildRankingEventRecords(events);
-      const emails = [...new Set(events.map((e) => e.actorEmail).filter(Boolean))] as string[];
-      const idByEmail = new Map<string, string>();
-      for (const email of emails) {
-        const actor = await getPlayerByEmail(env, email);
-        if (actor) idByEmail.set(email, actor.id);
-      }
-      const rows = stamped.map(({ event, timestamp }) => {
-        const actorId = event.actorEmail ? idByEmail.get(event.actorEmail) : undefined;
-        return {
-          [RANKING_EVENTS_FIELDS.player]: [event.playerId],
-          [RANKING_EVENTS_FIELDS.actor]: actorId ? [actorId] : [],
-          [RANKING_EVENTS_FIELDS.actorEmail]: event.actorEmail || "",
-          [RANKING_EVENTS_FIELDS.kind]: event.kind,
-          [RANKING_EVENTS_FIELDS.oldRank]: event.oldRank ?? null,
-          [RANKING_EVENTS_FIELDS.newRank]: event.newRank ?? null,
-          [RANKING_EVENTS_FIELDS.justification]: event.justification || "",
-          [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
-        };
-      });
-      // Airtable accepts up to 10 records per create request - chunk so a
-      // full-table reorder (many changed players) is still audited in full.
-      for (let i = 0; i < rows.length; i += 10) {
-        await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
-      }
-      // The next read must reach Airtable immediately - never serve a stale
-      // pre-write events list from the 60s cache (spec S8).
-      invalidateCachePrefix("ranking-events:");
-    } catch (err) {
-      console.error("[RankingEvents] failed to record events:", err);
-    }
-  })();
+  const stamped = buildRankingEventRecords(events);
+  const emails = [...new Set(events.map((e) => e.actorEmail).filter(Boolean))] as string[];
+  const idByEmail = new Map<string, string>();
+  for (const email of emails) {
+    const actor = await getPlayerByEmail(env, email);
+    if (actor) idByEmail.set(email, actor.id);
+  }
+  const rows = stamped.map(({ event, timestamp }) => {
+    const actorId = event.actorEmail ? idByEmail.get(event.actorEmail) : undefined;
+    return {
+      [RANKING_EVENTS_FIELDS.player]: [event.playerId],
+      [RANKING_EVENTS_FIELDS.actor]: actorId ? [actorId] : [],
+      [RANKING_EVENTS_FIELDS.actorEmail]: event.actorEmail || "",
+      [RANKING_EVENTS_FIELDS.kind]: event.kind,
+      [RANKING_EVENTS_FIELDS.oldRank]: event.oldRank ?? null,
+      [RANKING_EVENTS_FIELDS.newRank]: event.newRank ?? null,
+      [RANKING_EVENTS_FIELDS.justification]: event.justification || "",
+      [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
+    };
+  });
+  // Airtable accepts up to 10 records per create request - chunk so a
+  // full-table reorder (many changed players) is still audited in full.
+  for (let i = 0; i < rows.length; i += 10) {
+    await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
+  }
+  // The next read must reach Airtable immediately - never serve a stale
+  // pre-write events list from the 60s cache (spec S8).
+  invalidateCachePrefix("ranking-events:");
 }
 
 /** Drop every cached ranking-events read (call after a rank commit). */

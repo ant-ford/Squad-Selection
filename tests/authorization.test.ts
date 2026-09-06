@@ -32,6 +32,11 @@ const ENV = {
 const teamLinks = {
   coachIds: ["recCoach", "recInactiveCoach"],
   sectionCaptainIds: ["recSectionCaptain"],
+  coachTeamNamesByPersonId: new Map([
+    ["recCoach", ["Men's 1s"]],
+    ["recInactiveCoach", ["Men's 2s"]],
+  ]),
+  allTeamNames: ["Men's 1s", "Men's 2s", "Men's 3s"],
 };
 
 const people = {
@@ -40,7 +45,9 @@ const people = {
   activeCoach: { id: "recCoach", email: "coach@hkfc.com", active: true, playerCoach: [] },
   inactiveCoach: { id: "recInactiveCoach", email: "inactive-coach@hkfc.com", active: false, playerCoach: [] },
   sectionCaptain: { id: "recSectionCaptain", email: "captain@hkfc.com", active: false, playerCoach: [] },
-  fallbackCoach: { id: "recFallback", email: "fallback@hkfc.com", active: false, playerCoach: ["Player/Coach"] },
+  // Player/Coach alone is no longer a coach-access fallback: no Teams.Coach
+  // or Teams.Section Captain link, but the multi-select still says "Coach".
+  playerCoachFlagOnly: { id: "recFallback", email: "fallback@hkfc.com", active: false, playerCoach: ["Player/Coach"] },
 };
 
 // ---------------------------------------------------------------------------
@@ -101,8 +108,14 @@ describe("requireAuthorizedUser", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(user).toMatchObject({ email: "player@hkfc.com", personId: "recP1", role: "player" });
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
+    expect(user).toMatchObject({
+      email: "player@hkfc.com",
+      personId: "recP1",
+      role: "player",
+      coachTeams: [],
+      isSectionCaptain: false,
+    });
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
   });
 
   it("determines coach/section-captain status from the dedicated team-links lookup (all teams, active or not)", async () => {
@@ -165,6 +178,8 @@ describe("requireAuthorizedUser", () => {
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
     expect(user.role).toBe("coach");
+    expect(user.coachTeams).toEqual(["Men's 1s"]);
+    expect(user.isSectionCaptain).toBe(false);
   });
 
   it("allows an inactive coach linked via Teams.Coach (coach access does not depend on Active)", async () => {
@@ -176,22 +191,25 @@ describe("requireAuthorizedUser", () => {
     expect(user).toMatchObject({ personId: "recInactiveCoach", role: "coach" });
   });
 
-  it("allows an inactive section captain linked via Teams.Section Captain", async () => {
+  it("allows an inactive section captain linked via Teams.Section Captain, and sees every team", async () => {
     supabaseReturns("captain@hkfc.com");
     mocks.getPlayerByEmail.mockResolvedValue(people.sectionCaptain);
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(user).toMatchObject({ personId: "recSectionCaptain", role: "coach" });
+    expect(user).toMatchObject({ personId: "recSectionCaptain", role: "coach", isSectionCaptain: true });
+    // Section Captain is the most permissive path: every team, not just ones
+    // they have an explicit Teams.Coach link on.
+    expect(user.coachTeams).toEqual(teamLinks.allTeamNames);
   });
 
-  it("allows an inactive person whose People.Player/Coach flag contains Coach (fallback safeguard)", async () => {
+  it("does NOT grant coach access from People.Player/Coach alone (fallback removed)", async () => {
     supabaseReturns("fallback@hkfc.com");
-    mocks.getPlayerByEmail.mockResolvedValue(people.fallbackCoach);
+    mocks.getPlayerByEmail.mockResolvedValue(people.playerCoachFlagOnly);
 
-    const user = await requireAuthorizedUser(authedRequest(), ENV);
-
-    expect(user).toMatchObject({ personId: "recFallback", role: "coach" });
+    // No Teams.Coach or Teams.Section Captain link, inactive, and the
+    // Player/Coach multi-select says "Coach" - access must still be denied.
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
   });
 
   it("denies an inactive ordinary player with 403 APPLICATION_ACCESS_DENIED", async () => {
@@ -214,7 +232,7 @@ describe("requireAuthorizedUser", () => {
 
     await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
   });
 
   it("normalizes whitespace before matching against People", async () => {
@@ -223,7 +241,7 @@ describe("requireAuthorizedUser", () => {
 
     await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com", { fresh: true });
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
   });
 
   it("rejects an expired/invalid Supabase token with 401 UNAUTHORIZED", async () => {

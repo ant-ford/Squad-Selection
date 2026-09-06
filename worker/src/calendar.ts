@@ -1,9 +1,10 @@
 import { Env } from "./airtable";
 import { getPlayerByEmail, getReferenceData } from "./reference";
-import { getPlayerDisplayTeam, getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
-import { getMyProfile } from "./profile";
+import { getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
 import { getCached } from "../../src/lib/cache";
 import { HttpError } from "./http";
+import type { AuthorizedUser } from "./auth";
+import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 
 const MATCH_DURATION_MINUTES = 90;
 
@@ -56,6 +57,20 @@ async function hmacSign(secret: string, message: string): Promise<string> {
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Constant-time comparison of two hex-encoded HMAC signatures. A plain `===`
+ * short-circuits on the first mismatched character, leaking timing
+ * information an attacker could use to guess a valid signature byte by byte.
+ */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 // --- ICS Generators ---
@@ -180,13 +195,17 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   if (!id || !sig) return new Response("Unauthorized", { status: 401 });
 
   const expectedSig = await hmacSign(env.CALENDAR_SECRET, `player:${id}`);
-  if (sig !== expectedSig) return new Response("Unauthorized", { status: 401 });
+  if (!timingSafeEqualHex(sig, expectedSig)) return new Response("Unauthorized", { status: 401 });
 
   // Cache key includes the player's display team: changing Selected Team
   // EOS/SOS in Airtable rotates the key (once the 10-minute reference cache
   // refreshes), so a subscribed calendar always reflects the current
-  // dashboard fixture view.
-  const displayTeam = await getPlayerDisplayTeam(env, id);
+  // dashboard fixture view. Read from the already-cached reference data, not
+  // a fresh Airtable lookup, so a feed poll that hits cache makes zero
+  // Airtable calls.
+  const ref = await getReferenceData(env);
+  const player = ref.players.find((p) => p.id === id);
+  const displayTeam = player ? selectedDisplayTeam(player) || player.registeredTeam || "" : "";
   const cacheKey = `calendar:player:${id}:${displayTeam}`;
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
@@ -202,33 +221,8 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   });
 }
 
-export async function handleTeamCalendarExport(env: Env, email: string | null, team: string | null) {
-  if (!email || !team) throw new HttpError("Missing parameters", 400);
-
-  const profile = await getMyProfile(env, email);
-  const isCoach = profile.coachTeams?.some((t) => t.teamName === team);
-  if (!isCoach) throw new HttpError("Forbidden", 403);
-
-  const { fixtures } = await getUpcomingFixtures(env, { email, team });
-  const ref = await getReferenceData(env);
-  const playersById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
-
-  const events = fixtures.map((f: any) => formatVEvent(f, false, resolveSquadNames(f.selectedIds, playersById)));
-  const icsString = generateIcsPayload(events);
-
-  return new Response(icsString, {
-    headers: {
-      "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": `attachment; filename="HKFC_${team}_Schedule.ics"`,
-      "Cache-Control": "no-store",
-    },
-  });
-}
-
-export async function handleGetTeamCalendarLink(env: Env, email: string, team: string) {
-  const profile = await getMyProfile(env, email);
-  const isCoach = profile.coachTeams?.some((t) => t.teamName === team);
-  if (!isCoach) throw new HttpError("Forbidden", 403);
+export async function handleGetTeamCalendarLink(env: Env, user: AuthorizedUser, team: string) {
+  if (!user.coachTeams.includes(team)) throw new HttpError("Forbidden", 403);
 
   const payload = `team:${team}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
@@ -239,7 +233,7 @@ export async function handleTeamCalendarFeed(env: Env, team: string | null, sig:
   if (!team || !sig) return new Response("Unauthorized", { status: 401 });
 
   const expectedSig = await hmacSign(env.CALENDAR_SECRET, `team:${team}`);
-  if (sig !== expectedSig) return new Response("Unauthorized", { status: 401 });
+  if (!timingSafeEqualHex(sig, expectedSig)) return new Response("Unauthorized", { status: 401 });
 
   const cacheKey = `calendar:team:${team}`;
   const { data: icsString } = await getCached(cacheKey, async () => {

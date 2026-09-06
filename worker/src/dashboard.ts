@@ -4,10 +4,14 @@ import { getSeasonContext } from "./seasonContext";
 import { getRankingEvents } from "./rankingEvents";
 import { isQualifyingPlayUpCard } from "./playUp";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { hkDateKey } from "../../src/lib/hkDateKey";
 
-/** HKHA season boundary: starts 1 July. */
+/** HKHA season boundary: starts 1 July, Asia/Hong_Kong. */
 export function currentSeason(d = new Date()): string {
-  const y = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
+  const [yearStr, monthStr] = hkDateKey(d.toISOString()).split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr); // 1-12
+  const y = month >= 7 ? year : year - 1;
   return `${y}-${y + 1}`;
 }
 

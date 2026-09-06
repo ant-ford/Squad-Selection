@@ -133,9 +133,7 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
                 onClick={() => setOpenGame(openGame === g.matchId ? null : g.matchId)}
                 aria-expanded={openGame === g.matchId}
                 title={`${g.team} ${g.goalsFor}–${g.goalsAgainst} ${g.opponent}`}
-                // Explicit radius: the theme's --radius makes `rounded-md`
-                // fully circular at this size, and these should read as tiles.
-                className={`h-8 w-8 rounded-[5px] border text-xs font-bold transition-shadow ${
+                className={`h-8 w-8 rounded-md border text-xs font-bold transition-shadow ${
                   OUTCOME_TILE[g.outcome]
                 } ${openGame === g.matchId ? 'ring-2 ring-primary ring-offset-1' : ''}`}
               >

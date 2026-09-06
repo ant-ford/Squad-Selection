@@ -1,31 +1,9 @@
 import { Users, Zap } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
-
-type Fixture = {
-  id: string;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  hkfcTeam: string;
-  opponent: string;
-  isHome: boolean;
-  venue: string;
-  division: string;
-  availabilityStatus: string;
-  playerNotes: string;
-  selectionStatus: string;
-  selectionNotes: string;
-  selectedCount: number;
-  targetSquadSize: number;
-  availabilityExceptionId?: string;
-  isPlayUp?: boolean;
-  selectionTeam?: string;
-  /** Shirt colour for this fixture; '' until a coach sets it. */
-  kit?: 'Blue' | 'White' | '';
-};
+import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {
-  fixture: Fixture;
+  fixture: MyFixture;
   onTap: () => void;
   onAvailabilityChange: (
     status: 'Available' | 'Maybe' | 'Unavailable',

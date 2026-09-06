@@ -18,6 +18,7 @@ import {
   getSameDayMatches,
 } from "./seasonContext";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { hkDateKey } from "../../src/lib/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 
 type MatchSide = "home" | "away";
@@ -93,7 +94,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
   const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
 
-  const matchDateKey = (match.matchDate || "").split("T")[0];
+  const matchDateKey = hkDateKey(match.matchDate);
   const thisTeamRank = teamRankMap[hkfcTeam] ?? 99;
 
   const players = allPlayers.map((p) => {
@@ -374,25 +375,19 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
   const { data } = await getCached<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
     `availability:${matchId}`,
     async () => {
-      try {
-        const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-        const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
-        if (!season) return { exceptions: [] };
-        const allExceptions = await getExceptionsForSeasons(env, [season]);
-        return {
-          exceptions: allExceptions
-            .filter((e) => linkId(e.match) === matchId)
-            .map((e) => ({
-              playerId: linkId(e.player) || "",
-              status: e.availabilityStatus || "Available",
-              notes: e.note || "",
-            })),
-        };
-      } catch (err) {
-        // Never let the poll crash the app
-        console.error("getAvailabilityForMatch error:", err);
-        return { exceptions: [] };
-      }
+      const matchRecord = await airtableFindById(env, TABLES.match, matchId);
+      const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
+      if (!season) return { exceptions: [] };
+      const allExceptions = await getExceptionsForSeasons(env, [season]);
+      return {
+        exceptions: allExceptions
+          .filter((e) => linkId(e.match) === matchId)
+          .map((e) => ({
+            playerId: linkId(e.player) || "",
+            status: e.availabilityStatus || "Available",
+            notes: e.note || "",
+          })),
+      };
     },
     AVAILABILITY_FOR_MATCH_TTL_MS,
   );

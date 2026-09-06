@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Performance caches (evidence-based fixes):
-//   - player-by-email (60s, auth bypasses via { fresh: true })
+//   - player-by-email (60s cache; auth.ts uses it directly since B9)
 //   - scheduled-matches (10min, invalidated by syncSquad)
 //   - availability:{matchId} poll cache (25s, invalidated by writes)
 // ---------------------------------------------------------------------------
@@ -11,7 +11,12 @@ import { getPlayerByEmail, invalidatePlayerByEmail } from "../worker/src/referen
 import { getMyFixtures } from "../worker/src/fixtures";
 import { getAvailabilityForMatch, syncSquad } from "../worker/src/squad";
 import { setMyAvailability } from "../worker/src/availability";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll, invalidateCache, getCached } from "../src/lib/cache";
+import type { AuthorizedUser } from "../worker/src/auth";
+
+function authUser(email: string): AuthorizedUser {
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+}
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -148,19 +153,19 @@ describe("player-by-email cache", () => {
 
 describe("scheduled-matches cache", () => {
   it("fetches Scheduled matches once across repeated fixture loads", async () => {
-    await getMyFixtures(ENV, "dave@hkfc.com");
+    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     const afterFirst = matchesFetches();
     expect(afterFirst).toBe(1);
-    await getMyFixtures(ENV, "dave@hkfc.com");
+    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     expect(matchesFetches()).toBe(afterFirst);
   });
 
   it("is invalidated by syncSquad (selections live in match records)", async () => {
-    await getMyFixtures(ENV, "dave@hkfc.com");
+    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     const afterFirst = matchesFetches();
     // No newly-added players -> no eligibility revalidation, pure write path.
     await syncSquad(ENV, "recM1", ["recP2"], "coach@hkfc.com", "home");
-    await getMyFixtures(ENV, "dave@hkfc.com");
+    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     expect(matchesFetches()).toBeGreaterThan(afterFirst); // refetched after invalidation
   });
 });
@@ -183,5 +188,74 @@ describe("availability poll cache", () => {
     await getAvailabilityForMatch(ENV, "recM4");
     // read inside the write (season lookup) + the fresh post-write read
     expect(exceptionFetches()).toBe(afterRead + 2);
+  });
+});
+
+describe("getCached in-flight de-dup", () => {
+  it("shares one fetcher() call across concurrent cold misses for the same key", async () => {
+    let calls = 0;
+    const fetcher = () =>
+      new Promise<string>((resolve) => {
+        calls++;
+        setTimeout(() => resolve("value"), 10);
+      });
+
+    const [a, b, c] = await Promise.all([
+      getCached("dedup-key", fetcher),
+      getCached("dedup-key", fetcher),
+      getCached("dedup-key", fetcher),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(a.data).toBe("value");
+    expect(b.data).toBe("value");
+    expect(c.data).toBe("value");
+    // The originator reports a real miss; concurrent joiners share its result.
+    expect([a.fromCache, b.fromCache, c.fromCache].filter((f) => f === false)).toHaveLength(1);
+  });
+
+  it("still calls fetcher() again for a second, independent miss after the first resolves", async () => {
+    let calls = 0;
+    const fetcher = () => {
+      calls++;
+      return Promise.resolve(`value-${calls}`);
+    };
+
+    const first = await getCached("dedup-key-2", fetcher, 0); // ttl 0 -> expires immediately
+    const second = await getCached("dedup-key-2", fetcher, 0);
+
+    expect(calls).toBe(2);
+    expect(first.data).toBe("value-1");
+    expect(second.data).toBe("value-2");
+  });
+
+  it("does not let a stale in-flight fetch clobber a fresher one that started after invalidateCache", async () => {
+    // Deferred, manually-resolved promises so the test controls resolution
+    // order explicitly rather than trusting timer scheduling: the STALE
+    // fetch (started before invalidation) resolves LAST, after the fresh
+    // one - the worst case for a naive "last write wins" cache.
+    const deferred: { resolve: (v: string) => void }[] = [];
+    const fetcher = () =>
+      new Promise<string>((resolve) => {
+        deferred.push({ resolve });
+      });
+
+    const stale = getCached("dedup-key-3", fetcher); // call #1, starts the in-flight fetch
+    invalidateCache("dedup-key-3");
+    const fresh = getCached("dedup-key-3", fetcher); // call #2, must NOT join call #1
+
+    expect(deferred).toHaveLength(2);
+    // Resolve the FRESH fetch first, then the STALE one - the dangerous
+    // order for a naive "last write wins" cache, since the stale write
+    // would otherwise land last and clobber the fresh value.
+    deferred[1].resolve("fresh-value");
+    deferred[0].resolve("stale-value");
+    await Promise.all([stale, fresh]);
+
+    // Whichever order they settle in, the cache must end up holding the
+    // fresh fetch's result, not the stale one's.
+    const { data, fromCache } = await getCached("dedup-key-3", async () => "should-not-be-called");
+    expect(data).toBe("fresh-value");
+    expect(fromCache).toBe(true);
   });
 });

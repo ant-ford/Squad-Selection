@@ -7,19 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import { apiGet } from '@/lib/apiClient';
-
-type Fixture = {
-  id: string;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  venue: string;
-  availabilityStatus: string;
-  playerNotes: string;
-  availabilityExceptionId: string;
-  selectionStatus: string;
-  isHome: boolean;
-};
+import type { MyFixture } from '@/api/getMyFixtures';
 
 type SquadMember = {
   name: string;
@@ -45,7 +33,7 @@ const SQUAD_CACHE_TTL_MS = 30 * 1000;
 export default function PlayerAvailabilitySheet({
   fixture, conflictHint, onClose, onSaved,
 }: {
-  fixture: Fixture;
+  fixture: MyFixture;
   /** Soft hint: the player is Available for their My Team fixture on this date. */
   conflictHint?: string;
   onClose: () => void; onSaved: () => void;
