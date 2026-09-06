@@ -92,3 +92,13 @@ export const ABILITYGROUP_CONFIG_FIELDS = {
   capacity: "Capacity",
   isResidual: "Is Residual",
 } as const;
+export const AVAILABILITYRULES_FIELDS = {
+  player: "Player",
+  ruleType: "Rule Type",
+  availability: "Availability",
+  active: "Active",
+  startDate: "Start Date",
+  endDate: "End Date",
+  notes: "Notes",
+  lastModified: "Last Modified",
+} as const;

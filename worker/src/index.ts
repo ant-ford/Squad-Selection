@@ -18,6 +18,7 @@ import {
   setTeamAutoSelectPlayers,
 } from "./squad";
 import { setAvailability, setMyAvailability, setMyAvailabilityForDate } from "./availability";
+import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch } from "./recommendations";
 import {
   handleGetCalendarLink,
@@ -197,6 +198,38 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
         return json(
           await toggleAutoSelect(env, autoSelectMatch[1], enabled, user.email),
+          200,
+          origin,
+        );
+      }
+
+      // ── Standing Availability Rules (Self-service) ─────────────────────────
+      // Identity always comes from the session: a player can only read, add
+      // or remove their OWN rules.
+      if (method === "GET" && pathname === "/api/my-availability-rules") {
+        const user = await requireAuthorizedUser(request, env);
+        return json({ rules: await getRulesForPlayer(env, user.personId) }, 200, origin);
+      }
+      if (method === "POST" && pathname === "/api/my-availability-rules") {
+        const user = await requireAuthorizedUser(request, env);
+        const body = await readJsonBody(request);
+        return json(
+          await createAvailabilityRule(env, user.personId, {
+            ruleType: String(body.ruleType ?? ""),
+            availability: String(body.availability ?? ""),
+            startDate: body.startDate ? String(body.startDate) : undefined,
+            endDate: body.endDate ? String(body.endDate) : undefined,
+            notes: body.notes ? String(body.notes) : undefined,
+          }),
+          200,
+          origin,
+        );
+      }
+      const deleteRuleMatch = pathname.match(/^\/api\/my-availability-rules\/([^/]+)$/);
+      if (method === "POST" && deleteRuleMatch) {
+        const user = await requireAuthorizedUser(request, env);
+        return json(
+          await deleteAvailabilityRule(env, user.personId, deleteRuleMatch[1]),
           200,
           origin,
         );

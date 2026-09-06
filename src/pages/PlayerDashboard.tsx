@@ -5,7 +5,7 @@ import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtur
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3 } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
+import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -66,6 +67,7 @@ export default function PlayerDashboard() {
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
+  const [showRules, setShowRules] = useState(false);
 
   const loadData = useCallback(() => {
     if (!user) return;
@@ -256,6 +258,14 @@ export default function PlayerDashboard() {
                 </button>
               )}
               <button
+                onClick={() => setShowRules(true)}
+                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                title="Availability preferences"
+                aria-label="Availability preferences"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+              <button
                 onClick={() => setShowCalendarSync(true)}
                 className="p-2 text-muted-foreground hover:text-foreground transition-colors"
                 title="Sync to Calendar"
@@ -413,6 +423,15 @@ export default function PlayerDashboard() {
         playerName={data.playerName}
         onClose={() => setStatsPlayerId(null)}
       />
+
+      {showRules && (
+        <AvailabilityRulesSheet
+          onClose={() => {
+            setShowRules(false);
+            loadData(); // a new rule changes the default on every unanswered fixture
+          }}
+        />
+      )}
       <AppFooter />
     </div>
   );

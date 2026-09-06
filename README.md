@@ -313,6 +313,17 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 Participation can exceed 100%: appearances for other teams (play-ups and support games) count towards `gamesPlayed`, while `teamGames` only counts the player's own team's fixtures. That is deliberate — it reads as "turned out more often than their own team played".
 
+### Standing Availability Rules
+
+Players set standing preferences from the gear icon on their dashboard, instead of answering every fixture: not available for play-ups, for support games, midweek, between two dates, or for everything from now on. They live in the `Availability Rules` Airtable table (`Player`, `Rule Type`, `Availability`, `Active`, `Start Date`, `End Date`, `Notes`).
+
+Two rules govern how they resolve, both in [`worker/src/availabilityRules.ts`](worker/src/availabilityRules.ts):
+
+1. **An explicit Availability Exception always wins.** A rule is only the *default* for a fixture the player never answered, so setting a rule can never silently undo a tap. `Availability Exceptions` keeps meaning exactly what it meant before.
+2. **The more specific rule wins** where several apply: `Date range` → `Midweek` → `Play-ups`/`Support games` → `All future`, with ties broken by `Last Modified`. "Out from March, but around midweek" resolves the way a person would read it.
+
+Rules feed both the player's own dashboard and the coach's selection screen, and the payload carries `availabilityFromRule` so a coach can tell a standing preference from an actual answer — "hasn't been asked" reads very differently from "said no". Midweek means Monday–Friday. A missing table is not an error: every fixture just falls back to its normal default.
+
 ### Season Statistics
 
 `GET /api/player-stats/:id` (that player, or any coach) returns the season's form guide and totals. Always presented as a **drill-down**, never inline: stats are reference material, and on a phone an inline panel pushed the fixture list — the thing players actually action — below the fold. `SeasonStatsSheet` is the single entry point, opened from the player dashboard header, from a squad-selection player row, and from the ranking row menu, so the three views cannot drift apart.

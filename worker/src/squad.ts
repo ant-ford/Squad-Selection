@@ -18,6 +18,7 @@ import {
   getSameDayMatches,
 } from "./seasonContext";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 
 type MatchSide = "home" | "away";
 
@@ -98,11 +99,24 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   }
 
   const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
+  const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
+
+  const matchDateKey = (match.matchDate || "").split("T")[0];
+  const thisTeamRank = teamRankMap[hkfcTeam] ?? 99;
 
   const players = allPlayers.map((p) => {
     const isSelected = selectedPlayerIds.has(p.id);
     const exc = exceptionMap.get(p.id);
-    const availabilityStatus = exc?.availabilityStatus || "Available";
+    // Standing rules supply the default for players who have not answered
+    // this fixture. Coaches need to know which it is - "hasn't been asked"
+    // reads very differently from "said no" - so the flag rides along.
+    const playerRank = teamRankMap[p.registeredTeam || ""] ?? 99;
+    const effective = effectiveAvailability(exc?.availabilityStatus, rulesByPlayer.get(p.id) ?? [], {
+      date: matchDateKey,
+      isPlayUp: thisTeamRank < playerRank,
+      isSupport: thisTeamRank > playerRank,
+    });
+    const availabilityStatus = effective.status;
     const playerNotes = exc?.note || exc?.playerNotes || "";
     const eligibility = evaluatePlayerEligibility(p, match, ctx);
     const name = [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player";
@@ -118,7 +132,6 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     // only - computed from existing exceptions, no extra Airtable reads.
     const supportUnavailable: string[] = [];
     if (availabilityStatus !== "Unavailable") {
-      const thisTeamRank = teamRankMap[hkfcTeam] ?? 99;
       const seenTeams = new Set<string>();
       for (const fx of ctx.sameDayFixtures) {
         if ((teamRankMap[fx.teamName] ?? 99) <= thisTeamRank) continue;
@@ -142,6 +155,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       playingPosition: p.playingPosition || "",
       playingAbility: p.playingAbility || "",
       availabilityStatus,
+      /** True when the status came from a standing rule, not an explicit tap. */
+      availabilityFromRule: effective.fromRule,
       supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,

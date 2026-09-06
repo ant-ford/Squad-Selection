@@ -10,6 +10,7 @@ import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 import { buildEvaluationContext } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
+import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -348,14 +349,25 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const allExceptions = await getExceptionsForSeasons(env, relevantCategorized.map((x) => x.side.match.season || ""));
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
+  const playerRules = await getRulesForPlayer(env, playerId);
   const buildCard = (x: { side: Side; category: FixtureCategory }) => {
     const s = x.side;
     const team = teamsByName.get(s.team);
     const exc = exceptionByMatch.get(s.match.id);
+    // A standing rule supplies the default for a fixture the player has not
+    // answered; an explicit exception always wins.
+    const effective = effectiveAvailability(exc?.availabilityStatus, playerRules, {
+      date: (s.match.matchDate || "").split("T")[0],
+      isPlayUp: x.category === "play-up",
+      isSupport: x.category === "support",
+    });
     return {
       id: s.match.id, date: s.match.matchDate || "", homeTeam: s.match.homeTeam || "", awayTeam: s.match.awayTeam || "",
       hkfcTeam: s.team, opponent: s.opponent, isHome: s.isHome, venue: s.match.venue || "", division: s.match.division || "",
-      availabilityStatus: exc?.availabilityStatus || "Available", playerNotes: exc?.note || "",
+      availabilityStatus: effective.status,
+      /** True when the status came from a standing rule, not a tap. */
+      availabilityFromRule: effective.fromRule,
+      playerNotes: exc?.note || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
       // Kit follows the side being shown, so each half of a derby keeps its

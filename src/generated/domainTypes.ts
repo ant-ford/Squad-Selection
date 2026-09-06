@@ -143,3 +143,29 @@ export interface RecentChange {
   text: string;
   at: string;
 }
+/** Which fixtures a standing availability rule applies to. */
+export type AvailabilityRuleType =
+  | "Play-ups"
+  | "Support games"
+  | "Midweek"
+  | "Date range"
+  | "All future";
+
+/**
+ * A player's standing availability preference, used as the DEFAULT for
+ * fixtures they have not answered individually. An explicit Availability
+ * Exception always wins over a rule.
+ */
+export interface AvailabilityRule {
+  id: string;
+  player?: string[];
+  ruleType: AvailabilityRuleType | "";
+  availability: "Available" | "Maybe" | "Unavailable" | "";
+  active: boolean;
+  /** YYYY-MM-DD. Bounds "Date range"; optional lower bound for "All future". */
+  startDate: string;
+  /** YYYY-MM-DD. Upper bound for "Date range". */
+  endDate: string;
+  notes: string;
+  lastModified: string;
+}
