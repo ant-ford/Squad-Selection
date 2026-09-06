@@ -40,6 +40,4 @@ Thumbs.db
 # User Instructions
 HKFC Squad Selections.jpg
 HKFC Squad Selections.pptx
-# Local-only dev overrides (not committed)
-vite.config.local.ts
 .claude/

@@ -442,6 +442,8 @@ npx vite dev                    # Frontend: http://localhost:5173
 cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate terminal)
 ```
 
+The `cloudflare()` Vite plugin is applied to **builds only** ([`vite.config.ts`](vite.config.ts) switches on `command`). In dev its ProxyController deadlocks on Windows and the dev server accepts connections but answers none — no error, no log, just a hang. Nothing is lost: the root `wrangler.jsonc` is assets-only and the API runs separately on 8787. Builds and deploys still get the plugin. If the API ever moves into this Worker, dev will need it back and this has to be revisited.
+
 ### Build & Test
 
 ```bash
