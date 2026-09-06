@@ -1,0 +1,25 @@
+HKFC Squad Selection — cleanup baseline
+Captured: 2026-09-06
+Branch: cleanup/simplify (created from main)
+Base commit: 2a2391b91195df0ff772e0b6d98c21ea3d2bc13a
+
+Verification pipeline (all green):
+- npx tsc --noEmit                              -> clean, no errors
+- npx tsc --noEmit -p worker/tsconfig.json      -> clean, no errors
+- npx vitest run                                -> 28 test files passed (28), 486 tests passed (486)
+- npx vite build                                -> succeeded
+
+Build output (dist/assets):
+- index-BG8rDZwG.js           647.98 kB  (gzip: 189.96 kB)   <- main chunk, tracked across phases
+- PlayerRanking-CPOKx3xB.js    80.89 kB  (gzip:  25.59 kB)
+- SquadSelection-wOW6hyrQ.js   35.52 kB  (gzip:  10.44 kB)
+- ConfirmDialog-BuDfabQi.js    25.37 kB  (gzip:   8.05 kB)
+- FixtureList-DZjC2Y9h.js       8.45 kB  (gzip:   3.31 kB)
+- CoachLayout-ZJ-xE1Uv.js       4.05 kB  (gzip:   1.47 kB)
+- CoachDashboard-cLjatcJO.js    1.60 kB  (gzip:   0.72 kB)
+- index-Bueblpez.css           45.79 kB  (gzip:   8.86 kB)
+
+Note: docs/APP_REVIEW_2026-09-06.md states 470 tests; the actual baseline run
+shows 486 tests across 28 files. Recorded here as the real baseline to diff
+against at the end of the cleanup (docs/cleanup-report.md), consistent with
+the review's own finding that documented test counts are stale.
