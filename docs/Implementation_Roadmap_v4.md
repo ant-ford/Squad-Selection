@@ -1,10 +1,8 @@
-# HKFC Squad Selection - Engineering Specification v4
+# HKFC Squad Selection - Architecture Overview (Historical Spec)
 
-**Normative Engineering Specification · Architecture Reference · Business Rules · Developer Guide**
+> **This document is historical background, not a current specification.** It was written as a normative spec early in the project and has not been kept in lockstep with every change since. **The [repository README](../README.md) and the code itself are authoritative** for current behaviour, endpoints, invariants, and business rules. Read this document for the reasoning behind the architecture and the business-rule background; verify anything load-bearing against the code before relying on it. Where this document and the code disagree, the code wins.
 
-**Version:** 4.0
-**Date:** 2026-08-08
-**Status:** Authoritative - supersedes all previous roadmaps and specifications
+**Version:** 4.0 (2026-08-08), retained as-is below except where explicitly marked updated.
 
 **Language Convention:** This document uses IETF RFC 2119 keywords.
 `MUST` = absolute requirement. `MUST NOT` = absolute prohibition.
@@ -208,7 +206,7 @@ Examples:
 | INV-013 | Section Rank must be a positive integer ≤ active count for every active player | Data integrity; the ranking engine assumes contiguous ranks |
 | INV-014 | Ranking mutations invalidate the active ranking cache immediately | Coaches must see their changes reflected |
 | INV-015 | Reorder mutations validate that the submitted list length matches the active player count | Prevents stale-client overwrites (409 Conflict response) |
-| INV-016 | Only the Section Captain can modify the ability group configuration | `PUT /api/ranking/config` checks `isSectionCaptain` |
+| INV-016 | Only the Section Captain can modify the ability group configuration | `POST /api/ranking/config` checks `isSectionCaptain` |
 
 ### 3.3 Recommendation Engine Invariants
 
@@ -226,7 +224,6 @@ Examples:
 | ID | Invariant | Rationale |
 |---|---|---|
 | INV-030 | Airtable is only accessed through the Cloudflare Worker; the frontend never holds the Airtable token | Security: prevent token exfiltration |
-| INV-031 | Generated code (`src/generated/`) is never edited manually | Schema changes flow through the generation pipeline |
 | INV-032 | `Teams.Team Rank` determines all team hierarchy; rank 1 = highest | Do not infer rank from team name |
 | INV-033 | `Match Cards.Goalkeeper` is the authoritative source for the GK exemption | Per-appearance, not per-person |
 | INV-034 | `Match Cards.Play Up?` formula field is the authoritative play-up indicator | Computed from `Team` vs `Player Team` |
@@ -253,7 +250,7 @@ Examples:
 | INV-050 | Supabase manages all authentication; no custom auth system | Leverages battle-tested auth infrastructure |
 | INV-051 | Airtable Personal Access Token is stored as a Cloudflare Worker secret, never in client code | Prevents token exfiltration |
 | INV-052 | All write endpoints require authentication; anonymous endpoints are read-only (player fixtures, availability) | Principle of least privilege |
-| INV-053 | Section Captain role is verified server-side before config mutations | `PUT /api/ranking/config` checks `isSectionCaptain` |
+| INV-053 | Section Captain role is verified server-side before config mutations | `POST /api/ranking/config` checks `isSectionCaptain` |
 | INV-054 | Coach role is verified server-side before selection writes | `selectPlayer`, `removeSelection`, `syncSquad` |
 | INV-055 | API responses include CORS headers restricted to `ALLOWED_ORIGIN` environment variable | Prevents cross-origin abuse |
 
@@ -611,9 +608,9 @@ The system uses 7 Airtable tables:
 | **Ability Group Configuration** | Group capacities | 8 (one per group) |
 | **Selection Events** | Audit log (optional) | Variable |
 
-### 6.2 Generated Code
+### 6.2 Schema Mapping (`shared/schema/`)
 
-The `src/generated/` directory contains code generated from the Airtable schema:
+`shared/schema/` is **hand-maintained**, not generated - there is no generation script or pipeline. [`docs/Airtable Schema.json`](Airtable%20Schema.json) (an export of the live base) is the source of truth for the actual schema; `shared/schema/` is kept in sync with it by hand:
 
 | File | Contents |
 |---|---|
@@ -621,11 +618,11 @@ The `src/generated/` directory contains code generated from the Airtable schema:
 | `tableNames.ts` | `TABLES` constant mapping logical names to Airtable table names |
 | `fieldMaps.ts` | `PEOPLE_FIELDS`, `TEAMS_FIELDS`, `MATCHES_FIELDS`, etc. - mapping TS property names to Airtable field names |
 
-**⚠️ INVARIANT:** Generated code is never edited manually. When the Airtable schema changes, the generation script must be re-run, and the generated files replaced atomically.
+Living in `shared/` (not `worker/src/` or `src/`), it is usable from both the Worker and the frontend without either reaching into the other's tree.
 
 ### 6.3 Mapper Layer
 
-`src/mappers/` translates Airtable record shapes to domain types:
+`shared/mappers/` translates Airtable record shapes to domain types:
 
 | Mapper | Input | Output |
 |---|---|---|
@@ -668,16 +665,14 @@ getReferenceData(env) → {
 
 ### 6.5 Domain Type Versioning
 
-Domain types are versioned implicitly through the generated code. When the Airtable schema changes:
+No explicit version field is maintained on domain types. When the Airtable schema changes:
 
-1. Update the generation script's field mapping
-2. Re-generate `domainTypes.ts`, `tableNames.ts`, `fieldMaps.ts`
+1. Re-export `docs/Airtable Schema.json` from Airtable
+2. Update `domainTypes.ts`, `tableNames.ts`, `fieldMaps.ts` by hand to match
 3. Update affected mappers
 4. Update affected Worker queries
 5. Run the full test suite
 6. The golden eligibility tests will catch any regressions in field name changes
-
-No explicit version field is maintained on domain types. The generated code IS the version.
 
 ---
 
@@ -1034,7 +1029,7 @@ Before merging any Ranking Engine change, verify:
 - [ ] Stale detection (409 Conflict on length mismatch) still works
 - [ ] Ability badges update synchronously after config changes
 - [ ] API response shape unchanged (backwards compatible)
-- [ ] Generated types not manually edited
+- [ ] `shared/schema/` still matches `docs/Airtable Schema.json`
 
 ### 7.3 Recommendation Engine
 
@@ -1489,228 +1484,11 @@ Players and coaches both authenticate via Supabase:
 
 ## 10. API Specification
 
-### 10.1 Authentication Model
-
-All authenticated endpoints require `email` as a query parameter (GET) or `actingEmail` in the request body (POST). The Worker resolves the People record and checks roles.
-
-Unauthenticated endpoints (player-facing) accept a People record ID directly.
-
-### 10.2 Endpoint Reference
-
-#### Profile
-
-**`GET /api/my-profile`**
-- Auth: Yes (`?email=`)
-- Response: `ProfileData { preferredName, roles, isCoach, isAdmin, isSectionCaptain, coachTeams[] }`
-- Cache: N/A (always fresh via Supabase session)
-- Error: 400 (email missing), 404 (player not found)
-
-#### Fixtures
-
-**`GET /api/my-fixtures`**
-- Auth: Yes (`?email=`)
-- Response: `GetMyFixturesOutput { playerName, registeredTeam, fixtures[], eligibleOtherFixtures[] }`
-- Cache: No (always fresh - player-specific, low frequency)
-
-**`GET /api/upcoming-fixtures`**
-- Auth: Yes (`?email=` + optional `?team=`)
-- Response: `GetUpcomingFixturesOutput { fixtures[] }`
-- Cache: 5 min (staleTime: 300s in React Query)
-- Note: Section captains receive all teams' fixtures when no `team` filter
-
-**`GET /api/player-fixtures/:playerId`**
-- Auth: No (player-facing, validates player is active)
-- Response: `{ playerName, registeredTeam, fixtures[] }`
-
-#### Squad
-
-**`GET /api/match/:matchId/players`**
-- Auth: Yes
-- Query: `?side=home|away`
-- Response: `{ match: MatchInfo, players: AnnotatedPlayer[] }`
-- Cache: 5 min
-- Performance: Uses `season-index` + `players-for-match` caches
-
-**`GET /api/match/:matchId/squad`**
-- Auth: Yes
-- Response: `{ matchId, players: [{ id, name, position, ability }] }`
-- Players sorted: GK → DEF → MID → FWD, then by ability descending
-
-**`GET /api/match/:matchId/availability`**
-- Auth: Yes
-- Response: `{ exceptions: [{ playerId, status, notes }] }`
-- Used by: `useAvailabilityPoll` (30s polling)
-
-**`GET /api/match/:matchId/recommendations`**
-- Auth: Yes
-- Query: `?side=home|away&position=Defender&limit=5`
-- Response: `{ matchId, side, targetPosition, recommendations[] }`
-- Performance: Reuses `getPlayersForMatch` output
-
-**`POST /squad/sync`**
-- Auth: Yes
-- Body: `{ matchId, selectedIds, actingEmail, side }`
-- Response: `{ success: true }`
-- Side effects: Updates match record, logs selection events, invalidates 6 cache namespaces
-- Validation: Server-side eligibility NOT re-checked for bulk sync (individual selects use `selectPlayer`)
-
-**`POST /api/select-player`**
-- Auth: Yes
-- Body: `{ matchId, playerId, side }`
-- Response: `{ success: true }`
-- Validation: Re-runs eligibility server-side before creating selection
-
-**`POST /api/remove-selection`**
-- Auth: Yes
-- Body: `{ matchId, playerId, side }`
-- Response: `{ success: true }`
-
-#### Availability
-
-**`POST /api/set-availability`**
-- Auth: Yes (coach/admin)
-- Body: `{ playerId, matchId, status ("Maybe"|"Unavailable"), note? }`
-- Response: `{ success: true, exceptionId? }`
-
-**`POST /api/set-my-availability`**
-- Auth: No (player-facing)
-- Body: `{ fixtureId, status, note?, exceptionId? }`
-- Response: `{ success: true, exceptionId? }`
-- If `exceptionId` + status "Available" → deletes exception
-
-#### Ranking
-
-**`GET /api/ranking`**
-- Auth: Yes
-- Response: `RankingList { players[], activeCount, lastUpdated, config, version }`
-- Cache: 30s
-
-**`GET /api/ranking/inactive`**
-- Auth: Yes
-- Response: `InactiveRankingEntry[]`
-- Cache: 30s
-
-**`GET /api/ranking/config`**
-- Auth: Yes
-- Response: `AbilityGroupConfigMap { A, B, C, D, E, F, G }`
-- Cache: 5 min
-
-**`POST /api/ranking/config`**
-- Auth: Yes (Section Captain only)
-- Body: `{ config: AbilityGroupConfigMap, actingEmail }`
-- Response: `RankingList` (fully recomputed)
-- Validation: 403 if not Section Captain, 400 if config invalid
-
-**`POST /api/ranking/reorder`**
-- Auth: Yes
-- Body: `{ playerIds: string[], actingEmail }`
-- Response: `RankingList`
-- Validation: Length must match active count (409 if stale), no duplicates/unknowns (400)
-
-**`POST /api/ranking/move`**
-- Auth: Yes
-- Body: `{ playerId, newRank, actingEmail }`
-- Response: `RankingList`
-
-**`POST /api/ranking/move-relative`**
-- Auth: Yes
-- Body: `{ sourceId, targetId, position: "above"|"below", actingEmail }`
-- Response: `RankingList`
-
-**`POST /api/ranking/activate`**
-- Auth: Yes
-- Body: `{ playerId, actingEmail }`
-- Response: `RankingList`
-- Appends player at bottom of ranking
-
-**`POST /api/ranking/deactivate`**
-- Auth: Yes
-- Body: `{ playerId, actingEmail }`
-- Response: `RankingList`
-- Removes from ranking, shifts lower ranks up
-
-**`POST /api/ranking/initialize`**
-- Auth: Yes
-- Response: `RankingList`
-- Seeds ranking from ability + alphabetical
-
-#### Dashboard
-
-**`GET /api/playup-watch`**
-- Auth: Yes
-- Response: `{ season, watch: [{ id, name, registeredTeam, playUpCount }] }`
-- Cache: 5 min
-
-**`GET /api/recent-changes`**
-- Auth: Yes
-- Response: `{ changes[] }` (currently stub - returns `[]`)
-
-**`GET /api/recent-availability`**
-- Auth: Yes
-- Response: `{ changes[] }` (currently stub - returns `[]`)
-
-#### Calendar
-
-**`GET /api/calendar/link`**
-- Auth: Yes (`?email=`)
-- Response: `{ icsUrl: string }`
-
-**`GET /api/calendar/feed.ics`**
-- Auth: No (signed URL: `?id=` + `?sig=`)
-- Response: ICS file content
-
-**`GET /api/calendar/team-link`**
-- Auth: Yes (`?email=` + `?team=`)
-- Response: `{ icsUrl: string }`
-
-**`GET /api/calendar/team-feed.ics`**
-- Auth: No (signed URL: `?team=` + `?sig=`)
-- Response: ICS file content
-
-**`GET /api/calendar/team.ics`**
-- Auth: Yes (`?email=` + `?team=`)
-- Response: ICS file content (direct download)
-
-#### Health & Metrics
-
-**`GET /health`**
-- Auth: No
-- Response: `{ status: "ok", timestamp }`
-
-**`GET /api/eligibility-metrics`**
-- Auth: Yes
-- Response: Aggregated eligibility counts (no player data)
-
-**`POST /api/eligibility-metrics/reset`**
-- Auth: Yes
-- Response: `{ success: true }`
-
-### 10.3 Error Response Format
-
-All errors follow a consistent format:
-```json
-{
-  "error": "Human-readable error message"
-}
-```
-
-HTTP status codes:
-- 400: Bad request (missing/invalid parameters)
-- 403: Forbidden (role check failed)
-- 404: Not found
-- 409: Conflict (stale data)
-- 422: Unprocessable (cannot determine HKFC team)
-- 500: Internal server error
-- 502: Airtable error
-
-### 10.4 CORS
-
-All responses include CORS headers from `ALLOWED_ORIGIN` environment variable. OPTIONS preflight requests are handled automatically.
+This section originally documented every endpoint in detail; it described an email-query-parameter auth model that no longer exists (identity now comes from the verified Supabase session - see `worker/src/auth.ts`) and had drifted from the real route list in other ways too. Rather than maintain a second copy of the route table here, **the authoritative endpoint list is `worker/src/index.ts`** - read it directly for the current path, method, and auth requirement of every route. CORS headers come from `ALLOWED_ORIGIN`; OPTIONS preflight is handled automatically (`worker/src/http.ts`).
 
 ---
 
 ## 11. Frontend Architecture
-
 
 ### 11.1 Technology Choices
 
@@ -1871,7 +1649,7 @@ Run: `npx vitest` (watch) or `npx vitest run` (CI).
 4. **Section Rank is sole persisted ranking** â€" everything else is derived
 5. **Exception-based availability** â€" no "Available" records
 6. **Selections on `Matches.Selected Players Home/Away`** â€" no separate table
-7. **Generated code never edited manually** â€" regenerate from schema
+7. **`shared/schema/` is hand-maintained** â€" keep it in sync with `docs/Airtable Schema.json` when the Airtable schema changes
 
 ### Common Mistakes to Avoid
 
