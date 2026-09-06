@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { safeFormat } from '@/lib/dateUtils';
 import { setMyAvailability } from '@/api/setMyAvailability';
 import { toast } from 'sonner';
@@ -6,27 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
-import { apiGet } from '@/lib/apiClient';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { POS_SHORT } from '@/lib/format';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-
-type SquadMember = {
-  name: string;
-  position: string;
-};
+import { useMatchSquad } from '@/lib/queries';
 
 const OPTIONS = [
   { value: 'Available', label: 'Going', Icon: CheckCircle2, color: 'text-green-600' },
   { value: 'Maybe', label: 'Maybe', Icon: HelpCircle, color: 'text-amber-600' },
   { value: 'Unavailable', label: 'No', Icon: XCircle, color: 'text-red-600' },
 ] as const;
-
-// Short in-memory cache for the read-only squad list shown in this sheet, so
-// reopening a fixture does not refetch it. TTL matches the Worker's 30s
-// match-record cache; availability saves do not change the selected players.
-const squadCache = new Map<string, { players: SquadMember[]; at: number }>();
-const SQUAD_CACHE_TTL_MS = 30 * 1000;
 
 export default function PlayerAvailabilitySheet({
   fixture, conflictHint, onClose, onSaved,
@@ -39,27 +28,8 @@ export default function PlayerAvailabilitySheet({
   const [status, setStatus] = useState<string>(fixture.availabilityStatus);
   const [notes, setNotes] = useState(fixture.playerNotes);
   const [saving, setSaving] = useState(false);
-  const [squad, setSquad] = useState<SquadMember[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const side = fixture.isHome ? 'home' : 'away';
-    const key = `${fixture.id}:${side}`;
-    const cached = squadCache.get(key);
-    if (cached && Date.now() - cached.at < SQUAD_CACHE_TTL_MS) {
-      setSquad(cached.players);
-      return;
-    }
-    apiGet<{ players: SquadMember[] }>(`/api/match/${fixture.id}/squad?side=${side}`)
-      .then(data => {
-        if (cancelled) return;
-        const players = data.players ?? [];
-        squadCache.set(key, { players, at: Date.now() });
-        setSquad(players);
-      })
-      .catch(() => { if (!cancelled) setSquad([]); });
-    return () => { cancelled = true; };
-  }, [fixture.id, fixture.isHome]);
+  const { data: squadData, isError: squadFailed } = useMatchSquad(fixture.id, fixture.isHome ? 'home' : 'away');
+  const squad = squadData?.players ?? (squadFailed ? [] : null);
 
   const handleSave = async () => {
     setSaving(true);

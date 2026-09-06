@@ -1,8 +1,30 @@
-import { useEffect, useState } from 'react';
-import { supabase } from './supabase';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 
-export function useAuth() {
+interface AuthContextValue {
+  user: User | null;
+  isLoading: boolean;
+  loginWithEmail: (email: string) => Promise<void>;
+  verifyEmailOtp: (email: string, token: string) => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * The actual sign-out call, exported standalone so non-component code
+ * (apiClient's 401 handling) can trigger it without needing a hook. The
+ * AuthProvider's single onAuthStateChange subscription picks up the
+ * resulting session change and AuthGate re-renders Login - no other caller
+ * needs to touch `user` state or navigate anywhere.
+ */
+export async function signOut(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+/** One getSession() + one onAuthStateChange subscription for the whole app. */
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -14,7 +36,7 @@ export function useAuth() {
       if (!isMounted) return;
       setUser(session?.user ?? null);
       setLoading(false);
-      
+
       // Safety net: manually clean up the URL hash if Supabase didn't clear it
       if (window.location.hash) {
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -42,7 +64,7 @@ export function useAuth() {
   const loginWithEmail = async (email: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin }
+      options: { emailRedirectTo: window.location.origin },
     });
     if (error) throw error;
   };
@@ -51,24 +73,24 @@ export function useAuth() {
   // and fires onAuthStateChange, so the listener above picks the user up and
   // callers don't need to set any state themselves.
   const verifyEmailOtp = async (email: string, token: string): Promise<void> => {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email'
-    });
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
     if (error) throw error;
   };
 
   const logout = async (): Promise<void> => {
-    await supabase.auth.signOut();
+    await signOut();
     setUser(null);
   };
 
-  return {
-    user,
-    isLoading: loading,
-    loginWithEmail,
-    verifyEmailOtp,
-    logout
-  };
+  return (
+    <AuthContext.Provider value={{ user, isLoading: loading, loginWithEmail, verifyEmailOtp, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 }

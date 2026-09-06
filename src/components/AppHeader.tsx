@@ -1,16 +1,17 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
 import { LogOut, User, ListChecks, Home } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 
 export default function AppHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { logout: signOut } = useAuth();
   const isDashboard = location.pathname === '/coach' || location.pathname === '/coach/fixtures';
   const isRanking = location.pathname === '/coach/ranking';
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate('/');
   };
 

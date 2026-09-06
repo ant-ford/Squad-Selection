@@ -5,6 +5,10 @@ import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
 import { getRecommendations } from '@/api/getRecommendations';
+import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/getMyFixtures';
+import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
+import { getPlayerStats } from '@/api/getPlayerStats';
+import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
@@ -50,6 +54,23 @@ export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   });
 }
 
+export function useMatchSquad(matchId: string, side: 'home' | 'away') {
+  return useQuery({
+    queryKey: ['matchSquad', matchId, side],
+    queryFn: () => apiGet<{ players: { name: string; position: string }[] }>(`/api/match/${matchId}/squad`, { side }),
+    staleTime: 30_000,
+  });
+}
+
+export function usePlayerStats(playerId: string) {
+  return useQuery({
+    queryKey: ['playerStats', playerId],
+    queryFn: () => getPlayerStats(playerId),
+    enabled: !!playerId,
+    staleTime: 60_000,
+  });
+}
+
 export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
   const isVisible = useDocumentVisible();
   return useQuery({
@@ -57,6 +78,108 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
     queryFn: () => apiGet<{ exceptions: { playerId: string; status: string; notes: string }[] }>(`/api/match/${matchId}/availability`),
     refetchInterval: isEnabled && isVisible ? 30000 : false,
     enabled: isEnabled,
+  });
+}
+
+// ── Player dashboard ─────────────────────────────────────────────────────
+
+export function useMyFixtures() {
+  return useQuery({
+    queryKey: ['myFixtures'],
+    queryFn: () => getMyFixtures(),
+    staleTime: 60_000,
+  });
+}
+
+/** Patch one fixture, by id, across all three sections of the cached dashboard data. */
+function patchFixture(
+  data: GetMyFixturesOutput | undefined,
+  fixtureId: string,
+  patch: Partial<MyFixture>,
+): GetMyFixturesOutput | undefined {
+  if (!data) return data;
+  const upd = (f: MyFixture) => (f.id === fixtureId ? { ...f, ...patch } : f);
+  return {
+    ...data,
+    fixtures: data.fixtures.map(upd),
+    playUpOpportunities: data.playUpOpportunities?.map(upd),
+    supportFixtures: data.supportFixtures?.map(upd),
+  };
+}
+
+/** Patch every fixture on `date` (HKT date key), across all three sections. */
+function patchFixturesForDate(
+  data: GetMyFixturesOutput | undefined,
+  date: string,
+  patch: (f: MyFixture) => MyFixture,
+): GetMyFixturesOutput | undefined {
+  if (!data) return data;
+  const upd = (f: MyFixture) => (hkDateKey(f.date) === date ? patch(f) : f);
+  return {
+    ...data,
+    fixtures: data.fixtures.map(upd),
+    playUpOpportunities: data.playUpOpportunities?.map(upd),
+    supportFixtures: data.supportFixtures?.map(upd),
+  };
+}
+
+/**
+ * Single-fixture availability. Optimistic: the tapped status shows
+ * immediately, and a failure rolls back to the pre-tap snapshot.
+ */
+export function useQuickAvailability() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fixtureId, status }: { fixtureId: string; status: 'Available' | 'Maybe' | 'Unavailable' }) =>
+      setMyAvailability(fixtureId, status),
+    onMutate: async ({ fixtureId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
+      const previousData = queryClient.getQueryData<GetMyFixturesOutput>(['myFixtures']);
+      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+        patchFixture(old, fixtureId, { availabilityStatus: status }),
+      );
+      return { previousData };
+    },
+    onSuccess: (result, { fixtureId }) => {
+      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+        patchFixture(old, fixtureId, { availabilityExceptionId: result.exceptionId || '' }),
+      );
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) queryClient.setQueryData(['myFixtures'], context.previousData);
+    },
+  });
+}
+
+/**
+ * Date-level bulk availability (the goalkeeper/multi-fixture-day shortcut).
+ * Optimistic across every fixture on that date at once; a failure rolls
+ * back the whole snapshot.
+ */
+export function useBulkAvailability() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ date, status }: { date: string; status: 'Available' | 'Maybe' | 'Unavailable' }) =>
+      setMyAvailabilityForDate(date, status),
+    onMutate: async ({ date, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
+      const previousData = queryClient.getQueryData<GetMyFixturesOutput>(['myFixtures']);
+      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+        patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status })),
+      );
+      return { previousData };
+    },
+    onSuccess: (result, { date, status }) => {
+      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+        patchFixturesForDate(old, date, (f) => {
+          const r = result.results.find((x) => x.matchId === f.id);
+          return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || f.availabilityExceptionId };
+        }),
+      );
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) queryClient.setQueryData(['myFixtures'], context.previousData);
+    },
   });
 }
 

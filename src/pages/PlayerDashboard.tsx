@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/lib/useAuth';
-import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
-import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
+import { useAuth } from '@/lib/auth';
+import { useQueryClient } from '@tanstack/react-query';
+import type { MyFixture } from '@/api/getMyFixtures';
+import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -57,10 +58,12 @@ function DayAvailabilityControl({
 }
 
 export default function PlayerDashboard() {
-  const { user, isLoading, logout } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
-  const [data, setData] = useState<GetMyFixturesOutput | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data, isLoading: loading } = useMyFixtures();
+  const quickAvailability = useQuickAvailability();
+  const bulkAvailability = useBulkAvailability();
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
   const [conflictHint, setConflictHint] = useState<string | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
@@ -70,43 +73,14 @@ export default function PlayerDashboard() {
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
 
-  const loadData = useCallback(() => {
-    if (!user) return;
-    setLoading(true);
-    getMyFixtures()
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [user]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const applyPatch = (fixtureId: string, patch: Partial<MyFixture>) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const upd = (f: MyFixture) => (f.id === fixtureId ? { ...f, ...patch } : f);
-      return {
-        ...prev,
-        fixtures: prev.fixtures.map(upd),
-        playUpOpportunities: prev.playUpOpportunities?.map(upd),
-        supportFixtures: prev.supportFixtures?.map(upd),
-      };
-    });
-  };
-
-  const handleQuickAvailability = async (fixtureId: string, status: AvailabilityStatus) => {
-    const previousData = data;
-    applyPatch(fixtureId, { availabilityStatus: status });
-    try {
-      const result = await setMyAvailability(fixtureId, status);
-      applyPatch(fixtureId, { availabilityExceptionId: result.exceptionId || '' });
-      toast.success('Availability updated');
-    } catch (err) {
-      if (previousData) setData(previousData);
-      toast.error('Failed to update availability');
-    }
+  const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus) => {
+    quickAvailability.mutate(
+      { fixtureId, status },
+      {
+        onSuccess: () => toast.success('Availability updated'),
+        onError: () => toast.error('Failed to update availability'),
+      },
+    );
   };
 
   // Date-level bulk availability: a UX shortcut that performs the existing
@@ -116,43 +90,16 @@ export default function PlayerDashboard() {
   // The Worker applies this to every HKFC fixture that day, so the play-up
   // and support lists have to be patched alongside "My Team" - otherwise a
   // player marks themselves out and the play-up cards still read Available.
-  const handleBulkAvailability = async (date: string, status: AvailabilityStatus) => {
-    const previousData = data;
+  const handleBulkAvailability = (date: string, status: AvailabilityStatus) => {
     setBulkBusy(date + status);
-    const patchAllSections = (
-      prev: GetMyFixturesOutput | null,
-      upd: (f: MyFixture) => MyFixture,
-    ) =>
-      prev
-        ? {
-            ...prev,
-            fixtures: prev.fixtures.map(upd),
-            playUpOpportunities: prev.playUpOpportunities?.map(upd),
-            supportFixtures: prev.supportFixtures?.map(upd),
-          }
-        : prev;
-
-    setData((prev) =>
-      patchAllSections(prev, (f) =>
-        dateKey(f.date) === date ? { ...f, availabilityStatus: status } : f,
-      ),
+    bulkAvailability.mutate(
+      { date, status },
+      {
+        onSuccess: () => toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`),
+        onError: () => toast.error('Failed to update availability'),
+        onSettled: () => setBulkBusy(null),
+      },
     );
-    try {
-      const result = await setMyAvailabilityForDate(date, status);
-      setData((prev) =>
-        patchAllSections(prev, (f) => {
-          if (dateKey(f.date) !== date) return f;
-          const r = result.results.find((x) => x.matchId === f.id);
-          return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || '' };
-        }),
-      );
-      toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`);
-    } catch (err) {
-      if (previousData) setData(previousData);
-      toast.error('Failed to update availability');
-    } finally {
-      setBulkBusy(null);
-    }
   };
 
   // Opening a Support Fixture: if the player is Available for their My Team
@@ -202,7 +149,7 @@ export default function PlayerDashboard() {
     return counts;
   }, [data]);
 
-  if (isLoading || !user) return <DashboardSkeleton />;
+  // AuthGate already guarantees a signed-in user before this route renders.
   if (loading || !data) return <DashboardSkeleton />;
 
   const playUps = data.playUpOpportunities ?? [];
@@ -407,7 +354,7 @@ export default function PlayerDashboard() {
           onClose={() => setSelectedFixture(null)}
           onSaved={() => {
             setSelectedFixture(null);
-            loadData();
+            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
           }}
         />
       )}
@@ -423,7 +370,8 @@ export default function PlayerDashboard() {
         <AvailabilityRulesSheet
           onClose={() => {
             setShowRules(false);
-            loadData(); // a new rule changes the default on every unanswered fixture
+            // A new rule changes the default on every unanswered fixture.
+            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
           }}
         />
       )}

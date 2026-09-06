@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '@/lib/useAuth';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
 const CODE_LENGTH = 6;

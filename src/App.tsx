@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
-import { useAuth } from '@/lib/useAuth';
+import { AuthProvider, useAuth } from '@/lib/auth';
 import Login from './pages/Login';
 import PlayerDashboard from './pages/PlayerDashboard';
 
@@ -43,7 +43,7 @@ function RouteError() {
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background px-6 text-center">
       <p className="text-lg font-semibold text-foreground">Something went wrong</p>
       <p className="text-sm text-muted-foreground max-w-sm">
-        This usually happens right after a new version has been deployed. Reloading fixes it.
+        Reload to try again.
       </p>
       <button
         onClick={() => window.location.reload()}
@@ -156,9 +156,9 @@ function AppLoading() {
 
 export default function App() {
   return (
-    <>
+    <AuthProvider>
       <RouterProvider router={router} />
       <Toaster />
-    </>
+    </AuthProvider>
   );
 }
