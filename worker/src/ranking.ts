@@ -18,7 +18,6 @@ import {
 import { mapPlayer } from "../../src/mappers/playerMapper";
 import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
-import { ABILITY_RANK } from "../../src/lib/abilityRank";
 import { selectedDisplayTeam } from "../../src/lib/displayTeam";
 import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./reference";
 import {
@@ -422,35 +421,6 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
   ]);
 
-  invalidateCache(rankingCacheKey(true));
-  return recomputeDerivedFields(env);
-}
-
-export async function initializeRanking(env: Env): Promise<RankingList> {
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    'AND({Applicant Stage}!="Rejected", {Status}!="Resigned", OR({Active}=TRUE(), {Status}="Applicant"))',
-  );
-  const players = records.map(mapPlayer);
-  
-  const ranked = players
-    .filter((p) => typeof p.sectionRank === "number" && p.sectionRank > 0)
-    .sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
-    
-  const unranked = players
-    .filter((p) => !(typeof p.sectionRank === "number" && p.sectionRank > 0))
-    .sort((a, b) => {
-      const av = ABILITY_RANK[a.playingAbility ?? ""] ?? 0;
-      const bv = ABILITY_RANK[b.playingAbility ?? ""] ?? 0;
-      if (av !== bv) return bv - av;
-      return (a.preferredName ?? a.givenNames ?? "").localeCompare(b.preferredName ?? b.givenNames ?? "");
-    });
-
-  const combined = [...ranked, ...unranked];
-  const updates: { id: string; rank: number; oldRank: number }[] = combined.map((p, i) => ({ id: p.id, rank: i + 1, oldRank: p.sectionRank ?? 0 }));
-  
-  if (updates.length > 0) await applySectionRankUpdates(env, updates, "system");
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }

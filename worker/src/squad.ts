@@ -1,4 +1,4 @@
-import { Env, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId, airtableBatchCreate } from "./airtable";
+import { Env, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
 import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
 import { getReferenceData, getExceptionsForSeasons } from "./reference";
 import { getScheduledMatches } from "./fixtures";
@@ -30,14 +30,6 @@ type MatchSide = "home" | "away";
 // syncSquad invalidates `match:${matchId}` immediately after each write —
 // so a coach can never be served stale selections post-update.
 const MATCH_RECORD_TTL_MS = 30 * 1000;
-const SELECTION_EVENTS_TABLE = "Selection Events";
-const SELECTION_EVENTS_FIELDS = {
-  player: "Player",
-  match: "Match",
-  team: "Team",
-  action: "Action",
-  actor: "Actor",
-} as const;
 
 async function getMatchRecord(env: Env, matchId: string): Promise<any> {
   const { data } = await getCached<any>(`match:${matchId}`, async () => {
@@ -253,38 +245,6 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   }
   await airtableUpdate(env, TABLES.match, matchId, updates);
 
-  // ── Selection event log (feeds "Recent Changes"; optional table, never blocks writes) ──
-  try {
-    const events: Record<string, unknown>[] = [];
-    const push = (id: string, team: string, action: string) => {
-      if (events.length >= 10) return;
-      events.push({
-        [SELECTION_EVENTS_FIELDS.player]: [id],
-        [SELECTION_EVENTS_FIELDS.match]: [matchId],
-        [SELECTION_EVENTS_FIELDS.team]: team,
-        [SELECTION_EVENTS_FIELDS.action]: action,
-        [SELECTION_EVENTS_FIELDS.actor]: actingEmail || "",
-      });
-    };
-    const currentSelected = getSelectedPlayerIds(match, ref.teamRankMap, side);
-    const targetTeam = hkfcTeamName(match, ref.teamRankMap, side);
-    cleanIds.filter((id) => !currentSelected.includes(id)).forEach((id) => push(id, targetTeam, "Selected"));
-    currentSelected.filter((id) => !cleanIds.includes(id)).forEach((id) => push(id, targetTeam, "Removed"));
-    if (side === "home" || side === "away") {
-      const oppositeTeam = side === "home" ? match.awayTeam || "" : match.homeTeam || "";
-      const oppositeSelected = side === "home" 
-        ? (match.selectedPlayersAway || []) 
-        : (match.selectedPlayersHome || []);
-        
-      oppositeSelected
-        .filter((id: string) => cleanIds.includes(id))
-        .forEach((id: string) => push(id, oppositeTeam, "Removed"));
-    }
-    if (events.length > 0) airtableBatchCreate(env, SELECTION_EVENTS_TABLE, events).catch(() => {});
-  } catch {
-    /* Selection Events table not created yet — Recent Changes degrades to availability-only. */
-  }
-
   // Invalidation fan-out (Invariant #11). Every cache that can now be stale:
   const season = match.season || "";
   const allMatchesInSeason = await getAllMatches(env, season);
@@ -301,19 +261,6 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   }
   invalidateCachePrefix("calendar:player:");
   invalidateCachePrefix("calendar:team:");
-}
-
-export async function selectPlayer(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {
-  const { matchId, playerId, side } = input;
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
-  const match = mapMatch(matchRecord);
-  const ref = await getReferenceData(env);
-  const currentSelected = getSelectedPlayerIds(match, ref.teamRankMap, side);
-  if (!currentSelected.includes(playerId)) {
-    await syncSquad(env, matchId, [...currentSelected, playerId], undefined, side);
-  }
-  return { success: true };
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {
@@ -409,19 +356,6 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
 
   console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);
   return { success: true, teamName, playerIds: validIds };
-}
-
-export async function removeSelection(env: Env, input: { matchId: string; playerId: string; side?: MatchSide }) {
-  const { matchId, playerId, side } = input;
-  // WRITE PATH: fresh read (see syncSquad note).
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
-  const match = mapMatch(matchRecord);
-  const ref = await getReferenceData(env);
-  const currentSelected = getSelectedPlayerIds(match, ref.teamRankMap, side);
-  const newSelected = currentSelected.filter((id) => id !== playerId);
-  await syncSquad(env, matchId, newSelected, undefined, side);
-  return { success: true };
 }
 
 /**

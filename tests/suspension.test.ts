@@ -121,12 +121,9 @@ function suspensionCtx(suspensionByPlayer: Map<string, CardSuspensionState>): Ev
   return {
     teamMap,
     rankMap,
-    sameDayMatches: [],
     sameDayFixtures: [],
-    allSelections: [],
     selectionsByPlayer: new Map(),
     sameDaySelectionsByTeam: new Map(),
-    allExceptions: [],
     unavailablePlayerMatchKeys: new Set(),
     matchCards: [],
     matchCardsByPlayer: new Map(),

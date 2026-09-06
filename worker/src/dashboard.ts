@@ -56,12 +56,3 @@ export async function getRecentChanges(env: Env, days: number) {
   const changes = await getRankingEvents(env, days);
   return { changes };
 }
-
-export async function getRecentAvailability(_env: Env, _days: number) {
-  return {
-    changes: [] as {
-      playerId: string; playerName: string; team: string; status: string;
-      note: string; matchLabel: string; matchDate: string; updatedAt: string;
-    }[],
-  };
-}

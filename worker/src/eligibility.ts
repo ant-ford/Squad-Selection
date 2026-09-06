@@ -1,5 +1,4 @@
 import { linkId } from "./airtable";
-import { recordEligibilityEvaluation } from "./metrics";
 import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
 import type { CardSuspensionState } from "./suspension";
 import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
@@ -28,21 +27,6 @@ export const RULE_IDS = {
   WARN_U21_APPROACHING: "WARN_U21_APPROACHING",
 } as const;
 
-/**
- * Reasoning tag attached to every eligibility result, providing coaches
- * with the specific bye-law or HKFC interpretation that applies.
- */
-export interface EligibilityReasonTag {
-  /** Human-readable short label (e.g. "Bye-Law 7.2(a)"). */
-  source: string;
-  /** The actual text of the bye-law or HKFC interpretation. */
-  text: string;
-  /** Whether this is an HKFC operational override of the standard bye-law. */
-  isHkfcOverride: boolean;
-  /** Stable internal identifier (UI never displays this). */
-  ruleId: string;
-}
-
 export interface EligibilityResult {
   status: "eligible" | "warning" | "blocked";
   /** Mandatory reason string per HKFC spec §16 — only non-null when blocked. */
@@ -55,14 +39,14 @@ export interface EligibilityResult {
   selectedByTeam: string | null;
   /** Cross-team conflict: higher team making the player unavailable today. */
   sameDayHigherTeam: string | null;
-  /** Source reference for the reason (bye-law or HKFC interpretation). */
-  reasonTag: EligibilityReasonTag | null;
-  /** Source references for each warning. */
-  warningTags: EligibilityReasonTag[];
   /** Stable internal ID of the blocking rule; null when not blocked. */
   ruleId: string | null;
-  /** Optional step-by-step evaluation trace (debug mode only; never shown to coaches). */
-  trace?: string[];
+}
+
+/** A blocking rule's outcome: its stable ID paired with the coach-facing reason. */
+interface RuleBlock {
+  ruleId: string;
+  reason: string;
 }
 
 export interface VirtualSelection {
@@ -75,7 +59,6 @@ export interface VirtualSelection {
 // ── Internal helpers ────────────────────────────────────────────────────
 type TeamMap = Map<string, Team>;
 type RankMap = Record<string, number>;
-type Exception = { playerId: string; matchId: string; status: string };
 type SameDayTeamFixture = { matchId: string; teamName: string };
 
 function buildRankMap(teamMap: TeamMap): RankMap {
@@ -159,155 +142,26 @@ function teamRanks(
   return { rank, isPremier };
 }
 
-// ── Bye-Law & HKFC Interpretation Reference Library ─────────────────────
-/**
- * Centralised map of reason strings → their authoritative sources.
- * Reason strings are byte-identical to Spec §16 — never reword them.
- */
-const REASON_TAGS: Record<string, EligibilityReasonTag> = {
-  // ── Blocked reasons ─────────────────────────────────────────────────
-  "Admin data incomplete": {
-    ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE,
-    source: "HKFC Spec §2.2",
-    text: "Active players missing any of Registered Team, Playing Position, or Playing Ability must be blocked from selection. These players should remain visible to coaches but clearly identified as requiring administrative correction.",
-    isHkfcOverride: true,
-  },
-  Suspended: {
-    ruleId: RULE_IDS.SUSPENSION,
-    source: "Bye-Law 16.3–16.10",
-    text: "A player under suspension is not permitted to play in any match while the suspension is in effect. Suspensions are managed manually by administrators and may carry forward into future seasons where required by HKHA rulings.",
-    isHkfcOverride: false,
-  },
-  "Visiting player — fixed to registered team": {
-    ruleId: RULE_IDS.VISITING_FIXED_TEAM,
-    source: "Bye-Law 6.1–6.2 & HKFC Spec §6.2",
-    text: "Visiting Players (without HKID or Recognizance Form 8) may only play for their registered team. Any selection for another team is blocked.",
-    isHkfcOverride: false,
-  },
-  "Visiting player — fewer than 5 appearances for registered team": {
-    ruleId: RULE_IDS.VISITING_CUP_APPEARANCES,
-    source: "Bye-Law 6.1–6.6 & HKFC Spec §6.3",
-    text: "Visiting Players require five league appearances for their registered team before becoming eligible for any Cup, Plate or Bowl fixture.",
-    isHkfcOverride: false,
-  },
-  "Available for [Team] on same day": {
-    ruleId: RULE_IDS.SAME_DAY_AVAILABLE,
-    source: "Bye-Law 7.1 & HKFC Spec §7.2",
-    text: "Players may not represent more than one team on the same calendar day. Only an actual selection for a higher-ranked team makes a player unavailable for lower-team fixtures that day - mere availability for the higher team is surfaced as a warning and does not block (product decision 2026-09-03). Kick-off times are ignored — the restriction applies to the entire calendar day.",
-    isHkfcOverride: false,
-  },
-  "Selected for [Team] on same day": {
-    ruleId: RULE_IDS.SAME_DAY_SELECTED,
-    source: "Bye-Law 7.1 & HKFC Spec §7.2",
-    text: "Players may not represent more than one team on the same calendar day. If a player has already been selected by a higher-ranked team, a lower-ranked team cannot select them.",
-    isHkfcOverride: false,
-  },
-  "Higher-to-lower movement requires Committee approval": {
-    ruleId: RULE_IDS.HIGHER_TO_LOWER,
-    source: "Bye-Law 7.2(a) & HKFC Spec §9.1",
-    text: "Players may not move from a higher-ranked team to a lower-ranked team. This is a hard block and requires Committee approval to override.",
-    isHkfcOverride: false,
-  },
-  "Premier movement restriction — team has not completed 3 matches": {
-    ruleId: RULE_IDS.PREMIER_MOVEMENT,
-    source: "Bye-Law 7.4",
-    text: "Movement between Premier Division and lower divisions is blocked until BOTH involved teams have completed at least three league matches. The rule applies regardless of movement direction.",
-    isHkfcOverride: false,
-  },
-  "Play-up limit reached — re-registration required": {
-    ruleId: RULE_IDS.PLAYUP_LIMIT,
-    source: "Bye-Law 7.2 & HKFC Spec §13",
-    text: "When a player records four qualifying play-up appearances above their registered team (excluding goalkeeper appearances), the player becomes unavailable for their registered team. The player's effective playing team becomes the lowest-ranked team for which they have accumulated four qualifying play-up appearances. This reflects HKFC's operational interpretation of automatic upward re-registration.",
-    isHkfcOverride: true,
-  },
-  "Cup ban — ever registered to Premier Division": {
-    ruleId: RULE_IDS.CUP_BAN_PREMIER,
-    source: "Bye-Law 7.7 & HKFC Spec §14.1",
-    text: "Any player who has been registered to Premier Division at any point during the season is ineligible for Cup, Plate, and Bowl competitions.",
-    isHkfcOverride: false,
-  },
-  "Fewer than 2 league appearances — ineligible for Cup": {
-    ruleId: RULE_IDS.CUP_MIN_LEAGUE_APPEARANCES,
-    source: "Bye-Law 7.10 & HKFC Spec §14.2",
-    text: "A player must have at least two league appearances before participating in Cup competitions. The two league appearances requirement applies per team per season.",
-    isHkfcOverride: false,
-  },
-  "Already played in a Cup for [Team] this season": {
-    ruleId: RULE_IDS.CROSS_CUP,
-    source: "Bye-Law 7.9 & HKFC Spec §14.3",
-    text: "After appearing in any Cup competition (Cup, Plate, or Bowl) for a team, a player may not appear in Cup competitions for another team during the same season.",
-    isHkfcOverride: false,
-  },
-  "U21 double-game limit reached": {
-    ruleId: RULE_IDS.U21_DOUBLE_GAME_LIMIT,
-    source: "Bye-Law 7.6(c) & HKFC Spec §12.3",
-    text: "Maximum of three U21 double-game players per team per day. A double-game player is a U21 player appearing in a second match on the same day. HKFC interpretation: U21 players may play for any higher-ranked team (not just the immediate next team), and match timing is not enforced.",
-    isHkfcOverride: true,
-  },
-  // ── Warning reasons ──────────────────────────────────────────────────
-  "Second play-up appearance": {
-    ruleId: RULE_IDS.WARN_PLAYUP_SECOND,
-    source: "Bye-Law 7.2 & HKFC Spec §10",
-    text: "A player recording their second play-up appearance this season. After four qualifying play-up appearances, the player must be re-registered to the higher team. Goalkeeper appearances (when playing as goalkeeper) do not count toward this total.",
-    isHkfcOverride: false,
-  },
-  "Third play-up appearance": {
-    ruleId: RULE_IDS.WARN_PLAYUP_THIRD,
-    source: "Bye-Law 7.2 & HKFC Spec §10",
-    text: "A player recording their third play-up appearance this season. One more play-up appearance will trigger automatic re-registration. Goalkeeper appearances (when playing as goalkeeper) do not count toward this total.",
-    isHkfcOverride: false,
-  },
-  "Visiting player early-season requirement at risk": {
-    ruleId: RULE_IDS.WARN_VISITING_EARLY_SEASON,
-    source: "Bye-Law 6.1–6.6 & HKFC Spec §6.4",
-    text: "A Visiting Player who has appeared in consecutive early-season matches but remains below the 5-appearance threshold for Cup eligibility. Coaches should monitor to ensure the player reaches the required appearances before Cup fixtures begin.",
-    isHkfcOverride: false,
-  },
-  "U21 double-game limit approaching": {
-    ruleId: RULE_IDS.WARN_U21_APPROACHING,
-    source: "Bye-Law 7.6(c) & HKFC Spec §12.3",
-    text: "The team is approaching the maximum of three U21 double-game players allowed per team per day (currently at 2 of 3). Adding another U21 double-game player will reach the limit.",
-    isHkfcOverride: false,
-  },
-};
-
-/**
- * Look up a reason tag by reason string prefix.
- * Handles dynamic reason strings like "Available for [Team] on same day"
- * or "Already played in a Cup for [Team] this season".
- */
-export function lookupReasonTag(reason: string): EligibilityReasonTag | null {
-  if (REASON_TAGS[reason]) return REASON_TAGS[reason];
-  if (reason.match(/^Available for .+ on same day$/)) {
-    return REASON_TAGS["Available for [Team] on same day"] ?? null;
-  }
-  if (reason.match(/^Selected for .+ on same day$/)) {
-    return REASON_TAGS["Selected for [Team] on same day"] ?? null;
-  }
-  if (reason.match(/^Already played in a Cup for .+ this season$/)) {
-    return REASON_TAGS["Already played in a Cup for [Team] this season"] ?? null;
-  }
-  return null;
-}
-
 // ── Step 1: Admin Data Validation (§2.2) ────────────────────────────────
-function checkAdminData(player: Player): string | null {
-  if (!player.active) return "Admin data incomplete";
-  if (!player.registeredTeam) return "Admin data incomplete";
-  if (!player.playingPosition) return "Admin data incomplete";
-  if (!player.playingAbility) return "Admin data incomplete";
+function checkAdminData(player: Player): RuleBlock | null {
+  const reason = "Admin data incomplete";
+  if (!player.active) return { ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE, reason };
+  if (!player.registeredTeam) return { ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE, reason };
+  if (!player.playingPosition) return { ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE, reason };
+  if (!player.playingAbility) return { ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE, reason };
   return null;
 }
 
 // ── Step 2: Suspension (§5) ─────────────────────────────────────────────
-function checkSuspension(player: Player, ctx: EvaluationContext): string | null {
+function checkSuspension(player: Player, ctx: EvaluationContext): RuleBlock | null {
   // Manual disciplinary suspension and the automatically calculated card
   // suspension are independent - either blocks the player, neither clears
   // the other.
-  if (player.isSuspended === true) return "Suspended";
-  if ((player.matchesToServe ?? 0) > 0) return "Suspended";
+  const block = { ruleId: RULE_IDS.SUSPENSION, reason: "Suspended" };
+  if (player.isSuspended === true) return block;
+  if ((player.matchesToServe ?? 0) > 0) return block;
   const automatic = ctx.suspensionByPlayer?.get(player.id);
-  if (automatic?.active) return "Suspended";
+  if (automatic?.active) return block;
   return null;
 }
 
@@ -317,10 +171,10 @@ function checkVisitingPlayer(
   targetHkfcTeam: string,
   match: Match,
   ctx: EvaluationContext,
-): string | null {
+): RuleBlock | null {
   if (!player.isVisitingPlayer) return null;
   if (player.registeredTeam !== targetHkfcTeam) {
-    return "Visiting player — fixed to registered team";
+    return { ruleId: RULE_IDS.VISITING_FIXED_TEAM, reason: "Visiting player — fixed to registered team" };
   }
   if (isCup(match)) {
     // Spec §6.3: five appearances FOR THE REGISTERED TEAM.
@@ -332,7 +186,10 @@ function checkVisitingPlayer(
         !isFriendly(matchForCard(card, ctx)),
     ).length;
     if (appearances < 5) {
-      return "Visiting player — fewer than 5 appearances for registered team";
+      return {
+        ruleId: RULE_IDS.VISITING_CUP_APPEARANCES,
+        reason: "Visiting player — fewer than 5 appearances for registered team",
+      };
     }
   }
   return null;
@@ -346,7 +203,7 @@ function checkSameDayMovement(
   rankMap: RankMap,
   ctx: EvaluationContext,
 ): {
-  blockReason: string | null;
+  block: RuleBlock | null;
   selectedByTeam: string | null;
   sameDayHigherTeam: string | null;
   warnings: string[];
@@ -399,7 +256,7 @@ function checkSameDayMovement(
       // An actual selection for a higher team makes the player unavailable
       // for lower-team fixtures that day (§7.2).
       return {
-        blockReason: `Selected for ${sdmTeam} on same day`,
+        block: { ruleId: RULE_IDS.SAME_DAY_SELECTED, reason: `Selected for ${sdmTeam} on same day` },
         selectedByTeam: sdmTeam,
         sameDayHigherTeam: sdmTeam,
         warnings: withAvailabilityWarning(),
@@ -416,7 +273,7 @@ function checkSameDayMovement(
   }
 
   return {
-    blockReason: null,
+    block: null,
     selectedByTeam,
     sameDayHigherTeam,
     warnings: withAvailabilityWarning(),
@@ -430,7 +287,7 @@ function checkPremierRestriction(
   targetIsPremier: boolean,
   ctx: EvaluationContext,
   rankMap: RankMap,
-): string | null {
+): RuleBlock | null {
   const { isPremier: playerIsPremier } = playerRanks(player, rankMap);
   // Only applies when crossing Premier ↔ non-Premier boundary
   if (targetIsPremier === playerIsPremier) return null;
@@ -440,7 +297,10 @@ function checkPremierRestriction(
     ctx,
   );
   if (targetCompleted < 3 || playerCompleted < 3) {
-    return "Premier movement restriction — team has not completed 3 matches";
+    return {
+      ruleId: RULE_IDS.PREMIER_MOVEMENT,
+      reason: "Premier movement restriction — team has not completed 3 matches",
+    };
   }
   return null;
 }
@@ -486,12 +346,12 @@ function checkPlayUpRules(
   targetRank: number,
   playerRank: number,
   ctx: EvaluationContext,
-): { blockReason: string | null; playUpCount: number } {
+): { block: RuleBlock | null; playUpCount: number } {
   const playUpCount = calculatePlayUpCount(player, ctx);
   // §9.1 — Higher-to-lower movement blocked
   if (playerRank < targetRank) {
     return {
-      blockReason: "Higher-to-lower movement requires Committee approval",
+      block: { ruleId: RULE_IDS.HIGHER_TO_LOWER, reason: "Higher-to-lower movement requires Committee approval" },
       playUpCount,
     };
   }
@@ -499,12 +359,12 @@ function checkPlayUpRules(
   if (targetRank < playerRank) {
     if (playUpCount >= 4) {
       return {
-        blockReason: "Play-up limit reached — re-registration required",
+        block: { ruleId: RULE_IDS.PLAYUP_LIMIT, reason: "Play-up limit reached — re-registration required" },
         playUpCount,
       };
     }
   }
-  return { blockReason: null, playUpCount };
+  return { block: null, playUpCount };
 }
 
 function calculatePlayUpCount(
@@ -524,17 +384,20 @@ function checkCupEligibility(
   match: Match,
   targetTeam: string,
   ctx: EvaluationContext,
-): string | null {
+): RuleBlock | null {
   if (!isCup(match)) return null;
   // §14.1 — Premier Division Cup Ban
   if (player.everRegisteredToPremier === true) {
-    return "Cup ban — ever registered to Premier Division";
+    return { ruleId: RULE_IDS.CUP_BAN_PREMIER, reason: "Cup ban — ever registered to Premier Division" };
   }
   // §14.2 — Minimum 2 league appearances
   const cards = cardsForPlayer(player.id, ctx);
   const leagueApps = cards.filter((card) => isLeague(matchForCard(card, ctx))).length;
   if (leagueApps < 2) {
-    return "Fewer than 2 league appearances — ineligible for Cup";
+    return {
+      ruleId: RULE_IDS.CUP_MIN_LEAGUE_APPEARANCES,
+      reason: "Fewer than 2 league appearances — ineligible for Cup",
+    };
   }
   // §14.3 — Cross-cup restriction
   const otherTeamCupCard = cards.find((card) =>
@@ -542,7 +405,7 @@ function checkCupEligibility(
   );
   if (otherTeamCupCard) {
     const otherTeam = otherTeamCupCard.team || "another team";
-    return `Already played in a Cup for ${otherTeam} this season`;
+    return { ruleId: RULE_IDS.CROSS_CUP, reason: `Already played in a Cup for ${otherTeam} this season` };
   }
   return null;
 }
@@ -552,13 +415,15 @@ function checkU21DoubleGame(
   player: Player,
   targetHkfcTeam: string,
   ctx: EvaluationContext,
-): string | null {
+): RuleBlock | null {
   if (!player.u21Eligible) return null;
   if (targetHkfcTeam === player.registeredTeam) return null;
   const count = indexedU21DoubleGameCount(targetHkfcTeam, ctx);
   if (count === null) return null;
   const alreadySelected = ctx.sameDaySelectionsByTeam.get(targetHkfcTeam)?.has(player.id) ?? false;
-  return count >= 3 && !alreadySelected ? "U21 double-game limit reached" : null;
+  return count >= 3 && !alreadySelected
+    ? { ruleId: RULE_IDS.U21_DOUBLE_GAME_LIMIT, reason: "U21 double-game limit reached" }
+    : null;
 }
 
 // ── Warnings (§16) ─────────────────────────────────────────────────────
@@ -599,15 +464,12 @@ function generateWarnings(
 }
 
 // ── Result helpers ──────────────────────────────────────────────────────
-function blockedResult(reason: string, extras?: Partial<EligibilityResult>): EligibilityResult {
-  const tag = lookupReasonTag(reason);
+function blockedResult(block: RuleBlock, extras?: Partial<EligibilityResult>): EligibilityResult {
   return {
     status: "blocked",
-    reason,
-    reasonTag: tag,
-    ruleId: tag?.ruleId ?? null,
+    reason: block.reason,
+    ruleId: block.ruleId,
     warnings: [],
-    warningTags: [],
     playUpCount: extras?.playUpCount ?? 0,
     selectedByTeam: extras?.selectedByTeam ?? null,
     sameDayHigherTeam: extras?.sameDayHigherTeam ?? null,
@@ -624,10 +486,8 @@ function nonBlockedResult(
   return {
     status,
     reason: null,
-    reasonTag: null,
     ruleId: null,
     warnings,
-    warningTags: warnings.map((w) => lookupReasonTag(w)).filter(Boolean) as EligibilityReasonTag[],
     playUpCount,
     selectedByTeam,
     sameDayHigherTeam,
@@ -639,12 +499,9 @@ export interface EvaluationContext {
   teamMap: TeamMap;
   rankMap: RankMap;
   targetTeam?: string;
-  sameDayMatches: Match[];
   sameDayFixtures: SameDayTeamFixture[];
-  allSelections: VirtualSelection[];
   selectionsByPlayer: Map<string, Set<string>>;
   sameDaySelectionsByTeam: Map<string, Set<string>>;
-  allExceptions: Exception[];
   unavailablePlayerMatchKeys: Set<string>;
   matchCards: MatchCard[];
   matchCardsByPlayer: Map<string, MatchCard[]>;
@@ -655,25 +512,22 @@ export interface EvaluationContext {
   suspensionByPlayer?: Map<string, CardSuspensionState>;
 }
 
-// ── Internal evaluation (trace-aware) ───────────────────────────────────
-function evaluateInternal(
+// ── Main evaluation entry point ─────────────────────────────────────────
+/**
+ * Full eligibility evaluation following the HKFC Eligibility & Selection
+ * Rules Specification v1.0 §4 evaluation order (8 steps + warnings).
+ * Steps are evaluated in sequence, short-circuiting on the first block.
+ * ORDER IS FROZEN — do not reorder checks (Roadmap v3 Invariant #1).
+ */
+export function evaluatePlayerEligibility(
   player: Player,
   match: Match,
   ctx: EvaluationContext,
-  opts?: { trace?: boolean },
 ): EligibilityResult {
-  const trace: string[] | null = opts?.trace ? [] : null;
-  const t = (line: string) => { if (trace) trace.push(line); };
-  const finish = (r: EligibilityResult): EligibilityResult => {
-    if (trace) r.trace = trace;
-    return r;
-  };
-
   const effectiveRankMap = ctx.rankMap;
   const targetHkfcTeam = ctx.targetTeam ?? hkfcTeamNameSafe(match, effectiveRankMap);
   if (!targetHkfcTeam || effectiveRankMap[targetHkfcTeam] === undefined) {
-    t("✗ Step 0 — Target team unresolvable → Admin data incomplete");
-    return finish(blockedResult("Admin data incomplete"));
+    return blockedResult({ ruleId: RULE_IDS.ADMIN_DATA_INCOMPLETE, reason: "Admin data incomplete" });
   }
   const { rank: targetRank, isPremier: targetIsPremier } = teamRanks(
     targetHkfcTeam, effectiveRankMap, ctx.teamMap,
@@ -682,40 +536,26 @@ function evaluateInternal(
 
   // ── Step 1: Admin Data Validation ──
   const adminBlock = checkAdminData(player);
-  if (adminBlock) {
-    t(`✗ Step 1 — ${adminBlock}`);
-    return finish(blockedResult(adminBlock));
-  }
-  t("✓ Step 1 — Admin data complete");
+  if (adminBlock) return blockedResult(adminBlock);
 
   // ── Step 2: Suspension ──
   const suspensionBlock = checkSuspension(player, ctx);
-  if (suspensionBlock) {
-    t(`✗ Step 2 — ${suspensionBlock}`);
-    return finish(blockedResult(suspensionBlock));
-  }
-  t("✓ Step 2 — Suspension clear");
+  if (suspensionBlock) return blockedResult(suspensionBlock);
 
   // ── Step 3: Visiting Player ──
   const visitingBlock = checkVisitingPlayer(player, targetHkfcTeam, match, ctx);
-  if (visitingBlock) {
-    t(`✗ Step 3 — ${visitingBlock}`);
-    return finish(blockedResult(visitingBlock));
-  }
-  t("✓ Step 3 — Visiting player clear");
+  if (visitingBlock) return blockedResult(visitingBlock);
 
   // ── Step 4: Same-Day Movement ──
   const sameDayResult = checkSameDayMovement(
     player, targetHkfcTeam, targetRank, effectiveRankMap, ctx,
   );
-  if (sameDayResult.blockReason) {
-    t(`✗ Step 4 — ${sameDayResult.blockReason}`);
-    return finish(blockedResult(sameDayResult.blockReason, {
+  if (sameDayResult.block) {
+    return blockedResult(sameDayResult.block, {
       selectedByTeam: sameDayResult.selectedByTeam,
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    }));
+    });
   }
-  t("✓ Step 4 — Same-day movement clear");
   const sameDayWarnings = sameDayResult.warnings;
 
   // ── Step 5: Premier Division Restriction (evaluated before play-up rules,
@@ -724,49 +564,41 @@ function evaluateInternal(
     player, targetHkfcTeam, targetIsPremier, ctx, effectiveRankMap,
   );
   if (premierBlock) {
-    t(`✗ Step 5 — ${premierBlock}`);
-    return finish(blockedResult(premierBlock, {
+    return blockedResult(premierBlock, {
       selectedByTeam: sameDayResult.selectedByTeam,
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    }));
+    });
   }
-  t("✓ Step 5 — Premier restriction clear");
 
   // ── Step 6: Play-Up Rules ──
   const playUpResult = checkPlayUpRules(player, targetRank, playerRank, ctx);
-  if (playUpResult.blockReason) {
-    t(`✗ Step 6 — ${playUpResult.blockReason}`);
-    return finish(blockedResult(playUpResult.blockReason, {
+  if (playUpResult.block) {
+    return blockedResult(playUpResult.block, {
       playUpCount: playUpResult.playUpCount,
       selectedByTeam: sameDayResult.selectedByTeam,
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    }));
+    });
   }
-  t(`✓ Step 6 — Play-up clear (count ${playUpResult.playUpCount})`);
 
   // ── Step 7: Cup Eligibility ──
   const cupBlock = checkCupEligibility(player, match, targetHkfcTeam, ctx);
   if (cupBlock) {
-    t(`✗ Step 7 — ${cupBlock}`);
-    return finish(blockedResult(cupBlock, {
+    return blockedResult(cupBlock, {
       playUpCount: playUpResult.playUpCount,
       selectedByTeam: sameDayResult.selectedByTeam,
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    }));
+    });
   }
-  t("✓ Step 7 — Cup eligibility clear");
 
   // ── Step 8: U21 Double-Game ──
   const u21Block = checkU21DoubleGame(player, targetHkfcTeam, ctx);
   if (u21Block) {
-    t(`✗ Step 8 — ${u21Block}`);
-    return finish(blockedResult(u21Block, {
+    return blockedResult(u21Block, {
       playUpCount: playUpResult.playUpCount,
       selectedByTeam: sameDayResult.selectedByTeam,
       sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    }));
+    });
   }
-  t("✓ Step 8 — U21 double-game clear");
 
   // ── Count U21 double-games for warning threshold ──
   const u21DoubleGameCount = indexedU21DoubleGameCount(targetHkfcTeam, ctx) ?? 0;
@@ -779,36 +611,11 @@ function evaluateInternal(
   for (const w of sameDayWarnings) {
     if (!warnings.includes(w)) warnings.push(w);
   }
-  t(`✓ Final — ${warnings.length > 0 ? "warning" : "eligible"} (${warnings.length} warning(s))`);
-  return finish(nonBlockedResult(
+  return nonBlockedResult(
     warnings.length > 0 ? "warning" : "eligible",
     warnings,
     playUpResult.playUpCount,
     sameDayResult.selectedByTeam,
     sameDayResult.sameDayHigherTeam,
-  ));
-}
-
-// ── Main evaluation entry point (metrics-wrapped) ───────────────────────
-/**
- * Full eligibility evaluation following the HKFC Eligibility & Selection
- * Rules Specification v1.0 §4 evaluation order (8 steps + warnings).
- * Steps are evaluated in sequence, short-circuiting on the first block.
- * ORDER IS FROZEN — do not reorder checks (Roadmap v3 Invariant #1).
- */
-export function evaluatePlayerEligibility(
-  player: Player,
-  match: Match,
-  ctx: EvaluationContext,
-  opts?: { trace?: boolean },
-): EligibilityResult {
-  const startedAt = Date.now();
-  const result = evaluateInternal(player, match, ctx, opts);
-  recordEligibilityEvaluation({
-    status: result.status,
-    ruleId: result.ruleId,
-    warningRuleIds: result.warningTags.map((w) => w.ruleId),
-    durationMs: Date.now() - startedAt,
-  });
-  return result;
+  );
 }

@@ -84,11 +84,9 @@ const ABILITY_GROUPS: { group: string; values: string[] }[] = [
 export interface PlayerFiltersProps {
   filters: FilterState;
   onChange: (f: FilterState) => void;
-  bulkSelectMode?: boolean;
-  onToggleBulk?: () => void;
 }
 
-export default function PlayerFilters({ filters, onChange, bulkSelectMode, onToggleBulk }: PlayerFiltersProps) {
+export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps) {
   const [expandedAbility, setExpandedAbility] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
@@ -125,11 +123,6 @@ export default function PlayerFilters({ filters, onChange, bulkSelectMode, onTog
           </button>
         )}
         <div className="flex-1" />
-        {onToggleBulk && (
-          <button onClick={onToggleBulk} className={`text-xs px-3 py-1 rounded-full whitespace-nowrap shrink-0 transition-colors ${bulkSelectMode ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-muted-foreground'}`}>
-            Bulk Select
-          </button>
-        )}
       </div>
 
       {GROUPS.map(group => (

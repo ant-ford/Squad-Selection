@@ -9,7 +9,7 @@ vi.mock("../worker/src/airtable", () => ({
   escapeFormulaValue: (v: string) => v,
 }));
 
-import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type EligibilityReasonTag, type VirtualSelection } from "../worker/src/eligibility";
+import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
 import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
 
@@ -163,7 +163,14 @@ function buildMatchCardsByPlayer(matchCards: MatchCard[]): Map<string, MatchCard
   return map;
 }
 
-function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {}): EvaluationContext {
+type CtxOverrides = Partial<EvaluationContext> & {
+  matches?: Match[];
+  sameDayMatches?: Match[];
+  allSelections?: VirtualSelection[];
+  allExceptions?: { playerId: string; matchId: string; status: string }[];
+};
+
+function ctx(overrides: CtxOverrides = {}): EvaluationContext {
   const { teamMap, rankMap } = buildMaps([
     t("HKFC A", 1, true),
     t("HKFC B", 2),
@@ -185,12 +192,9 @@ function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {})
   return {
     teamMap: overrides.teamMap ?? teamMap,
     rankMap: finalRankMap,
-    sameDayMatches,
     sameDayFixtures: buildSameDayFixtures(sameDayMatches, finalRankMap),
-    allSelections,
     selectionsByPlayer,
     sameDaySelectionsByTeam,
-    allExceptions,
     unavailablePlayerMatchKeys: buildUnavailableKeys(allExceptions),
     matchCards,
     matchCardsByPlayer: buildMatchCardsByPlayer(matchCards),
@@ -199,21 +203,6 @@ function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {})
     playersById: overrides.playersById ?? new Map(),
     completedLeagueMatchesByTeam: computeCompletedLeagueMatchCounts({ matchCards, matchesById }),
     ...overrides,
-  };
-}
-
-function resultProps(r: ReturnType<typeof evaluatePlayerEligibility>) {
-  return {
-    status: r.status,
-    reason: r.reason,
-    warnings: r.warnings,
-    playUpCount: r.playUpCount,
-    selectedByTeam: r.selectedByTeam,
-    sameDayHigherTeam: r.sameDayHigherTeam,
-    hasReasonTag: r.reasonTag !== null,
-    reasonTagSource: r.reasonTag?.source ?? null,
-    reasonTagIsOverride: r.reasonTag?.isHkfcOverride ?? null,
-    warningTagCount: r.warningTags.length,
   };
 }
 
@@ -258,7 +247,6 @@ describe("evaluatePlayerEligibility", () => {
       const r = evaluatePlayerEligibility(p({ isSuspended: true }), m(), ctx());
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Suspended");
-      expect(r.reasonTag?.source).toBe("Bye-Law 16.3–16.10");
     });
 
     it("blocks player with matches to serve", () => {
@@ -293,7 +281,6 @@ describe("evaluatePlayerEligibility", () => {
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Visiting player — fixed to registered team");
-      expect(r.reasonTag?.source).toBe("Bye-Law 6.1–6.2 & HKFC Spec §6.2");
     });
 
     it("blocks visiting player in cup with fewer than 5 league appearances", () => {
@@ -379,7 +366,6 @@ describe("evaluatePlayerEligibility", () => {
       expect(r.reason).toBeNull();
       expect(r.warnings).toContain("Available for HKFC A on same day");
       expect(r.sameDayHigherTeam).toBe("HKFC A");
-      expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     });
 
     // A low-ranked player can be available for most of the club on a busy
@@ -401,7 +387,6 @@ describe("evaluatePlayerEligibility", () => {
       expect(sameDayWarnings).toHaveLength(1);
       // Ordered by team rank, strongest first - not fixture order.
       expect(sameDayWarnings[0]).toBe("Available for HKFC A, HKFC B, HKFC C on same day");
-      expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     });
 
     it("allows lower team when player has Unavailable exception for higher team", () => {
@@ -480,7 +465,6 @@ describe("evaluatePlayerEligibility", () => {
       // 0 completed matches for either team → blocked
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Premier movement restriction — team has not completed 3 matches");
-      expect(r.reasonTag?.source).toBe("Bye-Law 7.4");
     });
 
     it("allows Premier movement when both teams have 3+ completed matches", () => {
@@ -527,8 +511,6 @@ describe("evaluatePlayerEligibility", () => {
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Higher-to-lower movement requires Committee approval");
-      expect(r.reasonTag?.source).toBe("Bye-Law 7.2(a) & HKFC Spec §9.1");
-      expect(r.reasonTag?.isHkfcOverride).toBe(false);
     });
 
     it("Premier restriction fires before higher-to-lower when Premier involved", () => {
@@ -573,7 +555,6 @@ describe("evaluatePlayerEligibility", () => {
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Play-up limit reached — re-registration required");
       expect(r.playUpCount).toBe(4);
-      expect(r.reasonTag?.isHkfcOverride).toBe(true);
     });
 
     it("excludes goalkeeper appearances from play-up count", () => {
@@ -655,7 +636,6 @@ describe("evaluatePlayerEligibility", () => {
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("Cup ban — ever registered to Premier Division");
-      expect(r.reasonTag?.source).toBe("Bye-Law 7.7 & HKFC Spec §14.1");
     });
 
     it("blocks cup with fewer than 2 league appearances", () => {
@@ -759,7 +739,6 @@ describe("evaluatePlayerEligibility", () => {
       );
       expect(r.status).toBe("blocked");
       expect(r.reason).toBe("U21 double-game limit reached");
-      expect(r.reasonTag?.isHkfcOverride).toBe(true);
     });
 
     it("does not count U21 playing only one match (not double-gaming)", () => {
@@ -799,8 +778,6 @@ describe("evaluatePlayerEligibility", () => {
       );
       expect(r.status).toBe("warning");
       expect(r.warnings).toContain("Second play-up appearance");
-      expect(r.warningTags).toHaveLength(1);
-      expect(r.warningTags[0]?.source).toBe("Bye-Law 7.2 & HKFC Spec §10");
     });
 
     it("generates warning at 3rd play-up", () => {
@@ -880,64 +857,6 @@ describe("evaluatePlayerEligibility", () => {
         ctx({ matchCards })
       );
       expect(r.reason).toBeNull();
-      expect(r.reasonTag).toBeNull();
-    });
-  });
-
-  // ─── Reason Tags ──────────────────────────────────────────────────
-
-  describe("Reason Tags", () => {
-    it("attaches reason tag to every blocked result", () => {
-      const r = evaluatePlayerEligibility(
-        p({ isSuspended: true }),
-        m(),
-        ctx()
-      );
-      expect(r.reasonTag).not.toBeNull();
-      expect(r.reasonTag!.source).toBe("Bye-Law 16.3–16.10");
-      expect(typeof r.reasonTag!.text).toBe("string");
-      expect(r.reasonTag!.text.length).toBeGreaterThan(10);
-    });
-
-    it("marks HKFC overrides correctly", () => {
-      // Re-registration is an HKFC override
-      const matchCards = Array.from({ length: 4 }, (_, i) =>
-        mc({ id: `mc${i}`, player: ["p1"], team: "HKFC B", playerTeam: "HKFC C", playUp: true, goalkeeper: false })
-      );
-      const r = evaluatePlayerEligibility(
-        p({ registeredTeam: "HKFC C" }),
-        m({ homeTeam: "HKFC B" }),
-        ctx({ matchCards })
-      );
-      expect(r.reasonTag!.isHkfcOverride).toBe(true);
-
-      // Higher-to-lower is standard bye-law, not override
-      const r2 = evaluatePlayerEligibility(
-        p({ registeredTeam: "HKFC A" }),
-        m({ homeTeam: "HKFC D" }),
-        ctx()
-      );
-      expect(r2.reasonTag!.isHkfcOverride).toBe(false);
-    });
-
-    it("resolves dynamic reason strings with team names", () => {
-      const sameDayMatches = [
-        m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
-      ];
-      const allSelections = [
-        sel({ id: "s2", player: ["p1"], match: ["m2"], selectionStatus: "Selected" }),
-      ];
-      const allExceptions = [
-        { playerId: "p1", matchId: "m2", status: "Unavailable" },
-      ];
-      const r = evaluatePlayerEligibility(
-        p({ registeredTeam: "HKFC C" }),
-        m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches, allSelections, allExceptions })
-      );
-      expect(r.reason).toBe("Selected for HKFC A on same day");
-      expect(r.reasonTag).not.toBeNull();
-      expect(r.reasonTag!.source).toBe("Bye-Law 7.1 & HKFC Spec §7.2");
     });
   });
 

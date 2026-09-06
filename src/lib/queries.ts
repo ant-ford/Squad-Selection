@@ -6,17 +6,10 @@ import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
 import type { GetPlayersForMatchOutput } from '@/api/getPlayersForMatch';
 import { getRecommendations } from '@/api/getRecommendations';
 import type {
-  RecentChange,
   AbilityGroupConfigMap,
   InactiveRankingEntry,
   RankingList,
 } from '@/generated/domainTypes';
-
-async function authGet<T>(url: string, params?: Record<string, any>): Promise<T> {
-  // Identity is derived from the session by the Worker; the browser never
-  // supplies the email.
-  return apiGet<T>(url, params);
-}
 
 /** True while the browser tab is visible; used to pause background polling. */
 function useDocumentVisible(): boolean {
@@ -36,7 +29,7 @@ function useDocumentVisible(): boolean {
 export function useMyProfile() {
   return useQuery({
     queryKey: ['myProfile'],
-    queryFn: () => authGet<ProfileData>('/api/my-profile'),
+    queryFn: () => apiGet<ProfileData>('/api/my-profile'),
     staleTime: Infinity,
   });
 }
@@ -44,7 +37,7 @@ export function useMyProfile() {
 export function useUpcomingFixtures(teamFilter?: string) {
   return useQuery({
     queryKey: ['upcomingFixtures', teamFilter],
-    queryFn: () => authGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
+    queryFn: () => apiGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
     staleTime: 300_000,
   });
 }
@@ -132,29 +125,10 @@ function useRankingMutation<TVariables>(url: string) {
   });
 }
 
-export function useMoveRanking() {
-  return useRankingMutation<{ playerId: string; newRank: number; justification?: string }>(
-    '/api/ranking/move',
-  );
-}
-
-export function useMoveRankingRelative() {
-  return useRankingMutation<{
-    sourceId: string;
-    targetId: string;
-    position: 'above' | 'below';
-    justification?: string;
-  }>('/api/ranking/move-relative');
-}
-
 export function useReorderRanking() {
   return useRankingMutation<{ playerIds: string[]; justification?: string }>(
     '/api/ranking/reorder',
   );
-}
-
-export function useInitializeRanking() {
-  return useRankingMutation<void>('/api/ranking/initialize');
 }
 
 export function useActivatePlayer() {
@@ -215,10 +189,6 @@ export function useUpdateAbilityConfig() {
 
 // ── Dashboard ────────────────────────────────────────────────────────────
 export interface PlayUpWatchEntry { id: string; name: string; registeredTeam: string; playUpCount: number }
-export interface RecentAvailabilityChange {
-  playerId: string; playerName: string; team: string; status: string; note: string;
-  matchLabel: string; matchDate: string; updatedAt: string;
-}
 
 /** A persisted Section Rank change (see worker/src/rankingEvents.ts). */
 export interface RankingChange {
@@ -236,23 +206,15 @@ export interface RankingChange {
 export function usePlayUpWatch() {
   return useQuery({
     queryKey: ['playUpWatch'],
-    queryFn: () => authGet<{ season: string; watch: PlayUpWatchEntry[] }>('/api/playup-watch'),
+    queryFn: () => apiGet<{ season: string; watch: PlayUpWatchEntry[] }>('/api/playup-watch'),
     staleTime: 300_000,
-  });
-}
-
-export function useRecentAvailability(days = 7) {
-  return useQuery({
-    queryKey: ['recentAvailability', days],
-    queryFn: () => authGet<{ changes: RecentAvailabilityChange[] }>('/api/recent-availability', { days }),
-    staleTime: 60_000,
   });
 }
 
 export function useRecentChanges(days = 7) {
   return useQuery({
     queryKey: ['recentChanges', days],
-    queryFn: () => authGet<{ changes: RankingChange[] }>('/api/recent-changes', { days }),
+    queryFn: () => apiGet<{ changes: RankingChange[] }>('/api/recent-changes', { days }),
     staleTime: 60_000,
   });
 }

@@ -35,8 +35,7 @@ export function matchForCard(
  *
  * Used by:
  *  - the eligibility engine (`calculatePlayUpCount`, Step 6 of evaluation),
- *  - the dashboard Play-Up Watch,
- *  - the automatic re-registration service (`worker/src/registration.ts`).
+ *  - the dashboard Play-Up Watch.
  *
  * A qualifying play-up is a Match Card where:
  *  - `Play Up?` is true,

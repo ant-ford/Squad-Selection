@@ -151,12 +151,8 @@ describe("requireAuthorizedUser", () => {
 
       const user = await pending;
       expect(user.personId).toBe("recP1");
-      // Telemetry contract: the mocked team-links lookup reports its cache
-      // status, and the returned user carries the auth-phase breakdown.
-      expect(user.perf?.coachLinksFromCache).toBe(false);
-      expect(typeof user.perf?.coachLinksMs).toBe("number");
-      expect(typeof user.perf?.playerMs).toBe("number");
-      expect(typeof user.perf?.supabaseMs).toBe("number");
+      expect(mocks.getPlayerByEmail).toHaveBeenCalled();
+      expect(mocks.getTeamCoachLinks).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

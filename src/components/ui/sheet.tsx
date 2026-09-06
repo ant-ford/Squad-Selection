@@ -6,11 +6,9 @@ export function Sheet({
   onOpenChange,
 }: {
   children: React.ReactNode;
-  open?: boolean;
+  open: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  // Backwards-compatible: if `open` isn't provided, render children as before.
-  if (open === undefined) return <>{children}</>;
   if (!open) return null;
   return (
     <>

@@ -782,7 +782,7 @@ function RankingRowInner(props: {
     <div
       data-rank={rank}
       style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
-      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
+      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200' : 'border-border'}`}
     >
       <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
         <GripVertical className="h-4 w-4" />
@@ -933,13 +933,13 @@ function MoveToRankSheet({ player, activeCount, onClose, onSubmit, history }: {
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
         {advisory && (
-          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">
                 Recently moved {advisory.oldRank != null && advisory.newRank != null && advisory.newRank < advisory.oldRank ? 'up' : 'down'} by {advisory.actorName}
               </p>
-              <p className="text-amber-800/80 dark:text-amber-300/80">
+              <p className="text-amber-800/80">
                 {formatAge(advisory.at)} · {formatAbsolute(advisory.at)}
                 {advisory.note ? ` · "${advisory.note}"` : ''}
               </p>

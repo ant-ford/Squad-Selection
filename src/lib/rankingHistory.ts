@@ -1,19 +1,10 @@
 /**
- * Pure helpers for the ranking-history UI: proposed direction and the
- * non-blocking "reversal advisory" shown when a coach re-moves a player who
- * was recently moved by someone else.
+ * Pure helpers for the ranking-history UI: the non-blocking "reversal
+ * advisory" shown when a coach re-moves a player who was recently moved by
+ * someone else.
  */
 
 import type { RankingChange } from "./queries";
-
-/** Direction of a proposed rank change (lower number = higher rank). */
-export function proposedDirection(
-  from: number | null | undefined,
-  to: number | null | undefined,
-): "up" | "down" | null {
-  if (typeof from !== "number" || typeof to !== "number" || from === to) return null;
-  return to < from ? "up" : "down";
-}
 
 /**
  * Most recent ranking event for a player (excluding deactivations), used to
