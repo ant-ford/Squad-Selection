@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import SeasonStats from '@/components/SeasonStats';
+import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import {
   useAbilityGroupConfig, useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
@@ -556,20 +556,13 @@ export default function PlayerRanking() {
 
       {/* Coach drill-in: the same season stats a player sees on their own
           dashboard, opened from the ranking row menu. */}
-      <Sheet open={statsPlayerId !== null} onOpenChange={(open) => !open && setStatsPlayerId(null)}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>
-              {statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? ({} as Player)) : 'Season stats'}
-            </SheetTitle>
-          </SheetHeader>
-          {statsPlayerId && (
-            <div className="pt-2">
-              <SeasonStats playerId={statsPlayerId} />
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+      <SeasonStatsSheet
+        playerId={statsPlayerId}
+        playerName={
+          statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? ({} as Player)) : undefined
+        }
+        onClose={() => setStatsPlayerId(null)}
+      />
 
       {openMenuPlayerId !== null && (
         <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />

@@ -313,6 +313,12 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 Participation can exceed 100%: appearances for other teams (play-ups and support games) count towards `gamesPlayed`, while `teamGames` only counts the player's own team's fixtures. That is deliberate — it reads as "turned out more often than their own team played".
 
+### Season Statistics
+
+`GET /api/player-stats/:id` (that player, or any coach) returns the season's form guide and totals. Always presented as a **drill-down**, never inline: stats are reference material, and on a phone an inline panel pushed the fixture list — the thing players actually action — below the fold. `SeasonStatsSheet` is the single entry point, opened from the player dashboard header, from a squad-selection player row, and from the ranking row menu, so the three views cannot drift apart.
+
+Participation is `games played / team games`, with `(played + available-but-not-selected) / team games` in brackets — the second number separates "wasn't picked" from "wasn't around". Card points come from `Match Cards.Cards`; friendlies are excluded from every total, consistent with the eligibility engine.
+
 ### Notifying the Squad (WhatsApp click-to-chat)
 
 Coaches open **Notify** on the squad-selection screen to tell the selected squad they are playing. No WhatsApp Business account, API or approval is involved — a `wa.me` link opens WhatsApp on the coach's own device with the message pre-filled and **the coach presses send**. The app never sends anything.

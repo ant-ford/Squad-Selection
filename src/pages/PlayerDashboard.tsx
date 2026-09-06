@@ -5,14 +5,14 @@ import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtur
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3 } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
-import SeasonStats from '@/components/SeasonStats';
+import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -65,6 +65,7 @@ export default function PlayerDashboard() {
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     if (!user) return;
@@ -244,6 +245,16 @@ export default function PlayerDashboard() {
                   Coach View
                 </button>
               )}
+              {data.playerId && (
+                <button
+                  onClick={() => setStatsPlayerId(data.playerId!)}
+                  className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                  title="My season stats"
+                  aria-label="My season stats"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                </button>
+              )}
               <button
                 onClick={() => setShowCalendarSync(true)}
                 className="p-2 text-muted-foreground hover:text-foreground transition-colors"
@@ -284,11 +295,6 @@ export default function PlayerDashboard() {
       </div>
 
       <div className="container mx-auto px-4 pb-8">
-        {data.playerId && (
-          <div className="mb-4">
-            <SeasonStats playerId={data.playerId} defaultOpen={false} />
-          </div>
-        )}
 
         {isSpecialGK ? (
           <>
@@ -401,6 +407,12 @@ export default function PlayerDashboard() {
         />
       )}
       {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
+
+      <SeasonStatsSheet
+        playerId={statsPlayerId}
+        playerName={data.playerName}
+        onClose={() => setStatsPlayerId(null)}
+      />
       <AppFooter />
     </div>
   );

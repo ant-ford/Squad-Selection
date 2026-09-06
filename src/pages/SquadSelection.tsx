@@ -10,6 +10,7 @@ import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } fro
 import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
+import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import type { FixtureBrief } from '@/lib/whatsapp';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
@@ -58,6 +59,7 @@ export default function SquadSelection() {
   const [priorityPlayers, setPriorityPlayers] = useState<PriorityPlayer[]>([]);
   const [showPriorityManager, setShowPriorityManager] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
+  const [statsPlayer, setStatsPlayer] = useState<{ id: string; name: string } | null>(null);
   const [prioritySearch, setPrioritySearch] = useState('');
   const [savingPriority, setSavingPriority] = useState(false);
 
@@ -653,6 +655,7 @@ export default function SquadSelection() {
                     player={p}
                     selected={p.selectionStatus === 'Selected'}
                     onToggleSelection={() => handleToggleSelection(p.id)}
+                    onShowStats={() => setStatsPlayer({ id: p.id, name: p.preferredName })}
                   />
                 </div>
               );
@@ -703,6 +706,12 @@ export default function SquadSelection() {
           onClose={() => setShowNotify(false)}
         />
       )}
+
+      <SeasonStatsSheet
+        playerId={statsPlayer?.id ?? null}
+        playerName={statsPlayer?.name}
+        onClose={() => setStatsPlayer(null)}
+      />
     </div>
   );
 }

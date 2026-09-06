@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getPlayerStats, type PlayerGameResult, type PlayerSeasonStats } from '@/api/getPlayerStats';
@@ -70,53 +69,20 @@ function GameDetail({ game }: { game: PlayerGameResult }) {
   );
 }
 
-const OPEN_STORAGE_KEY = 'seasonStats:open';
-
-function readStoredOpen(fallback: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(OPEN_STORAGE_KEY);
-    return raw === null ? fallback : raw === '1';
-  } catch {
-    return fallback; // private mode / blocked storage
-  }
-}
-
 /**
  * Season statistics panel.
  *
- * Used on the player's own dashboard and by coaches drilling into a player,
- * so it takes a playerId rather than assuming the current user.
- *
- * Collapsed by default on the player dashboard: it sits above the fixture
- * list, which is what players actually come here to action, and on a phone
- * the full panel pushed the fixtures below the fold. The coach drill-in
- * passes defaultOpen because opening the stats *was* the intent there.
- * Whichever way a player leaves it is remembered.
+ * Always rendered inside a drill-down (SeasonStatsSheet) rather than inline:
+ * stats are reference material, and on a phone an inline panel pushed the
+ * fixtures - the thing players actually action - below the fold. It takes a
+ * playerId rather than assuming the current user, because coaches open the
+ * same panel for someone else.
  */
-export default function SeasonStats({
-  playerId,
-  defaultOpen = true,
-}: {
-  playerId: string;
-  defaultOpen?: boolean;
-}) {
+export default function SeasonStats({ playerId }: { playerId: string }) {
   const [stats, setStats] = useState<PlayerSeasonStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [openGame, setOpenGame] = useState<string | null>(null);
-  const [open, setOpen] = useState(() => readStoredOpen(defaultOpen));
-
-  const toggleOpen = () => {
-    setOpen((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(OPEN_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        // Preference is a convenience; never break the panel over it.
-      }
-      return next;
-    });
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -150,39 +116,11 @@ export default function SeasonStats({
         }`;
 
   return (
-    <section className="border border-border rounded-xl bg-card p-3">
-      {/* The header is the toggle: one tappable row that stays put whether
-          the panel is open or closed. */}
-      <button
-        type="button"
-        onClick={toggleOpen}
-        aria-expanded={open}
-        className="w-full flex items-center justify-between gap-2 text-left"
-      >
-        <span className="min-w-0 flex items-baseline gap-2">
-          <span className="text-sm font-semibold text-foreground shrink-0">
-            Season {stats.season}
-          </span>
-          <span className="text-[11px] text-muted-foreground truncate">{stats.team}</span>
-        </span>
-        <span className="flex items-center gap-2 shrink-0">
-          {!open && (
-            // Enough to be worth glancing at without opening.
-            <span className="text-[11px] text-muted-foreground">
-              {stats.gamesPlayed} played
-              {stats.participationPct !== null && ` · ${stats.participationPct}%`}
-            </span>
-          )}
-          {open ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </span>
-      </button>
-
-      {!open ? null : (
-      <div className="mt-2">
+    <section>
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h2 className="text-sm font-semibold text-foreground">Season {stats.season}</h2>
+        <span className="text-[11px] text-muted-foreground truncate">{stats.team}</span>
+      </div>
 
       {/* Recent form. Tap a tile for what happened in that game. */}
       {stats.recentGames.length > 0 && (
@@ -227,8 +165,6 @@ export default function SeasonStats({
           hint="played / team games (incl. available in brackets)"
         />
       </div>
-      </div>
-      )}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Circle, Ban, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react';
 
 type Player = {
   id: string;
@@ -31,9 +31,11 @@ interface PlayerRowProps {
   player: Player;
   selected: boolean;
   onToggleSelection: () => void;
+  /** Optional drill-in to this player's season stats (coach screens). */
+  onShowStats?: () => void;
 }
 
-const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSelection }: PlayerRowProps) {
+const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSelection, onShowStats }: PlayerRowProps) {
   const isBlocked = player.eligibilityStatus === 'blocked';
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const isMaybe = player.availabilityStatus === 'Maybe';
@@ -63,8 +65,26 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
           {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm shrink-0">VP</span>}
           <span className="text-[11px] text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · {player.playingAbility || '–'}</span>
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <span>
+            {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
+          </span>
+          {onShowStats && (
+            // Drill-in to this player's season stats. stopPropagation because
+            // the whole row toggles selection.
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onShowStats();
+              }}
+              title={`Season stats for ${player.preferredName}`}
+              aria-label={`Season stats for ${player.preferredName}`}
+              className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </p>
         {player.supportUnavailable && player.supportUnavailable.length > 0 && (
           <p className='text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
