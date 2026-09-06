@@ -33,14 +33,14 @@ export default defineConfig(({ command }) => ({
       includeAssets: ["assets/favicon.svg", "assets/apple-touch-icon.png"],
       manifest: {
         name: "HKFC Squad Selection",
-        short_name: "Squad Select",
+        short_name: "HKFC Squad",
         description: "HKFC Men's Hockey squad selection, availability and ranking",
         start_url: "/",
         display: "standalone",
         background_color: "#ffffff",
         theme_color: "#ffffff",
         icons: [
-          { src: "/assets/apple-touch-icon.png", sizes: "512x512", type: "image/png" },
+          { src: "/assets/apple-touch-icon.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
           { src: "/assets/favicon.svg", sizes: "any", type: "image/svg+xml" },
         ],
       },

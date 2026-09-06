@@ -7,7 +7,7 @@ export default function AppHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout: signOut } = useAuth();
-  const isDashboard = location.pathname === '/coach' || location.pathname === '/coach/fixtures';
+  const isDashboard = location.pathname === '/coach';
   const isRanking = location.pathname === '/coach/ranking';
 
   const logout = async () => {

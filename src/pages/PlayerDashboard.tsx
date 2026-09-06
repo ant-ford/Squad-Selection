@@ -175,8 +175,7 @@ export default function PlayerDashboard() {
                 <img src="/assets/logo-plain.svg" alt="Eddy" className="h-full w-full object-contain" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-foreground">HKFC Hockey</h1>
-                <p className="text-sm text-muted-foreground">Squad Selection</p>
+                <h1 className="text-lg font-semibold text-foreground">HKFC Squad Selection</h1>
               </div>
             </div>
             <div className="flex items-center gap-2">

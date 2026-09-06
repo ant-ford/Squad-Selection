@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { createBrowserRouter, RouterProvider, Outlet, useRouteError } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import Login from './pages/Login';
@@ -8,7 +8,6 @@ import PlayerDashboard from './pages/PlayerDashboard';
 // Coach-only routes — deferred so player-only visits skip this bundle.
 const CoachLayout    = lazy(() => import('./components/CoachLayout'));
 const CoachDashboard = lazy(() => import('./pages/CoachDashboard'));
-const FixtureList    = lazy(() => import('./pages/FixtureList'));
 const SquadSelection = lazy(() => import('./pages/SquadSelection'));
 const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
 
@@ -78,12 +77,11 @@ const router = createBrowserRouter([
             ),
           },
           {
+            // The dashboard (index route above) already IS Play-Up Watch +
+            // fixture list - this only exists so an old bookmark/link lands
+            // somewhere real instead of a 404.
             path: 'fixtures',
-            element: (
-              <Suspense fallback={<RouteSkeleton />}>
-                <FixtureList />
-              </Suspense>
-            ),
+            element: <Navigate to="/coach" replace />,
           },
           {
             path: 'match/:matchId',

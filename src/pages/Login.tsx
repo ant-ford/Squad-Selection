@@ -115,7 +115,7 @@ export default function Login() {
           />
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
-          HKFC Squad Manager
+          HKFC Squad Selection
         </h1>
 
         {step === 'request' ? (

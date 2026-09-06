@@ -587,7 +587,7 @@ export default function PlayerRanking() {
           <button onClick={handleDiscard} disabled={isSaving} className="flex-1 min-w-[100px] py-3 border rounded text-sm font-medium disabled:opacity-50">
             Discard
           </button>
-          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-primary-foreground rounded text-sm font-medium disabled:opacity-50">
             {reorder.isPending ? (
               <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
             ) : `Save (${modifiedCount})`}

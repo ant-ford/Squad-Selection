@@ -136,8 +136,8 @@ Every write goes through this pipeline. React MUST NOT bypass any step.
 â”‚  React 19 Â· Vite 7 Â· Tailwind CSS v4         â”‚
 â”‚  TanStack Query Â· TanStack Virtual Â· dnd-kit â”‚
 â”‚                                               â”‚
-â”‚  Pages: /  Â· /coach  Â· /coach/fixtures       â”‚
-â”‚         /coach/match/:id  Â· /coach/ranking   â”‚
+â”‚  Pages: /  Â· /coach  Â· /coach/match/:id      â”‚
+â”‚         /coach/ranking                       â”‚
 â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
                    â”‚ HTTPS (Worker URL)
 â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
