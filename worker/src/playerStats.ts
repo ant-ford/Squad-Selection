@@ -1,12 +1,12 @@
-import type { AvailabilityException, Match, MatchCard, Player } from "../../src/generated/domainTypes";
-import type { Env } from "./airtable";
+import type { AvailabilityException, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
+import type { Env } from "./env";
 import { HttpError } from "./http";
 import { isFriendly, matchForCard } from "./playUp";
 import { parseCardValue, yellowPointsFor } from "./suspension";
 import { getReferenceData } from "./reference";
-import { getSeasonContext } from "./seasonContext";
-import { currentSeason } from "./dashboard";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { getSeasonContext, currentSeason } from "./seasonContext";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { linkId } from "../../shared/airtableValueUtils";
 
 /**
  * Season statistics for one player.
@@ -70,11 +70,6 @@ export interface PlayerStatsInput {
 
 const DEFAULT_RECENT_LIMIT = 5;
 
-function firstLinkId(value: unknown): string | null {
-  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null;
-  return typeof value === "string" ? value : null;
-}
-
 /** A match counts towards season statistics once it has actually been played. */
 function isCountableTeamGame(m: Match, team: string): boolean {
   if (isFriendly(m)) return false;
@@ -125,7 +120,7 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
     cardPoints += cardPointsFor(cardValues);
 
     const match = matchForCard(card, matchesById);
-    const matchId = firstLinkId(card.match);
+    const matchId = linkId(card.match);
     const playedFor = card.team || "";
     if (playedFor === team && matchId) playedMatchIdsForTeam.add(matchId);
 
@@ -167,8 +162,8 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
 
   let gamesUnavailable = 0;
   for (const exc of exceptions) {
-    if (firstLinkId(exc.player) !== player.id) continue;
-    const matchId = firstLinkId(exc.match);
+    if (linkId(exc.player) !== player.id) continue;
+    const matchId = linkId(exc.match);
     if (!matchId || !teamGameIds.has(matchId)) continue;
     // "Maybe" is not a refusal, so it counts as available.
     if ((exc.availabilityStatus || "") === "Unavailable") gamesUnavailable++;

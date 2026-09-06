@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { apiGet } from "@/lib/apiClient";
 import { toast } from "sonner";
-import { Copy, Check, Calendar, Mail, Smartphone, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Copy, Check, Calendar, Mail, Smartphone, ChevronDown, ChevronUp } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 interface CalendarSheetProps {
   /** Fetches the signed link params from the appropriate endpoint. */
@@ -174,23 +175,14 @@ export default function CalendarSheet({
 
   // ── Bottom-sheet mode (PlayerDashboard) ──
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-4 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-            <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">{description}</p>
-          {linkContent}
-        </div>
-      </div>
-    </>
+    <Sheet open onOpenChange={(next) => !next && onClose?.()}>
+      <SheetContent side="bottom" className="p-4">
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
+        <p className="text-xs text-muted-foreground mb-4">{description}</p>
+        {linkContent}
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -17,7 +17,7 @@ import {
 } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
 import { computeSuspensionStates } from "../worker/src/suspension";
-import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
+import type { Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
 
 // ── Factories ────────────────────────────────────────────────────────────
 function t(name: string, rank: number, isPremier = false): Team {

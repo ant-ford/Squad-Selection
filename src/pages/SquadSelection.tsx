@@ -16,18 +16,11 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
-import { ABILITY_RANK } from '@/lib/abilityRank';
+import { ABILITY_RANK } from '@shared/abilityRank';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
+import { POS_SHORT, initials } from '@/lib/format';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
-
-const POS_SHORT: Record<string, string> = {
-  Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
-};
-
-function initials(name: string): string {
-  return (name.split(' ').map(n => n[0]).join('').slice(0, 2) || '?').toUpperCase();
-}
 
 interface PriorityPlayer {
   id: string;

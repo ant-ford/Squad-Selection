@@ -17,7 +17,7 @@
  * Shared module: imported by both the frontend (PlayerRanking) and the
  * Worker (ranking engine). Must remain pure — no Cloudflare or browser APIs.
  */
-import type { AbilityGroupConfigMap } from "../generated/domainTypes";
+import type { AbilityGroupConfigMap } from "./schema/domainTypes";
 
 export type SubGroup = "plus" | "neutral" | "minus";
 

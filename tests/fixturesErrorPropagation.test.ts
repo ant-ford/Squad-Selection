@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { getMyFixtures } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 import { AirtableError } from "../worker/src/airtable";
 import type { AuthorizedUser } from "../worker/src/auth";
 

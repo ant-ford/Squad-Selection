@@ -8,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import { apiGet } from '@/lib/apiClient';
 import type { MyFixture } from '@/api/getMyFixtures';
+import { POS_SHORT } from '@/lib/format';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 type SquadMember = {
   name: string;
@@ -19,10 +21,6 @@ const OPTIONS = [
   { value: 'Maybe', label: 'Maybe', Icon: HelpCircle, color: 'text-amber-600' },
   { value: 'Unavailable', label: 'No', Icon: XCircle, color: 'text-red-600' },
 ] as const;
-
-const POS_SHORT: Record<string, string> = {
-  Goalkeeper: 'GK', Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', 'Flexible/Varies': 'FLEX'
-};
 
 // Short in-memory cache for the read-only squad list shown in this sheet, so
 // reopening a fixture does not refetch it. TTL matches the Worker's 30s
@@ -69,8 +67,7 @@ export default function PlayerAvailabilitySheet({
       await setMyAvailability(
         fixture.id,
         status as 'Available' | 'Maybe' | 'Unavailable',
-        notes,
-        fixture.availabilityExceptionId || undefined
+        notes
       );
       toast.success('Availability updated');
       onSaved();
@@ -82,19 +79,12 @@ export default function PlayerAvailabilitySheet({
   };
 
   return (
-    <>
-      {/* Overlay – click to close */}
-      <div
-        className="fixed inset-0 bg-black/40 z-40"
-        onClick={onClose}
-      />
-      {/* Drawer panel */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Sheet open onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side="bottom">
         <div className="px-4 py-6">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Update Availability</h2>
+          <SheetHeader onClose={onClose}>
+            <SheetTitle>Update Availability</SheetTitle>
+          </SheetHeader>
 
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
@@ -173,7 +163,7 @@ export default function PlayerAvailabilitySheet({
             Save
           </Button>
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }

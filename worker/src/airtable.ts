@@ -1,12 +1,5 @@
 // Low-level Airtable REST client for the Worker.
-export interface Env {
-  AIRTABLE_TOKEN: string;
-  AIRTABLE_BASE_ID: string;
-  CALENDAR_SECRET: string;
-  ALLOWED_ORIGIN: string;
-  SUPABASE_URL: string;
-  SUPABASE_ANON_KEY: string;
-}
+import type { Env } from "./env";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -174,4 +167,4 @@ export function escapeFormulaValue(value: string): string {
 }
 
 // Re-export from the shared neutral module
-export { linkId, singleSelect } from "../../src/lib/airtableValueUtils";
+export { linkId } from "../../shared/airtableValueUtils";

@@ -11,19 +11,7 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
 
-    "baseUrl": "..",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "baseUrl": ".."
   },
-  "include": [
-    "src/**/*.ts",
-    "../src/generated/**/*.ts",
-    "../src/mappers/**/*.ts",
-    "../src/lib/cache.ts",
-    "../src/lib/displayTeam.ts",
-    "../src/lib/abilityGroup.ts",
-    "../src/lib/abilityRank.ts",
-    "../src/lib/hkDateKey.ts"
-  ]
+  "include": ["src/**/*.ts", "../shared/**/*.ts"]
 }

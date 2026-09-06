@@ -1,9 +1,9 @@
-import type { Env } from "./airtable";
+import type { Env } from "./env";
 import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { HttpError } from "./http";
-import { ABILITY_RANK } from "../../src/lib/abilityRank";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { ABILITY_RANK } from "../../shared/abilityRank";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 export interface RecommendationCandidate {
   id: string;

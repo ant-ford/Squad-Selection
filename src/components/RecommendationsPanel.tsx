@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useRecommendations } from '@/lib/queries';
 import { Loader2, Plus, HelpCircle } from 'lucide-react';
+import { POS_SHORT } from '@/lib/format';
 
 const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'];
-const POS_SHORT: Record<string, string> = { Goalkeeper: 'GK', Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD' };
 
 interface Props {
   matchId: string;

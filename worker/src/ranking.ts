@@ -7,19 +7,19 @@ import {
   airtableFindAll,
   airtableFindById,
   airtableUpdate,
-  type Env,
 } from "./airtable";
+import type { Env } from "./env";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
+import { TABLES } from "../../shared/schema/tableNames";
 import {
   ABILITYGROUP_CONFIG_FIELDS,
   PEOPLE_FIELDS,
-} from "../../src/generated/fieldMaps";
-import { mapPlayer } from "../../src/mappers/playerMapper";
-import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
-import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-import { invalidatePlayerByEmail } from "./reference";
+} from "../../shared/schema/fieldMaps";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
+import { mapAbilityGroupConfiguration } from "../../shared/mappers/abilityGroupConfigMapper";
+import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
 import type { AuthorizedUser } from "./auth";
 import {
   validateJustification,
@@ -27,19 +27,22 @@ import {
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import {
-  invalidateCache,
-  invalidateCachePrefix,
-  getCached,
-} from "../../src/lib/cache";
+import { invalidateCache, getCached } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
   Player,
   RankingList,
-} from "../../src/generated/domainTypes";
+} from "../../shared/schema/domainTypes";
 
 // ── In-memory derived-rank annotation ────────────────────────────────────
+/** Next 1-based occurrence count for `key`, advancing `counters` in place. */
+function nextCount(counters: Map<string, number>, key: string): number {
+  const n = (counters.get(key) ?? 0) + 1;
+  counters.set(key, n);
+  return n;
+}
+
 function annotateWithDerivedRanks(players: Player[]): Player[] {
   const teamCounters = new Map<string, number>();
   const posCounters = new Map<string, number>();
@@ -47,13 +50,9 @@ function annotateWithDerivedRanks(players: Player[]): Player[] {
     // Team blocks are grouped by the DISPLAYED team (Selected Team EOS ->
     // SOS -> Registered) so T# stays consistent with the optics. The cached
     // player object keeps the true Registered Team for business rules.
-    const tk = selectedDisplayTeam(p);
-    const pk = p.playingPosition ?? "";
-    const tr = (teamCounters.get(tk) ?? 0) + 1;
-    teamCounters.set(tk, tr);
-    const pr = (posCounters.get(pk) ?? 0) + 1;
-    posCounters.set(pk, pr);
-    return { ...p, teamRank: tr, positionalRank: pr };
+    const teamRank = nextCount(teamCounters, selectedDisplayTeam(p));
+    const positionalRank = nextCount(posCounters, p.playingPosition ?? "");
+    return { ...p, teamRank, positionalRank };
   });
 }
 
@@ -465,13 +464,9 @@ async function recomputeDerivedFieldsFromList(
     }
     
     // Same display-team grouping as annotateWithDerivedRanks (optics).
-    const teamKey = selectedDisplayTeam(p);
-    const positionKey = p.playingPosition ?? "";
-    const teamRank = (teamCounters.get(teamKey) ?? 0) + 1;
-    teamCounters.set(teamKey, teamRank);
-    const positionalRank = (positionalCounters.get(positionKey) ?? 0) + 1;
-    positionalCounters.set(positionKey, positionalRank);
-    
+    const teamRank = nextCount(teamCounters, selectedDisplayTeam(p));
+    const positionalRank = nextCount(positionalCounters, p.playingPosition ?? "");
+
     const assignment = computeAbilityAssignment(rank, n, config);
     const needsUpdate = p.playingAbility !== assignment.abilityDisplay;
     
@@ -496,10 +491,8 @@ async function recomputeDerivedFieldsFromList(
 
   await batchUpdatePlayers(env, fieldUpdates);
   invalidateCache(rankingCacheKey(true));
-  invalidateCache("club-reference");
-  invalidateCache("team-coach-links");
-  invalidateCachePrefix("players-for-match:");
-  
+  invalidateReferenceData();
+
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };
 }
 
@@ -536,7 +529,7 @@ async function applySectionRankUpdates(
 
   // Ranking history: fire-and-forget, after the commit succeeded. The
   // browser never stamps time - every event gets a server timestamp here.
-  if (recordEvents && actingEmail && actingEmail !== "system") {
+  if (recordEvents && actingEmail) {
     const events = selectRankingEventChanges(updates).map((u) => ({
       playerId: u.id,
       actorEmail: actingEmail,

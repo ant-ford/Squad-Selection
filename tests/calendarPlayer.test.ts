@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { handlePlayerCalendarFeed, handleTeamCalendarFeed } from "../worker/src/calendar";
-import { invalidateAll, invalidateCache } from "../src/lib/cache";
+import { invalidateAll, invalidateCache } from "../worker/src/cache";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",

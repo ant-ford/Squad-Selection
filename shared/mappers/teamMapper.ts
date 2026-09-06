@@ -1,5 +1,5 @@
-import { Team } from '@/generated/domainTypes';
-import { TEAMS_FIELDS } from '@/generated/fieldMaps';
+import { Team } from '../schema/domainTypes';
+import { TEAMS_FIELDS } from '../schema/fieldMaps';
 
 export function mapTeam(record: any): Team {
   const f = record.fields;

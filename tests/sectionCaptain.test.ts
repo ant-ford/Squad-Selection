@@ -21,7 +21,7 @@ vi.mock("../worker/src/reference", () => ({
 
 import { getMyProfile } from "../worker/src/profile";
 import { getMyFixtures } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
 
 const ENV = { AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "test-base" } as any;

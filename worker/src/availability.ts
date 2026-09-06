@@ -1,26 +1,20 @@
 import {
-  Env,
-  airtableFindAll,
   airtableFindById,
-  airtableCreate,
-  airtableUpdate,
-  airtableDelete,
   airtableBatchCreate,
   airtableBatchUpdate,
   airtableBatchDelete,
-  escapeFormulaValue,
   linkId,
 } from "./airtable";
-import { getPlayerByEmail, getReferenceData } from "./reference";
+import type { Env } from "./env";
+import { getPlayerByEmail, getReferenceData, getExceptionsForSeasons } from "./reference";
 import { getScheduledMatches } from "./fixtures";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../src/generated/fieldMaps";
-import { mapPlayer } from "../../src/mappers/playerMapper";
-import { mapAvailability } from "../../src/mappers/availabilityMapper";
-import { hkDateKey } from "../../src/lib/hkDateKey";
-import { invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
-import type { AvailabilityException } from "../../src/generated/domainTypes";
+import { TABLES } from "../../shared/schema/tableNames";
+import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../shared/schema/fieldMaps";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
+import { hkDateKey } from "../../shared/hkDateKey";
+import { invalidateCache, invalidateCachePrefix } from "./cache";
+import type { AvailabilityException } from "../../shared/schema/domainTypes";
 
 type ExceptionStatus = "Maybe" | "Unavailable";
 type AvailabilityStatus = "Available" | ExceptionStatus;
@@ -59,35 +53,39 @@ function chunk<T>(items: T[], size = 10): T[][] {
 /**
  * Find existing exceptions for a player across a set of matches.
  * Returns both the exceptions map AND the seasons involved for targeted cache invalidation.
+ *
+ * Resolves each match's season from the cached Scheduled-matches list (10min
+ * TTL) rather than one airtableFindById per match, and reads exceptions
+ * through the cached per-season index (5min TTL) rather than a fresh scan -
+ * a caller polling the same matches repeatedly costs zero Airtable calls
+ * once both caches are warm.
  */
 async function findPlayerExceptions(
   env: Env,
   playerId: string,
   matchIds: string[],
 ): Promise<{ exceptions: Map<string, AvailabilityException>; seasons: string[] }> {
+  const scheduledById = new Map((await getScheduledMatches(env)).map((m) => [m.id, m]));
   const matchSeasons = new Set<string>();
-  const matchRecords = await Promise.all(
-    matchIds.map((matchId) => airtableFindById(env, TABLES.match, matchId)),
-  );
-  for (const matchRecord of matchRecords) {
-    if (matchRecord) {
-      const season = matchRecord.fields?.[MATCHES_FIELDS.season] || "";
-      if (season) matchSeasons.add(season);
-    }
+  const unresolvedIds: string[] = [];
+  for (const matchId of matchIds) {
+    const season = scheduledById.get(matchId)?.season;
+    if (season) matchSeasons.add(season);
+    else unresolvedIds.push(matchId);
+  }
+  // A match not in the Scheduled cache (e.g. its status just changed) still
+  // needs its season resolved fresh, so its exceptions are never silently skipped.
+  for (const matchId of unresolvedIds) {
+    const record = await airtableFindById(env, TABLES.match, matchId);
+    const season = record?.fields?.[MATCHES_FIELDS.season] || "";
+    if (season) matchSeasons.add(season);
   }
 
   const seasons = [...matchSeasons];
   if (seasons.length === 0) return { exceptions: new Map(), seasons: [] };
 
-  const formula =
-    seasons.length === 1
-      ? `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(seasons[0])}"`
-      : `OR(${seasons.map((s) => `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(s)}"`).join(",")})`;
-
-  const records = await airtableFindAll(env, TABLES.availabilityException, formula);
-  const playerExceptions = records
-    .map(mapAvailability)
-    .filter((e) => linkId(e.player) === playerId);
+  const allExceptions = await getExceptionsForSeasons(env, seasons);
+  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId);
 
   return {
     exceptions: new Map(playerExceptions.map((e) => [linkId(e.match) || "", e])),
@@ -178,7 +176,6 @@ export interface SetMyAvailabilityInput {
   matchId: string;
   status: AvailabilityStatus;
   notes?: string;
-  existingExceptionId?: string;
 }
 
 export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
@@ -187,56 +184,13 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
 
-  let existingId: string | undefined;
-  let seasons: string[] = [];
-
-  if (input.existingExceptionId) {
-    const rec = await airtableFindById(env, TABLES.availabilityException, input.existingExceptionId);
-    if (rec && linkId(mapAvailability(rec).player) === user.id) {
-      existingId = input.existingExceptionId;
-    }
-    // Mismatched or missing record: fall through to the season-scoped
-    // lookup below instead of trusting a client-supplied id blindly.
-  }
-
-  if (!existingId) {
-    const result = await findPlayerExceptions(env, user.id, [input.matchId]);
-    existingId = result.exceptions.get(input.matchId)?.id;
-    seasons = result.seasons;
-  } else {
-    // If we trusted the client ID, we still need the season for cache invalidation
-    const matchRecord = await airtableFindById(env, TABLES.match, input.matchId);
-    const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
-    if (season) seasons = [season];
-  }
-
-  if (input.status === "Available") {
-    if (existingId) {
-      await airtableDelete(env, TABLES.availabilityException, existingId);
-    }
-    invalidateAvailabilityCaches([input.matchId], seasons);
-    return { success: true, exceptionId: null };
-  }
-
-  const fields = buildExceptionFields({
-    matchId: input.matchId,
+  const { results } = await setAvailability(env, {
     playerId: user.id,
+    matchIds: [input.matchId],
     status: input.status,
     notes: input.notes,
-    updatedById: user.id,
   });
-
-  let resultId: string;
-  if (existingId) {
-    await airtableUpdate(env, TABLES.availabilityException, existingId, fields);
-    resultId = existingId;
-  } else {
-    const created = await airtableCreate(env, TABLES.availabilityException, fields);
-    resultId = created.id;
-  }
-
-  invalidateAvailabilityCaches([input.matchId], seasons);
-  return { success: true, exceptionId: resultId };
+  return { success: true, exceptionId: results[0]?.exceptionId ?? null };
 }
 
 // ---------------------------------------------------------------------

@@ -17,7 +17,7 @@ import {
   type CardSuspensionState,
 } from "../worker/src/suspension";
 import { evaluatePlayerEligibility, type EvaluationContext } from "../worker/src/eligibility";
-import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
+import type { Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
 
 // ---------------------------------------------------------------------------
 // Factories

@@ -1,5 +1,5 @@
 import { HttpError } from "./http";
-import type { Env } from "./airtable";
+import type { Env } from "./env";
 import { getPlayerByEmail, getTeamCoachLinks } from "./reference";
 
 /**

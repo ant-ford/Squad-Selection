@@ -1,10 +1,10 @@
-import { Env } from "./airtable";
+import type { Env } from "./env";
 import { getPlayerByEmail, getReferenceData } from "./reference";
 import { getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
-import { getCached } from "../../src/lib/cache";
+import { getCached } from "./cache";
 import { HttpError } from "./http";
 import type { AuthorizedUser } from "./auth";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 const MATCH_DURATION_MINUTES = 90;
 
@@ -182,13 +182,13 @@ function resolveSquadNames(selectedIds: string[] | undefined, playersById: Map<s
 
 // --- Route Handlers ---
 
-export async function handleGetCalendarLink(env: Env, email: string) {
+export async function handleGetCalendarLink(env: Env, email: string, apiOrigin: string) {
   const player = await getPlayerByEmail(env, email);
   if (!player) throw new HttpError("Player not found", 404);
 
   const payload = `player:${player.id}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  return { id: player.id, sig };
+  return { url: `${apiOrigin}/api/calendar/feed.ics?id=${player.id}&sig=${sig}` };
 }
 
 export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig: string | null) {
@@ -221,12 +221,12 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   });
 }
 
-export async function handleGetTeamCalendarLink(env: Env, user: AuthorizedUser, team: string) {
+export async function handleGetTeamCalendarLink(env: Env, user: AuthorizedUser, team: string, apiOrigin: string) {
   if (!user.coachTeams.includes(team)) throw new HttpError("Forbidden", 403);
 
   const payload = `team:${team}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  return { team, sig };
+  return { url: `${apiOrigin}/api/calendar/team-feed.ics?team=${encodeURIComponent(team)}&sig=${sig}` };
 }
 
 export async function handleTeamCalendarFeed(env: Env, team: string | null, sig: string | null) {

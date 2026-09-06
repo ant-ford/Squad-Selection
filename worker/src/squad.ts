@@ -1,25 +1,21 @@
-import { Env, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
-import { getCached, invalidateCache, invalidateCachePrefix } from "../../src/lib/cache";
-import { getReferenceData, getExceptionsForSeasons } from "./reference";
+import { airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
+import type { Env } from "./env";
+import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
+import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
 import { getScheduledMatches } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
-import { computeSuspensionStates } from "./suspension";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../src/generated/fieldMaps";
-import { mapMatch } from "../../src/mappers/matchMapper";
-import { mapMatchCard } from "../../src/mappers/matchCardMapper";
-import type { KitColour, Match, Player, MatchCard, Team, AvailabilityException } from "../../src/generated/domainTypes";
-import { ABILITY_RANK } from "../../src/lib/abilityRank";
-import {
-  buildEvaluationContext,
-  getAllMatches,
-  getSeasonContext,
-  getSameDayMatches,
-} from "./seasonContext";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-import { hkDateKey } from "../../src/lib/hkDateKey";
+import { TABLES } from "../../shared/schema/tableNames";
+import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../shared/schema/fieldMaps";
+import { mapMatch } from "../../shared/mappers/matchMapper";
+import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
+import type { KitColour, Match, Player, MatchCard, Team, AvailabilityException } from "../../shared/schema/domainTypes";
+import { ABILITY_RANK } from "../../shared/abilityRank";
+import { buildEvaluationContext, getSeasonContext } from "./seasonContext";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
+import { hkfcSides } from "./match";
 
 type MatchSide = "home" | "away";
 
@@ -41,15 +37,32 @@ async function getMatchRecord(env: Env, matchId: string): Promise<any> {
   return data;
 }
 
+/**
+ * Invalidation fan-out for a write that changes a match's selections, kit,
+ * or auto-select flag. A coarse prefix wipe rather than computing exactly
+ * which matches are affected: a selection change can shift same-day
+ * eligibility for OTHER matches too, so a precise match-by-match key list
+ * would need its own full-season match read just to build it.
+ */
+function invalidateSelectionCaches(matchId: string, season?: string): void {
+  invalidateCache(`match:${matchId}`);
+  invalidateCache("scheduled-matches");
+  if (season) {
+    invalidateCache(`season-index:${season}`);
+    invalidateCache(`all-matches:${season}`);
+  }
+  invalidateCachePrefix("players-for-match:");
+  invalidateCachePrefix("calendar:");
+}
+
 // ── HKFC side resolution ────────────────────────────────────────────────
 function resolveHkfcSide(match: Match, rankMap: Record<string, number>, side?: MatchSide): MatchSide {
-  const home = match.homeTeam || "";
-  const away = match.awayTeam || "";
-  if (side === "home" && rankMap[home] !== undefined) return "home";
-  if (side === "away" && rankMap[away] !== undefined) return "away";
-  if (rankMap[home] !== undefined && rankMap[away] === undefined) return "home";
-  if (rankMap[away] !== undefined && rankMap[home] === undefined) return "away";
-  if (rankMap[home] !== undefined && rankMap[away] !== undefined) return side ?? "home";
+  const sides = hkfcSides(match, new Set(Object.keys(rankMap)));
+  if (side === "home" && sides.home) return "home";
+  if (side === "away" && sides.away) return "away";
+  if (sides.home && !sides.away) return "home";
+  if (sides.away && !sides.home) return "away";
+  if (sides.home && sides.away) return side ?? "home";
   // Fallback for derby/edge cases: trust the URL side or default home
   if (side) return side;
   return "home";
@@ -95,7 +108,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
 
   const matchDateKey = hkDateKey(match.matchDate);
-  const thisTeamRank = teamRankMap[hkfcTeam] ?? 99;
+  const thisTeamRank = teamRankMap[hkfcTeam] ?? UNRANKED_TEAM_RANK;
 
   const players = allPlayers.map((p) => {
     const isSelected = selectedPlayerIds.has(p.id);
@@ -103,7 +116,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     // Standing rules supply the default for players who have not answered
     // this fixture. Coaches need to know which it is - "hasn't been asked"
     // reads very differently from "said no" - so the flag rides along.
-    const playerRank = teamRankMap[p.registeredTeam || ""] ?? 99;
+    const playerRank = teamRankMap[p.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
     const effective = effectiveAvailability(exc?.availabilityStatus, rulesByPlayer.get(p.id) ?? [], {
       date: matchDateKey,
       isPlayUp: thisTeamRank < playerRank,
@@ -127,7 +140,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     if (availabilityStatus !== "Unavailable") {
       const seenTeams = new Set<string>();
       for (const fx of ctx.sameDayFixtures) {
-        if ((teamRankMap[fx.teamName] ?? 99) <= thisTeamRank) continue;
+        if ((teamRankMap[fx.teamName] ?? UNRANKED_TEAM_RANK) <= thisTeamRank) continue;
         if (seenTeams.has(fx.teamName)) continue;
         if (ctx.unavailablePlayerMatchKeys.has(`${p.id}:${fx.matchId}`)) {
           supportUnavailable.push(fx.teamName);
@@ -246,22 +259,10 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   }
   await airtableUpdate(env, TABLES.match, matchId, updates);
 
-  // Invalidation fan-out (Invariant #11). Every cache that can now be stale:
-  const season = match.season || "";
-  const allMatchesInSeason = await getAllMatches(env, season);
-  const affectedMatchIds = new Set([
-    matchId,
-    ...getSameDayMatches(allMatchesInSeason, match.matchDate || "").map((m) => m.id),
-  ]);
-  invalidateCache(`match:${matchId}`);
-  invalidateCache(`season-index:${season}`);
-  invalidateCache(`all-matches:${season}`);
-  invalidateCache("scheduled-matches");
-  for (const id of affectedMatchIds) {
-    invalidateCachePrefix(`players-for-match:${id}:`);
-  }
-  invalidateCachePrefix("calendar:player:");
-  invalidateCachePrefix("calendar:team:");
+  // Invalidation fan-out (Invariant #11): a selection change can affect
+  // same-day eligibility for OTHER matches too, so this is a coarse wipe
+  // rather than a match-by-match computation.
+  invalidateSelectionCaches(matchId, match.season || "");
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {
@@ -270,8 +271,7 @@ export async function toggleAutoSelect(env: Env, matchId: string, enabled: boole
   await airtableUpdate(env, TABLES.match, matchId, {
     [MATCHES_FIELDS.autoSelectEnabled]: enabled,
   });
-  invalidateCache(`match:${matchId}`);
-  invalidateCachePrefix(`players-for-match:${matchId}:`);
+  invalidateSelectionCaches(matchId);
   console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
   return { success: true, autoSelectEnabled: enabled };
 }
@@ -306,10 +306,7 @@ export async function setMatchKit(
 
   // Same invalidation set as the auto-select toggle: the fixture views and
   // the calendar feeds all read the kit off the cached match records.
-  invalidateCache(`match:${matchId}`);
-  invalidateCache("scheduled-matches");
-  invalidateCachePrefix(`players-for-match:${matchId}:`);
-  invalidateCachePrefix("calendar:");
+  invalidateSelectionCaches(matchId);
   console.log(`[Kit Audit] matchId=${matchId} side=${side} kit=${kit || "(cleared)"} actor=${actingEmail || "unknown"}`);
   return { success: true, side, kit };
 }
@@ -351,9 +348,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   });
 
   // Invalidate reference data cache so match-info picks up the new list
-  invalidateCache("club-reference");
-  invalidateCache("team-coach-links");
-  invalidateCachePrefix("players-for-match:");
+  invalidateReferenceData();
 
   console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);
   return { success: true, teamName, playerIds: validIds };

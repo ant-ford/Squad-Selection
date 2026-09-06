@@ -11,7 +11,7 @@ import { getPlayerByEmail, invalidatePlayerByEmail } from "../worker/src/referen
 import { getMyFixtures } from "../worker/src/fixtures";
 import { getAvailabilityForMatch, syncSquad } from "../worker/src/squad";
 import { setMyAvailability } from "../worker/src/availability";
-import { invalidateAll, invalidateCache, getCached } from "../src/lib/cache";
+import { invalidateAll, invalidateCache, getCached } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
 
 function authUser(email: string): AuthorizedUser {
@@ -186,8 +186,10 @@ describe("availability poll cache", () => {
     const afterRead = exceptionFetches();
     await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: "recM4", status: "Unavailable" });
     await getAvailabilityForMatch(ENV, "recM4");
-    // read inside the write (season lookup) + the fresh post-write read
-    expect(exceptionFetches()).toBe(afterRead + 2);
+    // The write's own exception lookup shares the same cached per-season
+    // index as the read above (warm, zero extra fetches) - only the
+    // invalidated post-write read hits Airtable again.
+    expect(exceptionFetches()).toBe(afterRead + 1);
   });
 });
 

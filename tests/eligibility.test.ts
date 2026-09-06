@@ -11,7 +11,7 @@ vi.mock("../worker/src/airtable", () => ({
 
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
-import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
+import type { Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
 
 // ── Test Data Factory ───────────────────────────────────────────────────
 

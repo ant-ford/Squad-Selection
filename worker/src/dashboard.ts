@@ -1,19 +1,9 @@
-import { Env } from "./airtable";
+import type { Env } from "./env";
 import { getReferenceData } from "./reference";
-import { getSeasonContext } from "./seasonContext";
+import { getSeasonContext, currentSeason } from "./seasonContext";
 import { getRankingEvents } from "./rankingEvents";
 import { isQualifyingPlayUpCard } from "./playUp";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-import { hkDateKey } from "../../src/lib/hkDateKey";
-
-/** HKHA season boundary: starts 1 July, Asia/Hong_Kong. */
-export function currentSeason(d = new Date()): string {
-  const [yearStr, monthStr] = hkDateKey(d.toISOString()).split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr); // 1-12
-  const y = month >= 7 ? year : year - 1;
-  return `${y}-${y + 1}`;
-}
+import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 /**
  * Play-Up Watch: players with 2+ adjusted play-up appearances this season.

@@ -18,11 +18,13 @@
  * player-in-match selections, not rank changes.
  */
 
-import { Env, AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import { AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
-import { getCached, invalidateCachePrefix } from "../../src/lib/cache";
+import { TABLES } from "../../shared/schema/tableNames";
+import { getCached, invalidateCachePrefix } from "./cache";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
 
 export const RANKING_EVENTS_TABLE = "Ranking Events";
 export const RANKING_EVENTS_FIELDS = {
@@ -183,15 +185,7 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
         for (const pid of missingIds) {
           try {
             const rec = await airtableFindById(env, TABLES.player, pid);
-            if (rec) {
-              const f = rec.fields ?? {};
-              playerById.set(pid, {
-                id: pid,
-                preferredName: f["Preferred Name"],
-                givenNames: f["Given Name(s)"],
-                email: f["Email"],
-              } as never);
-            }
+            if (rec) playerById.set(pid, mapPlayer(rec));
           } catch {
             /* name resolution is best-effort */
           }

@@ -5,10 +5,7 @@ import type { MyFixture } from '@/api/getMyFixtures';
 interface Props {
   fixture: MyFixture;
   onTap: () => void;
-  onAvailabilityChange: (
-    status: 'Available' | 'Maybe' | 'Unavailable',
-    exceptionId?: string
-  ) => void;
+  onAvailabilityChange: (status: 'Available' | 'Maybe' | 'Unavailable') => void;
 }
 
 export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange }: Props) {
@@ -104,7 +101,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                 key={value}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAvailabilityChange(value as any, fixture.availabilityExceptionId);
+                  onAvailabilityChange(value as any);
                 }}
                 className={`
                   px-3 py-1 text-xs font-medium min-w-[56px] transition-colors

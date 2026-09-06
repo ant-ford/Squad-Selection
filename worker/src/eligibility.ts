@@ -1,7 +1,9 @@
 import { linkId } from "./airtable";
 import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
+import { hkfcSides } from "./match";
+import { UNRANKED_TEAM_RANK } from "./reference";
 import type { CardSuspensionState } from "./suspension";
-import type { Match, MatchCard, Player, Team } from "../../src/generated/domainTypes";
+import type { Match, MatchCard, Player, Team } from "../../shared/schema/domainTypes";
 
 // ── Public types ────────────────────────────────────────────────────────
 
@@ -64,18 +66,9 @@ type SameDayTeamFixture = { matchId: string; teamName: string };
 function buildRankMap(teamMap: TeamMap): RankMap {
   const rm: RankMap = {};
   for (const [name, t] of teamMap.entries()) {
-    rm[name] = t.teamRank ?? 99;
+    rm[name] = t.teamRank ?? UNRANKED_TEAM_RANK;
   }
   return rm;
-}
-
-function safeLinkId(value: unknown): string | null {
-  try {
-    const id = linkId(value);
-    return id || null;
-  } catch {
-    return null;
-  }
 }
 
 function selectionKey(matchId: string, teamName: string): string {
@@ -87,7 +80,7 @@ function cardsForPlayer(playerId: string, ctx: EvaluationContext): MatchCard[] {
 }
 
 function matchForCard(card: MatchCard, ctx: EvaluationContext): Match | undefined {
-  const matchId = safeLinkId(card.match);
+  const matchId = linkId(card.match);
   return matchId ? ctx.matchesById.get(matchId) : undefined;
 }
 
@@ -112,10 +105,11 @@ function isCup(match: Match | undefined | null): boolean {
  * returns null if neither side has a known team rank.
  */
 function hkfcTeamNameSafe(match: Match, rankMap: RankMap): string | null {
+  const sides = hkfcSides(match, new Set(Object.keys(rankMap)));
+  if (sides.home) return sides.home.team;
+  if (sides.away) return sides.away.team;
   const home = match.homeTeam || "";
   const away = match.awayTeam || "";
-  if (rankMap[home] !== undefined) return home;
-  if (rankMap[away] !== undefined) return away;
   if (home) return home;
   if (away) return away;
   return null;
@@ -126,7 +120,7 @@ function playerRanks(
   rankMap: RankMap,
 ): { playerRank: number; isPremier: boolean } {
   const team = p.registeredTeam || "";
-  const rank = rankMap[team] ?? 99;
+  const rank = rankMap[team] ?? UNRANKED_TEAM_RANK;
   const isPremier = rank === 1;
   return { playerRank: rank, isPremier };
 }
@@ -136,7 +130,7 @@ function teamRanks(
   rankMap: RankMap,
   teamMap: TeamMap,
 ): { rank: number; isPremier: boolean } {
-  const rank = rankMap[teamName] ?? 99;
+  const rank = rankMap[teamName] ?? UNRANKED_TEAM_RANK;
   const team = teamMap.get(teamName);
   const isPremier = team?.isPremier === true || rank === 1;
   return { rank, isPremier };
@@ -228,7 +222,7 @@ function checkSameDayMovement(
   const withAvailabilityWarning = (): string[] => {
     if (availableForTeams.length === 0) return warnings;
     const ordered = [...availableForTeams].sort(
-      (a, b) => (rankMap[a] ?? 99) - (rankMap[b] ?? 99),
+      (a, b) => (rankMap[a] ?? UNRANKED_TEAM_RANK) - (rankMap[b] ?? UNRANKED_TEAM_RANK),
     );
     return [...warnings, `Available for ${ordered.join(", ")} on same day`];
   };
@@ -236,7 +230,7 @@ function checkSameDayMovement(
   for (const fixture of ctx.sameDayFixtures) {
     const sdmTeam = fixture.teamName;
     if (!sdmTeam) continue;
-    const sdmRank = rankMap[sdmTeam] ?? 99;
+    const sdmRank = rankMap[sdmTeam] ?? UNRANKED_TEAM_RANK;
     const isSelected =
       playerSelections?.has(selectionKey(fixture.matchId, sdmTeam)) ?? false;
 
@@ -315,7 +309,7 @@ export function computeCompletedLeagueMatchCounts(
   const matchIdsByTeam = new Map<string, Set<string>>();
   for (const card of ctx.matchCards) {
     if (!card.team) continue;
-    const cardMatchId = safeLinkId(card.match);
+    const cardMatchId = linkId(card.match);
     if (!cardMatchId) continue;
     const cardMatch = ctx.matchesById.get(cardMatchId);
     if (!isLeague(cardMatch)) continue;
@@ -444,13 +438,13 @@ function generateWarnings(
   }
   if (player.isVisitingPlayer) {
     const apps = matchCards.filter((mc) => {
-      const pId = safeLinkId(mc.player);
+      const pId = linkId(mc.player);
       return (
         pId === player.id &&
         mc.team === player.registeredTeam &&
         mc.season === currentSeason &&
         // Mirrors the blocking check above: friendlies are not appearances.
-        !isFriendly(matchesById.get(safeLinkId(mc.match) ?? ""))
+        !isFriendly(matchesById.get(linkId(mc.match) ?? ""))
       );
     }).length;
     if (apps < 5) {

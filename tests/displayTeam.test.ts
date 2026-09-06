@@ -4,11 +4,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Selected Team display (optics) + player dashboard fixture categories
 // ---------------------------------------------------------------------------
 
-import { selectedDisplayTeam } from "../src/lib/displayTeam";
+import { selectedDisplayTeam } from "../shared/displayTeam";
 import { getActiveRanking } from "../worker/src/ranking";
 import { getMyFixtures } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
-import type { Player } from "../src/generated/domainTypes";
+import { invalidateAll } from "../worker/src/cache";
+import type { Player } from "../shared/schema/domainTypes";
 import type { AuthorizedUser } from "../worker/src/auth";
 
 function authUser(email: string): AuthorizedUser {

@@ -1,11 +1,12 @@
-import { Env, airtableFindAll, escapeFormulaValue } from "./airtable";
-import { getCached, invalidateCache } from "../../src/lib/cache";
-import { TABLES } from "../../src/generated/tableNames";
-import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../src/generated/fieldMaps";
-import { mapPlayer } from "../../src/mappers/playerMapper";
-import { mapTeam } from "../../src/mappers/teamMapper";
-import { mapAvailability } from "../../src/mappers/availabilityMapper";
-import type { Player, Team, AvailabilityException } from "../../src/generated/domainTypes";
+import { airtableFindAll, escapeFormulaValue } from "./airtable";
+import type { Env } from "./env";
+import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
+import { TABLES } from "../../shared/schema/tableNames";
+import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../shared/schema/fieldMaps";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
+import { mapTeam } from "../../shared/mappers/teamMapper";
+import { mapAvailability } from "../../shared/mappers/availabilityMapper";
+import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
 export interface ReferenceData {
   players: Player[];
@@ -13,6 +14,9 @@ export interface ReferenceData {
   teamRankMap: Record<string, number>;
   teamNames: string[];
 }
+
+/** Rank sentinel for a team with no Team Rank set: sorts after every real rank. */
+export const UNRANKED_TEAM_RANK = 99;
 
 export async function getReferenceData(env: Env): Promise<ReferenceData> {
   const { data } = await getCached<ReferenceData>("club-reference", async () => {
@@ -26,7 +30,7 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 
     const teamRankMap: Record<string, number> = {};
     for (const t of teams) {
-      if (t.teamName) teamRankMap[t.teamName] = t.teamRank ?? 99;
+      if (t.teamName) teamRankMap[t.teamName] = t.teamRank ?? UNRANKED_TEAM_RANK;
     }
 
     return {
@@ -107,6 +111,18 @@ function playerByEmailKey(email: string): string {
 
 export function invalidatePlayerByEmail(email: string): void {
   invalidateCache(playerByEmailKey(email));
+}
+
+/**
+ * Fan-out for a write that changes club reference data (team rosters,
+ * coach links, ability/rank fields) - every read built on top of
+ * getReferenceData/getTeamCoachLinks or a per-match player list would
+ * otherwise keep serving the pre-write snapshot.
+ */
+export function invalidateReferenceData(): void {
+  invalidateCache("club-reference");
+  invalidateCache("team-coach-links");
+  invalidateCachePrefix("players-for-match:");
 }
 
 /**

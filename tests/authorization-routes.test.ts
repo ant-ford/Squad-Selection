@@ -35,7 +35,6 @@ const mocks = vi.hoisted(() => {
     handleTeamCalendarFeed: vi.fn(),
     getActiveRanking: vi.fn(),
     getInactiveRanking: vi.fn(),
-    getAbilityGroupConfig: vi.fn(),
     setAbilityGroupConfig: vi.fn(),
     movePlayerToRank: vi.fn(),
     movePlayerRelative: vi.fn(),
@@ -83,7 +82,6 @@ vi.mock("../worker/src/calendar", () => ({
 vi.mock("../worker/src/ranking", () => ({
   getActiveRanking: mocks.getActiveRanking,
   getInactiveRanking: mocks.getInactiveRanking,
-  getAbilityGroupConfig: mocks.getAbilityGroupConfig,
   setAbilityGroupConfig: mocks.setAbilityGroupConfig,
   movePlayerToRank: mocks.movePlayerToRank,
   movePlayerRelative: mocks.movePlayerRelative,
@@ -286,10 +284,10 @@ describe("session-derived identity (IDOR prevention)", () => {
   });
 
   it("GET /api/calendar/link derives the player from the session, ignoring ?email=", async () => {
-    mocks.handleGetCalendarLink.mockResolvedValue({ id: "recP1", sig: "abc" });
+    mocks.handleGetCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/feed.ics?id=recP1&sig=abc" });
     const res = await call("/api/calendar/link?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com", "https://hkfc-api.test");
   });
 });
 
@@ -425,10 +423,10 @@ describe("coach-only routes", () => {
 
 describe("authorized-user reads", () => {
   it("GET /api/calendar/team-link passes the session email and keeps the team param", async () => {
-    mocks.handleGetTeamCalendarLink.mockResolvedValue({ team: "Men's 1s", sig: "abc" });
+    mocks.handleGetTeamCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/team-feed.ics?team=Men's%201s&sig=abc" });
     const res = await call("/api/calendar/team-link?team=Men's%201s");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, "Men's 1s");
+    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, "Men's 1s", "https://hkfc-api.test");
   });
 });
 
@@ -507,7 +505,6 @@ describe("read routes require authentication", () => {
     ["/api/match/recM1/availability", () => mocks.getAvailabilityForMatch],
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
-    ["/api/ranking/config", () => mocks.getAbilityGroupConfig],
     ["/api/recent-changes", () => mocks.getRecentChanges],
     ["/api/playup-watch", () => mocks.getPlayUpWatch],
   ])("denies %s to a non-coach", async (path, handler) => {

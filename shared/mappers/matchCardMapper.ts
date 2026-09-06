@@ -1,10 +1,10 @@
 import {
   MatchCard
-} from "../generated/domainTypes";
+} from "../schema/domainTypes";
 
 import {
   MATCHCARDS_FIELDS
-} from "../generated/fieldMaps";
+} from "../schema/fieldMaps";
 
 export function mapMatchCard(
   record: any

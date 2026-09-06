@@ -1,6 +1,7 @@
 import { X, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 export type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability' | 'ability';
 
@@ -96,13 +97,7 @@ export interface PlayerFiltersProps {
 export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps) {
   const [expandedAbility, setExpandedAbility] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
-
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
   const totalActive =
     [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability, ...filters.ability].length +

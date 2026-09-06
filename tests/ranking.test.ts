@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { activatePlayer } from "../worker/src/ranking";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",

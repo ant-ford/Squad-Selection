@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computePlayerSeasonStats } from "../worker/src/playerStats";
-import type { Match, MatchCard, Player } from "../src/generated/domainTypes";
+import type { Match, MatchCard, Player } from "../shared/schema/domainTypes";
 
 const SEASON = "2026-2027";
 const TEAM = "HKFC B";

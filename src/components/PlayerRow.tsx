@@ -1,10 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
-
-const POS_SHORT: Record<string, string> = {
-  Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
-};
+import { POS_SHORT } from '@/lib/format';
 
 interface PlayerRowProps {
   player: MatchPlayer;

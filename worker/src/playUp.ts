@@ -1,4 +1,5 @@
-import type { Match, MatchCard } from "../../src/generated/domainTypes";
+import { linkId } from "../../shared/airtableValueUtils";
+import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 
 /**
  * Friendlies are not competitive fixtures and must never count towards any
@@ -15,18 +16,12 @@ export function isFriendly(match: Match | undefined | null): boolean {
   return (match.competitionType || "").trim().toUpperCase() === "FRIENDLY";
 }
 
-/** First linked record id, tolerating Airtable's array-or-missing shape. */
-function linkedMatchId(value: unknown): string | null {
-  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null;
-  return typeof value === "string" ? value : null;
-}
-
 /** Resolve the Match a Match Card belongs to, if it is loaded. */
 export function matchForCard(
   card: MatchCard,
   matchesById: Map<string, Match>,
 ): Match | undefined {
-  const id = linkedMatchId(card.match);
+  const id = linkId(card.match);
   return id ? matchesById.get(id) : undefined;
 }
 

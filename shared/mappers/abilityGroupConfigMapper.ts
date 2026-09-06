@@ -1,6 +1,6 @@
-import { ABILITYGROUP_CONFIG_FIELDS } from "../generated/fieldMaps";
-import { singleSelect } from "../lib/airtableValueUtils";
-import type { AbilityGroupConfiguration } from "../generated/domainTypes";
+import { ABILITYGROUP_CONFIG_FIELDS } from "../schema/fieldMaps";
+import { linkId } from "../airtableValueUtils";
+import type { AbilityGroupConfiguration } from "../schema/domainTypes";
 
 /**
  * Map a raw Airtable record from the `Ability Group Configuration` table
@@ -10,7 +10,7 @@ export function mapAbilityGroupConfiguration(
   record: any,
 ): AbilityGroupConfiguration {
   const f = record.fields ?? {};
-  const group = singleSelect(
+  const group = linkId(
     f[ABILITYGROUP_CONFIG_FIELDS.group],
   ) as AbilityGroupConfiguration["group"] | undefined;
 

@@ -1,5 +1,5 @@
-import { Match } from '@/generated/domainTypes';
-import { MATCHES_FIELDS } from '@/generated/fieldMaps';
+import { Match } from '../schema/domainTypes';
+import { MATCHES_FIELDS } from '../schema/fieldMaps';
 
 export function mapMatch(record: any): Match {
   const f = record.fields;

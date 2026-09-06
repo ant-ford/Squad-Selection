@@ -1,4 +1,4 @@
-import type { Player } from "../generated/domainTypes";
+import type { Player } from "./schema/domainTypes";
 
 /**
  * The team name the app DISPLAYS for a player.

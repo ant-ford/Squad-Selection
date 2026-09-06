@@ -9,7 +9,7 @@ import {
   isSpecialGoalkeeper,
   getMyFixtures,
 } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 import type { ReferenceData } from "../worker/src/reference";
 import type { AuthorizedUser } from "../worker/src/auth";
 

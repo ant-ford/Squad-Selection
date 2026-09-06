@@ -1,5 +1,5 @@
-import { Env } from "./airtable";
-import { getPlayerByEmail, getReferenceData } from "./reference";
+import type { Env } from "./env";
+import { getPlayerByEmail, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { HttpError } from "./http";
 import type { AuthorizedUser } from "./auth";
 
@@ -21,7 +21,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     .map((t) => ({
       id: t.id,
       teamName: t.teamName || "",
-      teamRank: t.teamRank ?? 99,
+      teamRank: t.teamRank ?? UNRANKED_TEAM_RANK,
       targetSquadSize: t.targetSquadSize || 16,
     }))
     .sort((a, b) => a.teamRank - b.teamRank);

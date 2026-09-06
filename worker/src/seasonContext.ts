@@ -13,31 +13,32 @@
  * setMyAvailability (exceptions changed).
  */
 
-import { Env, airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
-import { getCached } from "../../src/lib/cache";
-import { hkDateKey } from "../../src/lib/hkDateKey";
-import { getExceptionsForSeasons } from "./reference";
-import { computeSuspensionStates } from "./suspension";
+import { airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
+import type { Env } from "./env";
+import { getCached } from "./cache";
+import { hkDateKey } from "../../shared/hkDateKey";
+import { getExceptionsForSeasons, getReferenceData } from "./reference";
+import { computeSuspensionStates, type CardSuspensionState } from "./suspension";
 import {
   computeCompletedLeagueMatchCounts,
   type EvaluationContext,
   type VirtualSelection,
 } from "./eligibility";
-import { TABLES } from "../../src/generated/tableNames";
+import { TABLES } from "../../shared/schema/tableNames";
 import {
   AVAILABILITYEXCEPTIONS_FIELDS,
   MATCHES_FIELDS,
   MATCHCARDS_FIELDS,
-} from "../../src/generated/fieldMaps";
-import { mapMatch } from "../../src/mappers/matchMapper";
-import { mapMatchCard } from "../../src/mappers/matchCardMapper";
+} from "../../shared/schema/fieldMaps";
+import { mapMatch } from "../../shared/mappers/matchMapper";
+import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
 import type {
   Match,
   MatchCard,
   Player,
   Team,
   AvailabilityException,
-} from "../../src/generated/domainTypes";
+} from "../../shared/schema/domainTypes";
 
 // ── Season-scoped fetches ───────────────────────────────────────────────
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
@@ -70,16 +71,16 @@ function previousSeason(season: string): string | null {
   return Number.isFinite(y) ? `${y - 1}-${y}` : null;
 }
 
-// ── Season-level evaluation context (Performance Pass #3) ───────────────
-//
-// Everything that depends only on the SEASON — exceptions, match cards, the
-// full fixture list, play-up indexes, completed-league-match counts and the
-// virtual-selection indexes — is built once per season and shared by every
-// match+side opened that season.
-//
-// Cache key: `season-index:${season}` (10 minutes).
-// Invalidated by: syncSquad (selections changed), setAvailability and
-// setMyAvailability (exceptions changed).
+/** HKHA season boundary: starts 1 July, Asia/Hong_Kong. */
+export function currentSeason(d = new Date()): string {
+  const [yearStr, monthStr] = hkDateKey(d.toISOString()).split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr); // 1-12
+  const y = month >= 7 ? year : year - 1;
+  return `${y}-${y + 1}`;
+}
+
+// ── Season-level evaluation context (see file header) ───────────────────
 export interface SeasonContext {
   exceptionsRaw: AvailabilityException[];
   exceptionIndex: { playerId: string; matchId: string; status: string }[];
@@ -95,17 +96,20 @@ export interface SeasonContext {
   previousSeason: string | null;
   previousCards: MatchCard[];
   previousMatches: Match[];
+  /** Automatic card-suspension state, keyed by player id. */
+  suspensionByPlayer: Map<string, CardSuspensionState>;
 }
 
 export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
   const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
     const prevSeason = previousSeason(season);
-    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches] = await Promise.all([
+    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches, ref] = await Promise.all([
       getExceptionsForSeasons(env, [season]),
       getMatchCardsForSeason(env, season),
       getAllMatches(env, season),
       prevSeason ? getMatchCardsForSeason(env, prevSeason) : Promise.resolve([] as MatchCard[]),
       prevSeason ? getAllMatches(env, prevSeason) : Promise.resolve([] as Match[]),
+      getReferenceData(env),
     ]);
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
@@ -151,6 +155,22 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
     const unavailablePlayerMatchKeys = new Set(
       exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`)
     );
+
+    // Automatic card-suspension state, computed once per cache lifetime
+    // rather than once per candidate side (buildEvaluationContext is called
+    // per fixture+team, sometimes several times for one request).
+    const registeredTeamByPlayer = new Map<string, string>();
+    for (const p of ref.players) if (p.registeredTeam) registeredTeamByPlayer.set(p.id, p.registeredTeam);
+    const combinedMatchesById = new Map<string, Match>([...prevMatches, ...allMatches].map((m) => [m.id, m]));
+    const suspensionByPlayer = computeSuspensionStates({
+      currentCards: matchCards,
+      previousCards: prevMatchCards,
+      matchesById: combinedMatchesById,
+      currentSeason: season,
+      previousSeason: prevSeason,
+      registeredTeamByPlayer,
+    });
+
     return {
       exceptionsRaw,
       exceptionIndex,
@@ -166,6 +186,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       previousSeason: prevSeason,
       previousCards: prevMatchCards,
       previousMatches: prevMatches,
+      suspensionByPlayer,
     };
   }, 10 * 60 * 1000);
   return data;
@@ -184,22 +205,6 @@ export async function buildEvaluationContext(
   const season = await getSeasonContext(env, currentSeason);
   const playersById = new Map<string, Player>();
   for (const p of allPlayers) playersById.set(p.id, p);
-
-  // Automatic card-suspension state is computed here (not in getSeasonContext)
-  // because it needs each player's canonical Registered Team, which only
-  // `allPlayers` provides. Inputs are already in memory, so this is a pure
-  // in-memory pass with no additional Airtable queries.
-  const registeredTeamByPlayer = new Map<string, string>();
-  for (const p of allPlayers) if (p.registeredTeam) registeredTeamByPlayer.set(p.id, p.registeredTeam);
-  const combinedMatchesById = new Map<string, Match>([...season.previousMatches, ...season.allMatches].map((m) => [m.id, m]));
-  const suspensionByPlayer = computeSuspensionStates({
-    currentCards: season.matchCards,
-    previousCards: season.previousCards,
-    matchesById: combinedMatchesById,
-    currentSeason,
-    previousSeason: season.previousSeason,
-    registeredTeamByPlayer,
-  });
 
   // Same-day slice (excludes the target match).
   const sameDayMatches = getSameDayMatches(season.allMatches, matchDate).filter((m) => m.id !== match.id);
@@ -238,7 +243,7 @@ export async function buildEvaluationContext(
     currentSeason,
     playersById,
     completedLeagueMatchesByTeam: season.completedLeagueMatchesByTeam,
-    suspensionByPlayer,
+    suspensionByPlayer: season.suspensionByPlayer,
   };
   return { ctx, exceptionsRaw: season.exceptionsRaw };
 }

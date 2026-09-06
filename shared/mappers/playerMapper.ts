@@ -1,5 +1,5 @@
-import { Player } from "../generated/domainTypes";
-import { PEOPLE_FIELDS } from "../generated/fieldMaps";
+import { Player } from "../schema/domainTypes";
+import { PEOPLE_FIELDS } from "../schema/fieldMaps";
 
 function toOptionalInt(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;

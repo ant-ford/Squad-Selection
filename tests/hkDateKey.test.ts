@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { hkDateKey } from "../src/lib/hkDateKey";
+import { hkDateKey } from "../shared/hkDateKey";
 import { getSameDayMatches } from "../worker/src/seasonContext";
-import { currentSeason } from "../worker/src/dashboard";
-import type { Match } from "../src/generated/domainTypes";
+import { currentSeason } from "../worker/src/seasonContext";
+import type { Match } from "../shared/schema/domainTypes";
 
 // ---------------------------------------------------------------------------
 // One shared Hong Kong date key (bug B5): a 03:00 HKT kick-off is 19:00 UTC
@@ -54,7 +54,7 @@ describe("getSameDayMatches (seasonContext.ts)", () => {
   });
 });
 
-describe("currentSeason (dashboard.ts)", () => {
+describe("currentSeason (seasonContext.ts)", () => {
   it("uses the HKT month for the season boundary, not the runner's local/UTC month", () => {
     // 2026-06-30T17:00 UTC == 2026-07-01T01:00 HKT: already July in HKT,
     // so the new season has started even though it's still June in UTC.

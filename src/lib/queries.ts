@@ -9,7 +9,7 @@ import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
   RankingList,
-} from '@/generated/domainTypes';
+} from '@shared/schema/domainTypes';
 
 /** True while the browser tab is visible; used to pause background polling. */
 function useDocumentVisible(): boolean {
@@ -75,7 +75,7 @@ export function useRanking() {
   return useQuery({
     queryKey: ['ranking'],
     queryFn: () => apiGet<RankingList>('/api/ranking'),
-    // Reverted to 15s per ChatGPT feedback: Section Captains expect prompt updates
+    // Section Captains expect prompt updates.
     staleTime: 15_000,
   });
 }
@@ -85,18 +85,6 @@ export function useInactiveRanking() {
     queryKey: ['rankingInactive'],
     queryFn: () => apiGet<InactiveRankingEntry[]>('/api/ranking/inactive'),
     staleTime: 60_000,
-  });
-}
-
-export function useAbilityGroupConfig() {
-  return useQuery({
-    queryKey: ['rankingConfig'],
-    queryFn: () => apiGet<AbilityGroupConfigMap>('/api/ranking/config'),
-    // The config is embedded in every /api/ranking response and the config
-    // mutation writes it straight into this cache entry, so refetching on
-    // every ranking-page mount is pure waste.
-    staleTime: 300_000,
-    refetchOnMount: false,
   });
 }
 
@@ -173,11 +161,8 @@ export function useUpdateAbilityConfig() {
     mutationFn: (config: AbilityGroupConfigMap) =>
       apiPost<RankingList>('/api/ranking/config', { config }),
     onSuccess: (updatedRankingList) => {
-      // Update config cache
-      if (updatedRankingList.config) {
-        queryClient.setQueryData<AbilityGroupConfigMap>(['rankingConfig'], updatedRankingList.config);
-      }
       // Update ranking cache directly with the fully consistent response
+      // (config is embedded in it - no separate config cache to update).
       if (updatedRankingList.players) {
         queryClient.setQueryData<RankingList>(['ranking'], updatedRankingList);
       } else {

@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { setMyAvailability, setMyAvailabilityForDate } from "../worker/src/availability";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -162,16 +162,17 @@ describe("normal availability - identity boundary", () => {
     expect(state.exceptions[0].fields["Availability Status"]).toBe("Unavailable");
   });
 
-  it("an Airtable exception record ID alone can NOT modify another player's exception", async () => {
-    // Bill already has an Unavailable exception on recM1.
+  it("updating the same match never touches another player's exception (modify)", async () => {
+    // Bill already has an Unavailable exception on recM1. The Worker now
+    // resolves the caller's own exception itself (no client-supplied record
+    // ID exists in the request shape any more), so there is no longer a
+    // parameter through which Bill's ID could even be offered.
     state.exceptions = [exception("recEB1", "recB", "recM1")];
 
-    // Alice's session, but Bill's exception record ID in the payload.
     const out = await setMyAvailability(ENV, {
       email: "player-a@example.com",
       matchId: "recM1",
       status: "Unavailable",
-      existingExceptionId: "recEB1",
     });
 
     // Bill's exception is untouched.
@@ -185,16 +186,14 @@ describe("normal availability - identity boundary", () => {
     expect(aliceException).toBeTruthy();
   });
 
-  it("an Airtable exception record ID alone can NOT delete another player's exception", async () => {
+  it("updating the same match never touches another player's exception (delete)", async () => {
     state.exceptions = [exception("recEB1", "recB", "recM1", "Unavailable")];
 
-    // Unavailable -> Available deletes the CALLER's exception only. Alice
-    // supplies Bill's record ID hoping to delete it.
+    // Unavailable -> Available deletes the CALLER's exception only.
     const out = await setMyAvailability(ENV, {
       email: "player-a@example.com",
       matchId: "recM1",
       status: "Available",
-      existingExceptionId: "recEB1",
     });
 
     expect(out.exceptionId).toBeNull();

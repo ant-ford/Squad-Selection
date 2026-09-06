@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/useAuth';
 import { getMyFixtures, GetMyFixturesOutput, MyFixture } from '@/api/getMyFixtures';
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { safeFormat } from '@/lib/dateUtils';
-import { hkDateKey } from '@/lib/hkDateKey';
+import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
@@ -96,15 +96,11 @@ export default function PlayerDashboard() {
     });
   };
 
-  const handleQuickAvailability = async (
-    fixtureId: string,
-    status: AvailabilityStatus,
-    exceptionId?: string
-  ) => {
+  const handleQuickAvailability = async (fixtureId: string, status: AvailabilityStatus) => {
     const previousData = data;
     applyPatch(fixtureId, { availabilityStatus: status });
     try {
-      const result = await setMyAvailability(fixtureId, status, undefined, exceptionId);
+      const result = await setMyAvailability(fixtureId, status);
       applyPatch(fixtureId, { availabilityExceptionId: result.exceptionId || '' });
       toast.success('Availability updated');
     } catch (err) {
@@ -218,9 +214,7 @@ export default function PlayerDashboard() {
       key={`${f.id}-${f.hkfcTeam}`}
       fixture={f}
       onTap={() => openFixture(f)}
-      onAvailabilityChange={(status, exceptionId) =>
-        handleQuickAvailability(f.id, status, exceptionId)
-      }
+      onAvailabilityChange={(status) => handleQuickAvailability(f.id, status)}
     />
   );
 

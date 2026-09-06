@@ -13,7 +13,7 @@ import {
   MAX_JUSTIFICATION_CHARS,
   RANKING_EVENTS_TABLE,
 } from "../worker/src/rankingEvents";
-import { invalidateAll, getCached } from "../src/lib/cache";
+import { invalidateAll, getCached } from "../worker/src/cache";
 import { getRecentChanges } from "../worker/src/dashboard";
 import { HttpError } from "../worker/src/http";
 
