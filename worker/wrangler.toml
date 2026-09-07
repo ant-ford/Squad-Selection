@@ -2,12 +2,20 @@ name = "hkfc-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
 
+# Serve the API from the club's own domain instead of *.workers.dev.
+# `custom_domain = true` makes `wrangler deploy` create the DNS record and
+# certificate automatically; the eddy.global zone must be in the same
+# Cloudflare account.
+routes = [
+  { pattern = "api.eddy.global", custom_domain = true }
+]
+
 [observability]
 enabled = true
 
 [vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
-ALLOWED_ORIGIN = "https://hkfc-squad-selection.squad-selections.workers.dev"
+ALLOWED_ORIGIN = "https://app.eddy.global"
 
 SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"

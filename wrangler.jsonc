@@ -5,6 +5,13 @@
   "observability": {
     "enabled": true
   },
+  // Serve the app from the club's own domain instead of *.workers.dev.
+  // `custom_domain: true` makes `wrangler deploy` create the DNS record and
+  // certificate automatically; the eddy.global zone must be in the same
+  // Cloudflare account.
+  "routes": [
+    { "pattern": "app.eddy.global", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"

@@ -424,7 +424,7 @@ Create `.env` in the project root:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=***
-VITE_API_URL=https://your-worker.your-subdomain.workers.dev
+VITE_API_URL=https://api.eddy.global
 ```
 
 Configure Worker secrets:
@@ -469,6 +469,21 @@ npm run deploy        # Frontend build + deploy, same as deploy:web
 ```
 
 **Deploy order:** deploy the API Worker before the frontend when the API contract changes.
+
+**Custom domains.** Both Workers are served from `eddy.global` rather than `*.workers.dev`, which some corporate and mobile DNS resolvers block:
+
+| Worker | Hostname | Config |
+|---|---|---|
+| Frontend | `app.eddy.global` | root `wrangler.jsonc` -> `routes` |
+| API | `api.eddy.global` | `worker/wrangler.toml` -> `routes` |
+
+`custom_domain: true` makes `wrangler deploy` create the DNS record and certificate on first deploy, so no dashboard step is needed - but the `eddy.global` zone must sit in the same Cloudflare account as the Workers. Three values must agree or auth and CORS break:
+
+- `ALLOWED_ORIGIN` in `worker/wrangler.toml` must equal the frontend origin (`https://app.eddy.global`).
+- `VITE_API_URL` in `.env` must equal the API origin (`https://api.eddy.global`). It is baked in at build time, so the frontend needs a rebuild after any change.
+- The Supabase project's **Redirect URLs** allow-list must include `https://app.eddy.global`. Sign-in uses `window.location.origin`, so a missing entry makes every one-time-code link fail.
+
+The `*.workers.dev` hostnames keep working alongside the custom domains. Disable them in the dashboard (Worker -> Settings -> Domains & Routes) once the custom domains are verified.
 
 **Rollback:** `npx wrangler rollback` (from `worker/` for the API, from the repo root for the frontend) or the Cloudflare dashboard â†’ Workers & Pages â†’ the Worker â†’ Deployments â†’ Rollback.
 
