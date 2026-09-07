@@ -1,1 +1,2 @@
+# One origin, or a comma-separated allow-list of them.
 ALLOWED_ORIGIN=http://localhost:5173

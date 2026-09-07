@@ -13,7 +13,7 @@ if (!API_URL) {
   // fetch" errors scattered across the app.
   throw new Error(
     'Missing VITE_API_URL environment variable. Set it to your deployed ' +
-      'Worker URL, e.g. https://hkfc-api.squad-selections.workers.dev'
+      'Worker URL, e.g. https://api.eddy.global'
   );
 }
 
