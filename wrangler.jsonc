@@ -9,6 +9,9 @@
   // `custom_domain: true` makes `wrangler deploy` create the DNS record and
   // certificate automatically; the eddy.global zone must be in the same
   // Cloudflare account.
+  // workers_dev defaults to true, but it is stated explicitly so the
+  // *.workers.dev hostname is never dropped by accident while both are in use.
+  "workers_dev": true,
   "routes": [
     { "pattern": "app.eddy.global", "custom_domain": true }
   ],

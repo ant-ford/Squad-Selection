@@ -1,6 +1,14 @@
 import { AirtableError } from "./airtable";
 import type { Env } from "./env";
-import { json, errorJson, handleOptions, requireParam, HttpError } from "./http";
+import {
+  json,
+  errorJson,
+  handleOptions,
+  requireParam,
+  HttpError,
+  parseAllowedOrigins,
+  resolveOrigin,
+} from "./http";
 import { requireAuthorizedUser, requireCoach } from "./auth";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
@@ -49,7 +57,7 @@ async function readJsonBody(request: Request): Promise<any> {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (!env.ALLOWED_ORIGIN) {
+    if (parseAllowedOrigins(env.ALLOWED_ORIGIN).length === 0) {
       console.error("Server misconfigured: ALLOWED_ORIGIN is not set");
       return new Response(
         JSON.stringify({ error: "SERVER_MISCONFIGURED", message: "Server misconfigured: ALLOWED_ORIGIN is not set" }),
@@ -60,13 +68,13 @@ export default {
       return await handleRequest(request, env);
     } catch (err) {
       console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
-      return errorJson("Internal Server Error", 500, env.ALLOWED_ORIGIN);
+      return errorJson("Internal Server Error", 500, resolveOrigin(request, env.ALLOWED_ORIGIN));
     }
   },
 };
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {
-  const origin = env.ALLOWED_ORIGIN;
+  const origin = resolveOrigin(request, env.ALLOWED_ORIGIN);
   const url = new URL(request.url);
   const { pathname } = url;
   const method = request.method;

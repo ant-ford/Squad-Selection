@@ -12,6 +12,35 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * ALLOWED_ORIGIN holds either one origin or a comma-separated allow-list, so
+ * the API can serve the app on more than one hostname at once - needed while
+ * a domain move is in flight and the old and new frontends are both live.
+ */
+export function parseAllowedOrigins(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Picks the single origin to put in Access-Control-Allow-Origin.
+ *
+ * The request's own Origin is echoed back only when it is on the allow-list.
+ * Anything else falls back to the first configured origin, so the header is
+ * always one concrete origin - never a wildcard, and never the raw
+ * comma-separated list, which browsers reject. Responses carry Vary: Origin
+ * so a cache cannot serve one origin's header to another.
+ */
+export function resolveOrigin(request: Request, raw: string | undefined): string {
+  const allowed = parseAllowedOrigins(raw);
+  const requestOrigin = request.headers.get("Origin");
+  if (requestOrigin && allowed.includes(requestOrigin)) return requestOrigin;
+  return allowed[0] ?? "";
+}
+
 export function corsHeaders(origin: string): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,

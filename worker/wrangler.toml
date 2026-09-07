@@ -6,6 +6,10 @@ compatibility_date = "2026-07-04"
 # `custom_domain = true` makes `wrangler deploy` create the DNS record and
 # certificate automatically; the eddy.global zone must be in the same
 # Cloudflare account.
+# workers_dev defaults to true, but it is stated explicitly so the
+# *.workers.dev hostname is never dropped by accident while both are in use.
+workers_dev = true
+
 routes = [
   { pattern = "api.eddy.global", custom_domain = true }
 ]
@@ -15,7 +19,10 @@ enabled = true
 
 [vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
-ALLOWED_ORIGIN = "https://app.eddy.global"
+# Comma-separated allow-list. Both frontend hostnames are served during the
+# domain move; the request's Origin is echoed back when it is on this list.
+# Drop the workers.dev entry once that hostname is retired.
+ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-selections.workers.dev"
 
 SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"

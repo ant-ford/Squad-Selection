@@ -479,11 +479,13 @@ npm run deploy        # Frontend build + deploy, same as deploy:web
 
 `custom_domain: true` makes `wrangler deploy` create the DNS record and certificate on first deploy, so no dashboard step is needed - but the `eddy.global` zone must sit in the same Cloudflare account as the Workers. Three values must agree or auth and CORS break:
 
-- `ALLOWED_ORIGIN` in `worker/wrangler.toml` must equal the frontend origin (`https://app.eddy.global`).
+- `ALLOWED_ORIGIN` in `worker/wrangler.toml` is a **comma-separated allow-list** of frontend origins, not a single value. The request's `Origin` is echoed back when it is on the list; anything else gets the first entry. The header is always one concrete origin, never a wildcard and never the raw list, and every response carries `Vary: Origin`. Both the `app.eddy.global` and `*.workers.dev` frontends are listed so they work side by side; drop the `workers.dev` entry when that hostname is retired.
 - `VITE_API_URL` in `.env` must equal the API origin (`https://api.eddy.global`). It is baked in at build time, so the frontend needs a rebuild after any change.
-- The Supabase project's **Redirect URLs** allow-list must include `https://app.eddy.global`. Sign-in uses `window.location.origin`, so a missing entry makes every one-time-code link fail.
+- The Supabase project's **Redirect URLs** allow-list must include every frontend origin in use (`https://app.eddy.global` and the `workers.dev` hostname). Sign-in uses `window.location.origin`, so a missing entry makes every one-time-code link fail on that hostname.
 
-The `*.workers.dev` hostnames keep working alongside the custom domains. Disable them in the dashboard (Worker -> Settings -> Domains & Routes) once the custom domains are verified.
+The `*.workers.dev` hostnames keep working alongside the custom domains: `workers_dev` is set to `true` in both configs, and the CORS allow-list names both frontend origins. Retiring a hostname later is two edits - set `workers_dev = false` and remove that origin from `ALLOWED_ORIGIN`.
+
+**Deploy the API first.** `VITE_API_URL` points every frontend, on either hostname, at `https://api.eddy.global`. That hostname only exists after the API Worker has been deployed once, so deploying the frontend first leaves both frontends calling a host that does not resolve.
 
 **Rollback:** `npx wrangler rollback` (from `worker/` for the API, from the repo root for the frontend) or the Cloudflare dashboard â†’ Workers & Pages â†’ the Worker â†’ Deployments â†’ Rollback.
 

@@ -604,3 +604,83 @@ describe("player season stats are restricted to self or coach", () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// CORS origin allow-list. ALLOWED_ORIGIN may hold several origins so the API
+// can serve the old and new frontend hostnames at the same time during a
+// domain move. Access-Control-Allow-Origin must always come back as exactly
+// one concrete origin - never a wildcard, never the raw comma-separated list.
+// ---------------------------------------------------------------------------
+
+describe("CORS origin allow-list", () => {
+  const MULTI = {
+    ...ENV,
+    ALLOWED_ORIGIN: "https://app.example.test, https://old.workers.test",
+  } as any;
+
+  const fetchWithOrigin = (origin?: string, env: any = MULTI, path = "/health") =>
+    worker.fetch(
+      new Request(`https://hkfc-api.test${path}`, {
+        headers: origin ? { Origin: origin } : undefined,
+      }),
+      env,
+      CTX,
+    );
+
+  const acao = (res: Response) => res.headers.get("Access-Control-Allow-Origin");
+
+  it("echoes back the first allowed origin when the caller uses it", async () => {
+    const res = await fetchWithOrigin("https://app.example.test");
+    expect(acao(res)).toBe("https://app.example.test");
+  });
+
+  it("echoes back a later allowed origin, so the old hostname keeps working", async () => {
+    const res = await fetchWithOrigin("https://old.workers.test");
+    expect(acao(res)).toBe("https://old.workers.test");
+  });
+
+  it("never returns the raw comma-separated list", async () => {
+    const res = await fetchWithOrigin("https://app.example.test");
+    expect(acao(res)).not.toContain(",");
+  });
+
+  it("falls back to the first origin for an origin that is not allowed", async () => {
+    const res = await fetchWithOrigin("https://evil.test");
+    expect(acao(res)).toBe("https://app.example.test");
+    expect(acao(res)).not.toBe("https://evil.test");
+    expect(acao(res)).not.toBe("*");
+  });
+
+  it("falls back to the first origin when the request carries no Origin header", async () => {
+    const res = await fetchWithOrigin(undefined);
+    expect(acao(res)).toBe("https://app.example.test");
+  });
+
+  it("answers an OPTIONS preflight with the caller's allowed origin and Vary: Origin", async () => {
+    const res = await worker.fetch(
+      new Request("https://hkfc-api.test/api/my-fixtures", {
+        method: "OPTIONS",
+        headers: { Origin: "https://old.workers.test" },
+      }),
+      MULTI,
+      CTX,
+    );
+    expect(res.status).toBe(204);
+    expect(acao(res)).toBe("https://old.workers.test");
+    expect(res.headers.get("Vary")).toBe("Origin");
+  });
+
+  it("still fails closed when every entry is blank", async () => {
+    const res = await fetchWithOrigin("https://app.example.test", {
+      ...ENV,
+      ALLOWED_ORIGIN: " , ",
+    });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: "SERVER_MISCONFIGURED" });
+  });
+
+  it("keeps single-origin configuration working unchanged", async () => {
+    const res = await fetchWithOrigin("https://hkfc-squad-selection.test", ENV);
+    expect(acao(res)).toBe("https://hkfc-squad-selection.test");
+  });
+});
