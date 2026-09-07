@@ -8,7 +8,7 @@ const CODE_LENGTH = 6;
 // app - switching to the mail app on a phone, or reloading - and without
 // this the player came back to the email form with a code and nowhere to
 // type it. Session-scoped: it is a convenience, not a credential.
-const PENDING_EMAIL_KEY = 'login:pendingEmail';
+const PENDING_EMAIL_KEY = 'login:…mail';
 
 function readPendingEmail(): string {
   try {
@@ -126,6 +126,8 @@ export default function Login() {
             <form onSubmit={handleRequest}>
               <input
                 type="email"
+                id="login-email"
+                name="email"
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEmail(e.target.value)
@@ -165,6 +167,8 @@ export default function Login() {
             {!email && (
               <input
                 type="email"
+                id="login-email-verify"
+                name="email"
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 placeholder="your@email.com"
@@ -176,6 +180,8 @@ export default function Login() {
             <form onSubmit={handleVerify}>
               <input
                 type="text"
+                id="login-code"
+                name="code"
                 value={code}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setCode(e.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH))
