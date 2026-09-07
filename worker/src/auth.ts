@@ -11,16 +11,6 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/**
- * Verifies the caller's Supabase access token and returns the verified,
- * normalized email. This replaces all client-supplied `email` /
- * `actingEmail` parameters.
- */
-export async function requireAuthenticatedEmail(request: Request, env: Env): Promise<string> {
-  const email = await verifySupabaseSession(request, env);
-  return normalizeEmail(email);
-}
-
 export interface AuthorizedUser {
   /** Verified, normalized email from the Supabase session. */
   email: string;

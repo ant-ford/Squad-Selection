@@ -122,8 +122,21 @@ export async function recordRankingEvents(env: Env, events: RankingEventInput[])
   });
   // Airtable accepts up to 10 records per create request - chunk so a
   // full-table reorder (many changed players) is still audited in full.
-  for (let i = 0; i < rows.length; i += 10) {
-    await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
+  try {
+    for (let i = 0; i < rows.length; i += 10) {
+      await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
+    }
+  } catch (err) {
+    // Table not created yet: keep the documented graceful degradation, the
+    // same 404 carve-out the read path makes. The rank change itself has
+    // ALREADY been committed to People by the caller, so failing here would
+    // report a successful move as a 502 and invite the coach to redo it.
+    // Every OTHER failure still propagates - a real write error must surface.
+    if (err instanceof AirtableError && err.status === 404) {
+      console.error("[RankingEvents] table not created yet (404); rank change committed without an audit row:", err.message);
+      return;
+    }
+    throw err;
   }
   // The next read must reach Airtable immediately - never serve a stale
   // pre-write events list from the 60s cache (spec S8).

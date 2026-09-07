@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { queryClient } from './queryClient';
 
 interface AuthContextValue {
   user: User | null;
@@ -14,13 +15,20 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
  * The actual sign-out call, exported standalone so non-component code
- * (apiClient's 401 handling) can trigger it without needing a hook. The
+ * (apiClient's 401/403 handling) can trigger it without needing a hook. The
  * AuthProvider's single onAuthStateChange subscription picks up the
  * resulting session change and AuthGate re-renders Login - no other caller
  * needs to touch `user` state or navigate anywhere.
+ *
+ * The query cache is dropped here, not left to expire. Sign-out is soft (no
+ * page reload), so without this the next person to sign in on a shared phone
+ * inherits the previous user's cached responses - and ['myProfile'] is
+ * staleTime: Infinity, so they would keep someone else's coach status until
+ * the tab was reloaded.
  */
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
+  queryClient.clear();
 }
 
 /** One getSession() + one onAuthStateChange subscription for the whole app. */

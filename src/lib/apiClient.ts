@@ -56,8 +56,9 @@ async function parseResponse(response: Response) {
       // Sign out and return to login.
       if (data?.error === 'APPLICATION_ACCESS_DENIED') {
         toast.error(data.message || 'Your HKFC application access has been disabled.');
-        await supabase.auth.signOut().catch(() => {});
-        if (window.location.pathname !== '/') window.location.href = '/';
+        // Same single sign-out path as the 401 above: it clears the query
+        // cache and AuthGate renders Login. No hard navigation needed.
+        await signOut().catch(() => {});
         throw new ApiError(data.message || 'Access denied.', 403, data.error);
       }
 

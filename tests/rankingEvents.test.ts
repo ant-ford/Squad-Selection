@@ -67,6 +67,9 @@ function installFakeAirtable(opts: {
     if (table === RANKING_EVENTS_TABLE && method === "GET" && opts.failEventsWith) {
       return Promise.resolve(new Response("Airtable error", { status: opts.failEventsWith }));
     }
+    if (table === RANKING_EVENTS_TABLE && method === "POST" && opts.failEventsWith) {
+      return Promise.resolve(new Response("Airtable error", { status: opts.failEventsWith }));
+    }
 
     let records: any[] = [];
     if (table === "People") records = people;
@@ -194,13 +197,26 @@ describe("recordRankingEvents", () => {
     expect(typeof changes[0].at).toBe("string");
   });
 
-  it("propagates a failed write instead of swallowing it (no more fire-and-forget)", async () => {
-    installFakeAirtable({ events: [], failEvents: true });
+  it("propagates a real failed write instead of swallowing it (no more fire-and-forget)", async () => {
+    installFakeAirtable({ events: [], failEventsWith: 500 });
     await expect(
       recordRankingEvents(ENV, [
         { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
       ]),
     ).rejects.toBeInstanceOf(Error);
+  });
+
+  it("degrades gracefully when the table does not exist (404) — the rank change is already committed", async () => {
+    // The caller has ALREADY written the new Section Rank to People by the
+    // time this runs. Rejecting on a 404 would report a successful move as a
+    // 502 and invite the coach to redo it, so a missing audit table must not
+    // fail the request - matching getRankingEvents' documented 404 carve-out.
+    installFakeAirtable({ events: [], failEvents: true });
+    await expect(
+      recordRankingEvents(ENV, [
+        { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
+      ]),
+    ).resolves.toBeUndefined();
   });
 
   it("commits the event batch before the call resolves (no background write)", async () => {
