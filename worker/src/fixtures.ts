@@ -1,16 +1,20 @@
-import { Env, airtableFindAll, airtableFindById, linkId } from "./airtable";
-import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons } from "./reference";
-import { getCached } from "../../src/lib/cache";
+import { airtableFindAll, airtableFindById, linkId } from "./airtable";
+import type { Env } from "./env";
+import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { getCached } from "./cache";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
-import { mapMatch } from "../../src/mappers/matchMapper";
-import { mapPlayer } from "../../src/mappers/playerMapper";
-import type { KitColour, Match, Player, Team } from "../../src/generated/domainTypes";
+import { TABLES } from "../../shared/schema/tableNames";
+import { mapMatch } from "../../shared/mappers/matchMapper";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
+import type { KitColour, Match, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { hkDateKey } from "../../shared/hkDateKey";
 import { buildEvaluationContext } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
+import type { AuthorizedUser } from "./auth";
+import { hkfcSides, type SideInfo } from "./match";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -42,7 +46,7 @@ export function getLowestRankedTeamName(ref: ReferenceData): string {
   let lowest = "";
   let lowestRank = -Infinity;
   for (const t of ref.teams) {
-    const rank = t.teamRank ?? 99;
+    const rank = t.teamRank ?? UNRANKED_TEAM_RANK;
     if (rank > lowestRank) {
       lowestRank = rank;
       lowest = t.teamName || "";
@@ -64,87 +68,25 @@ export function isSpecialGoalkeeper(user: Player, ref: ReferenceData): boolean {
   return lowest !== "" && (user.registeredTeam || "") === lowest;
 }
 
-function buildSpecialGoalkeeperCard(
-  m: Match,
-  playerId: string,
-  teamsByName: ReadonlyMap<string | undefined, Team>,
-  ownTeam: string,
-): {
-  id: string; date: string; homeTeam: string; awayTeam: string;
-  hkfcTeam: string; opponent: string; isHome: boolean; venue: string; division: string;
-  availabilityStatus: string; playerNotes: string; availabilityExceptionId: string;
-  selectionStatus: string; selectionNotes: string; selectedCount: number; targetSquadSize: number;
-  isPlayUp?: boolean;
-  /** Shirt colour for the HKFC side this fixture is shown from. */
-  kit: KitColour;
-} {
-  const home = m.homeTeam || "";
-  const away = m.awayTeam || "";
-  const homeIsHkfc = teamsByName.has(home);
-  const awayIsHkfc = teamsByName.has(away);
-  let hkfcTeam: string;
-  let opponent: string;
-  let isHome: boolean;
-  let selectedIds: string[];
-  if (home === ownTeam) {
-    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
-  } else if (away === ownTeam) {
-    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
-  } else if ((m.selectedPlayersHome || []).includes(playerId)) {
-    // Player is selected for a side of a derby they are not registered to -
-    // show that side so the selection is visible.
-    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
-  } else if ((m.selectedPlayersAway || []).includes(playerId)) {
-    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
-  } else if (homeIsHkfc) {
-    hkfcTeam = home; opponent = away; isHome = true; selectedIds = m.selectedPlayersHome || [];
-  } else {
-    hkfcTeam = away; opponent = home; isHome = false; selectedIds = m.selectedPlayersAway || [];
-  }
-  const team = teamsByName.get(hkfcTeam);
-  return {
-    id: m.id,
-    date: m.matchDate || "",
-    homeTeam: home,
-    awayTeam: away,
-    hkfcTeam,
-    opponent,
-    isHome,
-    venue: m.venue || "",
-    division: m.division || "",
-    availabilityStatus: "Available",
-    playerNotes: "",
-    availabilityExceptionId: "",
-    selectionStatus: selectedIds.includes(playerId) ? "Selected" : "",
-    selectionNotes: "",
-    selectedCount: selectedIds.length,
-    targetSquadSize: team?.targetSquadSize || 16,
-    // Resolved to the side being shown, so a derby gives each team its own
-    // colour rather than one kit for the fixture.
-    kit: (isHome ? m.homeKit : m.awayKit) || "",
-  };
-}
-
-export async function getMyFixtures(env: Env, email: string) {
-  const user = await getPlayerByEmail(env, email);
+export async function getMyFixtures(env: Env, authUser: AuthorizedUser) {
+  const user = await getPlayerByEmail(env, authUser.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
   const teamName = user.registeredTeam || "";
   const displayTeam = selectedDisplayTeam(user) || teamName;
   const ref = await getReferenceData(env);
-  // Section Captains share coach access (see auth.ts); include their teams in
-  // coachTeams so the player-profile gates and team-scoped operations match.
-  const coachTeams = ref.teams
-    .filter((t) => (t.coach || []).includes(user.id) || (t.sectionCaptain || []).includes(user.id))
-    .map((t) => t.teamName || "");
+  // coachTeams/isSectionCaptain come from the single authorization
+  // derivation (auth.ts), not re-derived from Teams links here.
   const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
-  const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
-  const isCoach = coachTeams.length > 0;
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
     playerId: user.id,
     playerName: user.preferredName || user.givenNames || "Player",
     registeredTeam: displayTeam, displayTeam, playingPosition: user.playingPosition || "",
-    shirtNoValue: user.shirtNoValue || "", isCoach, coachTeams, captainTeams, isSectionCaptain,
+    shirtNoValue: user.shirtNoValue || "",
+    isCoach: authUser.role === "coach",
+    coachTeams: authUser.coachTeams,
+    captainTeams,
+    isSectionCaptain: authUser.isSectionCaptain,
   };
   const view = await buildPlayerFixtureView(env, user);
   return {
@@ -185,131 +127,118 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const ref = await getReferenceData(env);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const rankMap = ref.teamRankMap;
-  const displayRank = rankMap[displayTeam] ?? 99;
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
-
-  // Lowest-ranked team Goalkeeper: date-grouped schedule of ALL upcoming
-  // HKFC fixtures (derbies are a single card). No per-fixture Airtable
-  // requests - exceptions are bulk-fetched by season below.
-  if (isSpecialGoalkeeper(user, ref)) {
-    const allMatches = await getScheduledMatches(env);
-    const now = new Date().toISOString();
-    const upcoming = allMatches
-      .filter((m) => m.matchDate && m.matchDate >= now)
-      .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
-    const cards = upcoming
-      .filter((m) => teamNames.has(m.homeTeam || "") || teamNames.has(m.awayTeam || ""))
-      .map((m) => buildSpecialGoalkeeperCard(m, user.id, teamsByName, teamName));
-    const matchIds = cards.map((c) => c.id);
-    const allExceptions = await getExceptionsForSeasons(env, upcoming.map((m) => m.season || ""));
-    const exceptionByMatch = new Map(
-      allExceptions
-        .filter((e) => linkId(e.player) === user.id && matchIds.includes(linkId(e.match) || ""))
-        .map((e) => [linkId(e.match) || "", e]),
-    );
-    return {
-      displayTeam,
-      specialGoalkeeperView: true,
-      myTeam: cards.map((c) => ({
-        ...c,
-        fixtureCategory: "own" as const,
-        availabilityStatus: exceptionByMatch.get(c.id)?.availabilityStatus || "Available",
-        playerNotes: exceptionByMatch.get(c.id)?.note || "",
-        availabilityExceptionId: exceptionByMatch.get(c.id)?.id || "",
-      })),
-      playUpOpportunities: [],
-      supportFixtures: [],
-    };
-  }
 
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
-  // ---------------------------------------------------------------------
-  // ---------------------------------------------------------------------
-  // Fixture categories (presentation only - the eligibility engine remains
-  // the sole authority on whether a fixture is actually playable).
-  //
-  // Per-day model: on any given date the player sees AT MOST THREE fixture
-  // options, prioritised:
-  //   1. Upcoming Fixture  - the fixture they are selected for (their
-  //      current selected team), else their Selected Team (EOS) fixture
-  //      if it plays that day;
-  //   2. Support Fixture   - their Registered Team's fixture, when the
-  //      Registered Team is below the relevant selected/EOS team;
-  //   3. Play-Up fills     - teams immediately above the relevant team
-  //      (closest first, Registered Team excluded), subject to eligibility,
-  //      filling the remaining places up to three.
-  // The same-day availability dimension is neutralised for this portal
-  // presentation (players plan availability here); selection-time
-  // evaluation keeps every rule including same-day blocks.
-  // ---------------------------------------------------------------------
+
   type FixtureCategory = "own" | "play-up" | "support";
   type Side = { match: any; team: string; opponent: string; isHome: boolean; selectedIds: string[]; dateKey: string };
-  const sidesByDate = new Map<string, Side[]>();
-  for (const m of upcoming) {
-    const home = m.homeTeam || ""; const away = m.awayTeam || "";
-    const dateKey = (m.matchDate || "").split("T")[0];
-    const opponentFor = (isHome: boolean) => (isHome ? away : home);
-    if (teamNames.has(home)) {
-      const side = { match: m, team: home, opponent: opponentFor(true), isHome: true, selectedIds: m.selectedPlayersHome || [], dateKey };
-      const list = sidesByDate.get(dateKey) || [];
-      list.push(side);
-      sidesByDate.set(dateKey, list);
-    }
-    if (teamNames.has(away)) {
-      const side = { match: m, team: away, opponent: opponentFor(false), isHome: false, selectedIds: m.selectedPlayersAway || [], dateKey };
-      const list = sidesByDate.get(dateKey) || [];
-      list.push(side);
-      sidesByDate.set(dateKey, list);
-    }
-  }
-
-  const isSquadSelected = (s: Side) => s.selectedIds.includes(playerId);
   const categorized: { side: Side; category: FixtureCategory }[] = [];
+  const specialGoalkeeperView = isSpecialGoalkeeper(user, ref);
 
-  for (const [, entries] of sidesByDate) {
-    let carded = 0;
-    const takenMatches = new Set<string>();
-    const card = (s: Side, category: FixtureCategory) => {
-      categorized.push({ side: s, category });
-      takenMatches.add(s.match.id);
-      carded++;
-    };
+  if (specialGoalkeeperView) {
+    // Lowest-ranked team Goalkeeper: every upcoming HKFC fixture, uncapped
+    // and uncategorised (a planning view, not a selection gate) - a derby
+    // collapses to whichever side is most relevant to the player: their own
+    // team, else the side they are selected for, else home.
+    for (const m of upcoming) {
+      const sides = hkfcSides(m, teamNames);
+      if (!sides.home && !sides.away) continue;
+      const chosen: SideInfo =
+        (sides.home?.team === teamName && sides.home) ||
+        (sides.away?.team === teamName && sides.away) ||
+        (sides.home?.selectedIds.includes(playerId) && sides.home) ||
+        (sides.away?.selectedIds.includes(playerId) && sides.away) ||
+        sides.home ||
+        sides.away!;
+      categorized.push({ side: { match: m, ...chosen, dateKey: hkDateKey(m.matchDate) }, category: "own" });
+    }
+  } else {
+    // ---------------------------------------------------------------------
+    // Fixture categories (presentation only - the eligibility engine remains
+    // the sole authority on whether a fixture is actually playable).
+    //
+    // Per-day model: on any given date the player sees AT MOST THREE fixture
+    // options, prioritised:
+    //   1. Upcoming Fixture  - the fixture they are selected for (their
+    //      current selected team), else their Selected Team (EOS) fixture
+    //      if it plays that day;
+    //   2. Support Fixture   - their Registered Team's fixture, when the
+    //      Registered Team is below the relevant selected/EOS team;
+    //   3. Play-Up fills     - teams immediately above the relevant team
+    //      (closest first, Registered Team excluded), subject to eligibility,
+    //      filling the remaining places up to three.
+    // The same-day availability dimension is neutralised for this portal
+    // presentation (players plan availability here); selection-time
+    // evaluation keeps every rule including same-day blocks.
+    // ---------------------------------------------------------------------
+    const sidesByDate = new Map<string, Side[]>();
+    for (const m of upcoming) {
+      const dateKey = hkDateKey(m.matchDate);
+      const matchSides = hkfcSides(m, teamNames);
+      for (const sideInfo of [matchSides.home, matchSides.away]) {
+        if (!sideInfo) continue;
+        const list = sidesByDate.get(dateKey) || [];
+        list.push({ match: m, ...sideInfo, dateKey });
+        sidesByDate.set(dateKey, list);
+      }
+    }
 
-    // 1. Upcoming Fixture: the fixture the player is selected for.
-    const selectedSide = entries.find((s) => isSquadSelected(s));
-    if (selectedSide) card(selectedSide, "own");
+    const isSquadSelected = (s: Side) => s.selectedIds.includes(playerId);
 
-    // 2. The Selected Team (EOS) fixture, when it is a different match.
-    const eosSide = entries.find((s) => s.team === displayTeam && !takenMatches.has(s.match.id));
-    if (eosSide) card(eosSide, "own");
+    for (const [, entries] of sidesByDate) {
+      let carded = 0;
+      const takenMatches = new Set<string>();
+      const card = (s: Side, category: FixtureCategory) => {
+        categorized.push({ side: s, category });
+        takenMatches.add(s.match.id);
+        carded++;
+      };
 
-    // 3. Support Fixture: the Registered Team's fixture, when the
-    //    Registered Team is below the relevant selected/EOS team.
-    const primaryTeam = selectedSide?.team ?? eosSide?.team ?? displayTeam;
-    const primaryRank = rankMap[primaryTeam] ?? 99;
-    const registeredRank = rankMap[teamName] ?? 99;
-    const registeredSide = entries.find((s) => s.team === teamName && !takenMatches.has(s.match.id));
-    if (registeredSide && registeredRank > primaryRank) card(registeredSide, "support");
+      // 1. Upcoming Fixture: the fixture the player is selected for.
+      const selectedSide = entries.find((s) => isSquadSelected(s));
+      if (selectedSide) card(selectedSide, "own");
 
-    // 4. Play-ups: teams immediately above the relevant team (closest
-    //    first, Registered Team excluded), filling the remaining places,
-    //    subject to eligibility (gated below).
-    const aboveTeams = Object.entries(rankMap)
-      .filter(([name, rank]) => name && rank > 0 && rank < 99 && rank < primaryRank && name !== teamName)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
-    for (const name of aboveTeams) {
-      if (carded >= 3) break;
-      const entry = entries.find((s) => s.team === name && !takenMatches.has(s.match.id));
-      if (!entry) continue;
-      card(entry, "play-up");
+      // 2. The Selected Team (EOS) fixture, when it is a different match.
+      const eosSide = entries.find((s) => s.team === displayTeam && !takenMatches.has(s.match.id));
+      if (eosSide) card(eosSide, "own");
+
+      // 3. Support Fixture: the Registered Team's fixture, when the
+      //    Registered Team is below the relevant selected/EOS team.
+      const primaryTeam = selectedSide?.team ?? eosSide?.team ?? displayTeam;
+      const primaryRank = rankMap[primaryTeam] ?? UNRANKED_TEAM_RANK;
+      const registeredRank = rankMap[teamName] ?? UNRANKED_TEAM_RANK;
+      const registeredSide = entries.find((s) => s.team === teamName && !takenMatches.has(s.match.id));
+      if (registeredSide && registeredRank > primaryRank) card(registeredSide, "support");
+
+      // 4. Play-ups: teams immediately above the relevant team (closest
+      //    first, Registered Team excluded), filling the remaining places,
+      //    subject to eligibility (gated below).
+      const aboveTeams = Object.entries(rankMap)
+        .filter(([name, rank]) => name && rank > 0 && rank < 99 && rank < primaryRank && name !== teamName)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name]) => name);
+      for (const name of aboveTeams) {
+        if (carded >= 3) break;
+        const entry = entries.find((s) => s.team === name && !takenMatches.has(s.match.id));
+        if (!entry) continue;
+        card(entry, "play-up");
+      }
     }
   }
 
-  if (categorized.length === 0) return { displayTeam, myTeam: [], playUpOpportunities: [], supportFixtures: [] };
+  if (categorized.length === 0) {
+    return {
+      displayTeam,
+      specialGoalkeeperView: specialGoalkeeperView || undefined,
+      myTeam: [],
+      playUpOpportunities: [],
+      supportFixtures: [],
+    };
+  }
 
   // Eligibility gating: play-up and support candidates must pass the existing
   // eligibility engine (evaluatePlayerEligibility) for that team+fixture.
@@ -322,18 +251,12 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    let eligible = false;
-    try {
-      const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
-      // Portal gate = the engine itself (no neutralisation): mere availability
-      // for a higher team no longer blocks (product decision 2026-09-03),
-      // while an actual selection for a higher team still does.
-      const result = evaluatePlayerEligibility(user, side.match, ctx);
-      eligible = result.status !== "blocked";
-    } catch (err) {
-      console.error("[MyFixtures] eligibility evaluation failed:", err);
-      eligible = false;
-    }
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    // Portal gate = the engine itself (no neutralisation): mere availability
+    // for a higher team no longer blocks (product decision 2026-09-03),
+    // while an actual selection for a higher team still does.
+    const result = evaluatePlayerEligibility(user, side.match, ctx);
+    const eligible = result.status !== "blocked";
     gateCache.set(key, eligible);
     return eligible;
   };
@@ -357,7 +280,7 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
     // A standing rule supplies the default for a fixture the player has not
     // answered; an explicit exception always wins.
     const effective = effectiveAvailability(exc?.availabilityStatus, playerRules, {
-      date: (s.match.matchDate || "").split("T")[0],
+      date: hkDateKey(s.match.matchDate),
       isPlayUp: x.category === "play-up",
       isSupport: x.category === "support",
     });
@@ -382,26 +305,18 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   };
   return {
     displayTeam,
+    specialGoalkeeperView: specialGoalkeeperView || undefined,
     myTeam: ownCards.map(buildCard),
     playUpOpportunities: gated.filter((x) => x.category === "play-up").map(buildCard),
     supportFixtures: gated.filter((x) => x.category === "support").map(buildCard),
   };
 }
 
-
 /**
  * Calendar-facing fixture list: the SAME categorised view as the player
  * dashboard (My Team + Play-Up Opportunities + Support Fixtures), flattened.
  * Identity comes from the signed calendar token's player id.
  */
-/** The display team for a player record id (Selected Team EOS -> SOS -> Registered). */
-export async function getPlayerDisplayTeam(env: Env, playerId: string): Promise<string> {
-  const record = await airtableFindById(env, TABLES.player, playerId);
-  if (!record) return "";
-  const player = mapPlayer(record);
-  return selectedDisplayTeam(player) || player.registeredTeam || "";
-}
-
 export async function getPlayerFixtures(env: Env, playerId: string) {
   const record = await airtableFindById(env, TABLES.player, playerId);
   if (!record) throw new HttpError("Player not found or inactive", 404);
@@ -417,21 +332,15 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   };
 }
 
-export async function getUpcomingFixtures(env: Env, opts: { email?: string; team?: string }) {
+export async function getUpcomingFixtures(env: Env, opts: { user?: AuthorizedUser; team?: string }) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
   const playerById = new Map(ref.players.map((p) => [p.id, p]));
   const nameOf = (p?: Player) => (p ? p.preferredName || p.givenNames || "Player" : "");
-  let coachedTeamNames = new Set<string>();
-  if (opts.email) {
-    const user = await getPlayerByEmail(env, opts.email);
-    if (user) {
-      coachedTeamNames = new Set(ref.teams.filter((t) => (t.coach || []).includes(user.id)).map((t) => t.teamName || ""));
-      const isSectionCaptain = ref.teams.some((t) => (t.sectionCaptain || []).includes(user.id));
-      // Section captains see the whole section, whether or not a specific team filter is applied.
-      if (isSectionCaptain) coachedTeamNames = new Set(ref.teams.map((t) => t.teamName || ""));
-    }
-  }
+  // coachTeams already includes every team name when the user is a Section
+  // Captain (see auth.ts) - no separate derivation needed here.
+  const coachedTeamNames = new Set(opts.user?.coachTeams ?? []);
+  const allTeamNames = new Set(ref.teams.map((t) => t.teamName));
   const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
@@ -439,10 +348,10 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
     if (opts.team) {
-      // An email-bearing call (coach export) must be scoped to teams the
-      // coach manages; the signed no-email team-feed path is already
+      // An authenticated call (coach export) must be scoped to teams the
+      // coach manages; the signed no-user team-feed path is already
       // authorised by its HMAC signature, so it must not be gated here.
-      if (opts.email && !coachedTeamNames.has(opts.team)) return false;
+      if (opts.user && !coachedTeamNames.has(opts.team)) return false;
       return home === opts.team || away === opts.team;
     }
     return coachedTeamNames.has(home) || coachedTeamNames.has(away);
@@ -458,8 +367,12 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
   }
   const fixtures = relevant.flatMap((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
+    // hkfcSides identifies which side(s) are HKFC teams at all; bothCoached
+    // (below) is the narrower "does the caller manage both" question.
+    const matchSides = hkfcSides(m, allTeamNames);
     const bothCoached = coachedTeamNames.has(home) && coachedTeamNames.has(away);
-    const makeCard = (hkfcTeam: string, opponent: string, isHome: boolean) => {
+    const makeCard = (side: SideInfo) => {
+      const { team: hkfcTeam, opponent, isHome, selectedIds } = side;
       const team = teamsByName.get(hkfcTeam);
       const matchExceptions = exceptionsByMatch.get(m.id) || [];
       const statusByPlayer = new Map<string, string>();
@@ -477,51 +390,50 @@ export async function getUpcomingFixtures(env: Env, opts: { email?: string; team
       const maybeExcs = matchExceptions.filter((e: any) => e.availabilityStatus === "Maybe" && isThisTeamsPlayer(e));
       const unavailableNames = unavailableExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
       const maybeNames = maybeExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
-      
-      const selectedIds = isHome ? (m.selectedPlayersHome || []) : (m.selectedPlayersAway || []);
+
       const selectedPlayers = selectedIds.map((id) => ({ id, name: nameOf(playerById.get(id)) }));
-      
+
       const selectedPositionSummary: Record<string, number> = {};
       for (const id of selectedIds) {
         const pos = POS_KEY[playerById.get(id)?.playingPosition ?? ""] ?? "FLEX";
         selectedPositionSummary[pos] = (selectedPositionSummary[pos] ?? 0) + 1;
       }
-      
+
       return {
         id: m.id + (bothCoached ? (isHome ? "-home" : "-away") : ""),
-        date: m.matchDate || "", 
-        homeTeam: home, 
-        awayTeam: away, 
-        hkfcTeam, 
-        opponent, 
+        date: m.matchDate || "",
+        homeTeam: home,
+        awayTeam: away,
+        hkfcTeam,
+        opponent,
         isHome,
         division: m.division || "",
         venue: m.venue || "",
         kit: ((isHome ? m.homeKit : m.awayKit) || "") as KitColour,
         targetSquadSize: team?.targetSquadSize || 16,
-        selectedCount: selectedIds.length, 
-        selectedIds, 
+        selectedCount: selectedIds.length,
+        selectedIds,
         selectedPlayers,
-        selectedPositionSummary, 
+        selectedPositionSummary,
         hasGoalkeeperSelected: (selectedPositionSummary.GK ?? 0) > 0,
         selectedUnavailableNames: selectedIds
           .filter((id) => statusByPlayer.get(id) === "Unavailable")
           .map((id) => nameOf(playerById.get(id))),
-        maybeCount: maybeExcs.length, 
-        unavailableCount: unavailableExcs.length, 
-        maybeNames, 
+        maybeCount: maybeExcs.length,
+        unavailableCount: unavailableExcs.length,
+        maybeNames,
         unavailableNames,
 
       };
     };
-    if (bothCoached && !opts.team) return [makeCard(home, away, true), makeCard(away, home, false)];
+    if (bothCoached && !opts.team) return [makeCard(matchSides.home!), makeCard(matchSides.away!)];
     if (opts.team) {
-      if (home === opts.team) return [makeCard(home, away, true)];
-      if (away === opts.team) return [makeCard(away, home, false)];
+      if (home === opts.team && matchSides.home) return [makeCard(matchSides.home)];
+      if (away === opts.team && matchSides.away) return [makeCard(matchSides.away)];
       return [];
     }
-    if (coachedTeamNames.has(home)) return [makeCard(home, away, true)];
-    return [makeCard(away, home, false)];
+    if (coachedTeamNames.has(home) && matchSides.home) return [makeCard(matchSides.home)];
+    return matchSides.away ? [makeCard(matchSides.away)] : [];
   });
   return { fixtures };
 }

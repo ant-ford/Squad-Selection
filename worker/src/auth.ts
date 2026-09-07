@@ -1,8 +1,6 @@
 import { HttpError } from "./http";
-import type { Env } from "./airtable";
+import type { Env } from "./env";
 import { getPlayerByEmail, getTeamCoachLinks } from "./reference";
-import type { AuthPerf } from "./perf";
-import { logAuthPerf } from "./perf";
 
 /**
  * Normalizes an email for matching: trims surrounding whitespace and
@@ -13,16 +11,6 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/**
- * Verifies the caller's Supabase access token and returns the verified,
- * normalized email. This replaces all client-supplied `email` /
- * `actingEmail` parameters.
- */
-export async function requireAuthenticatedEmail(request: Request, env: Env): Promise<string> {
-  const email = await verifySupabaseSession(request, env);
-  return normalizeEmail(email);
-}
-
 export interface AuthorizedUser {
   /** Verified, normalized email from the Supabase session. */
   email: string;
@@ -30,8 +18,13 @@ export interface AuthorizedUser {
   personId: string;
   /** "coach" when the person holds any coach / section-captain relationship. */
   role: "player" | "coach";
-  /** Timing breakdown of this request's auth phase (telemetry; optional). */
-  perf?: AuthPerf;
+  /**
+   * Team names this person coaches (Teams.Coach link). A Section Captain's
+   * list is every team name, regardless of Active status - Section Captains
+   * see the whole section everywhere, the most permissive existing path.
+   */
+  coachTeams: string[];
+  isSectionCaptain: boolean;
 }
 
 /**
@@ -43,13 +36,11 @@ export interface AuthorizedUser {
  *  - the email must exist in People (case-insensitive, whitespace-normalized)
  *  - Active = true grants normal player access
  *  - coaches / section captains may be Active = false and are still allowed
- *  - the Teams table linked Coach / Section Captain fields are authoritative;
- *    People.Player/Coach is only a fallback data-quality safeguard
+ *  - the Teams table linked Coach / Section Captain fields are the ONLY
+ *    source of coach access - computed once, here, for the whole request
  */
 export async function requireAuthorizedUser(request: Request, env: Env): Promise<AuthorizedUser> {
-  const t0 = Date.now();
   const email = await verifySupabaseSession(request, env);
-  const supabaseMs = Date.now() - t0;
   const normalizedEmail = normalizeEmail(email);
 
   // Independent reads keyed off the verified session - run in parallel.
@@ -57,65 +48,41 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // on the other's result, and a failure in either rejects the request
   // exactly as the sequential version did. The coach-link lookup warms its
   // 10-minute cache either way.
-  const t1 = Date.now();
+  // Cached 60s (getPlayerByEmail's default TTL) - the Supabase token
+  // verification above still runs on every request, so a revoked session is
+  // rejected immediately; only the People-record lookup behind it is cached.
   const [player, links] = await Promise.all([
-    (async () => {
-      const s = Date.now();
-      const p = await getPlayerByEmail(env, normalizedEmail, { fresh: true });
-      return { p, playerMs: Date.now() - s };
-    })(),
-    (async () => {
-      const s = Date.now();
-      const l = await getTeamCoachLinks(env);
-      return { l, coachLinksMs: Date.now() - s };
-    })(),
+    getPlayerByEmail(env, normalizedEmail),
+    getTeamCoachLinks(env),
   ]);
-  const playerMs = player.playerMs;
-  const coachLinksMs = links.coachLinksMs;
-  const { coachIds, sectionCaptainIds } = links.l;
 
-  if (!player.p) {
+  if (!player) {
     throw new HttpError("Application access is not authorised.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
-  const isActive = player.p.active === true;
+  const isActive = player.active === true;
 
-  // Teams table linked fields are the authoritative source for coach access.
-  // Uses ALL team records (not just active ones) so a person's access never
-  // depends on whether their team record is temporarily marked inactive.
-  const isTeamCoach = coachIds.includes(player.p.id);
-  const isSectionCaptain = sectionCaptainIds.includes(player.p.id);
-
-  // Fallback / data-quality safeguard: People."Player/Coach" multi-select.
-  const hasCoachFlag = (player.p.playerCoach ?? []).some(
-    (c) => typeof c === "string" && c.toLowerCase().includes("coach"),
-  );
-
-  const isCoach = isTeamCoach || isSectionCaptain || hasCoachFlag;
+  // Teams table linked fields are the ONLY source of coach access. Uses ALL
+  // team records (not just active ones) so a person's access never depends
+  // on whether their team record is temporarily marked inactive.
+  const isSectionCaptain = links.sectionCaptainIds.includes(player.id);
+  // Section Captains see every team everywhere - the most permissive of the
+  // paths this used to be computed on, now the single definition.
+  const coachTeams = isSectionCaptain
+    ? links.allTeamNames
+    : links.coachTeamNamesByPersonId.get(player.id) ?? [];
+  const isCoach = coachTeams.length > 0 || isSectionCaptain;
 
   if (!isActive && !isCoach) {
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
-  logAuthPerf({
-    supabaseMs,
-    playerMs,
-    coachLinksMs,
-    coachLinksFromCache: links.l.cached === true,
-    personId: player.p.id,
-    role: isCoach ? "coach" : "player",
-  });
-
   return {
     email: normalizedEmail,
-    personId: player.p.id,
+    personId: player.id,
     role: isCoach ? "coach" : "player",
-    perf: {
-      supabaseMs,
-      playerMs,
-      coachLinksMs,
-      coachLinksFromCache: links.l.cached === true,
-    },
+    coachTeams,
+    isSectionCaptain,
   };
 }
 

@@ -4,11 +4,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Selected Team display (optics) + player dashboard fixture categories
 // ---------------------------------------------------------------------------
 
-import { selectedDisplayTeam } from "../src/lib/displayTeam";
+import { selectedDisplayTeam } from "../shared/displayTeam";
 import { getActiveRanking } from "../worker/src/ranking";
 import { getMyFixtures } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
-import type { Player } from "../src/generated/domainTypes";
+import { invalidateAll } from "../worker/src/cache";
+import type { Player } from "../shared/schema/domainTypes";
+import type { AuthorizedUser } from "../worker/src/auth";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+
+function authUser(email: string): AuthorizedUser {
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+}
 
 beforeEach(() => {
   invalidateAll();
@@ -86,19 +92,8 @@ function fakeRecord(kind: "player" | "team" | "match", domain: any): any {
   };
 }
 
-function installFakeAirtable(tables: Record<string, any[]>) {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    if (!u.includes("api.airtable.com")) {
-      return Promise.resolve(new Response("{}", { status: 404 }));
-    }
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    return Promise.resolve(
-      new Response(JSON.stringify({ records: tables[table] ?? [] }), { status: 200 }),
-    );
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
-  return { fetchMock };
+function installFakeAirtable(tables: FakeTables) {
+  return fakeAirtable(tables);
 }
 
 describe("ranking payload displays the Selected Team", () => {
@@ -161,7 +156,7 @@ describe("player portal fixture categories (per-day, max three)", () => {
       ),
       "Availability Exceptions": [],
     });
-    return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, "p1@hkfc.com");
+    return getMyFixtures({ AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any, authUser("p1@hkfc.com"));
   }
 
   it("Jonny (registered F, selected/display E, everything same day): E upcoming, D play-up, F support hidden (selected for E)", async () => {

@@ -1,6 +1,7 @@
 import { X, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
 export type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability' | 'ability';
 
@@ -22,24 +23,31 @@ export const EMPTY_FILTERS: FilterState = {
   name: '',
 };
 
-export function filtersToParams(f: FilterState): string {
-  const parts: string[] = [];
+/**
+ * Returns a URLSearchParams, not a string: callers merge it into the page's
+ * search params via URLSearchParams methods (params.set(k, v)), so a value
+ * is only ever percent-encoded once. Building a string here and re-parsing
+ * it with string.split('&'/'=') downstream double-encodes anything with a
+ * space or an ampersand in it (e.g. a name filter).
+ */
+export function filtersToParams(f: FilterState): URLSearchParams {
+  const params = new URLSearchParams();
   for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
     const vals = [...(f[cat] ?? [])];
-    if (vals.length) parts.push(`${cat}=${vals.sort().join(',')}`);
+    if (vals.length) params.set(cat, vals.sort().join(','));
   }
-  if (f.name) parts.push(`name=${encodeURIComponent(f.name)}`);
-  return parts.join('&');
+  if (f.name) params.set('name', f.name);
+  return params;
 }
 
-export function paramsToFilters(search: string): FilterState {
-  const params = new URLSearchParams(search);
+export function paramsToFilters(params: string | URLSearchParams): FilterState {
+  const sp = typeof params === 'string' ? new URLSearchParams(params) : params;
   const f: FilterState = { position: new Set(), eligibility: new Set(), selection: new Set(), availability: new Set(), ability: new Set(), name: '' };
   for (const cat of ['position','eligibility','selection','availability','ability'] as FilterCategory[]) {
-    const raw = params.get(cat);
+    const raw = sp.get(cat);
     if (raw) f[cat] = new Set(raw.split(',').filter(Boolean));
   }
-  f.name = params.get('name') || '';
+  f.name = sp.get('name') || '';
   return f;
 }
 
@@ -84,20 +92,12 @@ const ABILITY_GROUPS: { group: string; values: string[] }[] = [
 export interface PlayerFiltersProps {
   filters: FilterState;
   onChange: (f: FilterState) => void;
-  bulkSelectMode?: boolean;
-  onToggleBulk?: () => void;
 }
 
-export default function PlayerFilters({ filters, onChange, bulkSelectMode, onToggleBulk }: PlayerFiltersProps) {
+export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps) {
   const [expandedAbility, setExpandedAbility] = useState<string | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
-
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
   const totalActive =
     [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability, ...filters.ability].length +
@@ -125,11 +125,6 @@ export default function PlayerFilters({ filters, onChange, bulkSelectMode, onTog
           </button>
         )}
         <div className="flex-1" />
-        {onToggleBulk && (
-          <button onClick={onToggleBulk} className={`text-xs px-3 py-1 rounded-full whitespace-nowrap shrink-0 transition-colors ${bulkSelectMode ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-muted-foreground'}`}>
-            Bulk Select
-          </button>
-        )}
       </div>
 
       {GROUPS.map(group => (

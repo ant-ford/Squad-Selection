@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Smartphone, X } from 'lucide-react';
+import { Smartphone } from 'lucide-react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -90,55 +91,37 @@ export default function AppFooter() {
         </p>
       </div>
 
-      {showHelp && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/40 flex items-end justify-center"
-          onClick={() => setShowHelp(false)}
-        >
-          <div
-            className="bg-background rounded-t-2xl w-full max-w-md p-4 pb-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add to Home Screen instructions"
+      <Sheet open={showHelp} onOpenChange={setShowHelp}>
+        <SheetContent side="bottom" className="max-w-md mx-auto p-4 pb-6">
+          <SheetHeader onClose={() => setShowHelp(false)}>
+            <SheetTitle>Add to Home Screen</SheetTitle>
+          </SheetHeader>
+          {iOS ? (
+            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
+              <li>Open this page in <span className="font-medium text-foreground">Safari</span></li>
+              <li>Tap the <span className="font-medium text-foreground">Share</span> button (bottom toolbar)</li>
+              <li>Tap <span className="font-medium text-foreground">Add to Home Screen</span>, then <span className="font-medium text-foreground">Add</span></li>
+            </ol>
+          ) : android ? (
+            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
+              <li>Open this page in <span className="font-medium text-foreground">Chrome</span></li>
+              <li>Tap the <span className="font-medium text-foreground">⋮</span> menu (top right)</li>
+              <li>Tap <span className="font-medium text-foreground">Add to Home screen</span> or <span className="font-medium text-foreground">Install app</span></li>
+            </ol>
+          ) : (
+            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
+              <li>In <span className="font-medium text-foreground">Chrome</span>: click the install icon in the address bar, or <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Install page as app</span></li>
+              <li>In <span className="font-medium text-foreground">Edge</span>: <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Apps</span> → <span className="font-medium text-foreground">Install this site as an app</span></li>
+            </ol>
+          )}
+          <button
+            onClick={() => setShowHelp(false)}
+            className="mt-4 w-full py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium"
           >
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold text-foreground">Add to Home Screen</h2>
-              <button
-                onClick={() => setShowHelp(false)}
-                className="p-1 text-muted-foreground hover:text-foreground"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            {iOS ? (
-              <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-                <li>Open this page in <span className="font-medium text-foreground">Safari</span></li>
-                <li>Tap the <span className="font-medium text-foreground">Share</span> button (bottom toolbar)</li>
-                <li>Tap <span className="font-medium text-foreground">Add to Home Screen</span>, then <span className="font-medium text-foreground">Add</span></li>
-              </ol>
-            ) : android ? (
-              <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-                <li>Open this page in <span className="font-medium text-foreground">Chrome</span></li>
-                <li>Tap the <span className="font-medium text-foreground">⋮</span> menu (top right)</li>
-                <li>Tap <span className="font-medium text-foreground">Add to Home screen</span> or <span className="font-medium text-foreground">Install app</span></li>
-              </ol>
-            ) : (
-              <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-                <li>In <span className="font-medium text-foreground">Chrome</span>: click the install icon in the address bar, or <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Install page as app</span></li>
-                <li>In <span className="font-medium text-foreground">Edge</span>: <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Apps</span> → <span className="font-medium text-foreground">Install this site as an app</span></li>
-              </ol>
-            )}
-            <button
-              onClick={() => setShowHelp(false)}
-              className="mt-4 w-full py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
+            Got it
+          </button>
+        </SheetContent>
+      </Sheet>
     </footer>
   );
 }

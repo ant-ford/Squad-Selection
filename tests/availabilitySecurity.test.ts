@@ -16,7 +16,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { setMyAvailability, setMyAvailabilityForDate } from "../worker/src/availability";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -54,7 +55,6 @@ function match(id: string, homeTeam: string, date = DATE_KEY): any {
 }
 
 let state: { people: any[]; teams: any[]; matches: any[]; exceptions: any[] };
-let nextId: number;
 
 function seed() {
   state = {
@@ -63,7 +63,6 @@ function seed() {
     matches: [match("recM1", "B"), match("recM2", "A"), match("recM3", "H")],
     exceptions: [],
   };
-  nextId = 1;
 }
 
 function exception(id: string, playerId: string, matchId: string, status = "Unavailable"): any {
@@ -80,61 +79,15 @@ function exception(id: string, playerId: string, matchId: string, status = "Unav
 }
 
 function installFakeAirtable() {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    const method = init?.method ?? "GET";
-    const store = (): any[] =>
-      table === "People" ? state.people : table === "Teams" ? state.teams : table === "Matches" ? state.matches : table === "Availability Exceptions" ? state.exceptions : [];
-
-    if (method === "POST") {
-      const body = JSON.parse(init.body);
-      if (body.records) {
-        const created = body.records.map((r: any, i: number) => ({ id: `recNew${nextId++}`, fields: r.fields }));
-        store().push(...created);
-        return Promise.resolve(new Response(JSON.stringify({ records: created }), { status: 200 }));
-      }
-      const created = { id: `recNew${nextId++}`, fields: body.fields };
-      store().push(created);
-      return Promise.resolve(new Response(JSON.stringify(created), { status: 200 }));
-    }
-    if (method === "PATCH") {
-      const id = (u.match(/\/rec[A-Za-z0-9]+$/) ?? [])[0]?.slice(1);
-      const body = JSON.parse(init.body);
-      const target = store().find((r) => r.id === id);
-      if (target) target.fields = { ...target.fields, ...body.fields };
-      return Promise.resolve(new Response(JSON.stringify(target ?? {}), { status: 200 }));
-    }
-    if (method === "DELETE") {
-      const body = JSON.parse(init.body);
-      const ids: string[] = body.records ?? [body];
-      for (const id of ids) {
-        const idx = store().findIndex((r) => r.id === id);
-        if (idx >= 0) store().splice(idx, 1);
-      }
-      return Promise.resolve(new Response(JSON.stringify({ records: [] }), { status: 200 }));
-    }
-
-    // Honest filterByFormula emulation for People email lookups.
-    if (table === "People" && u.includes("filterByFormula")) {
-      const q = new URLSearchParams(u.split("?")[1] ?? "");
-      const formula = decodeURIComponent(q.get("filterByFormula") || "");
-      const m = formula.match(/"([^"]+)"/);
-      const needle = m ? m[1].toLowerCase() : "";
-      const filtered = store().filter((r) => (r.fields?.Email || "").toLowerCase() === needle);
-      return Promise.resolve(new Response(JSON.stringify({ records: filtered }), { status: 200 }));
-    }
-
-    const byId = u.match(/\/rec[A-Za-z0-9]+$/);
-    if (byId) {
-      const found = store().find((r) => r.id === byId[0].slice(1));
-      if (!found) return Promise.resolve(new Response("Not found", { status: 404 }));
-      return Promise.resolve(new Response(JSON.stringify(found), { status: 200 }));
-    }
-    return Promise.resolve(new Response(JSON.stringify({ records: store() }), { status: 200 }));
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
+  // Getters, not a snapshot: some tests reassign state.exceptions etc.
+  // directly, and the fake must see the live array.
+  const tables: FakeTables = {
+    get People() { return state.people; },
+    get Teams() { return state.teams; },
+    get Matches() { return state.matches; },
+    get "Availability Exceptions"() { return state.exceptions; },
+  };
+  fakeAirtable(tables);
 }
 
 beforeEach(() => {
@@ -162,16 +115,17 @@ describe("normal availability - identity boundary", () => {
     expect(state.exceptions[0].fields["Availability Status"]).toBe("Unavailable");
   });
 
-  it("an Airtable exception record ID alone can NOT modify another player's exception", async () => {
-    // Bill already has an Unavailable exception on recM1.
+  it("updating the same match never touches another player's exception (modify)", async () => {
+    // Bill already has an Unavailable exception on recM1. The Worker now
+    // resolves the caller's own exception itself (no client-supplied record
+    // ID exists in the request shape any more), so there is no longer a
+    // parameter through which Bill's ID could even be offered.
     state.exceptions = [exception("recEB1", "recB", "recM1")];
 
-    // Alice's session, but Bill's exception record ID in the payload.
     const out = await setMyAvailability(ENV, {
       email: "player-a@example.com",
       matchId: "recM1",
       status: "Unavailable",
-      existingExceptionId: "recEB1",
     });
 
     // Bill's exception is untouched.
@@ -185,16 +139,14 @@ describe("normal availability - identity boundary", () => {
     expect(aliceException).toBeTruthy();
   });
 
-  it("an Airtable exception record ID alone can NOT delete another player's exception", async () => {
+  it("updating the same match never touches another player's exception (delete)", async () => {
     state.exceptions = [exception("recEB1", "recB", "recM1", "Unavailable")];
 
-    // Unavailable -> Available deletes the CALLER's exception only. Alice
-    // supplies Bill's record ID hoping to delete it.
+    // Unavailable -> Available deletes the CALLER's exception only.
     const out = await setMyAvailability(ENV, {
       email: "player-a@example.com",
       matchId: "recM1",
       status: "Available",
-      existingExceptionId: "recEB1",
     });
 
     expect(out.exceptionId).toBeNull();

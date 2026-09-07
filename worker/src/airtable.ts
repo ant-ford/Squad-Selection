@@ -1,20 +1,5 @@
-import { countAirtableCall } from "./perf";
-
 // Low-level Airtable REST client for the Worker.
-export interface Env {
-  AIRTABLE_TOKEN: string;
-  AIRTABLE_BASE_ID: string;
-  CALENDAR_SECRET: string;
-  ALLOWED_ORIGIN?: string;
-  /**
-   * Set to "true" (deployed var/secret) to allow automatic re-registration
-   * writes in apply mode. When unset or any other value, reconciliation runs
-   * strictly as a dry-run and apply-mode API requests are rejected with 403.
-   */
-  AUTO_REGISTRATION_ENABLED?: string;
-  SUPABASE_URL: string;
-  SUPABASE_ANON_KEY: string;
-}
+import type { Env } from "./env";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -31,17 +16,27 @@ function tableUrl(env: Env, table: string) {
   return `${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(table)}`;
 }
 
+const MAX_RATE_LIMIT_RETRIES = 2;
+
 async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Promise<T | null> {
-  countAirtableCall(); // telemetry: exact per-request Airtable call count
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${env.AIRTABLE_TOKEN}`,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
-  
+  let response: Response;
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${env.AIRTABLE_TOKEN}`,
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+
+    if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) break;
+
+    const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+    const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 1000;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new AirtableError(
@@ -49,7 +44,7 @@ async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Prom
       response.status
     );
   }
-  
+
   if (response.status === 204) return null;
   return response.json() as Promise<T>;
 }
@@ -172,4 +167,4 @@ export function escapeFormulaValue(value: string): string {
 }
 
 // Re-export from the shared neutral module
-export { linkId, singleSelect } from "../../src/lib/airtableValueUtils";
+export { linkId } from "../../shared/airtableValueUtils";

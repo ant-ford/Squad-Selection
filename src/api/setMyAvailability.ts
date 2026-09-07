@@ -3,8 +3,7 @@ import { apiPost } from '@/lib/apiClient';
 export async function setMyAvailability(
   matchId: string,
   status: 'Available' | 'Maybe' | 'Unavailable',
-  notes?: string,
-  existingExceptionId?: string
+  notes?: string
 ) {
   // The Worker derives the player identity from the verified Supabase
   // session; the browser never supplies the email.
@@ -12,7 +11,6 @@ export async function setMyAvailability(
     matchId,
     status,
     notes,
-    existingExceptionId,
   });
 }
 

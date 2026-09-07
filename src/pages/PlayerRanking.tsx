@@ -19,18 +19,17 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import {
-  useAbilityGroupConfig, useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
+  useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
 } from '@/lib/queries';
 import { getReversalAdvisory, formatAge, formatAbsolute } from '@/lib/rankingHistory';
-import { emptyConfig, computeAbilityAssignment } from '@/lib/abilityGroup';
+import { emptyConfig, computeAbilityAssignment } from '@shared/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
-import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@/generated/domainTypes';
+import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@shared/schema/domainTypes';
 import type { RankingChange } from '@/lib/queries';
+import { POS_SHORT, initials } from '@/lib/format';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
-const POS_SHORT: Record<string, string> = {
-  Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', Goalkeeper: 'GK', 'Flexible/Varies': 'FLEX',
-};
 const ALL_POSITIONS = Object.keys(POS_SHORT);
 const GROUP_COLORS: Record<string, string> = {
   A: '#3b82f6', B: '#06b6d4', C: '#14b8a6', D: '#22c55e',
@@ -76,7 +75,7 @@ function nameOf(p: Player | InactiveRankingEntry): string {
 }
 
 function initialsOf(p: Player): string {
-  return (nameOf(p).split(' ').map((w) => w[0]).join('').slice(0, 2) || '?').toUpperCase();
+  return initials(nameOf(p));
 }
 
 function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGroupBoundaries>) {
@@ -97,7 +96,6 @@ export default function PlayerRanking() {
   const isSectionCaptain = !!profile?.isSectionCaptain;
   const ranking = useRanking();
   const inactiveQuery = useInactiveRanking();
-  const configQuery = useAbilityGroupConfig();
   // Ranking history for the reversal advisory + recent-changes list.
   const recentChangesQuery = useRecentChanges(30);
   const reorder = useReorderRanking();
@@ -127,13 +125,7 @@ export default function PlayerRanking() {
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
-  
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const [justification, setJustification] = useState('');
@@ -158,7 +150,7 @@ export default function PlayerRanking() {
 
   const data = ranking.data;
   const players = data?.players ?? [];
-  const config = data?.config ?? (configQuery.data as AbilityGroupConfigMap | undefined) ?? emptyConfig();
+  const config = data?.config ?? emptyConfig();
   const totalActive = data?.activeCount ?? 0;
   const playersById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
 
@@ -425,8 +417,8 @@ export default function PlayerRanking() {
             </button>
           </div>
           <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-            <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-              <SheetHeader><SheetTitle>Filters</SheetTitle></SheetHeader>
+            <SheetContent side="bottom" className="p-4">
+              <SheetHeader onClose={() => setIsFilterSheetOpen(false)}><SheetTitle>Filters</SheetTitle></SheetHeader>
               <RankingFilterContent {...filterBarProps} />
             </SheetContent>
           </Sheet>
@@ -482,6 +474,7 @@ export default function PlayerRanking() {
                         isFirst={virtualRow.index === 0}
                         isLast={virtualRow.index === filteredPlayers.length - 1}
                         disabled={isSaving || mutatingPlayerId === p.id}
+                        draftPending={draftIds !== null}
                         menuOpen={openMenuPlayerId === p.id}
                         onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
                         onMoveStep={moveStep}
@@ -512,7 +505,7 @@ export default function PlayerRanking() {
       </div>
 
       {showInactive && (
-        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} />
+        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} draftPending={draftIds !== null} />
       )}
 
       {moveToRankPlayer && (
@@ -568,11 +561,14 @@ export default function PlayerRanking() {
         <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />
       )}
 
-      {expandedPhoto && (
-        <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-6" onClick={() => setExpandedPhoto(null)}>
-          <img src={expandedPhoto} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+      <Sheet open={!!expandedPhoto} raised onOpenChange={(next) => !next && setExpandedPhoto(null)}>
+        <div
+          className="fixed inset-0 z-[61] bg-black/70 flex items-center justify-center p-6"
+          onClick={() => setExpandedPhoto(null)}
+        >
+          <img src={expandedPhoto ?? undefined} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
         </div>
-      )}
+      </Sheet>
 
       {hasChanges && (
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex flex-wrap gap-3 z-50 items-center">
@@ -591,7 +587,7 @@ export default function PlayerRanking() {
           <button onClick={handleDiscard} disabled={isSaving} className="flex-1 min-w-[100px] py-3 border rounded text-sm font-medium disabled:opacity-50">
             Discard
           </button>
-          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-white rounded text-sm font-medium disabled:opacity-50">
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-primary-foreground rounded text-sm font-medium disabled:opacity-50">
             {reorder.isPending ? (
               <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
             ) : `Save (${modifiedCount})`}
@@ -721,6 +717,8 @@ function SortableRankingRow(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
+  /** An unsaved reorder draft exists - Activate/Deactivate would silently discard it. */
+  draftPending: boolean;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
@@ -738,6 +736,7 @@ function SortableRankingRow(props: {
         isFirst={props.isFirst}
         isLast={props.isLast}
         disabled={props.disabled}
+        draftPending={props.draftPending}
         isDragging={isDragging}
         menuOpen={props.menuOpen}
         onMenuOpenChange={props.onMenuOpenChange}
@@ -757,6 +756,7 @@ function RankingRowInner(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
+  draftPending?: boolean;
   isDragging: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (v: boolean) => void;
@@ -782,7 +782,7 @@ function RankingRowInner(props: {
     <div
       data-rank={rank}
       style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
-      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70 dark:bg-amber-950/30' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200 dark:border-amber-800' : 'border-border'}`}
+      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200' : 'border-border'}`}
     >
       <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
         <GripVertical className="h-4 w-4" />
@@ -876,8 +876,10 @@ function RankingRowInner(props: {
                 <BarChart3 className="h-3.5 w-3.5 mr-2" /> Season stats
               </button>
               <button
-                onClick={() => { props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive"
+                onClick={() => { if (props.draftPending) return; props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
+                disabled={props.draftPending}
+                title={props.draftPending ? 'Save or discard your reorder first' : undefined}
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <UserMinus className="h-3.5 w-3.5 mr-2" /> Deactivate
               </button>
@@ -933,13 +935,13 @@ function MoveToRankSheet({ player, activeCount, onClose, onSubmit, history }: {
     <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
       <div className="space-y-3">
         {advisory && (
-          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">
                 Recently moved {advisory.oldRank != null && advisory.newRank != null && advisory.newRank < advisory.oldRank ? 'up' : 'down'} by {advisory.actorName}
               </p>
-              <p className="text-amber-800/80 dark:text-amber-300/80">
+              <p className="text-amber-800/80">
                 {formatAge(advisory.at)} · {formatAbsolute(advisory.at)}
                 {advisory.note ? ` · "${advisory.note}"` : ''}
               </p>
@@ -1053,8 +1055,10 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
   );
 }
 
-function InactiveSection({ entries, loading, onReactivate }: {
+function InactiveSection({ entries, loading, onReactivate, draftPending }: {
   entries: InactiveRankingEntry[]; loading: boolean; onReactivate: (entry: InactiveRankingEntry) => void;
+  /** An unsaved reorder draft exists - reactivating would silently discard it. */
+  draftPending: boolean;
 }) {
   return (
     <div className="container mx-auto px-4 pt-6">
@@ -1082,8 +1086,10 @@ function InactiveSection({ entries, loading, onReactivate }: {
                 </p>
               </div>
               <button
-                onClick={() => onReactivate(e)}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap"
+                onClick={() => { if (draftPending) return; onReactivate(e); }}
+                disabled={draftPending}
+                title={draftPending ? 'Save or discard your reorder first' : undefined}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}
@@ -1098,16 +1104,14 @@ function InactiveSection({ entries, loading, onReactivate }: {
 
 function ModalSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground"> <X className="h-5 w-5" /> </button>
-        </div>
+    <Sheet open onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side="bottom" className="p-4">
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
         {children}
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 

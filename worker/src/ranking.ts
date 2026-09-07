@@ -7,39 +7,42 @@ import {
   airtableFindAll,
   airtableFindById,
   airtableUpdate,
-  type Env,
 } from "./airtable";
+import type { Env } from "./env";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
+import { TABLES } from "../../shared/schema/tableNames";
 import {
   ABILITYGROUP_CONFIG_FIELDS,
   PEOPLE_FIELDS,
-} from "../../src/generated/fieldMaps";
-import { mapPlayer } from "../../src/mappers/playerMapper";
-import { mapAbilityGroupConfiguration } from "../../src/mappers/abilityGroupConfigMapper";
-import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../src/lib/abilityGroup";
-import { ABILITY_RANK } from "../../src/lib/abilityRank";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-import { getPlayerByEmail, getReferenceData, invalidatePlayerByEmail } from "./reference";
+} from "../../shared/schema/fieldMaps";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
+import { mapAbilityGroupConfiguration } from "../../shared/mappers/abilityGroupConfigMapper";
+import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
+import type { AuthorizedUser } from "./auth";
 import {
   validateJustification,
   selectRankingEventChanges,
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import {
-  invalidateCache,
-  invalidateCachePrefix,
-  getCached,
-} from "../../src/lib/cache";
+import { invalidateCache, getCached } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
   Player,
   RankingList,
-} from "../../src/generated/domainTypes";
+} from "../../shared/schema/domainTypes";
 
 // ── In-memory derived-rank annotation ────────────────────────────────────
+/** Next 1-based occurrence count for `key`, advancing `counters` in place. */
+function nextCount(counters: Map<string, number>, key: string): number {
+  const n = (counters.get(key) ?? 0) + 1;
+  counters.set(key, n);
+  return n;
+}
+
 function annotateWithDerivedRanks(players: Player[]): Player[] {
   const teamCounters = new Map<string, number>();
   const posCounters = new Map<string, number>();
@@ -47,20 +50,18 @@ function annotateWithDerivedRanks(players: Player[]): Player[] {
     // Team blocks are grouped by the DISPLAYED team (Selected Team EOS ->
     // SOS -> Registered) so T# stays consistent with the optics. The cached
     // player object keeps the true Registered Team for business rules.
-    const tk = selectedDisplayTeam(p);
-    const pk = p.playingPosition ?? "";
-    const tr = (teamCounters.get(tk) ?? 0) + 1;
-    teamCounters.set(tk, tr);
-    const pr = (posCounters.get(pk) ?? 0) + 1;
-    posCounters.set(pk, pr);
-    return { ...p, teamRank: tr, positionalRank: pr };
+    const teamRank = nextCount(teamCounters, selectedDisplayTeam(p));
+    const positionalRank = nextCount(posCounters, p.playingPosition ?? "");
+    return { ...p, teamRank, positionalRank };
   });
 }
 
 // ── Caching ──────────────────────────────────────────────────────────────
 const RANKING_CACHE_TTL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
-const AIRTABLE_WRITE_CONCURRENCY = 4;
+// Sequential writes: 4 parallel PATCH streams per reorder was tripping
+// Airtable's rate limit (see airtable.ts's 429 retry).
+const AIRTABLE_WRITE_CONCURRENCY = 1;
 
 // ── Internal helpers ─────────────────────────────────────────────────────
 function rankingCacheKey(active: boolean): string {
@@ -149,17 +150,9 @@ export async function getAbilityGroupConfig(
 export async function setAbilityGroupConfig(
   env: Env,
   config: AbilityGroupConfigMap,
-  actingEmail?: string,
+  user: AuthorizedUser,
 ): Promise<RankingList> {
-  if (!actingEmail) throw new HttpError("actingEmail is required", 400);
-  const actor = await getPlayerByEmail(env, actingEmail);
-  if (!actor) throw new HttpError("Player record not found for this email", 404);
-  
-  const ref = await getReferenceData(env);
-  const isSectionCaptain = ref.teams.some((t) =>
-    (t.sectionCaptain || []).includes(actor.id),
-  );
-  if (!isSectionCaptain) {
+  if (!user.isSectionCaptain) {
     throw new HttpError("Only the Section Captain can modify the ranking configuration", 403);
   }
 
@@ -360,10 +353,18 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
   const record = await airtableFindById(env, TABLES.player, playerId);
   if (!record) throw new HttpError("Player not found", 404);
   const player = mapPlayer(record);
-  
+
   if (player.active !== true) {
     const activePlayers = await fetchActiveRankingFromAirtable(env);
-    const newRank = activePlayers.length + 1;
+    // An Applicant can already appear in this pool with a Section Rank of
+    // their own (fetchActiveRankingFromAirtable includes non-rejected
+    // Applicants alongside Active players). Keep that rank - appending at
+    // length+1 would leave a hole at their old rank and push them past the
+    // end of the list.
+    const existing = activePlayers.find((p) => p.id === playerId);
+    const hasExistingRank = typeof existing?.sectionRank === "number" && existing.sectionRank > 0;
+    const newRank = hasExistingRank ? existing!.sectionRank! : activePlayers.length + 1;
+
     console.log(`[Ranking Audit] ${new Date().toISOString()} | User: ${actingEmail || 'system'} | Player: ${playerId} | Old Rank: N/A | New Rank: ${newRank} (Activated)`);
     await airtableUpdate(env, TABLES.player, playerId, {
       [PEOPLE_FIELDS.active]: true,
@@ -373,11 +374,27 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
     if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
     invalidateRankingEventsCache();
-    recordRankingEvents(env, [
-      { playerId, actorEmail: actingEmail, kind: "activate", oldRank: null, newRank },
+    await recordRankingEvents(env, [
+      { playerId, actorEmail: actingEmail, kind: "activate", oldRank: hasExistingRank ? newRank : null, newRank },
     ]);
+
+    // Safety net: renumber the whole pool to a contiguous 1..N, the same
+    // batch-update machinery reorderRanking uses. A no-op when already
+    // contiguous (the common case after the fix above).
+    invalidateCache(rankingCacheKey(true));
+    const afterActivation = await fetchActiveRankingFromAirtable(env);
+    const contiguousUpdates: { id: string; rank: number; oldRank: number }[] = [];
+    afterActivation.forEach((p, i) => {
+      const wantRank = i + 1;
+      if ((p.sectionRank ?? 0) !== wantRank) {
+        contiguousUpdates.push({ id: p.id, rank: wantRank, oldRank: p.sectionRank ?? 0 });
+      }
+    });
+    if (contiguousUpdates.length > 0) {
+      await applySectionRankUpdates(env, contiguousUpdates, actingEmail, "reorder", undefined, false);
+    }
   }
-  
+
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -418,39 +435,10 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
   if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
   invalidateRankingEventsCache();
-  recordRankingEvents(env, [
+  await recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
   ]);
 
-  invalidateCache(rankingCacheKey(true));
-  return recomputeDerivedFields(env);
-}
-
-export async function initializeRanking(env: Env): Promise<RankingList> {
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    'AND({Applicant Stage}!="Rejected", {Status}!="Resigned", OR({Active}=TRUE(), {Status}="Applicant"))',
-  );
-  const players = records.map(mapPlayer);
-  
-  const ranked = players
-    .filter((p) => typeof p.sectionRank === "number" && p.sectionRank > 0)
-    .sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
-    
-  const unranked = players
-    .filter((p) => !(typeof p.sectionRank === "number" && p.sectionRank > 0))
-    .sort((a, b) => {
-      const av = ABILITY_RANK[a.playingAbility ?? ""] ?? 0;
-      const bv = ABILITY_RANK[b.playingAbility ?? ""] ?? 0;
-      if (av !== bv) return bv - av;
-      return (a.preferredName ?? a.givenNames ?? "").localeCompare(b.preferredName ?? b.givenNames ?? "");
-    });
-
-  const combined = [...ranked, ...unranked];
-  const updates: { id: string; rank: number; oldRank: number }[] = combined.map((p, i) => ({ id: p.id, rank: i + 1, oldRank: p.sectionRank ?? 0 }));
-  
-  if (updates.length > 0) await applySectionRankUpdates(env, updates, "system");
   invalidateCache(rankingCacheKey(true));
   return recomputeDerivedFields(env);
 }
@@ -476,13 +464,9 @@ async function recomputeDerivedFieldsFromList(
     }
     
     // Same display-team grouping as annotateWithDerivedRanks (optics).
-    const teamKey = selectedDisplayTeam(p);
-    const positionKey = p.playingPosition ?? "";
-    const teamRank = (teamCounters.get(teamKey) ?? 0) + 1;
-    teamCounters.set(teamKey, teamRank);
-    const positionalRank = (positionalCounters.get(positionKey) ?? 0) + 1;
-    positionalCounters.set(positionKey, positionalRank);
-    
+    const teamRank = nextCount(teamCounters, selectedDisplayTeam(p));
+    const positionalRank = nextCount(positionalCounters, p.playingPosition ?? "");
+
     const assignment = computeAbilityAssignment(rank, n, config);
     const needsUpdate = p.playingAbility !== assignment.abilityDisplay;
     
@@ -507,10 +491,8 @@ async function recomputeDerivedFieldsFromList(
 
   await batchUpdatePlayers(env, fieldUpdates);
   invalidateCache(rankingCacheKey(true));
-  invalidateCache("club-reference");
-  invalidateCache("team-coach-links");
-  invalidateCachePrefix("players-for-match:");
-  
+  invalidateReferenceData();
+
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };
 }
 
@@ -547,7 +529,7 @@ async function applySectionRankUpdates(
 
   // Ranking history: fire-and-forget, after the commit succeeded. The
   // browser never stamps time - every event gets a server timestamp here.
-  if (recordEvents && actingEmail && actingEmail !== "system") {
+  if (recordEvents && actingEmail) {
     const events = selectRankingEventChanges(updates).map((u) => ({
       playerId: u.id,
       actorEmail: actingEmail,

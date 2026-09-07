@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { safeFormat } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getPlayerStats, type PlayerGameResult, type PlayerSeasonStats } from '@/api/getPlayerStats';
+import type { PlayerGameResult } from '@/api/getPlayerStats';
+import { usePlayerStats } from '@/lib/queries';
 
 /** Win green, draw white, loss red — per the form-guide convention. */
 const OUTCOME_TILE: Record<PlayerGameResult['outcome'], string> = {
@@ -79,29 +80,8 @@ function GameDetail({ game }: { game: PlayerGameResult }) {
  * same panel for someone else.
  */
 export default function SeasonStats({ playerId }: { playerId: string }) {
-  const [stats, setStats] = useState<PlayerSeasonStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const { data: stats, isLoading: loading, isError: failed } = usePlayerStats(playerId);
   const [openGame, setOpenGame] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setFailed(false);
-    getPlayerStats(playerId)
-      .then((s) => {
-        if (!cancelled) setStats(s);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [playerId]);
 
   if (loading) return <Skeleton className="h-32 w-full rounded-xl" />;
   // Stats are a nice-to-have next to fixtures; a failure should never take
@@ -133,9 +113,7 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
                 onClick={() => setOpenGame(openGame === g.matchId ? null : g.matchId)}
                 aria-expanded={openGame === g.matchId}
                 title={`${g.team} ${g.goalsFor}–${g.goalsAgainst} ${g.opponent}`}
-                // Explicit radius: the theme's --radius makes `rounded-md`
-                // fully circular at this size, and these should read as tiles.
-                className={`h-8 w-8 rounded-[5px] border text-xs font-bold transition-shadow ${
+                className={`h-8 w-8 rounded-md border text-xs font-bold transition-shadow ${
                   OUTCOME_TILE[g.outcome]
                 } ${openGame === g.matchId ? 'ring-2 ring-primary ring-offset-1' : ''}`}
               >

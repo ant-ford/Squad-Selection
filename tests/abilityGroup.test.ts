@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeAbilityAssignment, emptyConfig, validateConfig } from '../src/lib/abilityGroup';
-import type { AbilityGroupConfigMap } from '../src/generated/domainTypes';
+import { computeAbilityAssignment, emptyConfig, validateConfig } from '../shared/abilityGroup';
+import type { AbilityGroupConfigMap } from '../shared/schema/domainTypes';
 
 describe('abilityGroup — computeAbilityAssignment', () => {
   const config: AbilityGroupConfigMap = { A: 5, B: 8, C: 12, D: 15, E: 15, F: 15, G: 10 };

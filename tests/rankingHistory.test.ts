@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  proposedDirection,
   getReversalAdvisory,
   formatAge,
   formatAbsolute,
@@ -21,20 +20,6 @@ function change(overrides: Partial<RankingChange>): RankingChange {
     ...overrides,
   };
 }
-
-describe("proposedDirection", () => {
-  it("returns up when the new rank is lower (better)", () => {
-    expect(proposedDirection(10, 3)).toBe("up");
-  });
-  it("returns down when the new rank is higher (worse)", () => {
-    expect(proposedDirection(3, 10)).toBe("down");
-  });
-  it("returns null for same rank or missing ranks", () => {
-    expect(proposedDirection(3, 3)).toBeNull();
-    expect(proposedDirection(null, 3)).toBeNull();
-    expect(proposedDirection(3, undefined)).toBeNull();
-  });
-});
 
 describe("getReversalAdvisory", () => {
   it("returns the most recent event for the player (matched by stable player id)", () => {

@@ -1,4 +1,5 @@
 import { apiGet } from '@/lib/apiClient';
+import type { KitColour } from '@/api/getPlayersForMatch';
 
 export interface MyFixture {
   id: string;
@@ -27,6 +28,8 @@ export interface MyFixture {
   isPlayUp?: boolean;
   /** The HKFC team this fixture/selection belongs to (set when isPlayUp). */
   selectionTeam?: string;
+  /** Shirt colour for this fixture; '' until a coach sets it. */
+  kit?: KitColour;
 }
 
 export interface GetMyFixturesOutput {

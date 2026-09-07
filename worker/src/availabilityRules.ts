@@ -1,10 +1,11 @@
 import { HttpError } from "./http";
-import { AVAILABILITYRULES_FIELDS } from "../../src/generated/fieldMaps";
-import { Env, airtableCreate, airtableDelete, airtableFindAll } from "./airtable";
-import { getCached, invalidateCache } from "../../src/lib/cache";
-import { TABLES } from "../../src/generated/tableNames";
-import { mapAvailabilityRule } from "../../src/mappers/availabilityRuleMapper";
-import type { AvailabilityRule, AvailabilityRuleType } from "../../src/generated/domainTypes";
+import { AVAILABILITYRULES_FIELDS } from "../../shared/schema/fieldMaps";
+import { airtableCreate, airtableDelete, airtableFindAll } from "./airtable";
+import type { Env } from "./env";
+import { getCached, invalidateCache } from "./cache";
+import { TABLES } from "../../shared/schema/tableNames";
+import { mapAvailabilityRule } from "../../shared/mappers/availabilityRuleMapper";
+import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
 
 /**
  * Standing availability rules.

@@ -7,25 +7,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // the right error codes.
 
 const mocks = vi.hoisted(() => {
-  const authorizedPlayer = { email: "player@hkfc.com", personId: "recP1", role: "player" as const };
-  const authorizedCoach = { email: "coach@hkfc.com", personId: "recCoach", role: "coach" as const };
+  const authorizedPlayer = { email: "player@hkfc.com", personId: "recP1", role: "player" as const, coachTeams: [], isSectionCaptain: false };
+  const authorizedCoach = { email: "coach@hkfc.com", personId: "recCoach", role: "coach" as const, coachTeams: ["Men's 1s"], isSectionCaptain: false };
   return {
     authorizedPlayer,
     authorizedCoach,
-    requireAuthenticatedEmail: vi.fn(),
     requireAuthorizedUser: vi.fn(),
     requireCoach: vi.fn(),
-    getReferenceData: vi.fn(),
-    getActivePlayers: vi.fn(),
-    getPlayerByEmail: vi.fn(),
     getMyProfile: vi.fn(),
     getMyFixtures: vi.fn(),
-    getPlayerFixtures: vi.fn(),
     getUpcomingFixtures: vi.fn(),
     getPlayersForMatch: vi.fn(),
     getSquadForMatch: vi.fn(),
-    selectPlayer: vi.fn(),
-    removeSelection: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
@@ -33,56 +26,39 @@ const mocks = vi.hoisted(() => {
     toggleAutoSelect: vi.fn(),
     getTeamAutoSelectPlayers: vi.fn(),
     setTeamAutoSelectPlayers: vi.fn(),
-    setAvailability: vi.fn(),
     setMyAvailability: vi.fn(),
     setMyAvailabilityForDate: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     handleGetCalendarLink: vi.fn(),
     handlePlayerCalendarFeed: vi.fn(),
-    handleTeamCalendarExport: vi.fn(),
     handleGetTeamCalendarLink: vi.fn(),
     handleTeamCalendarFeed: vi.fn(),
     getActiveRanking: vi.fn(),
     getInactiveRanking: vi.fn(),
-    getAbilityGroupConfig: vi.fn(),
     setAbilityGroupConfig: vi.fn(),
     movePlayerToRank: vi.fn(),
     movePlayerRelative: vi.fn(),
     reorderRanking: vi.fn(),
     activatePlayer: vi.fn(),
     deactivatePlayer: vi.fn(),
-    initializeRanking: vi.fn(),
-    getEligibilityMetrics: vi.fn(),
-    resetEligibilityMetrics: vi.fn(),
     getPlayUpWatch: vi.fn(),
-    getRecentAvailability: vi.fn(),
     getRecentChanges: vi.fn(),
   };
 });
 
 vi.mock("../worker/src/auth", () => ({
-  requireAuthenticatedEmail: mocks.requireAuthenticatedEmail,
   requireAuthorizedUser: mocks.requireAuthorizedUser,
   requireCoach: mocks.requireCoach,
-}));
-
-vi.mock("../worker/src/reference", () => ({
-  getReferenceData: mocks.getReferenceData,
-  getActivePlayers: mocks.getActivePlayers,
-  getPlayerByEmail: mocks.getPlayerByEmail,
 }));
 
 vi.mock("../worker/src/profile", () => ({ getMyProfile: mocks.getMyProfile }));
 vi.mock("../worker/src/fixtures", () => ({
   getMyFixtures: mocks.getMyFixtures,
-  getPlayerFixtures: mocks.getPlayerFixtures,
   getUpcomingFixtures: mocks.getUpcomingFixtures,
 }));
 vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
   getSquadForMatch: mocks.getSquadForMatch,
-  selectPlayer: mocks.selectPlayer,
-  removeSelection: mocks.removeSelection,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
   setMatchKit: mocks.setMatchKit,
@@ -91,7 +67,6 @@ vi.mock("../worker/src/squad", () => ({
   setTeamAutoSelectPlayers: mocks.setTeamAutoSelectPlayers,
 }));
 vi.mock("../worker/src/availability", () => ({
-  setAvailability: mocks.setAvailability,
   setMyAvailability: mocks.setMyAvailability,
   setMyAvailabilityForDate: mocks.setMyAvailabilityForDate,
 }));
@@ -101,40 +76,34 @@ vi.mock("../worker/src/recommendations", () => ({
 vi.mock("../worker/src/calendar", () => ({
   handleGetCalendarLink: mocks.handleGetCalendarLink,
   handlePlayerCalendarFeed: mocks.handlePlayerCalendarFeed,
-  handleTeamCalendarExport: mocks.handleTeamCalendarExport,
   handleGetTeamCalendarLink: mocks.handleGetTeamCalendarLink,
   handleTeamCalendarFeed: mocks.handleTeamCalendarFeed,
 }));
 vi.mock("../worker/src/ranking", () => ({
   getActiveRanking: mocks.getActiveRanking,
   getInactiveRanking: mocks.getInactiveRanking,
-  getAbilityGroupConfig: mocks.getAbilityGroupConfig,
   setAbilityGroupConfig: mocks.setAbilityGroupConfig,
   movePlayerToRank: mocks.movePlayerToRank,
   movePlayerRelative: mocks.movePlayerRelative,
   reorderRanking: mocks.reorderRanking,
   activatePlayer: mocks.activatePlayer,
   deactivatePlayer: mocks.deactivatePlayer,
-  initializeRanking: mocks.initializeRanking,
-}));
-vi.mock("../worker/src/metrics", () => ({
-  getEligibilityMetrics: mocks.getEligibilityMetrics,
-  resetEligibilityMetrics: mocks.resetEligibilityMetrics,
 }));
 vi.mock("../worker/src/playerStats", () => ({ getPlayerSeasonStats: mocks.getPlayerSeasonStats }));
 vi.mock("../worker/src/dashboard", () => ({
   getPlayUpWatch: mocks.getPlayUpWatch,
-  getRecentAvailability: mocks.getRecentAvailability,
   getRecentChanges: mocks.getRecentChanges,
 }));
 
 import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
+import { AirtableError } from "../worker/src/airtable";
 
 const ENV = {
   AIRTABLE_TOKEN: "test-token",
   AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
+  ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "test-anon-key",
 } as any;
@@ -208,7 +177,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Defaults: an authorized ordinary player; coach-only routes reject.
   mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedPlayer);
-  mocks.requireAuthenticatedEmail.mockResolvedValue("player@hkfc.com");
   mocks.requireCoach.mockRejectedValue(coachDenied());
 
   mocks.getMyProfile.mockResolvedValue({
@@ -258,6 +226,23 @@ describe("error codes", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
+
+  it("maps an AirtableError to a generic 502 without leaking the Airtable URL or response body", async () => {
+    mocks.getMyProfile.mockRejectedValue(
+      new AirtableError(
+        "Airtable GET https://api.airtable.com/v0/appSecretBase123/People?filterByFormula=... failed (500): {\"error\":{\"message\":\"internal\"}}",
+        500,
+      ),
+    );
+
+    const res = await call("/api/my-profile");
+    const body = await res.json();
+    expect(res.status).toBe(502);
+    expect(body).toMatchObject({ error: "UPSTREAM_ERROR" });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("api.airtable.com");
+    expect(serialized).not.toContain("appSecretBase123");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -268,20 +253,20 @@ describe("session-derived identity (IDOR prevention)", () => {
   it("GET /api/my-profile ignores a ?email= query param", async () => {
     const res = await call("/api/my-profile?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
   });
 
   it("GET /api/my-fixtures ignores a ?email= query param", async () => {
     const res = await call("/api/my-fixtures?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
   });
 
   it("GET /api/upcoming-fixtures scopes by the session email, ignoring ?email=", async () => {
     const res = await call("/api/upcoming-fixtures?email=attacker@evil.com&team=Men's%201s");
     expect(res.status).toBe(200);
     expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
-      email: "player@hkfc.com",
+      user: mocks.authorizedPlayer,
       team: "Men's 1s",
     });
   });
@@ -299,10 +284,10 @@ describe("session-derived identity (IDOR prevention)", () => {
   });
 
   it("GET /api/calendar/link derives the player from the session, ignoring ?email=", async () => {
-    mocks.handleGetCalendarLink.mockResolvedValue({ id: "recP1", sig: "abc" });
+    mocks.handleGetCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/feed.ics?id=recP1&sig=abc" });
     const res = await call("/api/calendar/link?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com", "https://hkfc-api.test");
   });
 });
 
@@ -318,12 +303,7 @@ describe("coach-only routes", () => {
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
     { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
-    { path: "/api/ranking/initialize", init: jsonInit({}) },
-    { path: "/api/ranking/backfill", init: jsonInit({}) },
-    { path: "/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
-    { path: "/api/select-player", init: jsonInit({ matchId: "recM1", playerId: "a" }) },
-    { path: "/api/remove-selection", init: jsonInit({ matchId: "recM1", playerId: "a" }) },
-    { path: "/api/set-availability", init: jsonInit({ playerId: "a", matchIds: ["recM1"], status: "Available" }) },
+    { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
     { path: "/api/match/recM1/auto-select", init: jsonInit({ enabled: true }) },
   ];
@@ -397,11 +377,11 @@ describe("coach-only routes", () => {
     );
   });
 
-  it("allows a coach on POST /squad/sync and uses the session email, ignoring body actingEmail", async () => {
+  it("allows a coach on POST /api/squad/sync and uses the session email, ignoring body actingEmail", async () => {
     mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
 
     const res = await call(
-      "/squad/sync",
+      "/api/squad/sync",
       jsonInit({ matchId: "recM1", selectedIds: ["a", "b"], actingEmail: "attacker@evil.com", side: "home" }),
     );
     expect(res.status).toBe(200);
@@ -435,12 +415,6 @@ describe("coach-only routes", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
-
-  it("GET /api/player-by-email (coach lookup of another person) requires coach role", async () => {
-    const res = await call("/api/player-by-email?email=someone@hkfc.com");
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -448,18 +422,11 @@ describe("coach-only routes", () => {
 // ---------------------------------------------------------------------------
 
 describe("authorized-user reads", () => {
-  it("allows an authorized player on GET /api/reference-data", async () => {
-    mocks.getReferenceData.mockResolvedValue({ players: [], teams: [], teamRankMap: {}, teamNames: [] });
-    const res = await call("/api/reference-data");
-    expect(res.status).toBe(200);
-    expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
-  });
-
   it("GET /api/calendar/team-link passes the session email and keeps the team param", async () => {
-    mocks.handleGetTeamCalendarLink.mockResolvedValue({ team: "Men's 1s", sig: "abc" });
+    mocks.handleGetTeamCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/team-feed.ics?team=Men's%201s&sig=abc" });
     const res = await call("/api/calendar/team-link?team=Men's%201s");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com", "Men's 1s");
+    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, "Men's 1s", "https://hkfc-api.test");
   });
 });
 
@@ -477,6 +444,25 @@ describe("misc routing", () => {
   it("keeps /health public", async () => {
     const res = await call("/health");
     expect(res.status).toBe(200);
+  });
+
+  it("fails closed with 500 when ALLOWED_ORIGIN is not configured, even for /health", async () => {
+    const misconfiguredEnv = { ...ENV, ALLOWED_ORIGIN: "" };
+    const res = await worker.fetch(
+      new Request("https://hkfc-api.test/health"),
+      misconfiguredEnv,
+      CTX,
+    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: "SERVER_MISCONFIGURED" });
+  });
+
+  it("does not fall back to a wildcard CORS origin, and no longer advertises apikey/x-client-info", async () => {
+    const res = await call("/health");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ENV.ALLOWED_ORIGIN);
+    expect(res.headers.get("Access-Control-Allow-Origin")).not.toBe("*");
+    expect(res.headers.get("Access-Control-Allow-Headers")).not.toContain("apikey");
+    expect(res.headers.get("Access-Control-Allow-Headers")).not.toContain("x-client-info");
   });
 });
 
@@ -498,6 +484,12 @@ describe("read routes require authentication", () => {
     expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
   });
 
+  it("forwards ?side= on a derby squad read (regression: the route used to ignore it)", async () => {
+    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
+    await call("/api/match/recM1/squad?side=away");
+    expect(mocks.getSquadForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
+  });
+
   it("rejects an unauthenticated match squad read", async () => {
     mocks.requireAuthorizedUser.mockRejectedValue(
       new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
@@ -513,8 +505,8 @@ describe("read routes require authentication", () => {
     ["/api/match/recM1/availability", () => mocks.getAvailabilityForMatch],
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
-    ["/api/ranking/config", () => mocks.getAbilityGroupConfig],
-    ["/api/eligibility-metrics", () => mocks.getEligibilityMetrics],
+    ["/api/recent-changes", () => mocks.getRecentChanges],
+    ["/api/playup-watch", () => mocks.getPlayUpWatch],
   ])("denies %s to a non-coach", async (path, handler) => {
     const res = await call(path);
     expect(res.status).toBe(403);
@@ -528,6 +520,18 @@ describe("read routes require authentication", () => {
     const res = await call("/api/ranking");
     expect(res.status).toBe(200);
     expect(mocks.getActiveRanking).toHaveBeenCalled();
+  });
+
+  it("allows a coach through to recent-changes and playup-watch", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.getRecentChanges.mockResolvedValue({ changes: [] });
+    mocks.getPlayUpWatch.mockResolvedValue({ season: "2025-2026", watch: [] });
+    const changesRes = await call("/api/recent-changes");
+    expect(changesRes.status).toBe(200);
+    expect(mocks.getRecentChanges).toHaveBeenCalled();
+    const watchRes = await call("/api/playup-watch");
+    expect(watchRes.status).toBe(200);
+    expect(mocks.getPlayUpWatch).toHaveBeenCalled();
   });
 });
 
@@ -600,26 +604,3 @@ describe("player season stats are restricted to self or coach", () => {
   });
 });
 
-describe("player-fixtures is restricted to self or coach", () => {
-  it("lets a player read their own fixtures", async () => {
-    mocks.getPlayerFixtures.mockResolvedValue({ fixtures: [] });
-    const res = await call(`/api/player-fixtures/${mocks.authorizedPlayer.personId}`);
-    expect(res.status).toBe(200);
-    expect(mocks.getPlayerFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer.personId);
-  });
-
-  it("stops a player reading someone else's fixtures", async () => {
-    const res = await call("/api/player-fixtures/recSomeoneElse");
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
-    expect(mocks.getPlayerFixtures).not.toHaveBeenCalled();
-  });
-
-  it("lets a coach read any player's fixtures", async () => {
-    mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedCoach);
-    mocks.getPlayerFixtures.mockResolvedValue({ fixtures: [] });
-    const res = await call("/api/player-fixtures/recSomeoneElse");
-    expect(res.status).toBe(200);
-    expect(mocks.getPlayerFixtures).toHaveBeenCalledWith(ENV, "recSomeoneElse");
-  });
-});

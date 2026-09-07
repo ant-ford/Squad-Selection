@@ -1,4 +1,4 @@
-import type { Match, MatchCard } from "../../src/generated/domainTypes";
+import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 import { linkId } from "./airtable";
 
 /**

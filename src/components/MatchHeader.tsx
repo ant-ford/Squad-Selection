@@ -1,20 +1,7 @@
 import { useState } from 'react';
 import { safeFormat } from '@/lib/dateUtils';
-import { setMatchKit, type KitColour } from '@/api/getPlayersForMatch';
+import { setMatchKit, type KitColour, type MatchInfo } from '@/api/getPlayersForMatch';
 import { toast } from 'sonner';
-
-type MatchInfo = {
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  hkfcTeam?: string;
-  division: string;
-  venue: string;
-  targetSquadSize: number;
-  selectedCount: number;
-  side?: 'home' | 'away';
-  kit?: KitColour;
-};
 
 const KIT_SWATCH: Record<Exclude<KitColour, ''>, string> = {
   Blue: 'bg-blue-600 border-blue-700',

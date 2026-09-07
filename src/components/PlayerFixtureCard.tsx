@@ -1,36 +1,11 @@
 import { Users, Zap } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
-
-type Fixture = {
-  id: string;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  hkfcTeam: string;
-  opponent: string;
-  isHome: boolean;
-  venue: string;
-  division: string;
-  availabilityStatus: string;
-  playerNotes: string;
-  selectionStatus: string;
-  selectionNotes: string;
-  selectedCount: number;
-  targetSquadSize: number;
-  availabilityExceptionId?: string;
-  isPlayUp?: boolean;
-  selectionTeam?: string;
-  /** Shirt colour for this fixture; '' until a coach sets it. */
-  kit?: 'Blue' | 'White' | '';
-};
+import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {
-  fixture: Fixture;
+  fixture: MyFixture;
   onTap: () => void;
-  onAvailabilityChange: (
-    status: 'Available' | 'Maybe' | 'Unavailable',
-    exceptionId?: string
-  ) => void;
+  onAvailabilityChange: (status: 'Available' | 'Maybe' | 'Unavailable') => void;
 }
 
 export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange }: Props) {
@@ -126,7 +101,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                 key={value}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAvailabilityChange(value as any, fixture.availabilityExceptionId);
+                  onAvailabilityChange(value as any);
                 }}
                 className={`
                   px-3 py-1 text-xs font-medium min-w-[56px] transition-colors

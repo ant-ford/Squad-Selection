@@ -1,15 +1,9 @@
-import { Env } from "./airtable";
+import type { Env } from "./env";
 import { getReferenceData } from "./reference";
-import { getSeasonContext } from "./seasonContext";
+import { getSeasonContext, currentSeason } from "./seasonContext";
 import { getRankingEvents } from "./rankingEvents";
 import { isQualifyingPlayUpCard } from "./playUp";
-import { selectedDisplayTeam } from "../../src/lib/displayTeam";
-
-/** HKHA season boundary: starts 1 July. */
-export function currentSeason(d = new Date()): string {
-  const y = d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1;
-  return `${y}-${y + 1}`;
-}
+import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 /**
  * Play-Up Watch: players with 2+ adjusted play-up appearances this season.
@@ -55,13 +49,4 @@ export async function getRecentChanges(env: Env, days: number) {
   // server-side and degrades to [] ONLY when the table does not exist yet.
   const changes = await getRankingEvents(env, days);
   return { changes };
-}
-
-export async function getRecentAvailability(_env: Env, _days: number) {
-  return {
-    changes: [] as {
-      playerId: string; playerName: string; team: string; status: string;
-      note: string; matchLabel: string; matchDate: string; updatedAt: string;
-    }[],
-  };
 }

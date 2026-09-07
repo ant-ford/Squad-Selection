@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { safeFormat } from '@/lib/dateUtils';
 import { setMyAvailability } from '@/api/setMyAvailability';
 import { toast } from 'sonner';
@@ -6,25 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
-import { apiGet } from '@/lib/apiClient';
-
-type Fixture = {
-  id: string;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  venue: string;
-  availabilityStatus: string;
-  playerNotes: string;
-  availabilityExceptionId: string;
-  selectionStatus: string;
-  isHome: boolean;
-};
-
-type SquadMember = {
-  name: string;
-  position: string;
-};
+import type { MyFixture } from '@/api/getMyFixtures';
+import { POS_SHORT } from '@/lib/format';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { useMatchSquad } from '@/lib/queries';
 
 const OPTIONS = [
   { value: 'Available', label: 'Going', Icon: CheckCircle2, color: 'text-green-600' },
@@ -32,20 +17,10 @@ const OPTIONS = [
   { value: 'Unavailable', label: 'No', Icon: XCircle, color: 'text-red-600' },
 ] as const;
 
-const POS_SHORT: Record<string, string> = {
-  Goalkeeper: 'GK', Defender: 'DEF', Midfielder: 'MID', Forward: 'FWD', 'Flexible/Varies': 'FLEX'
-};
-
-// Short in-memory cache for the read-only squad list shown in this sheet, so
-// reopening a fixture does not refetch it. TTL matches the Worker's 30s
-// match-record cache; availability saves do not change the selected players.
-const squadCache = new Map<string, { players: SquadMember[]; at: number }>();
-const SQUAD_CACHE_TTL_MS = 30 * 1000;
-
 export default function PlayerAvailabilitySheet({
   fixture, conflictHint, onClose, onSaved,
 }: {
-  fixture: Fixture;
+  fixture: MyFixture;
   /** Soft hint: the player is Available for their My Team fixture on this date. */
   conflictHint?: string;
   onClose: () => void; onSaved: () => void;
@@ -53,27 +28,8 @@ export default function PlayerAvailabilitySheet({
   const [status, setStatus] = useState<string>(fixture.availabilityStatus);
   const [notes, setNotes] = useState(fixture.playerNotes);
   const [saving, setSaving] = useState(false);
-  const [squad, setSquad] = useState<SquadMember[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const side = fixture.isHome ? 'home' : 'away';
-    const key = `${fixture.id}:${side}`;
-    const cached = squadCache.get(key);
-    if (cached && Date.now() - cached.at < SQUAD_CACHE_TTL_MS) {
-      setSquad(cached.players);
-      return;
-    }
-    apiGet<{ players: SquadMember[] }>(`/api/match/${fixture.id}/squad?side=${side}`)
-      .then(data => {
-        if (cancelled) return;
-        const players = data.players ?? [];
-        squadCache.set(key, { players, at: Date.now() });
-        setSquad(players);
-      })
-      .catch(() => { if (!cancelled) setSquad([]); });
-    return () => { cancelled = true; };
-  }, [fixture.id, fixture.isHome]);
+  const { data: squadData, isError: squadFailed } = useMatchSquad(fixture.id, fixture.isHome ? 'home' : 'away');
+  const squad = squadData?.players ?? (squadFailed ? [] : null);
 
   const handleSave = async () => {
     setSaving(true);
@@ -81,8 +37,7 @@ export default function PlayerAvailabilitySheet({
       await setMyAvailability(
         fixture.id,
         status as 'Available' | 'Maybe' | 'Unavailable',
-        notes,
-        fixture.availabilityExceptionId || undefined
+        notes
       );
       toast.success('Availability updated');
       onSaved();
@@ -94,19 +49,12 @@ export default function PlayerAvailabilitySheet({
   };
 
   return (
-    <>
-      {/* Overlay – click to close */}
-      <div
-        className="fixed inset-0 bg-black/40 z-40"
-        onClick={onClose}
-      />
-      {/* Drawer panel */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Sheet open onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side="bottom">
         <div className="px-4 py-6">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Update Availability</h2>
+          <SheetHeader onClose={onClose}>
+            <SheetTitle>Update Availability</SheetTitle>
+          </SheetHeader>
 
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
@@ -185,7 +133,7 @@ export default function PlayerAvailabilitySheet({
             Save
           </Button>
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }

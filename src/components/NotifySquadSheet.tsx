@@ -8,6 +8,7 @@ import {
   whatsAppLink,
   type FixtureBrief,
 } from '@/lib/whatsapp';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 export interface NotifyTarget {
   id: string;
@@ -75,9 +76,8 @@ export default function NotifySquadSheet({
   };
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl max-h-[85vh] overflow-y-auto shadow-lg">
+    <Sheet open onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side="bottom">
         <div className="sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between">
           <div>
             <h2 className="text-base font-semibold text-foreground">Notify squad</h2>
@@ -174,7 +174,7 @@ export default function NotifySquadSheet({
             </section>
           )}
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/lib/useAuth';
-import { useMyProfile } from '@/lib/queries';
+import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
 
 const CODE_LENGTH = 6;
 
@@ -40,19 +38,10 @@ export default function Login() {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const { loginWithEmail, verifyEmailOtp, user } = useAuth();
-  const { data: profile, isLoading: profileLoading } = useMyProfile();
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!user) return;
-    // Wait for profile to resolve before deciding where to send them.
-    if (profileLoading) return;
-    if (profile?.isCoach) {
-      navigate('/coach', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-  }, [user, profile, profileLoading, navigate]);
+  // Post-login routing happens in one place: AuthGate unmounts Login the
+  // instant the session arrives and renders the authenticated app (player
+  // view first) - a redirect effect here would never get the chance to run.
 
   const sendEmail = async (): Promise<boolean> => {
     setSending(true);
@@ -126,7 +115,7 @@ export default function Login() {
           />
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
-          HKFC Squad Manager
+          HKFC Squad Selection
         </h1>
 
         {step === 'request' ? (

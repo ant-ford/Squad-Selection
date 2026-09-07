@@ -1,17 +1,13 @@
 import { Outlet, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/lib/useAuth';
 import { useMyProfile } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 
 export default function CoachLayout() {
-  const { user, isLoading } = useAuth();
+  // AuthGate already guarantees a signed-in user before this route renders.
   const { data: profile, isLoading: profileLoading } = useMyProfile();
 
-  if (isLoading || !user) {
-    return <LoadingSkeleton />;
-  }
   if (profileLoading || !profile) {
     return <LoadingSkeleton />;
   }

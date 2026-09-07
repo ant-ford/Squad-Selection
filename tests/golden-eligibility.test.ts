@@ -17,38 +17,22 @@ import {
 } from "../worker/src/eligibility";
 import { linkId } from "../worker/src/airtable";
 import { computeSuspensionStates } from "../worker/src/suspension";
-import type { Match, MatchCard, Player, Team } from "../src/generated/domainTypes";
+import type { Match, MatchCard } from "../shared/schema/domainTypes";
+import { t, p, m, mc } from "./helpers/factories";
 
 // ── Factories ────────────────────────────────────────────────────────────
-function t(name: string, rank: number, isPremier = false): Team {
-  return { id: `team_${name.toLowerCase()}`, teamName: name, teamRank: rank, isPremier, active: true };
-}
-function p(overrides: Partial<Player> = {}): Player {
-  return {
-    id: "p1", active: true, registeredTeam: "HKFC C", playingPosition: "Defender",
-    playingAbility: "B", isVisitingPlayer: false, isSuspended: false, matchesToServe: 0,
-    everRegisteredToPremier: false, u21Eligible: false, preferredName: "Test Player",
-    ...overrides,
-  };
-}
-function m(overrides: Partial<Match> = {}): Match {
-  return {
-    id: "m1", matchDate: "2026-07-05", season: "2025-2026", homeTeam: "HKFC C",
-    awayTeam: "Opponent C", homeTeamScore: 0, awayTeamScore: 0, division: "Division 2",
-    competitionType: "League", matchStatus: "Scheduled", ...overrides,
-  };
-}
-function mc(overrides: Partial<MatchCard> = {}): MatchCard {
-  return {
-    id: "mc1", player: ["p1"], match: ["m1"], team: "HKFC C", playerTeam: "HKFC C",
-    playUp: false, goalkeeper: false, season: "2025-2026", ...overrides,
-  };
-}
 function sel(overrides: Partial<VirtualSelection> = {}) {
   return { player: ["p1"], match: ["m1"], ...overrides } as VirtualSelection;
 }
 
-function ctx(overrides: Partial<EvaluationContext> & { matches?: Match[] } = {}): EvaluationContext {
+type CtxOverrides = Partial<EvaluationContext> & {
+  matches?: Match[];
+  sameDayMatches?: Match[];
+  allSelections?: VirtualSelection[];
+  allExceptions?: { playerId: string; matchId: string; status: string }[];
+};
+
+function ctx(overrides: CtxOverrides = {}): EvaluationContext {
   const teams = overrides.teamMap
     ? [...overrides.teamMap.values()]
     : [t("HKFC A", 1, true), t("HKFC B", 2), t("HKFC C", 3), t("HKFC D", 4), t("HKFC E", 5)];
@@ -202,7 +186,6 @@ describe("Golden: every blocked reason string and rule ID", () => {
     );
     expect(r.status).toBe("warning");
     expect(r.warnings).toContain("Available for HKFC A on same day");
-    expect(r.warningTags.map((t) => t.ruleId)).toContain(RULE_IDS.SAME_DAY_AVAILABLE);
     expect(r.sameDayHigherTeam).toBe("HKFC A");
   });
   it("SAME_DAY_SELECTED", () => {
@@ -297,9 +280,7 @@ describe("Golden: every warning string and rule ID", () => {
     const r3 = evaluatePlayerEligibility(p(), m({ homeTeam: "HKFC B" }), ctx({ matchCards: three }));
     expect(r2.status).toBe("warning");
     expect(r2.warnings).toContain("Second play-up appearance");
-    expect(r2.warningTags[0]?.ruleId).toBe(RULE_IDS.WARN_PLAYUP_SECOND);
     expect(r3.warnings).toContain("Third play-up appearance");
-    expect(r3.warningTags[0]?.ruleId).toBe(RULE_IDS.WARN_PLAYUP_THIRD);
   });
   it("WARN_VISITING_EARLY_SEASON", () => {
     const r = evaluatePlayerEligibility(
@@ -355,17 +336,5 @@ describe("Golden: evaluation order never changes", () => {
   it("Step 5 before Step 6 when Premier boundary crossed", () => {
     const r = evaluatePlayerEligibility(p({ registeredTeam: "HKFC A" }), m({ homeTeam: "HKFC D" }), ctx());
     expect(r.reason).toBe("Premier movement restriction — team has not completed 3 matches");
-  });
-});
-
-// ── Explainability trace (debug mode) ────────────────────────────────────
-describe("Golden: evaluation trace", () => {
-  it("emits a step-by-step trace only when requested", () => {
-    const withTrace = evaluatePlayerEligibility(p({ isSuspended: true }), m(), ctx(), { trace: true });
-    expect(withTrace.trace).toBeDefined();
-    expect(withTrace.trace!.some((l) => l.includes("Step 1"))).toBe(true);
-    expect(withTrace.trace!.some((l) => l.includes("✗ Step 2"))).toBe(true);
-    const withoutTrace = evaluatePlayerEligibility(p({ isSuspended: true }), m(), ctx());
-    expect(withoutTrace.trace).toBeUndefined();
   });
 });

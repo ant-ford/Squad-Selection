@@ -3,26 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
-
-type Fixture = {
-  id: string;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
-  hkfcTeam: string;
-  opponent: string;
-  isHome: boolean;
-  division: string;
-  venue: string;
-  targetSquadSize: number;
-  selectedCount: number;
-  maybeCount: number;
-  unavailableCount: number;
-  maybeNames?: string[];
-  unavailableNames?: string[];
-  selectedUnavailableNames?: string[];
-  hasGoalkeeperSelected?: boolean;
-};
+import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 
 /** Click-toggled name popover that positions above or below based on viewport space. */
 function NamePopover({
@@ -136,7 +117,7 @@ export default function FixtureCard({
   fixture,
   conflicts = [],
 }: {
-  fixture: Fixture;
+  fixture: UpcomingFixture;
   conflicts?: SameDayConflict[];
 }) {
   const navigate = useNavigate();

@@ -9,8 +9,14 @@ import {
   isSpecialGoalkeeper,
   getMyFixtures,
 } from "../worker/src/fixtures";
-import { invalidateAll } from "../src/lib/cache";
+import { invalidateAll } from "../worker/src/cache";
 import type { ReferenceData } from "../worker/src/reference";
+import type { AuthorizedUser } from "../worker/src/auth";
+import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+
+function authUser(email: string): AuthorizedUser {
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+}
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -131,44 +137,14 @@ function tableOf(u: string): string {
 }
 
 function installFakeAirtable() {
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    fetchCalls.push({ url: u, method: init?.method ?? "GET" });
-    if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-    const table = tableOf(u);
-    let records: any[] = [];
-    if (table === "People") {
-      records = PLAYER_RECORDS;
-      // Honest filterByFormula emulation: {Email}="..."
-      const q = new URLSearchParams(u.split("?")[1] ?? "");
-      const formula = decodeURIComponent(q.get("filterByFormula") || "");
-      const m = formula.match(/"([^"]+)"/);
-      if (m) {
-        const needle = m[1].toLowerCase();
-        records = records.filter((r) => (r.fields?.["Email"] || "").toLowerCase() === needle);
-      }
-    } else if (table === "Teams") records = TEAM_RECORDS;
-    else if (table === "Matches") records = MATCH_RECORDS;
-    else if (table === "Availability Exceptions") records = EXCEPTION_RECORDS;
-    else records = [];
-    const byId = u.match(/\/rec[A-Z0-9]+/);
-    if (byId) {
-      const found = records.find((r) => u.includes(r.id));
-      return Promise.resolve(
-        new Response(JSON.stringify(found ?? { id: "x", fields: {} }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    }
-    return Promise.resolve(
-      new Response(JSON.stringify({ records }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
+  const tables: FakeTables = {
+    People: PLAYER_RECORDS,
+    Teams: TEAM_RECORDS,
+    Matches: MATCH_RECORDS,
+    "Availability Exceptions": EXCEPTION_RECORDS,
+  };
+  const { calls } = fakeAirtable(tables);
+  fetchCalls = calls;
 }
 
 beforeEach(() => {
@@ -186,7 +162,7 @@ const exceptionFetches = () =>
 
 describe("getMyFixtures - special goalkeeper view", () => {
   it("returns every upcoming HKFC fixture (one card per match, derbies single)", async () => {
-    const out = await getMyFixtures(ENV, "bob@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     expect(out.specialGoalkeeperView).toBe(true);
     expect(out.displayTeam).toBe("H"); // banner copy uses the team name, never "lowest ranked"
     expect(out.fixtures.map((f: any) => f.id)).toEqual(["recM1", "recM4"]);
@@ -195,18 +171,18 @@ describe("getMyFixtures - special goalkeeper view", () => {
   });
 
   it("excludes matches with no HKFC side", async () => {
-    const out = await getMyFixtures(ENV, "bob@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     expect(out.fixtures.some((f: any) => f.id === "recM6")).toBe(false);
   });
 
   it("sorts by date ascending", async () => {
-    const out = await getMyFixtures(ENV, "bob@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     const dates = out.fixtures.map((f: any) => f.date);
     expect(dates).toEqual([...dates].sort());
   });
 
   it("maps selection status from either side", async () => {
-    const out = await getMyFixtures(ENV, "bob@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     const m1 = out.fixtures.find((f: any) => f.id === "recM1");
     const m4 = out.fixtures.find((f: any) => f.id === "recM4");
     expect(m1.selectionStatus).toBe("Selected");
@@ -216,7 +192,7 @@ describe("getMyFixtures - special goalkeeper view", () => {
   });
 
   it("maps per-match availability exceptions (Maybe) and defaults to Available", async () => {
-    const out = await getMyFixtures(ENV, "bob@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     const m1 = out.fixtures.find((f: any) => f.id === "recM1");
     const m4 = out.fixtures.find((f: any) => f.id === "recM4");
     expect(m1.availabilityStatus).toBe("Available");
@@ -226,12 +202,12 @@ describe("getMyFixtures - special goalkeeper view", () => {
   });
 
   it("fetches exceptions in bulk by season - never once per fixture", async () => {
-    await getMyFixtures(ENV, "bob@hkfc.com");
+    await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     expect(exceptionFetches()).toBe(1);
   });
 
   it("does not change the normal player experience", async () => {
-    const out = await getMyFixtures(ENV, "dave@hkfc.com");
+    const out = await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     expect(out.specialGoalkeeperView).toBeUndefined();
     expect(out.fixtures.map((f: any) => f.id)).toEqual(["recM1", "recM4"]);
     expect(out.fixtures.every((f: any) => f.hkfcTeam === "A")).toBe(true);

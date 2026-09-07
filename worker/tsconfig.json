@@ -4,25 +4,14 @@
     "lib": ["ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["@cloudflare/workers-types", "node"],
+    "types": ["@cloudflare/workers-types"],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
 
-    "baseUrl": "..",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "baseUrl": ".."
   },
-  "include": [
-    "src/**/*.ts",
-    "../src/generated/**/*.ts",
-    "../src/mappers/**/*.ts",
-    "../src/lib/cache.ts",
-    "../src/lib/displayTeam.ts",
-    "../src/lib/abilityGroup.ts",
-    "../src/lib/abilityRank.ts"
-  ]
+  "include": ["src/**/*.ts", "../shared/**/*.ts"]
 }

@@ -3,6 +3,7 @@
 // token — it only ever calls this Worker.
 
 import { supabase } from './supabase';
+import { signOut } from './auth';
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -37,11 +38,11 @@ async function parseResponse(response: Response) {
   }
 
   if (!response.ok) {
-    // 401 UNAUTHORIZED: expired / invalid Supabase session.
-    // Sign out and return to login.
+    // 401 UNAUTHORIZED: expired / invalid Supabase session. Sign out through
+    // the one auth path; AuthGate's own session subscription renders Login
+    // as soon as it fires - no hard navigation needed.
     if (response.status === 401) {
-      await supabase.auth.signOut().catch(() => {});
-      if (window.location.pathname !== '/') window.location.href = '/';
+      await signOut().catch(() => {});
       throw new ApiError(
         data?.message || 'Session expired. Please log in again.',
         401,
@@ -55,8 +56,9 @@ async function parseResponse(response: Response) {
       // Sign out and return to login.
       if (data?.error === 'APPLICATION_ACCESS_DENIED') {
         toast.error(data.message || 'Your HKFC application access has been disabled.');
-        await supabase.auth.signOut().catch(() => {});
-        if (window.location.pathname !== '/') window.location.href = '/';
+        // Same single sign-out path as the 401 above: it clears the query
+        // cache and AuthGate renders Login. No hard navigation needed.
+        await signOut().catch(() => {});
         throw new ApiError(data.message || 'Access denied.', 403, data.error);
       }
 

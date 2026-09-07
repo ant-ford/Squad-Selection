@@ -5,7 +5,7 @@ import {
   resolveRuleStatus,
   type RuleFixtureContext,
 } from "../worker/src/availabilityRules";
-import type { AvailabilityRule } from "../src/generated/domainTypes";
+import type { AvailabilityRule } from "../shared/schema/domainTypes";
 
 function rule(overrides: Partial<AvailabilityRule> = {}): AvailabilityRule {
   return {

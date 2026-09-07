@@ -18,11 +18,13 @@
  * player-in-match selections, not rank changes.
  */
 
-import { Env, AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import { AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
-import { TABLES } from "../../src/generated/tableNames";
-import { getCached, invalidateCachePrefix } from "../../src/lib/cache";
+import { TABLES } from "../../shared/schema/tableNames";
+import { getCached, invalidateCachePrefix } from "./cache";
+import { mapPlayer } from "../../shared/mappers/playerMapper";
 
 export const RANKING_EVENTS_TABLE = "Ranking Events";
 export const RANKING_EVENTS_FIELDS = {
@@ -91,46 +93,54 @@ export function buildRankingEventRecords(
 }
 
 /**
- * Fire-and-forget: records the events after a successful rank commit and
- * never blocks or fails the mutation. Actor link is resolved from the
- * verified session email via the People table (never client-supplied).
+ * Records the events after a successful rank commit. Awaited by the caller:
+ * a failed write must surface as an error, not a silently missing audit
+ * entry. Actor link is resolved from the verified session email via the
+ * People table (never client-supplied).
  */
 export async function recordRankingEvents(env: Env, events: RankingEventInput[]): Promise<void> {
   if (events.length === 0) return;
-  void (async () => {
-    try {
-      const stamped = buildRankingEventRecords(events);
-      const emails = [...new Set(events.map((e) => e.actorEmail).filter(Boolean))] as string[];
-      const idByEmail = new Map<string, string>();
-      for (const email of emails) {
-        const actor = await getPlayerByEmail(env, email);
-        if (actor) idByEmail.set(email, actor.id);
-      }
-      const rows = stamped.map(({ event, timestamp }) => {
-        const actorId = event.actorEmail ? idByEmail.get(event.actorEmail) : undefined;
-        return {
-          [RANKING_EVENTS_FIELDS.player]: [event.playerId],
-          [RANKING_EVENTS_FIELDS.actor]: actorId ? [actorId] : [],
-          [RANKING_EVENTS_FIELDS.actorEmail]: event.actorEmail || "",
-          [RANKING_EVENTS_FIELDS.kind]: event.kind,
-          [RANKING_EVENTS_FIELDS.oldRank]: event.oldRank ?? null,
-          [RANKING_EVENTS_FIELDS.newRank]: event.newRank ?? null,
-          [RANKING_EVENTS_FIELDS.justification]: event.justification || "",
-          [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
-        };
-      });
-      // Airtable accepts up to 10 records per create request - chunk so a
-      // full-table reorder (many changed players) is still audited in full.
-      for (let i = 0; i < rows.length; i += 10) {
-        await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
-      }
-      // The next read must reach Airtable immediately - never serve a stale
-      // pre-write events list from the 60s cache (spec S8).
-      invalidateCachePrefix("ranking-events:");
-    } catch (err) {
-      console.error("[RankingEvents] failed to record events:", err);
+  const stamped = buildRankingEventRecords(events);
+  const emails = [...new Set(events.map((e) => e.actorEmail).filter(Boolean))] as string[];
+  const idByEmail = new Map<string, string>();
+  for (const email of emails) {
+    const actor = await getPlayerByEmail(env, email);
+    if (actor) idByEmail.set(email, actor.id);
+  }
+  const rows = stamped.map(({ event, timestamp }) => {
+    const actorId = event.actorEmail ? idByEmail.get(event.actorEmail) : undefined;
+    return {
+      [RANKING_EVENTS_FIELDS.player]: [event.playerId],
+      [RANKING_EVENTS_FIELDS.actor]: actorId ? [actorId] : [],
+      [RANKING_EVENTS_FIELDS.actorEmail]: event.actorEmail || "",
+      [RANKING_EVENTS_FIELDS.kind]: event.kind,
+      [RANKING_EVENTS_FIELDS.oldRank]: event.oldRank ?? null,
+      [RANKING_EVENTS_FIELDS.newRank]: event.newRank ?? null,
+      [RANKING_EVENTS_FIELDS.justification]: event.justification || "",
+      [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
+    };
+  });
+  // Airtable accepts up to 10 records per create request - chunk so a
+  // full-table reorder (many changed players) is still audited in full.
+  try {
+    for (let i = 0; i < rows.length; i += 10) {
+      await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
     }
-  })();
+  } catch (err) {
+    // Table not created yet: keep the documented graceful degradation, the
+    // same 404 carve-out the read path makes. The rank change itself has
+    // ALREADY been committed to People by the caller, so failing here would
+    // report a successful move as a 502 and invite the coach to redo it.
+    // Every OTHER failure still propagates - a real write error must surface.
+    if (err instanceof AirtableError && err.status === 404) {
+      console.error("[RankingEvents] table not created yet (404); rank change committed without an audit row:", err.message);
+      return;
+    }
+    throw err;
+  }
+  // The next read must reach Airtable immediately - never serve a stale
+  // pre-write events list from the 60s cache (spec S8).
+  invalidateCachePrefix("ranking-events:");
 }
 
 /** Drop every cached ranking-events read (call after a rank commit). */
@@ -188,15 +198,7 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
         for (const pid of missingIds) {
           try {
             const rec = await airtableFindById(env, TABLES.player, pid);
-            if (rec) {
-              const f = rec.fields ?? {};
-              playerById.set(pid, {
-                id: pid,
-                preferredName: f["Preferred Name"],
-                givenNames: f["Given Name(s)"],
-                email: f["Email"],
-              } as never);
-            }
+            if (rec) playerById.set(pid, mapPlayer(rec));
           } catch {
             /* name resolution is best-effort */
           }
