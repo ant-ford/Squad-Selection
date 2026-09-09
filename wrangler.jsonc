@@ -15,9 +15,19 @@
   "routes": [
     { "pattern": "app.eddy.global", "custom_domain": true }
   ],
+  // A tiny front-door script handles requests that match no file in dist/.
+  // Static assets are still served directly, before this ever runs.
+  //
+  // `not_found_handling` is deliberately "none": the SPA fallback now lives in
+  // web-shell/index.ts, which distinguishes a client-side route (serve the app
+  // shell) from a missing hashed build file (404). Returning index.html for a
+  // missing chunk handed the browser HTML to parse as JavaScript, and the app
+  // hung on its loading skeleton with no recoverable error.
+  "main": "web-shell/index.ts",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "none"
   },
   "compatibility_flags": [
     "nodejs_compat"
