@@ -126,10 +126,10 @@ export function invalidateReferenceData(): void {
 }
 
 /**
- * People-record lookup by email, cached for 60s. The AUTHORIZATION path
- * (worker/src/auth.ts) passes { fresh: true } so access decisions always
- * use a live Airtable read; every other caller (fixtures, profile,
- * availability, ranking actor resolution) reuses the short-TTL entry.
+ * People-record lookup by email, cached for 60s. Every caller, including
+ * the authorization path in worker/src/auth.ts, reuses that short-TTL entry,
+ * so an Airtable correction takes up to a minute to change an access
+ * decision. Pass { fresh: true } to bypass the cache for a live read.
  */
 export async function getPlayerByEmail(
   env: Env,
@@ -148,12 +148,30 @@ export async function getPlayerByEmail(
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
+  // LOWER() on the Airtable side matters: "=" compares text case-sensitively,
+  // so matching the caller's lowercased address against the raw Email field
+  // missed every People record stored with a capital letter, and those people
+  // were denied access as if they did not exist. The access rules have always
+  // promised a case-insensitive match; this is what delivers it.
   const records = await airtableFindAll(
     env,
     TABLES.player,
-    `{${PEOPLE_FIELDS.email}}="${escapeFormulaValue(email)}"`
+    `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(email)}"`
   );
-  return records[0] ? mapPlayer(records[0]) : null;
+  // Airtable cannot enforce uniqueness on Email, and a stale duplicate is
+  // easy to create. Taking whichever record came back first let a superseded
+  // row decide someone's access: the person is refused while the record an
+  // administrator is looking at plainly says Active. Prefer an active record
+  // over an inactive one, and always say in the logs that a choice was made,
+  // so the underlying duplicate still gets cleaned up.
+  if (records.length > 1) {
+    console.warn(
+      `${records.length} People records share the email ${email}: ` +
+        `${records.map((r) => r.id).join(", ")} - resolve the duplicate in Airtable`,
+    );
+  }
+  const chosen = records.find((r) => r.fields?.[PEOPLE_FIELDS.active] === true) ?? records[0];
+  return chosen ? mapPlayer(chosen) : null;
 }
 
 export async function getExceptionsForSeasons(env: Env, seasons: string[]): Promise<AvailabilityException[]> {

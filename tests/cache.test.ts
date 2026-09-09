@@ -35,6 +35,13 @@ const TEAM_RECORDS = ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => ({
 const PLAYER_RECORDS = [
   { id: "recP2", fields: { "Preferred Name": "Bob", Surname: "B", Email: "bob@hkfc.com", Active: true, "Registered Team": "H", "Playing Position": "Goalkeeper", "Playing Ability": "H", Status: "Active" } },
   { id: "recP4", fields: { "Preferred Name": "Dave", Surname: "D", Email: "dave@hkfc.com", Active: true, "Registered Team": "A", "Playing Position": "Defender", "Playing Ability": "A", Status: "Active" } },
+  // Email stored with capitals. Airtable compares text case-sensitively, so
+  // this record is only reachable if the lookup lowercases both sides.
+  { id: "recP5", fields: { "Preferred Name": "Erin", Surname: "E", Email: "Erin.Capital@HKFC.com", Active: true, "Registered Team": "A", "Playing Position": "Midfielder", "Playing Ability": "B", Status: "Active" } },
+  // A stale duplicate ahead of the live record for the same address. Ordered
+  // inactive-first on purpose: taking records[0] would refuse this person.
+  { id: "recTwinStale", fields: { "Preferred Name": "Twin", Surname: "T", Email: "twin@hkfc.com", "Registered Team": "A", "Playing Position": "Forward", "Playing Ability": "C", Status: "Inactive" } },
+  { id: "recTwinActive", fields: { "Preferred Name": "Twin", Surname: "T", Email: "twin@hkfc.com", Active: true, "Registered Team": "A", "Playing Position": "Forward", "Playing Ability": "C", Status: "Active" } },
 ];
 
 const MATCH_RECORDS = [
@@ -95,6 +102,23 @@ describe("player-by-email cache", () => {
     const before = peopleFetches();
     await getPlayerByEmail(ENV, "dave@hkfc.com");
     expect(peopleFetches()).toBe(before);
+  });
+
+  // Regression: the lookup sent {Email}="..." against an already-lowercased
+  // address. Airtable compares text case-sensitively, so every People record
+  // whose Email held a capital letter failed to match and that person was
+  // refused access as though they were not in the club at all.
+  it("finds a People record whose Email is stored with capital letters", async () => {
+    const found = await getPlayerByEmail(ENV, "erin.capital@hkfc.com");
+    expect(found?.id).toBe("recP5");
+  });
+
+  // Regression: a stale duplicate row returned ahead of the live one decided
+  // the person's access, so they were refused while the record the
+  // administrator was editing plainly said Active.
+  it("prefers the active record when duplicates share an email", async () => {
+    const found = await getPlayerByEmail(ENV, "twin@hkfc.com");
+    expect(found?.id).toBe("recTwinActive");
   });
 
   it("bypasses the cache with { fresh: true } (authorization path)", async () => {

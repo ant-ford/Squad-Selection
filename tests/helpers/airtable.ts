@@ -26,19 +26,34 @@ export interface FakeAirtableHandle {
 
 /**
  * Evaluates the small subset of Airtable formula syntax this codebase
- * actually sends: `{Field}="value"` (case-insensitive), `{Field}=TRUE()` /
- * `=FALSE()`, and `OR(clause, clause, ...)`. An unrecognised formula matches
- * everything rather than silently hiding data a test would otherwise notice
- * is missing.
+ * actually sends: `{Field}="value"`, `LOWER({Field})="value"`,
+ * `{Field}=TRUE()` / `=FALSE()`, and `OR(clause, clause, ...)`. An
+ * unrecognised formula matches everything rather than silently hiding data a
+ * test would otherwise notice is missing.
+ *
+ * `{Field}="value"` is deliberately CASE-SENSITIVE, because that is what
+ * Airtable does. This fake used to lowercase both sides, which made a
+ * case-sensitive lookup look case-insensitive in tests and hid a real
+ * lockout: People records whose Email held a capital letter never matched.
+ * Code that needs a case-insensitive match must send LOWER() itself.
  */
 function evaluateFormula(formula: string, record: FakeRecord): boolean {
   const or = formula.match(/^OR\((.*)\)$/s);
   if (or) return splitTopLevel(or[1]).some((clause) => evaluateFormula(clause, record));
 
+  const lowerEq = formula.match(/^LOWER\(\{([^}]+)\}\)="((?:[^"\\]|\\.)*)"$/);
+  if (lowerEq) {
+    const [, field, value] = lowerEq;
+    return (
+      String(record.fields?.[field] ?? "").toLowerCase() ===
+      value.replace(/\\"/g, '"').toLowerCase()
+    );
+  }
+
   const eq = formula.match(/^\{([^}]+)\}="((?:[^"\\]|\\.)*)"$/);
   if (eq) {
     const [, field, value] = eq;
-    return String(record.fields?.[field] ?? "").toLowerCase() === value.replace(/\\"/g, '"').toLowerCase();
+    return String(record.fields?.[field] ?? "") === value.replace(/\\"/g, '"');
   }
 
   const bool = formula.match(/^\{([^}]+)\}=(TRUE|FALSE)\(\)$/);

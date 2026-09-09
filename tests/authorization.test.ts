@@ -30,7 +30,9 @@ const ENV = {
 // deliberately ignores the Teams.Active flag, so a coach/section-captain link
 // counts even when the team record is inactive.
 const teamLinks = {
-  coachIds: ["recCoach", "recInactiveCoach"],
+  // recUnnamedTeamCoach is linked under Teams.Coach but the team record has
+  // a blank Team Name, so it contributes no entry to coachTeamNamesByPersonId.
+  coachIds: ["recCoach", "recInactiveCoach", "recUnnamedTeamCoach"],
   sectionCaptainIds: ["recSectionCaptain"],
   coachTeamNamesByPersonId: new Map([
     ["recCoach", ["Men's 1s"]],
@@ -45,6 +47,7 @@ const people = {
   activeCoach: { id: "recCoach", email: "coach@hkfc.com", active: true, playerCoach: [] },
   inactiveCoach: { id: "recInactiveCoach", email: "inactive-coach@hkfc.com", active: false, playerCoach: [] },
   sectionCaptain: { id: "recSectionCaptain", email: "captain@hkfc.com", active: false, playerCoach: [] },
+  unnamedTeamCoach: { id: "recUnnamedTeamCoach", email: "unnamed-team-coach@hkfc.com", active: false, playerCoach: [] },
   // Player/Coach alone is no longer a coach-access fallback: no Teams.Coach
   // or Teams.Section Captain link, but the multi-select still says "Coach".
   playerCoachFlagOnly: { id: "recFallback", email: "fallback@hkfc.com", active: false, playerCoach: ["Player/Coach"] },
@@ -189,6 +192,18 @@ describe("requireAuthorizedUser", () => {
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
     expect(user).toMatchObject({ personId: "recInactiveCoach", role: "coach" });
+  });
+
+  it("allows a coach whose team has a blank Team Name (coach access is the link, not the derived name list)", async () => {
+    supabaseReturns("unnamed-team-coach@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.unnamedTeamCoach);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    // Inactive and with no named teams to show, but still a coach: deriving
+    // this from coachTeams.length would have denied them outright.
+    expect(user).toMatchObject({ personId: "recUnnamedTeamCoach", role: "coach" });
+    expect(user.coachTeams).toEqual([]);
   });
 
   it("allows an inactive section captain linked via Teams.Section Captain, and sees every team", async () => {

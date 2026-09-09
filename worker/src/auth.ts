@@ -57,6 +57,7 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   ]);
 
   if (!player) {
+    console.warn(`Access denied - no People record matched email ${normalizedEmail}`);
     throw new HttpError("Application access is not authorised.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
@@ -66,14 +67,26 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // team records (not just active ones) so a person's access never depends
   // on whether their team record is temporarily marked inactive.
   const isSectionCaptain = links.sectionCaptainIds.includes(player.id);
+  // Coach status comes from the Teams.Coach link itself, never from the
+  // derived team-name list below. coachTeamNamesByPersonId only gains an
+  // entry when the team record has a non-empty Team Name, so deriving access
+  // from it silently locked out anyone coaching a team whose name was blank.
+  const isTeamCoach = links.coachIds.includes(player.id);
   // Section Captains see every team everywhere - the most permissive of the
   // paths this used to be computed on, now the single definition.
   const coachTeams = isSectionCaptain
     ? links.allTeamNames
     : links.coachTeamNamesByPersonId.get(player.id) ?? [];
-  const isCoach = coachTeams.length > 0 || isSectionCaptain;
+  const isCoach = isTeamCoach || isSectionCaptain;
 
   if (!isActive && !isCoach) {
+    // Logged with the matched record id: the commonest cause of a surprise
+    // denial is a second People record sharing the email, so the record the
+    // administrator is looking at is not the one that was matched.
+    console.warn(
+      `Access denied - matched People record ${player.id} for ${normalizedEmail} ` +
+        `has Active=${JSON.stringify(player.active)} and no coach link`,
+    );
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
