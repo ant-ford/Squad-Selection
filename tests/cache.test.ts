@@ -113,6 +113,15 @@ describe("player-by-email cache", () => {
     expect(found?.id).toBe("recP5");
   });
 
+  // The match is case-insensitive on both sides, so it cannot depend on the
+  // caller having normalized first. auth.ts does; other callers need not.
+  it("matches whatever case the caller passes, against whatever case is stored", async () => {
+    for (const query of ["ERIN.CAPITAL@HKFC.COM", "Erin.Capital@HKFC.com", " erin.CAPITAL@hkfc.com "]) {
+      invalidatePlayerByEmail(query);
+      expect((await getPlayerByEmail(ENV, query))?.id).toBe("recP5");
+    }
+  });
+
   // Regression: a stale duplicate row returned ahead of the live one decided
   // the person's access, so they were refused while the record the
   // administrator was editing plainly said Active.

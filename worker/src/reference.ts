@@ -148,15 +148,20 @@ export async function getPlayerByEmail(
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
-  // LOWER() on the Airtable side matters: "=" compares text case-sensitively,
-  // so matching the caller's lowercased address against the raw Email field
-  // missed every People record stored with a capital letter, and those people
-  // were denied access as if they did not exist. The access rules have always
-  // promised a case-insensitive match; this is what delivers it.
+  // Matching an email is case-insensitive on BOTH sides, unconditionally.
+  //
+  // Airtable's "=" compares text case-sensitively, so the original
+  // {Email}="<address>" missed every People record whose Email held a capital
+  // letter and refused that person as if they were not in the club. LOWER()
+  // fixes the stored side. Lowercasing here rather than trusting the caller
+  // fixes the other side: auth.ts happens to pass a normalized address, but a
+  // caller that did not (recordRankingEvents resolving an actor, say) would
+  // reintroduce exactly the same silent miss.
+  const normalized = email.trim().toLowerCase();
   const records = await airtableFindAll(
     env,
     TABLES.player,
-    `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(email)}"`
+    `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(normalized)}"`
   );
   // Airtable cannot enforce uniqueness on Email, and a stale duplicate is
   // easy to create. Taking whichever record came back first let a superseded
@@ -166,7 +171,7 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
   // so the underlying duplicate still gets cleaned up.
   if (records.length > 1) {
     console.warn(
-      `${records.length} People records share the email ${email}: ` +
+      `${records.length} People records share the email ${normalized}: ` +
         `${records.map((r) => r.id).join(", ")} - resolve the duplicate in Airtable`,
     );
   }
