@@ -1,7 +1,8 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
 import Login from './pages/Login';
 import PlayerDashboard from './pages/PlayerDashboard';
 
@@ -38,6 +39,12 @@ function RouteSkeleton() {
 function RouteError() {
   const error = useRouteError();
   console.error(error);
+  // A lazy route whose chunk 404s (or comes back as the SPA fallback HTML)
+  // means this client is running a previous deploy. Clear the service worker
+  // and reload once rather than leaving the skeleton up indefinitely.
+  useEffect(() => {
+    if (isChunkLoadError(error)) void recoverFromStaleDeploy();
+  }, [error]);
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background px-6 text-center">
       <p className="text-lg font-semibold text-foreground">Something went wrong</p>

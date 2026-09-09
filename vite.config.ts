@@ -31,6 +31,15 @@ export default defineConfig(({ command }) => ({
       registerType: "autoUpdate",
       injectRegister: "auto",
       includeAssets: ["assets/favicon.svg", "assets/apple-touch-icon.png"],
+      workbox: {
+        // Drop precaches from previous deploys instead of leaving them to be
+        // served alongside the current one.
+        cleanupOutdatedCaches: true,
+        // Never answer an asset or API request with the cached index.html.
+        // The Worker already falls back to index.html for unknown paths, so
+        // a missing chunk would otherwise be handed back as HTML twice over.
+        navigateFallbackDenylist: [/^\/assets\//, /^\/api\//],
+      },
       manifest: {
         name: "HKFC Squad Selection",
         short_name: "HKFC Squad",
