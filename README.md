@@ -470,6 +470,12 @@ npm run deploy        # Frontend build + deploy, same as deploy:web
 
 **Deploy order:** deploy the API Worker before the frontend when the API contract changes.
 
+**Missing assets return 404, not the app shell.** `wrangler.jsonc` sets `main` to `web-shell/index.ts`, a few lines that run only for requests matching no file in `dist/`. It 404s anything under `/assets/` and serves `index.html` for everything else. `not_found_handling` is `"none"` because that script now owns the SPA fallback.
+
+Why it exists: asset filenames are content-hashed and a deploy removes the previous ones, so a client holding an old page requests chunks that no longer exist. Returning `index.html` for those handed the browser HTML to parse as JavaScript - the lazy route never resolved and the app sat on its loading skeleton with no error to catch. `tests/webShell.test.ts` pins both branches.
+
+**Windows local build caveat:** adding `main` means the Cloudflare Vite plugin spawns a `workerd` process during `vite build`, and on Windows it keeps a handle on `dist/hkfc_squad_selection/.wrangler` after the build exits. The next build then fails with `EPERM ... prepare-out-dir`. Kill the stray `workerd` and delete `dist/` to recover. Linux unlink semantics make this a non-issue, so CI and Cloudflare Workers Builds are unaffected.
+
 **Custom domains.** Both Workers are served from `eddy.global` rather than `*.workers.dev`, which some corporate and mobile DNS resolvers block:
 
 | Worker | Hostname | Config |

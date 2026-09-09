@@ -9,14 +9,15 @@
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
-    "verify": "npm run typecheck && npm run typecheck:worker && npm run typecheck:tests && npm test && npm run build",
+    "verify": "npm run typecheck && npm run typecheck:worker && npm run typecheck:shell && npm run typecheck:tests && npm test && npm run build",
     "dev": "vite",
     "dev:api": "wrangler dev --config worker/wrangler.toml --port 8787",
     "build": "vite build",
     "preview": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "deploy:web": "wrangler deploy",
-    "deploy:api": "wrangler deploy --config worker/wrangler.toml"
+    "deploy:api": "wrangler deploy --config worker/wrangler.toml",
+    "typecheck:shell": "tsc --noEmit -p web-shell/tsconfig.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6",
