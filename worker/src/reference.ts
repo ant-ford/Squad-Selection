@@ -126,10 +126,10 @@ export function invalidateReferenceData(): void {
 }
 
 /**
- * People-record lookup by email, cached for 60s. The AUTHORIZATION path
- * (worker/src/auth.ts) passes { fresh: true } so access decisions always
- * use a live Airtable read; every other caller (fixtures, profile,
- * availability, ranking actor resolution) reuses the short-TTL entry.
+ * People-record lookup by email, cached for 60s. Every caller, including
+ * the authorization path in worker/src/auth.ts, reuses that short-TTL entry,
+ * so an Airtable correction takes up to a minute to change an access
+ * decision. Pass { fresh: true } to bypass the cache for a live read.
  */
 export async function getPlayerByEmail(
   env: Env,
@@ -148,12 +148,35 @@ export async function getPlayerByEmail(
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
+  // Matching an email is case-insensitive on BOTH sides, unconditionally.
+  //
+  // Airtable's "=" compares text case-sensitively, so the original
+  // {Email}="<address>" missed every People record whose Email held a capital
+  // letter and refused that person as if they were not in the club. LOWER()
+  // fixes the stored side. Lowercasing here rather than trusting the caller
+  // fixes the other side: auth.ts happens to pass a normalized address, but a
+  // caller that did not (recordRankingEvents resolving an actor, say) would
+  // reintroduce exactly the same silent miss.
+  const normalized = email.trim().toLowerCase();
   const records = await airtableFindAll(
     env,
     TABLES.player,
-    `{${PEOPLE_FIELDS.email}}="${escapeFormulaValue(email)}"`
+    `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(normalized)}"`
   );
-  return records[0] ? mapPlayer(records[0]) : null;
+  // Airtable cannot enforce uniqueness on Email, and a stale duplicate is
+  // easy to create. Taking whichever record came back first let a superseded
+  // row decide someone's access: the person is refused while the record an
+  // administrator is looking at plainly says Active. Prefer an active record
+  // over an inactive one, and always say in the logs that a choice was made,
+  // so the underlying duplicate still gets cleaned up.
+  if (records.length > 1) {
+    console.warn(
+      `${records.length} People records share the email ${normalized}: ` +
+        `${records.map((r) => r.id).join(", ")} - resolve the duplicate in Airtable`,
+    );
+  }
+  const chosen = records.find((r) => r.fields?.[PEOPLE_FIELDS.active] === true) ?? records[0];
+  return chosen ? mapPlayer(chosen) : null;
 }
 
 export async function getExceptionsForSeasons(env: Env, seasons: string[]): Promise<AvailabilityException[]> {
