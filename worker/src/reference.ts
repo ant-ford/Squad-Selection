@@ -157,12 +157,39 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
   // fixes the other side: auth.ts happens to pass a normalized address, but a
   // caller that did not (recordRankingEvents resolving an actor, say) would
   // reintroduce exactly the same silent miss.
+  //
+  // The exact-match query runs FIRST and is the only one on the hot path. It
+  // is the query this app used for years, so a formula Airtable might reject
+  // can never be what takes every authenticated route down: an authorization
+  // failure here surfaces as a 502 on every screen, which is exactly how this
+  // was found. The case-insensitive form is a fallback, reached only when the
+  // exact match finds nothing, and its failure is contained.
   const normalized = email.trim().toLowerCase();
-  const records = await airtableFindAll(
+  let records = await airtableFindAll(
     env,
     TABLES.player,
-    `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(normalized)}"`
+    `{${PEOPLE_FIELDS.email}}="${escapeFormulaValue(normalized)}"`
   );
+
+  if (records.length === 0) {
+    try {
+      records = await airtableFindAll(
+        env,
+        TABLES.player,
+        `LOWER({${PEOPLE_FIELDS.email}})="${escapeFormulaValue(normalized)}"`
+      );
+    } catch (err) {
+      // Treat as "no such person", which is what the exact match already
+      // concluded. Logged rather than thrown: someone whose address is stored
+      // in mixed case should be told they are not authorised, not have the
+      // whole application fail for everyone.
+      console.error(
+        "Case-insensitive People lookup failed:",
+        err instanceof Error ? err.message : err,
+      );
+      records = [];
+    }
+  }
   // Airtable cannot enforce uniqueness on Email, and a stale duplicate is
   // easy to create. Taking whichever record came back first let a superseded
   // row decide someone's access: the person is refused while the record an

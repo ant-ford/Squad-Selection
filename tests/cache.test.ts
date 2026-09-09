@@ -122,6 +122,27 @@ describe("player-by-email cache", () => {
     }
   });
 
+  // Regression, and the reason the case-insensitive query is a fallback rather
+  // than the primary one: authorization runs through this lookup, so a formula
+  // Airtable rejects turned into a 502 on every authenticated route and the
+  // whole app hung. A failure in the fallback must read as "no such person".
+  it("survives the case-insensitive fallback failing, rather than taking every route down", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('LOWER')) {
+        return new Response('{"error":{"type":"INVALID_FILTER_BY_FORMULA"}}', { status: 422 });
+      }
+      return realFetch(input as never, init);
+    }) as typeof fetch;
+    try {
+      invalidatePlayerByEmail('nobody@hkfc.com');
+      await expect(getPlayerByEmail(ENV, 'nobody@hkfc.com')).resolves.toBeNull();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   // Regression: a stale duplicate row returned ahead of the live one decided
   // the person's access, so they were refused while the record the
   // administrator was editing plainly said Active.
