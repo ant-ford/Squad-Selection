@@ -35,6 +35,8 @@ export interface MyFixture {
 export interface GetMyFixturesOutput {
   playerId: string;
   playerName: string;
+  /** People.Photo, first attachment URL. Empty when the player has none. */
+  photo?: string;
   /** The team the app displays for this player (Selected Team EOS -> SOS -> Registered). */
   displayTeam?: string;
   registeredTeam: string;

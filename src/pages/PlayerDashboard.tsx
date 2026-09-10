@@ -36,9 +36,27 @@ function DayAvailabilityControl({
   busy: string | null;
   onSet: (date: string, status: AvailabilityStatus) => void;
 }) {
+  // Collapsed by default. This sits above every multi-fixture day, so as a
+  // permanently expanded row of buttons it added a block of height to each
+  // one and pushed the fixtures themselves - the thing players came to act
+  // on - down the page. Open it and the same three choices are there.
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <div className="flex justify-end -mt-1">
+        <button
+          onClick={() => setOpen(true)}
+          className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline py-0.5"
+        >
+          Set whole day
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1.5 py-1.5 flex-wrap">
-      <span className="text-[11px] text-muted-foreground">Set availability for the day:</span>
+    <div className="flex items-center justify-end gap-1.5 py-1 flex-wrap">
       {(['Available', 'Maybe', 'Unavailable'] as AvailabilityStatus[]).map((s) => (
         <button
           key={s}
@@ -53,6 +71,13 @@ function DayAvailabilityControl({
           {s === 'Available' ? 'All going' : s === 'Maybe' ? 'All maybe' : 'All out'}
         </button>
       ))}
+      <button
+        onClick={() => setOpen(false)}
+        aria-label="Close whole-day availability"
+        className="text-[11px] text-muted-foreground hover:text-foreground px-1 py-1"
+      >
+        &times;
+      </button>
     </div>
   );
 }
@@ -228,10 +253,24 @@ export default function PlayerDashboard() {
       <div className="container mx-auto px-4 py-4">
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-lg font-bold text-primary">
-                {(data.playerName || '?')[0].toUpperCase()}
-              </span>
+            <div className="h-12 w-12 shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center">
+              {data.photo ? (
+                <img
+                  src={data.photo}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  // A stale Airtable attachment URL would otherwise leave a
+                  // broken-image glyph where the initial used to be.
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <span className="text-lg font-bold text-primary">
+                  {(data.playerName || '?')[0].toUpperCase()}
+                </span>
+              )}
             </div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>
