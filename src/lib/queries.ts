@@ -38,10 +38,18 @@ export function useMyProfile() {
   });
 }
 
-export function useUpcomingFixtures(teamFilter?: string) {
+export function useUpcomingFixtures(teamFilter?: string, includePast = false) {
   return useQuery({
-    queryKey: ['upcomingFixtures', teamFilter],
-    queryFn: () => apiGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', { team: teamFilter }),
+    // includePast is part of the key: the two responses hold different
+    // fixtures, so they must not share a cache entry.
+    queryKey: ['upcomingFixtures', teamFilter, includePast],
+    queryFn: () =>
+      apiGet<GetUpcomingFixturesOutput>('/api/upcoming-fixtures', {
+        team: teamFilter,
+        // Played matches are a separate Airtable read, so they are requested
+        // only while the coach is actually looking at past fixtures.
+        past: includePast ? '1' : undefined,
+      }),
     staleTime: 300_000,
   });
 }

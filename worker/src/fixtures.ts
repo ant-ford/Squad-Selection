@@ -33,6 +33,30 @@ export async function getScheduledMatches(env: Env): Promise<Match[]> {
   return data;
 }
 
+/** How far back "show past" reaches on the coach fixture list. */
+export const PAST_FIXTURE_WINDOW_DAYS = 28;
+
+/**
+ * Played matches, cached alongside the scheduled ones.
+ *
+ * A fixture stops being "Scheduled" the moment a result is entered, so
+ * getScheduledMatches() cannot see last weekend's games however the caller
+ * filters by date. That is why the coach list's "Show past" toggle appeared
+ * to do nothing: the matches it was meant to reveal were never fetched.
+ *
+ * Filtered by status rather than by date. A date formula would be tighter,
+ * but every authenticated coach screen depends on this call, and status
+ * equality is the one filter shape already proven against this base.
+ * Narrowing to the recent window happens in JS, at the caller.
+ */
+export async function getPlayedMatches(env: Env): Promise<Match[]> {
+  const { data } = await getCached<Match[]>("played-matches", async () => {
+    const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Played"');
+    return records.map(mapMatch);
+  }, SCHEDULED_MATCHES_TTL_MS);
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Lowest-ranked team Goalkeeper schedule
 // ---------------------------------------------------------------------------
@@ -81,6 +105,9 @@ export async function getMyFixtures(env: Env, authUser: AuthorizedUser) {
     // The dashboard's season-stats panel reads stats for this id.
     playerId: user.id,
     playerName: user.preferredName || user.givenNames || "Player",
+    // People.Photo, already mapped to the first attachment's URL. Optional:
+    // the dashboard falls back to the initial when a player has no photo.
+    photo: user.photo || "",
     registeredTeam: displayTeam, displayTeam, playingPosition: user.playingPosition || "",
     shirtNoValue: user.shirtNoValue || "",
     isCoach: authUser.role === "coach",
@@ -332,7 +359,10 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   };
 }
 
-export async function getUpcomingFixtures(env: Env, opts: { user?: AuthorizedUser; team?: string }) {
+export async function getUpcomingFixtures(
+  env: Env,
+  opts: { user?: AuthorizedUser; team?: string; includePast?: boolean },
+) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
   const playerById = new Map(ref.players.map((p) => [p.id, p]));
@@ -341,9 +371,32 @@ export async function getUpcomingFixtures(env: Env, opts: { user?: AuthorizedUse
   // Captain (see auth.ts) - no separate derivation needed here.
   const coachedTeamNames = new Set(opts.user?.coachTeams ?? []);
   const allTeamNames = new Set(ref.teams.map((t) => t.teamName));
-  const allMatches = await getScheduledMatches(env);
-  const now = new Date().toISOString();
-  const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
+
+  // Day boundaries in Hong Kong, not UTC, and not the current instant. The
+  // old comparison was against `now`, so a fixture dropped off the list the
+  // moment it kicked off - the coach lost the teamsheet mid-match.
+  const todayKey = hkDateKey(new Date().toISOString());
+  const cutoff = new Date(Date.now() - PAST_FIXTURE_WINDOW_DAYS * 86_400_000);
+  const pastCutoffKey = hkDateKey(cutoff.toISOString());
+
+  const scheduled = await getScheduledMatches(env);
+  // Played matches are only fetched when asked for, so the common case costs
+  // nothing extra. They are a separate status, hence a separate read.
+  const played = opts.includePast ? await getPlayedMatches(env) : [];
+  const seen = new Set<string>();
+  const allMatches = [...scheduled, ...played].filter((m) => {
+    if (!m.id || seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  const upcoming = allMatches
+    .filter((m) => {
+      if (!m.matchDate) return false;
+      const key = hkDateKey(m.matchDate);
+      if (key >= todayKey) return true;
+      return opts.includePast === true && key >= pastCutoffKey;
+    })
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";

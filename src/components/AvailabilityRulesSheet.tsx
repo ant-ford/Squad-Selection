@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Plus, Trash2, X } from 'lucide-react';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   createMyAvailabilityRule,
@@ -114,16 +114,32 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Availability preferences</SheetTitle>
-        </SheetHeader>
+        {/* SheetContent carries no padding of its own, so this sheet used to
+            run flush into the edges. Header is sticky because the body
+            scrolls - the title and the way out must stay reachable. */}
+        <div className="sticky top-0 z-10 bg-background rounded-t-2xl">
+          <div className="flex justify-center pt-2.5">
+            <div className="h-1 w-9 rounded-full bg-muted-foreground/25" />
+          </div>
+          <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 border-b border-border">
+            <SheetTitle>Availability preferences</SheetTitle>
+            <button
+              onClick={onClose}
+              aria-label="Close availability preferences"
+              className="shrink-0 -mr-1.5 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
-        <p className="text-xs text-muted-foreground mt-1">
+        <div className="px-5 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <p className="text-xs text-muted-foreground leading-relaxed">
           Standing answers for fixtures you haven't set individually. Setting a fixture
           yourself always overrides these, and where two overlap the more specific one wins.
         </p>
 
-        <div className="mt-3 space-y-2">
+        <div className="mt-4 space-y-2">
           {rules === null ? (
             <Skeleton className="h-16 w-full rounded-lg" />
           ) : rules.length === 0 ? (
@@ -250,6 +266,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
             </div>
           </div>
         )}
+        </div>
       </SheetContent>
     </Sheet>
   );

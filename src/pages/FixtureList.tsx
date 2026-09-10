@@ -37,7 +37,10 @@ export default function FixtureList() {
     setSearchParams(newParams, { replace: true });
   };
 
-  const { data, isLoading } = useUpcomingFixtures();
+  // Asking for past fixtures is what makes them exist in the payload at all:
+  // a played match leaves the "Scheduled" status the API otherwise reads, so
+  // filtering client-side could never have revealed last weekend's games.
+  const { data, isLoading } = useUpcomingFixtures(undefined, showPast);
   const allFixtures = data?.fixtures || [];
   const sameDayConflicts = useMemo(() => detectSameDayConflicts(allFixtures), [allFixtures]);
   const conflictsByFixture = useMemo(() => {

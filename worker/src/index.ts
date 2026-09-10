@@ -276,7 +276,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/upcoming-fixtures") {
       const user = await requireAuthorizedUser(request, env);
       const team = url.searchParams.get("team") ?? undefined;
-      return json(await getUpcomingFixtures(env, { user, team }), 200, origin);
+      // Recently played matches cost an extra Airtable read, so the coach
+      // list asks for them only while "Show past" is on.
+      const includePast = url.searchParams.get("past") === "1";
+      return json(await getUpcomingFixtures(env, { user, team, includePast }), 200, origin);
     }
 
     // Dashboard metrics (Coach) - expose every player's rank moves / play-up counts.
