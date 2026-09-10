@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Trash2, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -49,6 +50,12 @@ function describe(rule: AvailabilityRule): string {
  * for players to discover.
  */
 export default function AvailabilityRulesSheet({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  // A preference decides the availability shown on every unanswered fixture,
+  // so adding or removing one changes the dashboard. Without this the cached
+  // fixture list kept resolving against the rule that had just been deleted,
+  // and the fixture stayed unavailable with no way to say otherwise.
+  const refreshFixtures = () => queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
   const [rules, setRules] = useState<AvailabilityRule[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -88,6 +95,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
         endDate: endDate || undefined,
       });
       toast.success('Preference saved');
+      refreshFixtures();
       setAdding(false);
       setStartDate('');
       setEndDate('');
@@ -105,6 +113,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
     try {
       await deleteMyAvailabilityRule(rule.id);
       toast.success('Preference removed');
+      refreshFixtures();
     } catch {
       setRules(previous ?? null);
       toast.error('Could not remove that preference');
