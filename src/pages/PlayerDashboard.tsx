@@ -16,6 +16,7 @@ import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
+import PastFixtureCard from '@/components/PastFixtureCard';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -86,7 +87,11 @@ export default function PlayerDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data, isLoading: loading } = useMyFixtures();
+  // Declared before the query that reads it: results are extra payload on a
+  // screen most players open to answer an upcoming fixture, so they are
+  // fetched only while this is on.
+  const [showPast, setShowPast] = useState(false);
+  const { data, isLoading: loading } = useMyFixtures(showPast);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
@@ -383,6 +388,34 @@ export default function PlayerDashboard() {
             )}
           </>
         )}
+
+        {/* Played fixtures. Read-only: availability is a statement about the
+            future, so the buttons are replaced by what actually happened. */}
+        <div className="mt-6 pt-4 border-t border-border">
+          <button
+            onClick={() => setShowPast((v) => !v)}
+            className="w-full flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+          >
+            <span className="font-medium">Recent results</span>
+            <span className="text-xs">{showPast ? 'Hide' : 'Show'}</span>
+          </button>
+
+          {showPast && (
+            <div className="mt-3 space-y-2">
+              {loading ? (
+                <p className="text-sm text-muted-foreground py-2">Loading results…</p>
+              ) : (data.pastFixtures ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No fixtures played in the last few weeks.
+                </p>
+              ) : (
+                (data.pastFixtures ?? []).map((f) => (
+                  <PastFixtureCard key={f.id} fixture={f} />
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedFixture && (

@@ -91,10 +91,14 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
 
 // ── Player dashboard ─────────────────────────────────────────────────────
 
-export function useMyFixtures() {
+export function useMyFixtures(includePast = false) {
   return useQuery({
-    queryKey: ['myFixtures'],
-    queryFn: () => getMyFixtures(),
+    // The flag is part of the key: the two responses differ, so they must not
+    // share an entry. Every write below matches on the ['myFixtures'] PREFIX
+    // rather than an exact key, so an optimistic patch still reaches whichever
+    // variant is on screen.
+    queryKey: ['myFixtures', includePast],
+    queryFn: () => getMyFixtures(includePast),
     staleTime: 60_000,
   });
 }
@@ -142,19 +146,19 @@ export function useQuickAvailability() {
       setMyAvailability(fixtureId, status),
     onMutate: async ({ fixtureId, status }) => {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
-      const previousData = queryClient.getQueryData<GetMyFixturesOutput>(['myFixtures']);
-      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+      const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
+      queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixture(old, fixtureId, { availabilityStatus: status }),
       );
       return { previousData };
     },
     onSuccess: (result, { fixtureId }) => {
-      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+      queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixture(old, fixtureId, { availabilityExceptionId: result.exceptionId || '' }),
       );
     },
     onError: (_err, _vars, context) => {
-      if (context?.previousData) queryClient.setQueryData(['myFixtures'], context.previousData);
+      for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);
     },
   });
 }
@@ -171,14 +175,14 @@ export function useBulkAvailability() {
       setMyAvailabilityForDate(date, status),
     onMutate: async ({ date, status }) => {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
-      const previousData = queryClient.getQueryData<GetMyFixturesOutput>(['myFixtures']);
-      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+      const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
+      queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status })),
       );
       return { previousData };
     },
     onSuccess: (result, { date, status }) => {
-      queryClient.setQueryData<GetMyFixturesOutput>(['myFixtures'], (old) =>
+      queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixturesForDate(old, date, (f) => {
           const r = result.results.find((x) => x.matchId === f.id);
           return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || f.availabilityExceptionId };
@@ -186,7 +190,7 @@ export function useBulkAvailability() {
       );
     },
     onError: (_err, _vars, context) => {
-      if (context?.previousData) queryClient.setQueryData(['myFixtures'], context.previousData);
+      for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);
     },
   });
 }

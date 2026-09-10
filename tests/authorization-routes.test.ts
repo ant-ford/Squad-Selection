@@ -260,7 +260,19 @@ describe("session-derived identity (IDOR prevention)", () => {
   it("GET /api/my-fixtures ignores a ?email= query param", async () => {
     const res = await call("/api/my-fixtures?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, {
+      includePast: false,
+    });
+  });
+
+  // Results are extra payload, so the player dashboard asks for them only
+  // while the past view is open. The identity still comes from the session.
+  it("GET /api/my-fixtures passes ?past=1 through as includePast", async () => {
+    const res = await call("/api/my-fixtures?past=1&email=attacker@evil.com");
+    expect(res.status).toBe(200);
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, {
+      includePast: true,
+    });
   });
 
   it("GET /api/upcoming-fixtures scopes by the session email, ignoring ?email=", async () => {
