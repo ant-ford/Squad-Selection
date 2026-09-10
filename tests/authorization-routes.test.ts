@@ -98,6 +98,7 @@ vi.mock("../worker/src/dashboard", () => ({
 import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
 import { AirtableError } from "../worker/src/airtable";
+import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
   AIRTABLE_TOKEN: "test-token",
@@ -682,5 +683,61 @@ describe("CORS origin allow-list", () => {
   it("keeps single-origin configuration working unchanged", async () => {
     const res = await fetchWithOrigin("https://hkfc-squad-selection.test", ENV);
     expect(acao(res)).toBe("https://hkfc-squad-selection.test");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deep health check. Plain /health only proves the Worker is running. A
+// rejected Airtable token once looked exactly like a frontend fault: sign-in
+// worked, /health was green, and every screen behind the login failed, with
+// no unauthenticated route that touched Airtable to prove otherwise.
+// ---------------------------------------------------------------------------
+
+describe("GET /health?deep=1", () => {
+  const withAirtable = async (responder: () => Response, path = "/health?deep=1") => {
+    invalidateAll();
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("api.airtable.com")) return responder();
+      throw new Error("unexpected fetch: " + String(input));
+    }) as typeof fetch;
+    try {
+      return await call(path);
+    } finally {
+      globalThis.fetch = realFetch;
+      invalidateAll();
+    }
+  };
+
+  it("reports airtable ok when the token works", async () => {
+    const res = await withAirtable(() => new Response(JSON.stringify({ records: [] }), { status: 200 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "ok", airtable: "ok" });
+  });
+
+  it("reports airtable error when the token is rejected, without leaking why", async () => {
+    const res = await withAirtable(
+      () => new Response('{"error":{"type":"AUTHENTICATION_REQUIRED"}}', { status: 401 }),
+    );
+    // Still 200: the Worker itself is up. Only the dependency is broken.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ status: "ok", airtable: "error" });
+    // No message, no record, no configuration - detail belongs in the logs.
+    expect(JSON.stringify(body)).not.toMatch(/AUTHENTICATION_REQUIRED|test-token|test-base|airtable\.com/i);
+  });
+
+  it("leaves plain /health untouched, and free of any Airtable call", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      throw new Error("plain /health must not call out: " + String(input));
+    }) as typeof fetch;
+    try {
+      const res = await call("/health");
+      expect(res.status).toBe(200);
+      expect(await res.json()).not.toHaveProperty("airtable");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
