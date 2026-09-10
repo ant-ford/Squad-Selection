@@ -271,7 +271,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
     if (method === "GET" && pathname === "/api/my-fixtures") {
       const user = await requireAuthorizedUser(request, env);
-      return json(await getMyFixtures(env, user), 200, origin);
+      // Results are a meaningful amount of payload for a screen most players
+      // open to answer an upcoming fixture, so they come only on request.
+      const includePast = url.searchParams.get("past") === "1";
+      return json(await getMyFixtures(env, user, { includePast }), 200, origin);
     }
     if (method === "GET" && pathname === "/api/upcoming-fixtures") {
       const user = await requireAuthorizedUser(request, env);

@@ -32,9 +32,41 @@ export interface MyFixture {
   kit?: KitColour;
 }
 
+/** A named goal or card contribution on a played fixture. */
+export interface PastContribution {
+  name: string;
+  goals?: number;
+  cards?: string[];
+}
+
+/** A fixture the player's team has already played. Read-only. */
+export interface PastFixture {
+  id: string;
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  hkfcTeam: string;
+  opponent: string;
+  isHome: boolean;
+  venue: string;
+  division: string;
+  /** Null when no score has been entered, so the tile can stay quiet. */
+  goalsFor: number | null;
+  goalsAgainst: number | null;
+  outcome: 'win' | 'draw' | 'loss' | null;
+  /** True when the player has a Match Card - the record that they played. */
+  played: boolean;
+  myGoals: number;
+  myCards: string[];
+  scorers: PastContribution[];
+  cards: PastContribution[];
+}
+
 export interface GetMyFixturesOutput {
   playerId: string;
   playerName: string;
+  /** Recently played fixtures. Empty unless the past view was requested. */
+  pastFixtures?: PastFixture[];
   /** People.Photo, first attachment URL. Empty when the player has none. */
   photo?: string;
   /** The team the app displays for this player (Selected Team EOS -> SOS -> Registered). */
@@ -71,6 +103,11 @@ export interface GetMyFixturesOutput {
  * The Worker derives the identity from the verified Supabase session — the
  * browser never supplies the email.
  */
-export async function getMyFixtures(): Promise<GetMyFixturesOutput> {
-  return apiGet<GetMyFixturesOutput>('/api/my-fixtures');
+export async function getMyFixtures(includePast = false): Promise<GetMyFixturesOutput> {
+  return apiGet<GetMyFixturesOutput>('/api/my-fixtures', {
+    // Results come from the cached season context, so this adds no Airtable
+    // call, but it is real payload on a screen most players open to answer
+    // an upcoming fixture. Requested only when the past view is showing.
+    past: includePast ? '1' : undefined,
+  });
 }
