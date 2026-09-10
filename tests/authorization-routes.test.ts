@@ -269,7 +269,30 @@ describe("session-derived identity (IDOR prevention)", () => {
     expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
       user: mocks.authorizedPlayer,
       team: "Men's 1s",
+      includePast: false,
     });
+  });
+
+  // Played matches are a second Airtable read, so the flag has to reach the
+  // query rather than being applied client-side: a played fixture leaves the
+  // "Scheduled" status the query reads, so it is absent unless asked for.
+  it("GET /api/upcoming-fixtures passes ?past=1 through as includePast", async () => {
+    const res = await call("/api/upcoming-fixtures?past=1");
+    expect(res.status).toBe(200);
+    expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
+      user: mocks.authorizedPlayer,
+      team: undefined,
+      includePast: true,
+    });
+  });
+
+  it("GET /api/upcoming-fixtures treats any other ?past= value as off", async () => {
+    const res = await call("/api/upcoming-fixtures?past=yes");
+    expect(res.status).toBe(200);
+    expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(
+      ENV,
+      expect.objectContaining({ includePast: false }),
+    );
   });
 
   it("POST /api/set-my-availability cannot target another person via body.email", async () => {

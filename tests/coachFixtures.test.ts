@@ -125,3 +125,87 @@ describe("coach fixture tiles: availability counts scoped to the fixture's Selec
     expect(fTile?.maybeNames ?? []).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// "Show past" on the coach fixture list. A fixture leaves the "Scheduled"
+// status the moment a result is entered, so the query behind this screen
+// could not see last weekend's games however the client filtered by date.
+// The toggle looked broken because the matches were never fetched.
+// ---------------------------------------------------------------------------
+
+describe("coach fixture list: recently played matches", () => {
+  const dayOffset = (days: number) =>
+    new Date(Date.now() + days * 86_400_000).toISOString().split("T")[0];
+
+  const addMatch = (id: string, team: string, day: string, status: string) => {
+    state.matches.push({
+      id,
+      fields: {
+        Date: `${day}T09:00:00.000Z`,
+        Season: "2026-2027",
+        "Home Team": team,
+        "Away Team": "Opponent",
+        "Match Status": status,
+        "Selected Players Home": [],
+        "Target Squad Size": 14,
+      },
+    });
+  };
+
+  const idsFor = async (team: string, includePast?: boolean) => {
+    const { fixtures } = await getUpcomingFixtures(ENV, { team, includePast });
+    return fixtures.map((f: { id: string }) => f.id);
+  };
+
+  it("omits a played match by default, so the normal list stays upcoming-only", async () => {
+    addMatch("recM_LASTWEEK", "E", dayOffset(-3), "Played");
+    expect(await idsFor("E")).not.toContain("recM_LASTWEEK");
+  });
+
+  it("includes last weekend's played match when past fixtures are asked for", async () => {
+    addMatch("recM_LASTWEEK", "E", dayOffset(-3), "Played");
+    expect(await idsFor("E", true)).toContain("recM_LASTWEEK");
+  });
+
+  it("still returns upcoming fixtures alongside the past ones", async () => {
+    addMatch("recM_LASTWEEK", "E", dayOffset(-3), "Played");
+    const ids = await idsFor("E", true);
+    expect(ids).toContain("recM_E");
+    expect(ids).toContain("recM_LASTWEEK");
+  });
+
+  it("stops at the window, so the list cannot grow without bound", async () => {
+    addMatch("recM_ANCIENT", "E", dayOffset(-120), "Played");
+    expect(await idsFor("E", true)).not.toContain("recM_ANCIENT");
+  });
+
+  // Regression: the filter compared against the current instant, so a fixture
+  // vanished from the coach's list the moment it kicked off - exactly when the
+  // teamsheet is wanted. Today's fixtures now stay all day.
+  //
+  // Pinned to a fixed clock rather than "today at 09:00", which would only
+  // exercise the regression when the suite happened to run after kick-off.
+  it("keeps a fixture earlier today in the upcoming list", async () => {
+    vi.useFakeTimers();
+    try {
+      // 18:00 Hong Kong, with the fixture at 17:00 the same day: already
+      // started, still today, so it must stay on the list.
+      vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
+      state.matches.push({
+        id: "recM_EARLIER_TODAY",
+        fields: {
+          Date: "2026-09-10T09:00:00.000Z",
+          Season: "2026-2027",
+          "Home Team": "E",
+          "Away Team": "Opponent",
+          "Match Status": "Scheduled",
+          "Selected Players Home": [],
+          "Target Squad Size": 14,
+        },
+      });
+      expect(await idsFor("E")).toContain("recM_EARLIER_TODAY");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
