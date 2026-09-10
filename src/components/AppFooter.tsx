@@ -7,20 +7,26 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-function detectPlatform() {
+/**
+ * Only iOS is detected, and only because it is the one platform where the
+ * install option lives somewhere genuinely different - the Share menu rather
+ * than the browser's own menu. Everywhere else the instructions are the same,
+ * so there is nothing to branch on and no browser to name.
+ */
+function isAppleTouchDevice(): boolean {
   const ua = navigator.userAgent;
-  const iOS =
+  return (
     /iPad|iPhone|iPod/.test(ua) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  return { iOS, android: /Android/.test(ua) };
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
 }
 
 /**
- * Discreet "Add to Home Screen" entry point in the app footer.
+ * Discreet "Install app" entry point in the app footer.
  *
  * - Hidden entirely while the app runs as an installed PWA (standalone).
  * - Uses the native browser install prompt (beforeinstallprompt) when the
- *   browser offers one; otherwise shows a small platform-aware how-to sheet.
+ *   browser offers one; otherwise shows a short, browser-neutral how-to.
  * - Pure frontend: no backend calls, no storage.
  */
 export default function AppFooter() {
@@ -62,7 +68,7 @@ export default function AppFooter() {
     setShowHelp(true);
   };
 
-  const { iOS, android } = detectPlatform();
+  const iOS = isAppleTouchDevice();
 
   return (
     <footer className="border-t border-border bg-background py-1 mt-auto">
@@ -76,7 +82,7 @@ export default function AppFooter() {
               title="Install this app on your device"
             >
               <Smartphone className="h-3 w-3" />
-              Add to Home Screen
+              Install app
             </button>
           )}
         </p>
@@ -92,28 +98,53 @@ export default function AppFooter() {
       </div>
 
       <Sheet open={showHelp} onOpenChange={setShowHelp}>
-        <SheetContent side="bottom" className="max-w-md mx-auto p-4 pb-6">
+        <SheetContent side="bottom" className="max-w-md mx-auto p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           <SheetHeader onClose={() => setShowHelp(false)}>
-            <SheetTitle>Add to Home Screen</SheetTitle>
+            <SheetTitle>Install this app</SheetTitle>
           </SheetHeader>
-          {iOS ? (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>Open this page in <span className="font-medium text-foreground">Safari</span></li>
-              <li>Tap the <span className="font-medium text-foreground">Share</span> button (bottom toolbar)</li>
-              <li>Tap <span className="font-medium text-foreground">Add to Home Screen</span>, then <span className="font-medium text-foreground">Add</span></li>
-            </ol>
-          ) : android ? (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>Open this page in <span className="font-medium text-foreground">Chrome</span></li>
-              <li>Tap the <span className="font-medium text-foreground">⋮</span> menu (top right)</li>
-              <li>Tap <span className="font-medium text-foreground">Add to Home screen</span> or <span className="font-medium text-foreground">Install app</span></li>
-            </ol>
-          ) : (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>In <span className="font-medium text-foreground">Chrome</span>: click the install icon in the address bar, or <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Install page as app</span></li>
-              <li>In <span className="font-medium text-foreground">Edge</span>: <span className="font-medium text-foreground">⋮</span> → <span className="font-medium text-foreground">Apps</span> → <span className="font-medium text-foreground">Install this site as an app</span></li>
-            </ol>
-          )}
+          <p className="text-sm text-muted-foreground">
+            Installing puts the app on your device, so it opens like any other app and
+            keeps you signed in.
+          </p>
+
+          {/* Two paths only. iPhone and iPad genuinely differ - the option
+              lives in the Share menu rather than the browser's own menu -
+              and every other platform reaches it the same way. Naming
+              specific browsers dated badly and excluded the ones people
+              actually use, so the wording describes the menu, not the
+              product, and says plainly that the label varies. */}
+          <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground list-decimal list-outside pl-5">
+            {iOS ? (
+              <>
+                <li>
+                  Tap the <span className="font-medium text-foreground">Share</span> button
+                  in your browser's toolbar.
+                </li>
+                <li>
+                  Scroll down and choose{' '}
+                  <span className="font-medium text-foreground">Add to Home Screen</span>.
+                </li>
+                <li>
+                  Confirm with <span className="font-medium text-foreground">Add</span>.
+                </li>
+              </>
+            ) : (
+              <>
+                <li>Open your browser's menu, or look for an install icon in the address bar.</li>
+                <li>
+                  Choose <span className="font-medium text-foreground">Install</span> or{' '}
+                  <span className="font-medium text-foreground">Add to Home screen</span>.
+                  The exact wording varies between browsers.
+                </li>
+                <li>Confirm when prompted.</li>
+              </>
+            )}
+          </ol>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            Not every browser can install apps. If you cannot find the option, the app
+            works normally in the browser and you can bookmark this page instead.
+          </p>
           <button
             onClick={() => setShowHelp(false)}
             className="mt-4 w-full py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium"
