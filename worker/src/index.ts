@@ -1,4 +1,6 @@
-import { AirtableError } from "./airtable";
+import { AirtableError, airtableList } from "./airtable";
+import { getCached } from "./cache";
+import { TABLES } from "../../shared/schema/tableNames";
 import type { Env } from "./env";
 import {
   json,
@@ -84,6 +86,32 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   try {
     // ── Health Check (Public) ──────────────────────────────────────────────
     if (method === "GET" && pathname === "/health") {
+      // ?deep=1 additionally reports whether the Worker's own credentials
+      // still work. Plain /health only proves the Worker is running, which is
+      // exactly why a rejected Airtable token once looked like a frontend
+      // fault: sign-in succeeded, /health was green, and every screen behind
+      // the login failed. There is no unauthenticated route that touches
+      // Airtable, so confirming the token previously meant signing in.
+      //
+      // Reports "ok" or "error" and nothing else - no message, no record, no
+      // configuration. The detail stays in Workers Logs. Cached for 60s so it
+      // cannot be used to hammer Airtable.
+      if (url.searchParams.get("deep") === "1") {
+        const { data: airtable } = await getCached<"ok" | "error">(
+          "health:airtable",
+          async () => {
+            try {
+              await airtableList(env, TABLES.team, { maxRecords: "1" });
+              return "ok";
+            } catch (err) {
+              console.error("Health check: Airtable unreachable:", err instanceof Error ? err.message : err);
+              return "error";
+            }
+          },
+          60 * 1000,
+        );
+        return json({ status: "ok", airtable, timestamp: new Date().toISOString() }, 200, origin);
+      }
       return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
     }
 
