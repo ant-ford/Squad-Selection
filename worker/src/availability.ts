@@ -143,6 +143,26 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
 
   const { exceptions: exceptionByMatch, seasons } = await findPlayerExceptions(env, input.playerId, input.matchIds);
 
+  // Says what this write actually saw and did. Setting yourself Available is
+  // a delete, and a delete that finds nothing still reports success, so from
+  // the outside a no-op and a real change are identical. Three separate
+  // causes have now hidden behind that, and each one cost a deploy to guess
+  // at. One line here settles the next one.
+  console.log(
+    "Availability write: " +
+      JSON.stringify({
+        player: input.playerId,
+        matches: input.matchIds,
+        status: input.status,
+        seasonsResolved: seasons,
+        exceptionsFoundForPlayer: [...exceptionByMatch.entries()].map(([matchId, e]) => ({
+          matchId,
+          exceptionId: e.id,
+          status: e.availabilityStatus,
+        })),
+      }),
+  );
+
   const toDelete: string[] = [];
   const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
   const toCreate: { matchId: string; fields: Record<string, unknown> }[] = [];
@@ -170,6 +190,11 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       toCreate.push({ matchId, fields });
     }
   }
+
+  console.log(
+    "Availability write outcome: " +
+      JSON.stringify({ deleting: toDelete, updating: toUpdate.map((u) => u.id), creating: toCreate.length }),
+  );
 
   for (const batch of chunk(toDelete)) await airtableBatchDelete(env, TABLES.availabilityException, batch);
   for (const batch of chunk(toUpdate)) await airtableBatchUpdate(env, TABLES.availabilityException, batch);
