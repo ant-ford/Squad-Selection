@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { queryClient } from './queryClient';
+import { setAccessDenied } from './accessDenied';
 
 interface AuthContextValue {
   user: User | null;
@@ -29,6 +30,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
   queryClient.clear();
+  // A denial belongs to the session that earned it. Left set, the next
+  // person to sign in on a shared phone would meet someone else's refusal.
+  setAccessDenied(null);
 }
 
 /** One getSession() + one onAuthStateChange subscription for the whole app. */
@@ -54,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 2. Auth state listener
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!isMounted) return;
+      // Whoever just arrived deserves a clean slate; the refusal that was on
+      // screen was about the previous session.
+      setAccessDenied(null);
       setUser(session?.user ?? null);
       setLoading(false);
     });
