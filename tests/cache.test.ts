@@ -351,6 +351,15 @@ describe("availability writes read past the cache", () => {
         status: "Available",
       });
       expect(deleteCalls()).toBe(1);
+      // The id must actually reach Airtable. Asserting only that a DELETE
+      // happened is what let a batch delete with an empty query string -
+      // rejected by Airtable every single time - pass as working.
+      const deleteUrl = fetchCalls.find(
+        (c) => c.method === "DELETE" && tableOf(c.url) === "Availability Exceptions",
+      )!.url;
+      expect(deleteUrl).toContain("records%5B%5D=recStale1");
+      // And the record is gone, not merely asked about.
+      expect(EXCEPTION_RECORDS.some((e) => e.id === "recStale1")).toBe(false);
     } finally {
       cleanup();
     }
