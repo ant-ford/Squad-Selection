@@ -40,7 +40,20 @@ export default function SquadSelection() {
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
-  const [filters, setFilters] = useState<FilterState>(() => paramsToFilters(searchParams));
+  const [filters, setFilters] = useState<FilterState>(() => {
+    const fromUrl = paramsToFilters(searchParams);
+    // Default to the players who can actually be picked. A coach opening a
+    // squad screen is choosing among the eligible and the warned; blocked
+    // players are there to be understood, not selected, and burying the
+    // former among the latter is what made the list hard to work.
+    //
+    // An explicit eligibility param always wins, so a shared link still
+    // shows exactly what the person who sent it was looking at.
+    if (!searchParams.get('eligibility')) {
+      fromUrl.eligibility = new Set(['eligible', 'warning']);
+    }
+    return fromUrl;
+  });
   const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
 
