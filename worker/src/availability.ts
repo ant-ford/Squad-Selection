@@ -84,7 +84,21 @@ async function findPlayerExceptions(
   const seasons = [...matchSeasons];
   if (seasons.length === 0) return { exceptions: new Map(), seasons: [] };
 
-  const allExceptions = await getExceptionsForSeasons(env, seasons);
+  // Never cached. This is a read-modify-write: what comes back decides
+  // whether an exception is updated, created, or deleted.
+  //
+  // Setting yourself Available deletes the exception, and the delete only
+  // happens if this read can see it. The cache is per-isolate, so an
+  // exception written a moment ago on another isolate is simply absent here:
+  // nothing gets deleted, the call still reports success, and the player
+  // stays Unavailable no matter how many times they tap. The same gap
+  // creates a duplicate row when the answer changes from Maybe to
+  // Unavailable, because the existing record is invisible and a second one
+  // is written instead.
+  //
+  // Selection sync already reads fresh on its write path for exactly this
+  // reason; availability was the one write that did not.
+  const allExceptions = await getExceptionsForSeasons(env, seasons, { fresh: true });
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId);
 
   return {
