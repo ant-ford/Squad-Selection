@@ -185,10 +185,12 @@ describe("availability poll cache", () => {
     const afterRead = exceptionFetches();
     await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: "recM4", status: "Unavailable" });
     await getAvailabilityForMatch(ENV, "recM4");
-    // The write's own exception lookup shares the same cached per-season
-    // index as the read above (warm, zero extra fetches) - only the
-    // invalidated post-write read hits Airtable again.
-    expect(exceptionFetches()).toBe(afterRead + 1);
+    // Two extra reads, both deliberate. The write's own lookup no longer
+    // shares the warm per-season index: it is a read-modify-write, and
+    // reading a cached snapshot meant a delete could silently target a
+    // record that was not in it. Then the invalidated post-write read hits
+    // Airtable again.
+    expect(exceptionFetches()).toBe(afterRead + 2);
   });
 });
 
@@ -302,5 +304,73 @@ describe("availability exceptions freshness", () => {
     const before = exceptionFetches();
     await getExceptionsForSeasons(ENV, SEASON);
     expect(exceptionFetches()).toBe(before + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The availability write is a read-modify-write, so it must never consult the
+// cache. Setting yourself Available deletes the exception, and the delete only
+// happens if the lookup can see the record. The cache is per-isolate, so an
+// exception written moments ago elsewhere is simply absent - nothing is
+// deleted, success is still reported, and the player stays Unavailable however
+// many times they tap.
+// ---------------------------------------------------------------------------
+
+describe("availability writes read past the cache", () => {
+  const deleteCalls = () =>
+    fetchCalls.filter((c) => c.method === "DELETE" && tableOf(c.url) === "Availability Exceptions").length;
+  const createCalls = () =>
+    fetchCalls.filter((c) => c.method === "POST" && tableOf(c.url) === "Availability Exceptions").length;
+
+  /** An exception this isolate's cache has never seen, as if written elsewhere. */
+  const addExceptionElsewhere = (id: string, matchId: string) => {
+    EXCEPTION_RECORDS.push({
+      id,
+      fields: {
+        Player: ["recP4"],
+        Match: [matchId],
+        "Availability Status": "Unavailable",
+        "Player Notes": "",
+        "Season (Matches)": "2026-27",
+      },
+    } as (typeof EXCEPTION_RECORDS)[number]);
+    return () => {
+      const at = EXCEPTION_RECORDS.findIndex((e) => e.id === id);
+      if (at >= 0) EXCEPTION_RECORDS.splice(at, 1);
+    };
+  };
+
+  it("deletes an exception the cache never saw, instead of silently doing nothing", async () => {
+    // Warm the cache BEFORE the exception exists - the stale snapshot.
+    await getExceptionsForSeasons(ENV, ["2026-27"]);
+    const cleanup = addExceptionElsewhere("recStale1", "recM1");
+    try {
+      await setMyAvailability(ENV, {
+        email: "dave@hkfc.com",
+        matchId: "recM1",
+        status: "Available",
+      });
+      expect(deleteCalls()).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("updates that exception rather than writing a duplicate", async () => {
+    await getExceptionsForSeasons(ENV, ["2026-27"]);
+    const cleanup = addExceptionElsewhere("recStale2", "recM1");
+    try {
+      const createsBefore = createCalls();
+      await setMyAvailability(ENV, {
+        email: "dave@hkfc.com",
+        matchId: "recM1",
+        status: "Maybe",
+      });
+      // A second row for the same player and match is a data problem, not
+      // just a display one: two answers, and whichever is read first wins.
+      expect(createCalls()).toBe(createsBefore);
+    } finally {
+      cleanup();
+    }
   });
 });
