@@ -12,6 +12,14 @@ export interface MyFixture {
   venue: string;
   division: string;
   availabilityStatus: string;
+  /**
+   * True when the status above came from a standing preference rather than
+   * an answer the player gave for this fixture. The Worker has always sent
+   * this; without it on screen there is no way to tell "I said no" from
+   * "a preference decided for me", which is exactly the confusion that made
+   * a stuck midweek fixture so hard to explain.
+   */
+  availabilityFromRule?: boolean;
   playerNotes: string;
   availabilityExceptionId: string;
   selectionStatus: string;

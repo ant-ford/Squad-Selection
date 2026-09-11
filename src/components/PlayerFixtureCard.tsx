@@ -118,6 +118,16 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
         </div>
       </div>
 
+      {/* Says where the status came from. A preference is a default the
+          player can override just by tapping one of the buttons above; an
+          answer they gave for this fixture is not overridden by anything. */}
+      {fixture.availabilityFromRule && (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          {fixture.availabilityStatus} from your availability preferences. Tap to set this
+          fixture on its own.
+        </p>
+      )}
+
       {fixture.playerNotes && (
         <div className="mt-2 text-xs text-muted-foreground italic truncate">“{fixture.playerNotes}”</div>
       )}
