@@ -39,6 +39,33 @@ export default defineConfig(({ command }) => ({
         // The Worker already falls back to index.html for unknown paths, so
         // a missing chunk would otherwise be handed back as HTML twice over.
         navigateFallbackDenylist: [/^\/assets\//, /^\/api\//],
+        // Navigations go to the network first, falling back to the cached
+        // shell only when it genuinely cannot be reached.
+        //
+        // Answering every navigation from the precache is what let a phone
+        // sit on a previous deploy indefinitely: the browser never saw the
+        // current index.html, so it kept asking for chunk filenames that no
+        // longer exist and the loading skeleton never resolved. A laptop that
+        // had visited more recently was fine - exactly the shape of the
+        // reports, and not something the client could recover from, because
+        // the recovery code lives in the bundle it could not load.
+        //
+        // The trade is that a cold start with no connection now fails instead
+        // of showing a shell. That shell was never usable offline anyway:
+        // every screen behind it needs the API.
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "app-shell",
+              // Slow connection at the side of a pitch: wait, then fall back.
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 1 },
+            },
+          },
+        ],
       },
       manifest: {
         name: "HKFC Squad Selection",
