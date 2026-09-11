@@ -7,7 +7,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 //   - availability:{matchId} poll cache (25s, invalidated by writes)
 // ---------------------------------------------------------------------------
 
-import { getPlayerByEmail, invalidatePlayerByEmail } from "../worker/src/reference";
+import {
+  getPlayerByEmail,
+  invalidatePlayerByEmail,
+  getExceptionsForSeasons,
+} from "../worker/src/reference";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { getAvailabilityForMatch, syncSquad } from "../worker/src/squad";
 import { setMyAvailability } from "../worker/src/availability";
@@ -254,5 +258,49 @@ describe("getCached in-flight de-dup", () => {
     const { data, fromCache } = await getCached("dedup-key-3", async () => "should-not-be-called");
     expect(data).toBe("fresh-value");
     expect(fromCache).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Availability exceptions: cached for the aggregate views, read fresh where a
+// player is looking at their own answer.
+//
+// The cache lives in one Worker isolate's memory and Cloudflare runs many, so
+// a write only clears it where the write happened. Landing on another isolate
+// served a five-minute-old copy that put the player's previous status back -
+// which is what "I can't change my availability" actually was. Invalidation
+// cannot fix that; only not caching the read can.
+// ---------------------------------------------------------------------------
+
+describe("availability exceptions freshness", () => {
+  const SEASON = ["2026-27"];
+
+  it("serves a repeat read from the cache by default", async () => {
+    await getExceptionsForSeasons(ENV, SEASON);
+    const before = exceptionFetches();
+    await getExceptionsForSeasons(ENV, SEASON);
+    expect(exceptionFetches()).toBe(before);
+  });
+
+  it("goes back to Airtable with { fresh: true }", async () => {
+    await getExceptionsForSeasons(ENV, SEASON);
+    const before = exceptionFetches();
+    await getExceptionsForSeasons(ENV, SEASON, { fresh: true });
+    expect(exceptionFetches()).toBe(before + 1);
+  });
+
+  it("returns the same data either way", async () => {
+    const cached = await getExceptionsForSeasons(ENV, SEASON);
+    const fresh = await getExceptionsForSeasons(ENV, SEASON, { fresh: true });
+    expect(fresh.map((e) => e.id)).toEqual(cached.map((e) => e.id));
+  });
+
+  // A fresh read must not prime the cache for everyone else, or one player's
+  // dashboard would silently extend the staleness window for the rest.
+  it("does not write its result into the cache", async () => {
+    await getExceptionsForSeasons(ENV, SEASON, { fresh: true });
+    const before = exceptionFetches();
+    await getExceptionsForSeasons(ENV, SEASON);
+    expect(exceptionFetches()).toBe(before + 1);
   });
 });
