@@ -154,10 +154,19 @@ export async function airtableBatchDelete(
   table: string,
   ids: string[]
 ): Promise<any> {
-  const body = JSON.stringify({ records: ids });
-  return airtableFetch(env, tableUrl(env, table), {
+  // Airtable takes the ids as repeated QUERY parameters on a batch delete,
+  // never as a JSON body. It ignores a body on DELETE entirely, so sending
+  // one meant every batch delete came back 422 INVALID_RECORDS - "records
+  // must be a non-empty array of record IDs" - against a URL with no query
+  // string at all.
+  //
+  // The only caller is availability, where deleting the exception IS how a
+  // player sets themselves Available. So that never worked for anyone.
+  if (ids.length === 0) return null;
+  const params = new URLSearchParams();
+  for (const id of ids) params.append("records[]", id);
+  return airtableFetch(env, `${tableUrl(env, table)}?${params.toString()}`, {
     method: "DELETE",
-    body,
   });
 }
 

@@ -146,9 +146,21 @@ export function fakeAirtable(tables: FakeTables): FakeAirtableHandle {
     }
 
     if (method === "DELETE") {
-      const body = init?.body ? JSON.parse(init.body) : {};
+      // Ids come from repeated `records[]` QUERY parameters, exactly as the
+      // real API requires, or from the path for a single-record delete.
+      //
+      // This fake used to read them from the JSON body instead, which is
+      // what let a batch delete that sent a body - and which Airtable always
+      // rejected with 422 - pass every test. A player setting themselves
+      // Available deletes their exception, so that one wrong line hid a
+      // feature that had never worked.
       const singleId = recordIdFromUrl(u);
-      const ids: string[] = body.records ?? (singleId ? [singleId] : []);
+      const query = new URLSearchParams(u.split("?")[1] ?? "");
+      const ids: string[] = query.getAll("records[]").length
+        ? query.getAll("records[]")
+        : singleId
+        ? [singleId]
+        : [];
       for (const id of ids) {
         const idx = records.findIndex((r) => r.id === id);
         if (idx >= 0) records.splice(idx, 1);
