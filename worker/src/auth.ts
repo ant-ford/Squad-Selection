@@ -1,15 +1,11 @@
 import { HttpError } from "./http";
+import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import { getPlayerByEmail, getTeamCoachLinks } from "./reference";
 
-/**
- * Normalizes an email for matching: trims surrounding whitespace and
- * lowercases. Supabase and Airtable stores can disagree on case, so every
- * lookup and comparison uses the normalized form.
- */
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+// One definition for the whole app, browser included - see the module for
+// why every store in this system disagrees about case.
+export { normalizeEmail } from "../../shared/normalizeEmail";
 
 export interface AuthorizedUser {
   /** Verified, normalized email from the Supabase session. */

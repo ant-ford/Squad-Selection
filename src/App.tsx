@@ -1,9 +1,11 @@
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
 import Login from './pages/Login';
+import AccessNotActive from '@/components/AccessNotActive';
+import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
 
 // Coach-only routes — deferred so player-only visits skip this bundle.
@@ -14,8 +16,13 @@ const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
+  // Authenticated but not authorised. Kept as a screen rather than a
+  // sign-out: the session is valid, so making them fetch another code
+  // achieves nothing except another round trip through their inbox.
+  const accessDenied = useSyncExternalStore(subscribeAccessDenied, getAccessDenied, () => null);
   if (isLoading) return <AppLoading />;
   if (!user) return <Login />;
+  if (accessDenied) return <AccessNotActive message={accessDenied} />;
   return <Outlet />;
 }
 

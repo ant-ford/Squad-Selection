@@ -4,6 +4,7 @@
 
 import { supabase } from './supabase';
 import { signOut } from './auth';
+import { setAccessDenied } from './accessDenied';
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -51,14 +52,20 @@ async function parseResponse(response: Response) {
     }
 
     if (response.status === 403) {
-      // 403 APPLICATION_ACCESS_DENIED: not an authorised HKFC application
-      // user (unknown email / deactivated person with no coach access).
-      // Sign out and return to login.
+      // 403 APPLICATION_ACCESS_DENIED: authenticated, but not on the list -
+      // an unknown email, or a People record that is not Active and carries
+      // no coach link.
+      //
+      // Deliberately does NOT sign out. Authentication succeeded; only
+      // authorisation failed, and destroying the session over that forced a
+      // fresh trip through the email on every single load. That is what
+      // players reported as "I have to log in every time", and it made an
+      // Airtable data problem look like a broken login. AuthGate shows a
+      // screen explaining it, with Retry, which matters because the People
+      // lookup is cached for 60s and the first retry after an admin ticks
+      // the box often still fails.
       if (data?.error === 'APPLICATION_ACCESS_DENIED') {
-        toast.error(data.message || 'Your HKFC application access has been disabled.');
-        // Same single sign-out path as the 401 above: it clears the query
-        // cache and AuthGate renders Login. No hard navigation needed.
-        await signOut().catch(() => {});
+        setAccessDenied(data.message || 'Your access is not active.');
         throw new ApiError(data.message || 'Access denied.', 403, data.error);
       }
 
