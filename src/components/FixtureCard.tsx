@@ -142,7 +142,9 @@ export default function FixtureCard({
     >
       <div className="flex justify-between items-start">
         <div className="min-w-0">
-          <p className="font-medium text-foreground truncate">
+          {/* Wraps rather than truncates. The opponent's name is the half a
+              coach is scanning for, and it was the half being cut off. */}
+          <p className="font-medium text-foreground line-clamp-2">
             {fixture.hkfcTeam === fixture.homeTeam
               ? <><span className="font-bold">{fixture.homeTeam}</span> vs {fixture.awayTeam}</>
               : <>{fixture.homeTeam} vs <span className="font-bold">{fixture.awayTeam}</span></>
@@ -163,14 +165,18 @@ export default function FixtureCard({
               {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
             </p>
           )}
-          {nowUnavailable.length > 0 && (
-            <p className="text-xs text-destructive font-semibold mt-1 flex items-center gap-1 justify-end">
-              <AlertTriangle className="h-3 w-3" />
-              {nowUnavailable.length} selected player{nowUnavailable.length > 1 ? 's' : ''} now unavailable
-            </p>
-          )}
         </div>
       </div>
+
+      {/* Full width, below the header. It used to live in the right-hand
+          column, which is shrink-0, so this one sentence decided how much
+          room was left for the fixture title. */}
+      {nowUnavailable.length > 0 && (
+        <p className="text-xs text-destructive font-semibold mt-2 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          {nowUnavailable.length} selected player{nowUnavailable.length > 1 ? 's' : ''} now unavailable
+        </p>
+      )}
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
         <NamePopover names={maybeNames} label="maybe" count={fixture.maybeCount} />
         <NamePopover names={unavailNames} label="unavail" count={fixture.unavailableCount} />
