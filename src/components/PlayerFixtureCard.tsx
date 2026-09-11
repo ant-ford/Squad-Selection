@@ -1,5 +1,6 @@
 import { Users, Zap } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
+import { availableLabel } from '@/lib/format';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {
@@ -91,7 +92,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
         </div>
         <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
           {[
-            { value: 'Available', label: 'Going' },
+            { value: 'Available', label: availableLabel(isSelected) },
             { value: 'Maybe', label: 'Maybe' },
             { value: 'Unavailable', label: 'No' },
           ].map(({ value, label }, idx) => {
@@ -104,7 +105,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                   onAvailabilityChange(value as any);
                 }}
                 className={`
-                  px-3 py-1 text-xs font-medium min-w-[56px] transition-colors
+                  px-2 py-1 text-xs font-medium min-w-[48px] transition-colors
                   ${idx === 0 ? 'rounded-l-full' : ''}
                   ${idx === 2 ? 'rounded-r-full' : ''}
                   ${active ? statusColorMap[value] : 'bg-background text-muted-foreground hover:bg-muted/50'}
