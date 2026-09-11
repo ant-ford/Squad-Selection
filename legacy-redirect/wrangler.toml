@@ -1,0 +1,18 @@
+# Deploy this to the OLD Cloudflare account - the one whose workers.dev
+# subdomain is "squad-selections". The name must match the deleted Worker
+# exactly, or it will not claim
+# hkfc-squad-selection.squad-selections.workers.dev.
+#
+#   cd legacy-redirect
+#   npx wrangler deploy
+#
+# No secrets, no bindings, no routes: it only needs its workers.dev
+# hostname, which is the whole point of it.
+name = "hkfc-squad-selection"
+main = "index.ts"
+compatibility_date = "2026-07-04"
+
+workers_dev = true
+
+[observability]
+enabled = true
