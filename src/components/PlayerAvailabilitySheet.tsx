@@ -7,12 +7,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { POS_SHORT } from '@/lib/format';
+import { POS_SHORT, availableLabel } from '@/lib/format';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useMatchSquad } from '@/lib/queries';
 
 const OPTIONS = [
-  { value: 'Available', label: 'Going', Icon: CheckCircle2, color: 'text-green-600' },
+  // Label is overridden at render: it depends on whether this player has
+  // been selected, which the array cannot know.
+  { value: 'Available', label: 'Available', Icon: CheckCircle2, color: 'text-green-600' },
   { value: 'Maybe', label: 'Maybe', Icon: HelpCircle, color: 'text-amber-600' },
   { value: 'Unavailable', label: 'No', Icon: XCircle, color: 'text-red-600' },
 ] as const;
@@ -89,7 +91,11 @@ export default function PlayerAvailabilitySheet({
               >
                 <opt.Icon className={`h-5 w-5 ${status === opt.value ? 'text-primary' : 'text-muted-foreground'}`} />
                 <div>
-                  <p className="text-sm font-medium text-foreground">{opt.label}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {opt.value === 'Available'
+                      ? availableLabel(fixture.selectionStatus === 'Selected')
+                      : opt.label}
+                  </p>
                 </div>
               </button>
             ))}
