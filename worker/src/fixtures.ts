@@ -320,7 +320,16 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  const allExceptions = await getExceptionsForSeasons(env, relevantCategorized.map((x) => x.side.match.season || ""));
+  // Read past the cache. This is the player looking at their own answer, so
+  // it has to reflect the tap they just made. The cache is per-isolate, so a
+  // write only clears it where it happened: land on another isolate and a
+  // five-minute-old copy put the old status straight back, which is what
+  // "I can't change my availability" actually was.
+  const allExceptions = await getExceptionsForSeasons(
+    env,
+    relevantCategorized.map((x) => x.side.match.season || ""),
+    { fresh: true },
+  );
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   const playerRules = await getRulesForPlayer(env, playerId);

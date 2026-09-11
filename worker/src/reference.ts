@@ -180,17 +180,38 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
   return chosen ? mapPlayer(chosen) : null;
 }
 
-export async function getExceptionsForSeasons(env: Env, seasons: string[]): Promise<AvailabilityException[]> {
+/**
+ * Availability exceptions for one or more seasons.
+ *
+ * Cached for five minutes, which is fine for the aggregate views but NOT for
+ * a player looking at their own answer. The cache lives in the memory of one
+ * Worker isolate, and Cloudflare runs many: a write invalidates the cache on
+ * whichever isolate served it, and says nothing to the others. So a player
+ * could set Maybe, tap Available, and have the next request land on an
+ * isolate still holding a five-minute-old copy - which showed Maybe again.
+ * From their side the status simply would not change.
+ *
+ * Pass { fresh: true } where read-your-own-write matters. It skips the cache
+ * entirely rather than trying to invalidate across isolates, which an
+ * in-memory cache cannot do.
+ */
+export async function getExceptionsForSeasons(
+  env: Env,
+  seasons: string[],
+  opts?: { fresh?: boolean },
+): Promise<AvailabilityException[]> {
   const uniqueSeasons = [...new Set(seasons.filter(Boolean))].sort();
   const cacheKey = `exceptions:${uniqueSeasons.join(",") || "none"}`;
-  const { data } = await getCached<AvailabilityException[]>(cacheKey, async () => {
+  const load = async () => {
     if (uniqueSeasons.length === 0) return [];
     const formula = uniqueSeasons.length === 1
       ? `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(uniqueSeasons[0])}"`
       : `OR(${uniqueSeasons.map((s) => `{${AVAILABILITYEXCEPTIONS_FIELDS.season}}="${escapeFormulaValue(s)}"`).join(",")})`;
     const records = await airtableFindAll(env, TABLES.availabilityException, formula);
     return records.map(mapAvailability);
-  }, 5 * 60 * 1000);
+  };
+  if (opts?.fresh) return load();
+  const { data } = await getCached<AvailabilityException[]>(cacheKey, load, 5 * 60 * 1000);
   return data;
 }
 
