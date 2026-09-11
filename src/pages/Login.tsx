@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { normalizeEmail } from '@shared/normalizeEmail';
 
 const CODE_LENGTH = 6;
 
@@ -46,7 +47,7 @@ export default function Login() {
   const sendEmail = async (): Promise<boolean> => {
     setSending(true);
     try {
-      await loginWithEmail(email);
+      await loginWithEmail(normalizeEmail(email));
       toast.success('Email sent! Use the link or enter the code below.');
       return true;
     } catch (err: unknown) {
@@ -62,14 +63,14 @@ export default function Login() {
   const handleRequest = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (await sendEmail()) {
-      writePendingEmail(email);
+      writePendingEmail(normalizeEmail(email));
       setStep('verify');
     }
   };
 
   /** Cross-device case: the code arrived on a phone, the app is on a laptop. */
   const haveACode = () => {
-    if (email.trim()) writePendingEmail(email.trim());
+    if (email.trim()) writePendingEmail(normalizeEmail(email));
     setStep('verify');
   };
 
@@ -84,7 +85,7 @@ export default function Login() {
     try {
       // On success the auth listener picks up the session and the redirect
       // effect above takes over.
-      await verifyEmailOtp(email, code.trim());
+      await verifyEmailOtp(normalizeEmail(email), code.trim());
       writePendingEmail(null); // signed in; nothing outstanding to resume
     } catch (err: unknown) {
       const message =
@@ -134,6 +135,10 @@ export default function Login() {
                 }
                 placeholder="your@email.com"
                 autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
                 required
                 className="w-full p-2 border border-border rounded mb-4 bg-background text-foreground"
               />
@@ -173,6 +178,10 @@ export default function Login() {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="email"
                 required
                 className="w-full p-2 border border-border rounded mb-3 bg-background text-foreground"
               />

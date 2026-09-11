@@ -1,4 +1,5 @@
 import { airtableFindAll, escapeFormulaValue } from "./airtable";
+import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
 import { TABLES } from "../../shared/schema/tableNames";
@@ -106,7 +107,7 @@ export async function getActivePlayers(env: Env): Promise<Player[]> {
 const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
 
 function playerByEmailKey(email: string): string {
-  return `player-by-email:${email.trim().toLowerCase()}`;
+  return `player-by-email:${normalizeEmail(email)}`;
 }
 
 export function invalidatePlayerByEmail(email: string): void {
@@ -157,7 +158,7 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
   // fixes the other side: auth.ts happens to pass a normalized address, but a
   // caller that did not (recordRankingEvents resolving an actor, say) would
   // reintroduce exactly the same silent miss.
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmail(email);
   const records = await airtableFindAll(
     env,
     TABLES.player,
