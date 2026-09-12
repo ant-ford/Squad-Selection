@@ -12,8 +12,15 @@ import { displayWarning, conflictsWorthShowing } from "../src/components/PlayerR
 describe("player row: same-day availability shown once", () => {
   const warning = "Available for HKFC B, HKFC C on same day";
 
-  it("trims the suffix a coach can take as read on a fixture screen", () => {
-    expect(displayWarning(warning)).toBe("Available for HKFC B, HKFC C");
+  it("trims the suffix and the club prefix a coach can take as read", () => {
+    expect(displayWarning(warning)).toBe("Available for B, C");
+  });
+
+  it("drops the club prefix even where there is no suffix to trim", () => {
+    expect(displayWarning("Selected for HKFC A on same day")).toBe("Selected for A");
+    expect(displayWarning("Already played in a Cup for HKFC D this season")).toBe(
+      "Already played in a Cup for D this season",
+    );
   });
 
   it("leaves every other warning exactly as the engine wrote it", () => {
