@@ -1,13 +1,12 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
-import { usePlayersForMatch, useAvailabilityPoll } from '@/lib/queries';
+import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
 import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { apiPost, apiGet } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
-import RecommendationsPanel from '@/components/RecommendationsPanel';
 import PlayerRow from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
@@ -16,11 +15,15 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
-import { ABILITY_RANK } from '@shared/abilityRank';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
+import { compareSelected, sortSquadList } from '@/lib/squadSort';
 import { POS_SHORT, initials } from '@/lib/format';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
+
+// The whole pool, not a top-N shortlist: the ranking orders the unselected
+// half of the squad list, so every candidate needs a place in it.
+const RECOMMENDATION_POOL_LIMIT = 500;
 
 interface PriorityPlayer {
   id: string;
@@ -38,6 +41,7 @@ export default function SquadSelection() {
 
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
+  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => {
@@ -283,16 +287,15 @@ export default function SquadSelection() {
     });
   }, [mergedPlayers, filters]);
 
-  const sortedPlayers = useMemo(() => {
-    return [...filteredPlayers].sort((a, b) => {
-      const aSelected = a.selectionStatus === 'Selected' ? 1 : 0;
-      const bSelected = b.selectionStatus === 'Selected' ? 1 : 0;
-      if (aSelected !== bSelected) return bSelected - aSelected;
-      const abilityDiff = (ABILITY_RANK[b.playingAbility] ?? 0) - (ABILITY_RANK[a.playingAbility] ?? 0);
-      if (abilityDiff !== 0) return abilityDiff;
-      return a.preferredName.localeCompare(b.preferredName);
-    });
-  }, [filteredPlayers]);
+  const recRankById = useMemo(
+    () => new Map((recData?.recommendations ?? []).map((r, i) => [r.id, i] as [string, number])),
+    [recData]
+  );
+
+  const sortedPlayers = useMemo(
+    () => sortSquadList(filteredPlayers, recRankById),
+    [filteredPlayers, recRankById]
+  );
 
   const listRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -308,15 +311,10 @@ export default function SquadSelection() {
     return { ...data.match, selectedCount };
   }, [data?.match, mergedPlayers]);
 
-  const selectedIdsSet = useMemo(
-    () => new Set(mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id)),
-    [mergedPlayers]
-  );
-
   // Squad to notify, in the order shown on screen. Uses the merged list so a
   // just-selected player is included without waiting for a refetch.
   const selectedPlayers = useMemo(
-    () => mergedPlayers.filter(p => p.selectionStatus === 'Selected'),
+    () => mergedPlayers.filter(p => p.selectionStatus === 'Selected').sort(compareSelected),
     [mergedPlayers]
   );
 
@@ -446,20 +444,9 @@ export default function SquadSelection() {
       </div>
       <MatchHeader match={optimisticMatch} matchId={matchId} />
 
-      {optimisticMatch.selectedCount < optimisticMatch.targetSquadSize && (
-        <div className="container mx-auto px-4 pt-3">
-          <RecommendationsPanel
-            matchId={matchId!}
-            side={side}
-            excludeIds={selectedIdsSet}
-            onSelect={(playerId) => updateDeltas([{ playerId, action: 'select' }])}
-          />
-        </div>
-      )}
-
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
 
-      <div className="container mx-auto py-2 px-4 flex flex-wrap items-center gap-3 border-b border-border/50 pb-3">
+      <div className="container mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/50">
         <div className="flex items-center gap-3">
           <input
             type="checkbox"

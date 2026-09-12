@@ -195,10 +195,16 @@ export function useBulkAvailability() {
   });
 }
 
-export function useRecommendations(matchId: string, side?: "home" | "away", position?: string, enabled = true) {
+export function useRecommendations(
+  matchId: string,
+  side?: "home" | "away",
+  position?: string,
+  limit?: number,
+  enabled = true,
+) {
   return useQuery({
-    queryKey: ['recommendations', matchId, side, position],
-    queryFn: () => getRecommendations(matchId, side, position),
+    queryKey: ['recommendations', matchId, side, position, limit],
+    queryFn: () => getRecommendations(matchId, side, position, limit),
     enabled,
     staleTime: 300_000,
   });

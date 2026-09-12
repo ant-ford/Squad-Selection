@@ -19,6 +19,11 @@ export interface GetRecommendationsOutput {
   recommendations: Recommendation[];
 }
 
-export async function getRecommendations(matchId: string, side?: 'home' | 'away', position?: string) {
-  return apiGet<GetRecommendationsOutput>(`/api/match/${matchId}/recommendations`, { side, position });
+export async function getRecommendations(
+  matchId: string,
+  side?: 'home' | 'away',
+  position?: string,
+  limit?: number,
+) {
+  return apiGet<GetRecommendationsOutput>(`/api/match/${matchId}/recommendations`, { side, position, limit });
 }
