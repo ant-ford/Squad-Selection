@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { signInErrorMessage } from "../src/pages/Login";
+
+// Imported from src/lib, not from the page: pulling it out of Login.tsx
+// dragged in the Supabase client, which throws at module load without its
+// environment variables. That passed locally and failed in CI.
+import { signInErrorMessage } from "../src/lib/signInError";
 
 // Supabase says "Token has expired or is invalid", which tells someone
 // staring at a code they just typed nothing about what to do. A code is

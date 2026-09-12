@@ -2,28 +2,15 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { normalizeEmail } from '@shared/normalizeEmail';
+import { signInErrorMessage } from '@/lib/signInError';
 
 const CODE_LENGTH = 6;
-
-/**
- * Supabase says "Token has expired or is invalid", which tells someone
- * staring at a code they just typed nothing about what to do next. A code is
- * single-use and a new request replaces the previous one, so the fix is
- * almost always "use the newest email".
- */
-export function signInErrorMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : '';
-  if (/expired|invalid/i.test(raw)) {
-    return 'That code has already been used or has expired. Tap Resend email and use the code from the newest one.';
-  }
-  return raw || 'Could not sign you in. Please try again.';
-}
 
 // Which address we last sent a code to. Checking email means leaving the
 // app - switching to the mail app on a phone, or reloading - and without
 // this the player came back to the email form with a code and nowhere to
 // type it. Session-scoped: it is a convenience, not a credential.
-const PENDING_EMAIL_KEY = 'login:…mail';
+const PENDING_EMAIL_KEY = 'login:pendingEmail';
 
 function readPendingEmail(): string {
   try {
