@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useMyProfile } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
-import AppHeader from '@/components/AppHeader';
+import CoachHeader from '@/components/CoachHeader';
 import AppFooter from '@/components/AppFooter';
 
 export default function CoachLayout() {
@@ -18,7 +18,7 @@ export default function CoachLayout() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <AppHeader profile={profile} />
+      <CoachHeader profile={profile} />
       <main className="flex-1">
         <Outlet context={{ profile }} />
       </main>
