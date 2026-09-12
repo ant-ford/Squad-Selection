@@ -49,18 +49,24 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const isMaybe = player.availabilityStatus === 'Maybe';
 
-  let bgClass = '';
-  if (isMaybe) bgClass = 'bg-amber-50/70';
-  else if (isUnavailable) bgClass = 'bg-red-50/70';
+  // A tint alone was not carrying outdoors on a phone, so each state also
+  // gets a solid edge. The bar is on every row, transparent when there is
+  // nothing to say, so names stay on one vertical line down the list.
+  let bgClass = 'border-l-transparent';
+  if (isMaybe) bgClass = 'bg-amber-200 border-l-amber-600';
+  else if (isUnavailable) bgClass = 'bg-red-200 border-l-red-600';
 
-  const dimmed = isBlocked || isUnavailable;
+  // Blocked rows still recede - they are there to be understood, not picked.
+  // Unavailable ones no longer do: dimming a pale tint was most of why these
+  // were hard to read in daylight, and the colour already says enough.
+  const dimmed = isBlocked;
   const visibleConflicts = conflictsWorthShowing(player.conflicts, player.warnings);
   const isDoubleBooked = player.selectionStatus === 'Selected'
     && (player.conflicts ?? []).some(c => c.type === 'selected');
 
   return (
     <div
-      className={`flex items-center gap-2 sm:gap-3 py-1.5 border-b border-border ${dimmed ? 'opacity-60' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
+      className={`flex items-center gap-2 sm:gap-3 py-1.5 pl-2 border-b border-border border-l-4 ${dimmed ? 'opacity-70' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
       onClick={!isBlocked ? onToggleSelection : undefined}
     >
       <div className="shrink-0">
@@ -97,7 +103,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
           )}
         </p>
         {player.supportUnavailable && player.supportUnavailable.length > 0 && (
-          <p className='text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
+          <p className='text-[11px] text-amber-900 bg-amber-50 border border-amber-400 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
             <AlertCircle className='h-3 w-3 shrink-0' />
             Available here - unavailable for {player.supportUnavailable.map(shortTeam).join(', ')}
           </p>
@@ -107,10 +113,10 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
         {visibleConflicts.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1.5">
             {visibleConflicts.map((c, i) => (
-              <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${
-                c.type === 'selected' && isDoubleBooked ? 'text-red-700 bg-red-100 font-medium'
-                : c.type === 'selected' ? 'text-blue-600 bg-blue-50'
-                : 'text-amber-600 bg-amber-50'
+              <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border ${
+                c.type === 'selected' && isDoubleBooked ? 'text-red-900 bg-red-100 border-red-500 font-medium'
+                : c.type === 'selected' ? 'text-blue-900 bg-blue-50 border-blue-400'
+                : 'text-amber-900 bg-amber-50 border-amber-400'
                 }`}>
                 {c.type === 'selected' && isDoubleBooked && <AlertCircle className="h-3 w-3" />}
                 {c.type === 'selected' ? `Selected: ${shortTeam(c.team)}` : `Available: ${shortTeam(c.team)}`}
@@ -121,12 +127,12 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
 
         <div className="mt-1 flex flex-wrap gap-1.5">
           {(player.blocks ?? []).map((b, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+            <span key={i} className="inline-flex items-center gap-1 text-xs text-red-900 bg-red-50 border border-red-400 px-1.5 py-0.5 rounded">
               <Ban className="h-3 w-3 shrink-0" /> {b.reason}
             </span>
           ))}
           {(player.warnings ?? []).map((w, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+            <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-900 bg-amber-50 border border-amber-400 px-1.5 py-0.5 rounded">
               <AlertCircle className="h-3 w-3 shrink-0" /> {displayWarning(w)}
             </span>
           ))}

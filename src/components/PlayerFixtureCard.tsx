@@ -29,13 +29,17 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
 
   return (
     <div
-      className={`w-full border rounded-xl p-3 text-left transition-all hover:shadow-sm cursor-pointer ${
+      // Answered states carry a heavier border and a solid tint: the old
+      // fractional-opacity washes were close to invisible on a phone outdoors.
+      // The tint stops at 100 so the active availability button below, which
+      // is the 200 of the same hue, still stands off the card.
+      className={`w-full border-2 rounded-xl p-3 text-left transition-all hover:shadow-sm cursor-pointer ${
         isSelected
           ? 'border-primary bg-primary/5'
           : isUnavailable
-          ? 'border-border bg-muted/30 opacity-60'
+          ? 'border-red-400 bg-red-100'
           : isMaybe
-          ? 'border-amber-200 bg-amber-50/30'
+          ? 'border-amber-400 bg-amber-100'
           : 'border-border bg-card'
       }`}
       role="button"
