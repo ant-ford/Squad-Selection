@@ -1,12 +1,23 @@
 <!--
   Supabase Auth -> Email Templates -> Magic Link
 
-  Paste the markup below into that template. It contains NO links, which is
-  the entire point: corporate mail scanners (Outlook Safe Links, Mimecast,
-  Proofpoint) pre-fetch links to inspect them, and the magic link and the
-  6-digit code are the SAME single-use token. Following the link burns the
-  token, so the code in that email then fails too - which is what users on
-  scanned domains saw as "Token has expired or is invalid".
+  Paste the markup below into that template.
+
+  NO LINKS, deliberately. Corporate mail scanners (Outlook Safe Links,
+  Mimecast, Proofpoint) pre-fetch links to inspect them, and the magic link
+  and the 6-digit code are the SAME single-use token. Following the link
+  burns the token, so the code in that email fails too - which is what users
+  on scanned domains saw as "Token has expired or is invalid".
+
+  The logo is an IMAGE, not text. Email clients strip @font-face, so the
+  brand lettering cannot be set in Fairwater Script and survive: it would
+  fall back to a generic script almost everywhere. The wordmark image is how
+  it renders identically in every client, and it carries the badger too.
+
+  Fixed width and height on that image on purpose. Clients that block images
+  by default then reserve the right space and show the alt text, instead of
+  an oversized empty box. The code itself is text, never an image, so a
+  blocked-image client can still read it.
 
   Kept here so the template is reviewable and recoverable; the live copy
   lives in the Supabase dashboard, which is not in version control.
@@ -19,9 +30,12 @@
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5eaf0;border-radius:12px;">
 
         <tr>
-          <td style="background-color:#0b0d12;border-radius:12px 12px 0 0;padding:20px 28px;">
-            <div style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-style:italic;color:#ffffff;">Eddy</div>
-            <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b909a;padding-top:4px;">HKFC Squad Selection</div>
+          <td align="center" style="padding:26px 28px 22px 28px;border-bottom:1px solid #e5eaf0;">
+            <img src="https://eddy.global/assets/Eddy%20Title.png"
+                 alt="Eddy"
+                 width="200" height="55"
+                 style="display:block;width:200px;height:55px;border:0;outline:none;text-decoration:none;" />
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b909a;padding-top:12px;">HKFC Squad Selection</div>
           </td>
         </tr>
 
