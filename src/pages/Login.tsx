@@ -5,6 +5,20 @@ import { normalizeEmail } from '@shared/normalizeEmail';
 
 const CODE_LENGTH = 6;
 
+/**
+ * Supabase says "Token has expired or is invalid", which tells someone
+ * staring at a code they just typed nothing about what to do next. A code is
+ * single-use and a new request replaces the previous one, so the fix is
+ * almost always "use the newest email".
+ */
+export function signInErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : '';
+  if (/expired|invalid/i.test(raw)) {
+    return 'That code has already been used or has expired. Tap Resend email and use the code from the newest one.';
+  }
+  return raw || 'Could not sign you in. Please try again.';
+}
+
 // Which address we last sent a code to. Checking email means leaving the
 // app - switching to the mail app on a phone, or reloading - and without
 // this the player came back to the email form with a code and nowhere to
@@ -88,9 +102,7 @@ export default function Login() {
       await verifyEmailOtp(normalizeEmail(email), code.trim());
       writePendingEmail(null); // signed in; nothing outstanding to resume
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid or expired code';
-      toast.error(message);
+      toast.error(signInErrorMessage(err));
       setCode('');
     } finally {
       setVerifying(false);
@@ -167,7 +179,7 @@ export default function Login() {
               <span className="font-medium text-foreground">{email || 'your address'}</span>
             </p>
             <p className="text-muted-foreground mb-4 text-center text-sm">
-              Tap the link in that email, or type its {CODE_LENGTH}-digit code here.
+              Enter the {CODE_LENGTH}-digit code from that email.
             </p>
             {!email && (
               <input

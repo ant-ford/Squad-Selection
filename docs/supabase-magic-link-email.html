@@ -1,0 +1,78 @@
+<!--
+  Supabase Auth -> Email Templates -> Magic Link
+
+  Paste the markup below into that template. It contains NO links, which is
+  the entire point: corporate mail scanners (Outlook Safe Links, Mimecast,
+  Proofpoint) pre-fetch links to inspect them, and the magic link and the
+  6-digit code are the SAME single-use token. Following the link burns the
+  token, so the code in that email then fails too - which is what users on
+  scanned domains saw as "Token has expired or is invalid".
+
+  Kept here so the template is reviewable and recoverable; the live copy
+  lives in the Supabase dashboard, which is not in version control.
+
+  Variables used: {{ .Token }}, {{ .Email }}.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;margin:0;padding:24px 12px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5eaf0;border-radius:12px;">
+
+        <tr>
+          <td style="background-color:#0b0d12;border-radius:12px 12px 0 0;padding:20px 28px;">
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-style:italic;color:#ffffff;">Eddy</div>
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b909a;padding-top:4px;">HKFC Squad Selection</div>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:28px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;">
+            <div style="font-size:19px;font-weight:bold;color:#0f1720;">Your sign-in code</div>
+            <div style="font-size:14px;line-height:22px;color:#4b5563;padding-top:10px;">
+              Enter this code in the app to sign in as <strong style="color:#0f1720;">{{ .Email }}</strong>.
+            </div>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:20px 28px 8px 28px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;border:1px solid #e5eaf0;border-radius:10px;">
+              <tr>
+                <td align="center" style="padding:22px 12px;font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:bold;letter-spacing:10px;color:#0f1720;">{{ .Token }}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:12px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#6b7280;">
+            The code expires in one hour and can be used once. Requesting another code replaces this one.
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:18px 28px 0 28px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e5eaf0;">
+              <tr>
+                <td style="padding-top:16px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#6b7280;">
+                  The app is at <span style="color:#0f1720;font-weight:bold;">app.eddy.global</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:16px 28px 26px 28px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9aa1ab;">
+            Didn't ask to sign in? You can ignore this email. Nobody can use this code without it.
+          </td>
+        </tr>
+
+      </table>
+
+      <div style="max-width:480px;padding:14px 8px 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;color:#9aa1ab;text-align:center;">
+        Sent by Eddy &middot; HKFC Men's Hockey squad management
+      </div>
+    </td>
+  </tr>
+</table>
