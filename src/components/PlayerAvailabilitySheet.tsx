@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { POS_SHORT, availableLabel } from '@/lib/format';
+import { POS_SHORT } from '@/lib/format';
+import { availableLabel } from '@shared/availableLabel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useMatchSquad } from '@/lib/queries';
 

@@ -5,8 +5,96 @@ import { getCached } from "./cache";
 import { HttpError } from "./http";
 import type { AuthorizedUser } from "./auth";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { availableLabel } from "../../shared/availableLabel";
+import { getPlayedMatches } from "./fixtures";
+import { currentSeason } from "./seasonContext";
+import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 
 const MATCH_DURATION_MINUTES = 90;
+
+/** A squad member as the calendar lists them. */
+type SquadEntry = { name: string; availabilityStatus?: string };
+
+/**
+ * Attach each fixture's season record and head-to-head. Played matches are
+ * fetched once for the whole feed rather than per event - every fixture reads
+ * the same list.
+ */
+async function withTeamRecords(env: Env, fixtures: any[]): Promise<any[]> {
+  const played = await getPlayedMatches(env);
+  const season = currentSeason();
+  return fixtures.map((f) => ({
+    ...f,
+    record: buildTeamRecord(played, f.hkfcTeam || "", f.opponent, season),
+  }));
+}
+
+/**
+ * The squad, one per line, with the only status worth a reader's attention
+ * marked. A selected player who answered "Maybe" is still in the side but is
+ * not a certainty, and that is exactly what a teammate reading the invitation
+ * wants to know.
+ */
+function formatSquadLines(squad: SquadEntry[]): string[] {
+  return squad.map((p) => (p.availabilityStatus === "Maybe" ? `${p.name} (Maybe)` : p.name));
+}
+
+/** "Saturday 4 October, 15:00" in Hong Kong time. */
+function formatWhen(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Hong_Kong",
+    weekday: "long", day: "numeric", month: "long",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("weekday")} ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")}`;
+}
+
+/** "20 November 2026" in Hong Kong time. */
+function formatDay(iso: string): string {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Hong_Kong",
+    day: "numeric", month: "long", year: "numeric",
+  }).format(new Date(iso));
+}
+
+const OUTCOME_WORD: Record<Outcome, string> = { win: "Won", draw: "Drew", loss: "Lost" };
+
+/** This season's record and the last meeting, as the FORM section's lines. */
+function formatFormLines(record: TeamRecord | undefined): string[] {
+  if (!record) return [];
+  const lines: string[] = [];
+  if (record.played > 0) {
+    lines.push(`This season: ${record.won}W ${record.drawn}D ${record.lost}L (${record.played} played)`);
+  }
+  const last = record.lastMeeting;
+  if (last) {
+    const where = last.isHome ? "home" : `away at ${last.venue || "TBD"}`;
+    lines.push(
+      `Last meeting: ${OUTCOME_WORD[last.outcome]} ${last.goalsFor}-${last.goalsAgainst}, ${formatDay(last.date)} (${where})`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * The event body, laid out in labelled sections.
+ *
+ * Calendar clients render DESCRIPTION in a proportional font, so columns
+ * cannot be aligned with padding the way an email can. Capitalised section
+ * headings and "Label: value" lines are what survives that and still reads
+ * as something composed rather than dumped.
+ *
+ * A section with no lines is dropped whole, so a fixture with no result
+ * history behind it doesn't carry an empty FORM heading.
+ */
+function buildDescription(sections: { heading?: string; lines: string[] }[]): string {
+  const blocks = sections
+    .filter((s) => s.lines.length > 0)
+    .map((s) => (s.heading ? [s.heading, ...s.lines] : s.lines).join("\n"));
+  return [...blocks, "Sent by Eddy · HKFC Men's Hockey squad management"].join("\n\n");
+}
 
 // --- Utility Functions ---
 
@@ -98,7 +186,7 @@ function generateIcsPayload(events: string[]): string {
   ].join("\r\n");
 }
 
-function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] = []): string {
+function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry[] = []): string {
   const isHome = fixture.isHome;
   const cleanId = fixture.id.replace(/-home$/, "").replace(/-away$/, "");
   const uid = `${cleanId}-${isHome ? "home" : "away"}@hkfc-squad.app`;
@@ -114,12 +202,18 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
     const isUnavailable = fixture.availabilityStatus === "Unavailable";
+    const isMaybe = fixture.availabilityStatus === "Maybe";
     if (isSelected) {
       summaryPrefix = "✅ ";
       status = "CONFIRMED";
     } else if (isUnavailable) {
       summaryPrefix = "❌ ";
       status = "CANCELLED";
+    } else if (isMaybe) {
+      // A Maybe is a different thing from an unanswered fixture, and the one
+      // the player most needs to come back to.
+      summaryPrefix = "❓ ";
+      status = "TENTATIVE";
     } else {
       summaryPrefix = "🟦 ";
       status = "TENTATIVE";
@@ -132,12 +226,22 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
   // renders everywhere and survives the text-only views.
   const kitIcon = fixture.kit === "Blue" ? " 🔵" : fixture.kit === "White" ? " ⚪" : "";
   const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}${kitIcon}`;
-  const kitLine = fixture.kit ? `Kit: ${fixture.kit}\n` : "";
+
+  const matchSection = [
+    ...(fixture.kit ? [`Kit: ${fixture.kit}`] : []),
+    `Venue: ${fixture.venue || "TBD"}`,
+    `Division: ${fixture.division || "TBD"}`,
+  ];
 
   let description = "";
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
-    const availability = fixture.availabilityStatus === "Available" ? "Going" : (fixture.availabilityStatus || "Going");
+    // No answer counts as available - that is the app's own default - so the
+    // line reads "Going" for a selected player and "Available" otherwise.
+    const availability =
+      !fixture.availabilityStatus || fixture.availabilityStatus === "Available"
+        ? availableLabel(isSelected)
+        : fixture.availabilityStatus;
     // Category mirrors the player dashboard (My Team / Play-Up Opportunity /
     // Support Fixture) so the calendar matches what the player sees.
     const categoryLabels: Record<string, string> = {
@@ -145,15 +249,40 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
       "play-up": "Play-Up Opportunity",
       support: "Support Fixture",
     };
-    const categoryLine = fixture.fixtureCategory && categoryLabels[fixture.fixtureCategory]
-      ? `Category: ${categoryLabels[fixture.fixtureCategory]}\n`
-      : "";
-    description = `${categoryLine}${kitLine}Selection: ${isSelected ? "SELECTED" : "PENDING"}\nAvailability: ${availability}\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
+    const squad: SquadEntry[] = fixture.squad ?? [];
+    description = buildDescription([
+      { lines: [`${teamName} vs ${fixture.opponent}`, formatWhen(startDate)] },
+      {
+        heading: "YOUR PLACE",
+        lines: [
+          `Selection: ${isSelected ? "Selected" : "Not yet selected"}`,
+          `Availability: ${availability}`,
+          ...(categoryLabels[fixture.fixtureCategory]
+            ? [`Category: ${categoryLabels[fixture.fixtureCategory]}`]
+            : []),
+        ],
+      },
+      { heading: "MATCH", lines: matchSection },
+      { heading: "FORM", lines: formatFormLines(fixture.record) },
+      {
+        heading: squad.length > 0 ? `SQUAD (${squad.length})` : "",
+        lines: formatSquadLines(squad),
+      },
+    ]);
   } else {
-    description = `${kitLine}Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} Selected\nDivision: ${fixture.division}\nVenue: ${fixture.venue || "TBD"}`;
-    if (squadNames.length > 0) {
-      description += `\n\nSelected Players:\n${squadNames.join("\n")}`;
-    }
+    description = buildDescription([
+      { lines: [`${teamName} vs ${fixture.opponent}`, formatWhen(startDate)] },
+      {
+        heading: "SELECTION",
+        lines: [`Squad: ${fixture.selectedCount}/${fixture.targetSquadSize} selected`],
+      },
+      { heading: "MATCH", lines: matchSection },
+      { heading: "FORM", lines: formatFormLines(fixture.record) },
+      {
+        heading: teamSquad.length > 0 ? `SQUAD (${teamSquad.length})` : "",
+        lines: formatSquadLines(teamSquad),
+      },
+    ]);
   }
 
   const location = escapeIcsText(fixture.venue || "TBD");
@@ -172,12 +301,6 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, squadNames: string[] 
   ];
 
   return lines.map(foldLine).join("\r\n");
-}
-
-// Resolve squad names from selectedIds + cached reference data (no per-fixture Airtable lookups).
-function resolveSquadNames(selectedIds: string[] | undefined, playersById: Map<string, string>): string[] {
-  if (!selectedIds || selectedIds.length === 0) return [];
-  return selectedIds.map((id) => playersById.get(id)).filter((n): n is string => !!n);
 }
 
 // --- Route Handlers ---
@@ -209,7 +332,7 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   const cacheKey = `calendar:player:${id}:${displayTeam}`;
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
-    const events = fixtures.map((f: any) => formatVEvent(f, true));
+    const events = (await withTeamRecords(env, fixtures)).map((f: any) => formatVEvent(f, true));
     return generateIcsPayload(events);
   }, 5 * 60 * 1000);
 
@@ -238,9 +361,9 @@ export async function handleTeamCalendarFeed(env: Env, team: string | null, sig:
   const cacheKey = `calendar:team:${team}`;
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getUpcomingFixtures(env, { team });
-    const ref = await getReferenceData(env);
-    const playersById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
-    const events = fixtures.map((f: any) => formatVEvent(f, false, resolveSquadNames(f.selectedIds, playersById)));
+    const events = (await withTeamRecords(env, fixtures)).map((f: any) =>
+      formatVEvent(f, false, f.selectedPlayers ?? []),
+    );
     return generateIcsPayload(events);
   }, 5 * 60 * 1000);
 
