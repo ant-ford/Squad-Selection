@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { normalizeEmail } from '@shared/normalizeEmail';
+import { signInErrorMessage } from '@/lib/signInError';
 
 const CODE_LENGTH = 6;
 
@@ -9,7 +10,7 @@ const CODE_LENGTH = 6;
 // app - switching to the mail app on a phone, or reloading - and without
 // this the player came back to the email form with a code and nowhere to
 // type it. Session-scoped: it is a convenience, not a credential.
-const PENDING_EMAIL_KEY = 'login:…mail';
+const PENDING_EMAIL_KEY = 'login:pendingEmail';
 
 function readPendingEmail(): string {
   try {
@@ -88,9 +89,7 @@ export default function Login() {
       await verifyEmailOtp(normalizeEmail(email), code.trim());
       writePendingEmail(null); // signed in; nothing outstanding to resume
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid or expired code';
-      toast.error(message);
+      toast.error(signInErrorMessage(err));
       setCode('');
     } finally {
       setVerifying(false);
@@ -167,7 +166,7 @@ export default function Login() {
               <span className="font-medium text-foreground">{email || 'your address'}</span>
             </p>
             <p className="text-muted-foreground mb-4 text-center text-sm">
-              Tap the link in that email, or type its {CODE_LENGTH}-digit code here.
+              Enter the {CODE_LENGTH}-digit code from that email.
             </p>
             {!email && (
               <input
