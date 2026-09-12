@@ -22,6 +22,11 @@
   Kept here so the template is reviewable and recoverable; the live copy
   lives in the Supabase dashboard, which is not in version control.
 
+  The logo is eddy-email-logo.png: the same artwork at 400px (twice the
+  rendered width, so it stays sharp on a phone) and 13KB rather than 180KB,
+  on a path with no space in it. An encoded %20 is one more thing for a mail
+  gateway to rewrite on the way through.
+
   Variables used: {{ .Token }}, {{ .Email }}.
 -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;margin:0;padding:24px 12px;">
@@ -31,7 +36,7 @@
 
         <tr>
           <td align="center" style="padding:26px 28px 22px 28px;border-bottom:1px solid #e5eaf0;">
-            <img src="https://eddy.global/assets/Eddy%20Title.png"
+            <img src="https://eddy.global/assets/eddy-email-logo.png"
                  alt="Eddy"
                  width="200" height="55"
                  style="display:block;width:200px;height:55px;border:0;outline:none;text-decoration:none;" />
