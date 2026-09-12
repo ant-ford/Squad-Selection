@@ -14,6 +14,7 @@ import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
+import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
@@ -197,62 +198,43 @@ export default function PlayerDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8">
-                <img src="/assets/logo-plain.svg" alt="Eddy" className="h-full w-full object-contain" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">HKFC Squad Selection</h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {(data.isCoach || data.isSectionCaptain) && (
-                <button
-                  onClick={() => navigate('/coach')}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  Coach View
-                </button>
-              )}
-              {data.playerId && (
-                <button
-                  onClick={() => setStatsPlayerId(data.playerId!)}
-                  className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                  title="My season stats"
-                  aria-label="My season stats"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                onClick={() => setShowRules(true)}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                title="Availability preferences"
-                aria-label="Availability preferences"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setShowCalendarSync(true)}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                title="Sync to Calendar"
-              >
-                <CalendarDays className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => logout()}
-                className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader>
+        {(data.isCoach || data.isSectionCaptain) && (
+          <button onClick={() => navigate('/coach')} className={headerNavClass()}>
+            <Shield className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Coach View</span>
+          </button>
+        )}
+        {data.playerId && (
+          <button
+            onClick={() => setStatsPlayerId(data.playerId!)}
+            className={headerIconClass}
+            title="My season stats"
+            aria-label="My season stats"
+          >
+            <BarChart3 className="h-4 w-4" />
+          </button>
+        )}
+        <button
+          onClick={() => setShowRules(true)}
+          className={headerIconClass}
+          title="Availability preferences"
+          aria-label="Availability preferences"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setShowCalendarSync(true)}
+          className={headerIconClass}
+          title="Sync to Calendar"
+          aria-label="Sync to Calendar"
+        >
+          <CalendarDays className="h-4 w-4" />
+        </button>
+        <button onClick={() => logout()} className={headerIconClass} aria-label="Log out">
+          <LogOut className="h-4 w-4" />
+        </button>
+      </AppHeader>
 
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">

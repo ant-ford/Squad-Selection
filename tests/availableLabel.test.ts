@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { availableLabel } from "../src/lib/format";
+import { availableLabel } from "../shared/availableLabel";
 
 // Before the squad is picked a player is stating availability, so the button
 // says so. Once selected they are in the side, and "Going" is what they

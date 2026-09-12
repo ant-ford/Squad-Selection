@@ -239,6 +239,138 @@ describe("player calendar (Selected Team view)", () => {
   });
 });
 
+describe("player calendar event detail", () => {
+  /** The DESCRIPTION of the first event whose SUMMARY contains `needle`. */
+  function descriptionFor(ics: string, needle: string): string {
+    const lines = unfold(ics);
+    const i = lines.findIndex((l) => l.startsWith("SUMMARY:") && l.includes(needle));
+    const d = lines.slice(i).find((l) => l.startsWith("DESCRIPTION:")) || "";
+    // Undo the ICS escaping so assertions can read the text as written.
+    return d.replace(/^DESCRIPTION:/, "").replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";");
+  }
+
+  const feed = async () => {
+    const sig = await sign("player:recP1");
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
+    return res.text();
+  };
+
+  function teammate(id: string, name: string) {
+    state.people.push({
+      id,
+      fields: { "Preferred Name": name, Email: `${name}@hkfc.com`, Active: true, "Registered Team": "F", "Playing Ability": "B", "Playing Position": "Midfielder" },
+    });
+  }
+
+  function exception(id: string, matchId: string, playerId: string, status: string) {
+    state.exceptions.push({
+      id,
+      fields: { Player: [playerId], Match: [matchId], "Availability Status": status, "Season (Matches)": ["2026-2027"] },
+    });
+  }
+
+  it("names the kit colour under the match section", async () => {
+    const m = match("recM_F", "F", 1);
+    m.fields["Home Kit"] = "White";
+    state.matches = [m];
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc).toContain("MATCH\nKit: White");
+  });
+
+  it("opens with the fixture and when it is, and signs off", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc.split("\n")[0]).toBe("F vs Opponent");
+    // Hong Kong time, spelled out rather than an ISO stamp.
+    expect(desc.split("\n")[1]).toMatch(/^[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+, \d{2}:\d{2}$/);
+    expect(desc.trimEnd().endsWith("Sent by Eddy · HKFC Men's Hockey squad management")).toBe(true);
+  });
+
+  it("drops a section whole when it has nothing to say", async () => {
+    // Nobody has played yet, so there is no record and no head-to-head.
+    state.matches = [match("recM_F", "F", 1)];
+    expect(descriptionFor(await feed(), "F vs")).not.toContain("FORM");
+  });
+
+  /** A completed result in the same season as the fixtures above. */
+  function result(id: string, homeTeam: string, awayTeam: string, home: number, away: number, day: number) {
+    return {
+      id,
+      fields: {
+        Date: `${DAY(day)}T09:00:00.000Z`,
+        Season: "2026-2027",
+        "Home Team": homeTeam,
+        "Away Team": awayTeam,
+        "Home Score": home,
+        "Away Score": away,
+        "Match Status": "Played",
+        Venue: "KCC",
+      },
+    };
+  }
+
+  it("carries the season record and the last meeting with these opponents", async () => {
+    state.matches = [
+      match("recM_F", "F", 1),
+      result("recR1", "F", "Opponent", 3, 1, -30), // beat them last time
+      result("recR2", "F", "Someone Else", 0, 2, -20),
+      result("recR3", "Other", "F", 1, 1, -10),
+    ];
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc).toContain("FORM");
+    expect(desc).toContain("This season: 1W 1D 1L (3 played)");
+    expect(desc).toMatch(/Last meeting: Won 3-1, \d{1,2} [A-Z][a-z]+ \d{4} \(home\)/);
+  });
+
+  it("says Going once the player is picked, and Available until then", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    expect(descriptionFor(await feed(), "F vs")).toContain("Availability: Available");
+
+    invalidateAll();
+    state.matches = [match("recM_F", "F", 1, ["recP1"])];
+    expect(descriptionFor(await feed(), "F vs")).toContain("Availability: Going");
+  });
+
+  it("leaves a player's own Maybe answer as they gave it", async () => {
+    state.matches = [match("recM_F", "F", 1, ["recP1"])];
+    exception("recX1", "recM_F", "recP1", "Maybe");
+    const ics = await feed();
+    expect(descriptionFor(ics, "F vs")).toContain("Availability: Maybe");
+    // Being picked is the stronger fact, so the title still reads as selected.
+    expect(eventsWith(ics, "F vs")[0]).toContain("✅");
+  });
+
+  it("marks an unanswered-but-Maybe fixture apart from one never answered", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    exception("recX1", "recM_F", "recP1", "Maybe");
+    expect(eventsWith(await feed(), "F vs")[0]).toContain("❓");
+
+    invalidateAll();
+    state.exceptions = [];
+    expect(eventsWith(await feed(), "F vs")[0]).toContain("🟦");
+  });
+
+  it("lists the squad the player has been picked in, flagging the Maybes", async () => {
+    teammate("recP2", "Tom");
+    teammate("recP3", "Raj");
+    state.matches = [match("recM_F", "F", 1, ["recP1", "recP2", "recP3"])];
+    exception("recX2", "recM_F", "recP3", "Maybe");
+
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc).toContain("SQUAD (3)");
+    expect(desc).toContain("Jonny");
+    expect(desc).toContain("Tom");
+    expect(desc).toContain("Raj (Maybe)");
+    // Tom answered nothing, so he carries no flag.
+    expect(desc).not.toContain("Tom (");
+  });
+
+  it("carries no squad block for a fixture nobody has been picked for", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    expect(descriptionFor(await feed(), "F vs")).not.toContain("SQUAD (");
+  });
+});
+
 describe("player calendar feed signature and caching", () => {
   it("rejects a mismatched signature with 401", async () => {
     state.matches = [match("recM_F", "F", 1)];

@@ -1,6 +1,6 @@
 import { Users, Zap } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
-import { availableLabel } from '@/lib/format';
+import { availableLabel } from '@shared/availableLabel';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {

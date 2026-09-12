@@ -1,21 +1,22 @@
 import React from 'react';
 import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
-import { POS_SHORT } from '@/lib/format';
+import { POS_SHORT, shortTeam } from '@/lib/format';
 
 /**
- * The eligibility engine's warning reads "Available for X, Y on same day".
- * That exact string is pinned by the golden tests and must not change, so
- * the trim happens here, at the point of display. On a screen that is
- * already about one specific fixture, "on same day" is the only part a
- * coach can take as read.
+ * The eligibility engine's warning reads "Available for HKFC X, HKFC Y on
+ * same day". That exact string is pinned by the golden tests and must not
+ * change, so the trim happens here, at the point of display. On a screen that
+ * is already about one specific HKFC fixture, "on same day" and the club
+ * prefix are both things a coach can take as read.
  */
 const SAME_DAY_SUFFIX = ' on same day';
 
 export function displayWarning(warning: string): string {
-  return warning.endsWith(SAME_DAY_SUFFIX)
+  const trimmed = warning.endsWith(SAME_DAY_SUFFIX)
     ? warning.slice(0, -SAME_DAY_SUFFIX.length)
     : warning;
+  return shortTeam(trimmed);
 }
 
 /**
@@ -98,7 +99,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
         {player.supportUnavailable && player.supportUnavailable.length > 0 && (
           <p className='text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
             <AlertCircle className='h-3 w-3 shrink-0' />
-            Available here - unavailable for {player.supportUnavailable.join(', ')}
+            Available here - unavailable for {player.supportUnavailable.map(shortTeam).join(', ')}
           </p>
         )}
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
@@ -112,7 +113,7 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
                 : 'text-amber-600 bg-amber-50'
                 }`}>
                 {c.type === 'selected' && isDoubleBooked && <AlertCircle className="h-3 w-3" />}
-                {c.type === 'selected' ? `Selected: ${c.team}` : `Available: ${c.team}`}
+                {c.type === 'selected' ? `Selected: ${shortTeam(c.team)}` : `Available: ${shortTeam(c.team)}`}
               </span>
             ))}
           </div>

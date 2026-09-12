@@ -333,6 +333,15 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   const playerRules = await getRulesForPlayer(env, playerId);
+  // Everyone's answer, per match, so a card can say who else is in the squad
+  // and which of them are only a Maybe.
+  const squadStatus = new Map<string, string>();
+  for (const e of allExceptions) {
+    const mId = linkId(e.match);
+    const pId = linkId(e.player);
+    if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
+  }
+  const squadNameById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
   const buildCard = (x: { side: Side; category: FixtureCategory }) => {
     const s = x.side;
     const team = teamsByName.get(s.team);
@@ -353,6 +362,10 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
       playerNotes: exc?.note || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
+      squad: s.selectedIds.map((id) => ({
+        name: squadNameById.get(id) || "Player",
+        availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
+      })),
       // Kit follows the side being shown, so each half of a derby keeps its
       // own colour.
       kit: ((s.isHome ? s.match.homeKit : s.match.awayKit) || "") as KitColour,
@@ -477,7 +490,11 @@ export async function getUpcomingFixtures(
       const unavailableNames = unavailableExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
       const maybeNames = maybeExcs.map((e: any) => nameOf(playerById.get(linkId(e.player) || ""))).filter(Boolean);
 
-      const selectedPlayers = selectedIds.map((id) => ({ id, name: nameOf(playerById.get(id)) }));
+      const selectedPlayers = selectedIds.map((id) => ({
+        id,
+        name: nameOf(playerById.get(id)),
+        availabilityStatus: statusByPlayer.get(id) || "",
+      }));
 
       const selectedPositionSummary: Record<string, number> = {};
       for (const id of selectedIds) {
