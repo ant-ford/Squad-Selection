@@ -1,80 +1,113 @@
 <!--
   Supabase Auth -> Email Templates -> Magic Link
 
-  Paste the markup below into that template.
-
   NO LINKS, deliberately. Corporate mail scanners (Outlook Safe Links,
   Mimecast, Proofpoint) pre-fetch links to inspect them, and the magic link
   and the 6-digit code are the SAME single-use token. Following the link
   burns the token, so the code in that email fails too - which is what users
   on scanned domains saw as "Token has expired or is invalid".
 
-  The logo is an IMAGE, not text. Email clients strip @font-face, so the
-  brand lettering cannot be set in Fairwater Script and survive: it would
-  fall back to a generic script almost everywhere. The wordmark image is how
-  it renders identically in every client, and it carries the badger too.
+  FORCED LIGHT. The logo has a transparent background, so if a client
+  darkens the panel behind it the black artwork disappears. No background
+  colour fixes that on its own - white is already the lightest there is, and
+  dark mode overrides declared colours anyway. Three things hold it light:
+  the color-scheme meta tags, a prefers-color-scheme override that re-asserts
+  every surface, and [data-ogsc] rules for Outlook.com, which rewrites the
+  document rather than honouring the media query. bgcolor attributes sit
+  alongside the inline styles for older Outlook.
 
-  Fixed width and height on that image on purpose. Clients that block images
-  by default then reserve the right space and show the alt text, instead of
-  an oversized empty box. The code itself is text, never an image, so a
-  blocked-image client can still read it.
+  Verified by rendering it under dark-scheme emulation: the card stays white
+  and the logo stays legible.
+
+  The logo is an IMAGE, not text. Email clients strip @font-face, so the
+  brand lettering cannot be set in Fairwater Script and survive.
+
+  Fixed width and height on that image on purpose, so a client that blocks
+  images reserves the right space and shows the alt text. The code itself is
+  text, never an image.
 
   Kept here so the template is reviewable and recoverable; the live copy
   lives in the Supabase dashboard, which is not in version control.
 
-  The logo is eddy-email-logo.png: the same artwork at 400px (twice the
-  rendered width, so it stays sharp on a phone) and 13KB rather than 180KB,
-  on a path with no space in it. An encoded %20 is one more thing for a mail
-  gateway to rewrite on the way through.
-
   Variables used: {{ .Token }}, {{ .Email }}.
 -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;margin:0;padding:24px 12px;">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
+<title>Your sign-in code</title>
+<style>
+  :root { color-scheme: light only; supported-color-schemes: light only; }
+  /* Re-assert every surface under a client that darkens automatically.
+     The logo has a transparent background, so if the panel behind it goes
+     dark the black artwork disappears. */
+  @media (prefers-color-scheme: dark) {
+    .eddy-page  { background-color: #f4f6f8 !important; }
+    .eddy-card  { background-color: #ffffff !important; }
+    .eddy-code  { background-color: #f4f6f8 !important; }
+    .eddy-ink   { color: #0f1720 !important; }
+    .eddy-body  { color: #4b5563 !important; }
+    .eddy-muted { color: #6b7280 !important; }
+    .eddy-faint { color: #9aa1ab !important; }
+  }
+  [data-ogsc] .eddy-page  { background-color: #f4f6f8 !important; }
+  [data-ogsc] .eddy-card  { background-color: #ffffff !important; }
+  [data-ogsc] .eddy-code  { background-color: #f4f6f8 !important; }
+  [data-ogsc] .eddy-ink   { color: #0f1720 !important; }
+  [data-ogsc] .eddy-body  { color: #4b5563 !important; }
+  [data-ogsc] .eddy-muted { color: #6b7280 !important; }
+  [data-ogsc] .eddy-faint { color: #9aa1ab !important; }
+</style>
+</head>
+<body class="eddy-page" bgcolor="#f4f6f8" style="margin:0;padding:0;background-color:#f4f6f8;">
+<table role="presentation" class="eddy-page" bgcolor="#f4f6f8" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;margin:0;padding:24px 12px;">
   <tr>
     <td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5eaf0;border-radius:12px;">
+      <table role="presentation" class="eddy-card" bgcolor="#ffffff" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e5eaf0;border-radius:12px;">
 
         <tr>
-          <td align="center" style="padding:26px 28px 22px 28px;border-bottom:1px solid #e5eaf0;">
-            <img src="https://eddy.global/assets/eddy-email-logo.png"
-                 alt="Eddy"
-                 width="200" height="55"
-                 style="display:block;width:200px;height:55px;border:0;outline:none;text-decoration:none;" />
-            <div style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b909a;padding-top:12px;">HKFC Squad Selection</div>
+          <td align="center" class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:26px 28px 22px 28px;border-bottom:1px solid #e5eaf0;border-radius:12px 12px 0 0;">
+            <img src="https://eddy.global/assets/eddy-email-logo.png" alt="Eddy" width="200" height="55" style="display:block;width:200px;height:55px;border:0;outline:none;text-decoration:none;" />
+            <div class="eddy-faint" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8b909a;padding-top:12px;">HKFC Squad Selection</div>
           </td>
         </tr>
 
         <tr>
-          <td style="padding:28px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;">
-            <div style="font-size:19px;font-weight:bold;color:#0f1720;">Your sign-in code</div>
-            <div style="font-size:14px;line-height:22px;color:#4b5563;padding-top:10px;">
-              Enter this code in the app to sign in as <strong style="color:#0f1720;">{{ .Email }}</strong>.
+          <td class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:28px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;">
+            <div class="eddy-ink" style="font-size:19px;font-weight:bold;color:#0f1720;">Your sign-in code</div>
+            <div class="eddy-body" style="font-size:14px;line-height:22px;color:#4b5563;padding-top:10px;">
+              Enter this code in the app to sign in as <strong class="eddy-ink" style="color:#0f1720;">{{ .Email }}</strong>.
             </div>
           </td>
         </tr>
 
         <tr>
-          <td style="padding:20px 28px 8px 28px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;border:1px solid #e5eaf0;border-radius:10px;">
+          <td class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:20px 28px 8px 28px;">
+            <table role="presentation" class="eddy-code" bgcolor="#f4f6f8" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f8;border:1px solid #e5eaf0;border-radius:10px;">
               <tr>
-                <td align="center" style="padding:22px 12px;font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:bold;letter-spacing:10px;color:#0f1720;">{{ .Token }}</td>
+                <td align="center" class="eddy-ink" style="padding:22px 12px;font-family:'Courier New',Courier,monospace;font-size:34px;font-weight:bold;letter-spacing:10px;color:#0f1720;">{{ .Token }}</td>
               </tr>
             </table>
           </td>
         </tr>
 
         <tr>
-          <td style="padding:12px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#6b7280;">
-            The code expires in one hour and can be used once. Requesting another code replaces this one.
+          <td class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:12px 28px 0 28px;font-family:Arial,Helvetica,sans-serif;">
+            <div class="eddy-muted" style="font-size:13px;line-height:21px;color:#6b7280;">
+              The code expires in one hour and can be used once. Requesting another code replaces this one.
+            </div>
           </td>
         </tr>
 
         <tr>
-          <td style="padding:18px 28px 0 28px;">
+          <td class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 28px 0 28px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e5eaf0;">
               <tr>
-                <td style="padding-top:16px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#6b7280;">
-                  The app is at <span style="color:#0f1720;font-weight:bold;">app.eddy.global</span>
+                <td class="eddy-muted" style="padding-top:16px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#6b7280;">
+                  The app is at <span class="eddy-ink" style="color:#0f1720;font-weight:bold;">app.eddy.global</span>
                 </td>
               </tr>
             </table>
@@ -82,16 +115,20 @@
         </tr>
 
         <tr>
-          <td style="padding:16px 28px 26px 28px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9aa1ab;">
-            Didn't ask to sign in? You can ignore this email. Nobody can use this code without it.
+          <td class="eddy-card" bgcolor="#ffffff" style="background-color:#ffffff;padding:16px 28px 26px 28px;font-family:Arial,Helvetica,sans-serif;border-radius:0 0 12px 12px;">
+            <div class="eddy-faint" style="font-size:12px;line-height:19px;color:#9aa1ab;">
+              Didn't ask to sign in? You can ignore this email. Nobody can use this code without it.
+            </div>
           </td>
         </tr>
 
       </table>
 
-      <div style="max-width:480px;padding:14px 8px 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;color:#9aa1ab;text-align:center;">
+      <div class="eddy-faint" style="max-width:480px;padding:14px 8px 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:18px;color:#9aa1ab;text-align:center;">
         Sent by Eddy &middot; HKFC Men's Hockey squad management
       </div>
     </td>
   </tr>
 </table>
+</body>
+</html>
