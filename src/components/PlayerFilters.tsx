@@ -1,6 +1,6 @@
 import { X, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
 import { useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 export type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability' | 'ability';
@@ -89,6 +89,11 @@ const ABILITY_GROUPS: { group: string; values: string[] }[] = [
   { group: 'H', values: ['H+', 'H', 'H-'] },
 ];
 
+// One width for every row label, so the chips line up down the whole panel.
+// Narrower on a phone, where "Position:" and its five chips only just fit.
+const LABEL_CLASS = 'text-xs text-muted-foreground w-16 sm:w-20 shrink-0';
+const CHIP_CLASS = 'text-xs px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 transition-colors';
+
 export interface PlayerFiltersProps {
   filters: FilterState;
   onChange: (f: FilterState) => void;
@@ -104,9 +109,9 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
     (filters.name ? 1 : 0);
 
   const filterContent = (
-    <>
+    <div className="space-y-2">
       {/* Name search */}
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground shrink-0" />
         <input
           type="text"
@@ -117,22 +122,25 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
         />
       </div>
 
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-medium text-muted-foreground">Filters</span>
-        {totalActive > 0 && (
-          <button onClick={() => onChange(EMPTY_FILTERS)} className="text-xs text-destructive flex items-center gap-0.5">
-            <X className="h-3 w-3" /> Clear ({totalActive})
-          </button>
-        )}
-        <div className="flex-1" />
-      </div>
+      {/* The sheet has its own "Filters" title, so the caption would only
+          repeat it there. */}
+      {(!isMobile || totalActive > 0) && (
+        <div className="flex items-center gap-2">
+          {!isMobile && <span className="text-xs font-medium text-muted-foreground">Filters</span>}
+          {totalActive > 0 && (
+            <button onClick={() => onChange(EMPTY_FILTERS)} className="text-xs text-destructive flex items-center gap-0.5">
+              <X className="h-3 w-3" /> Clear ({totalActive})
+            </button>
+          )}
+        </div>
+      )}
 
       {GROUPS.map(group => (
-        <div key={group.category} className="flex items-center gap-1.5 mb-1 flex-wrap">
-          <span className="text-xs text-muted-foreground w-16 shrink-0">{group.label}:</span>
+        <div key={group.category} className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
+          <span className={LABEL_CLASS}>{group.label}:</span>
           {group.options.map(opt => (
             <button key={opt.key} onClick={() => onChange({ ...filters, [group.category]: toggleInSet(filters[group.category], opt.key) })}
-              className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${filters[group.category].has(opt.key) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+              className={`${CHIP_CLASS} ${filters[group.category].has(opt.key) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
               {opt.label}
             </button>
           ))}
@@ -140,8 +148,8 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
       ))}
 
       {/* Ability: parent toggles all sub-grades, caret expands granular */}
-      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className="text-xs text-muted-foreground w-16 shrink-0">Ability:</span>
+      <div className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
+        <span className={LABEL_CLASS}>Ability:</span>
         {ABILITY_GROUPS.map(g => {
           const allSelected = g.values.every(v => filters.ability.has(v));
           const someSelected = g.values.some(v => filters.ability.has(v));
@@ -155,7 +163,7 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
           return (
             <div key={g.group} className="flex items-center gap-1">
               <button onClick={toggleGroup}
-                className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary/40 text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                className={`${CHIP_CLASS} ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary/40 text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                 {g.group}
               </button>
               <button onClick={() => setExpandedAbility(isExpanded ? null : g.group)}
@@ -166,7 +174,7 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
                 <div className="flex items-center gap-1 ml-1">
                   {g.values.map(v => (
                     <button key={v} onClick={() => onChange({ ...filters, ability: toggleInSet(filters.ability, v) })}
-                      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${filters.ability.has(v) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                      className={`${CHIP_CLASS} ${filters.ability.has(v) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                       {v}
                     </button>
                   ))}
@@ -176,14 +184,14 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
           );
         })}
       </div>
-    </>
+    </div>
   );
 
   if (isMobile) {
     return (
       <>
         <div className="border-b border-border">
-          <div className="container mx-auto px-4 py-2">
+          <div className="container mx-auto px-4 py-3">
             <button
               onClick={() => setIsSheetOpen(true)}
               className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
@@ -195,10 +203,29 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
         </div>
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
           <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle>Filters</SheetTitle>
-            </SheetHeader>
-            <div className="mt-2">{filterContent}</div>
+            {/* SheetContent carries no padding of its own, so the padding here
+                is not decoration - without it the chips run into the edges of
+                the screen. The header is sticky because the body scrolls. */}
+            <div className="sticky top-0 z-10 bg-background rounded-t-2xl">
+              <div className="flex justify-center pt-2.5">
+                <div className="h-1 w-9 rounded-full bg-muted-foreground/25" />
+              </div>
+              <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 border-b border-border">
+                <SheetTitle>Filters</SheetTitle>
+                <button
+                  onClick={() => setIsSheetOpen(false)}
+                  aria-label="Close filters"
+                  className="shrink-0 -mr-1.5 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* The bottom inset keeps the last row clear of the home indicator. */}
+            <div className="px-5 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              {filterContent}
+            </div>
           </SheetContent>
         </Sheet>
       </>
@@ -207,7 +234,7 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
 
   return (
     <div className="border-b border-border">
-      <div className="container mx-auto px-4 py-2">
+      <div className="container mx-auto px-4 py-3">
         {filterContent}
       </div>
     </div>
