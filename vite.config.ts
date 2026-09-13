@@ -88,4 +88,29 @@ export default defineConfig(({ command }) => ({
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        /**
+         * Split the dependencies out of the app chunk.
+         *
+         * Everything was landing in one ~660 kB file, so each deploy invalidated
+         * the whole thing and a phone on a pitch-side connection re-downloaded
+         * React and the Supabase client to pick up a copy change. These barely
+         * move between releases; keeping them separate means a deploy usually
+         * only reissues the small app chunk, and the rest is served from cache.
+         */
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("@supabase")) return "vendor-supabase";
+          if (id.includes("react-router")) return "vendor-router";
+          if (id.includes("@tanstack")) return "vendor-query";
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) {
+            return "vendor-react";
+          }
+          return "vendor";
+        },
+      },
+    },
+  },
 }));
