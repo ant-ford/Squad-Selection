@@ -22,6 +22,13 @@ export interface UpcomingFixture {
   unavailableCount: number;
   maybeNames?: string[];
   unavailableNames?: string[];
+
+  /** Present once the match has been played. */
+  result?: {
+    goalsFor: number;
+    goalsAgainst: number;
+    outcome: 'win' | 'draw' | 'loss';
+  } | null;
 }
 
 export interface GetUpcomingFixturesOutput {
