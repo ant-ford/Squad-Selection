@@ -13,7 +13,7 @@ import { TABLES } from "../../shared/schema/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../shared/mappers/playerMapper";
 import { hkDateKey } from "../../shared/hkDateKey";
-import { invalidateCache, invalidateCachePrefix } from "./cache";
+import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import type { AvailabilityException } from "../../shared/schema/domainTypes";
 
 type ExceptionStatus = "Maybe" | "Unavailable";
@@ -111,16 +111,19 @@ async function findPlayerExceptions(
  * Invalidation fan-out for availability writes.
  * Now correctly scoped to only invalidate the specific seasons involved.
  */
-function invalidateAvailabilityCaches(matchIds: string[], seasons: string[]) {
+async function invalidateAvailabilityCaches(env: Env, matchIds: string[], seasons: string[]) {
   for (const matchId of matchIds) {
     invalidateCachePrefix(`players-for-match:${matchId}:`);
     invalidateCache(`availability:${matchId}`);
   }
-  invalidateCachePrefix("exceptions:");
   for (const season of new Set(seasons)) {
     invalidateCache(`season-index:${season}`);
   }
   invalidateCachePrefix("calendar:player:");
+
+  // Shared, so it has to be dropped everywhere: a coach on another isolate
+  // was otherwise shown the answer this write replaced.
+  await invalidateShared(env, [], ["exceptions:"]);
 }
 
 // ── Bulk set (admin / coach) ────────────────────────────────────────────
@@ -205,7 +208,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   }
   for (const c of createdBatches) results.push({ matchId: c.matchId, exceptionId: c.id });
 
-  invalidateAvailabilityCaches(input.matchIds, seasons);
+  await invalidateAvailabilityCaches(env, input.matchIds, seasons);
   return { success: true, updated: results.length, results };
 }
 

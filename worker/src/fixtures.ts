@@ -1,7 +1,7 @@
 import { airtableFindAll, airtableFindById, linkId } from "./airtable";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
-import { getCached } from "./cache";
+import { getCached, getShared } from "./cache";
 import { HttpError } from "./http";
 import { TABLES } from "../../shared/schema/tableNames";
 import { mapMatch } from "../../shared/mappers/matchMapper";
@@ -27,11 +27,10 @@ const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Mid
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
 export async function getScheduledMatches(env: Env): Promise<Match[]> {
-  const { data } = await getCached<Match[]>("scheduled-matches", async () => {
+  return getShared<Match[]>(env, "scheduled-matches", async () => {
     const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
     return records.map(mapMatch);
   }, SCHEDULED_MATCHES_TTL_MS);
-  return data;
 }
 
 /** How far back "show past" reaches on the coach fixture list. */
@@ -51,11 +50,10 @@ export const PAST_FIXTURE_WINDOW_DAYS = 28;
  * Narrowing to the recent window happens in JS, at the caller.
  */
 export async function getPlayedMatches(env: Env): Promise<Match[]> {
-  const { data } = await getCached<Match[]>("played-matches", async () => {
+  return getShared<Match[]>(env, "played-matches", async () => {
     const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Played"');
     return records.map(mapMatch);
   }, SCHEDULED_MATCHES_TTL_MS);
-  return data;
 }
 
 /**
@@ -72,7 +70,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   const unique = [...new Set(seasons.filter(Boolean))].sort();
   if (unique.length === 0) return [];
   const key = `played-matches:${unique.join(",")}`;
-  const { data } = await getCached<Match[]>(key, async () => {
+  return getShared<Match[]>(env, key, async () => {
     const seasonClause = unique.length === 1
       ? `{Season}="${unique[0]}"`
       : `OR(${unique.map((s) => `{Season}="${s}"`).join(",")})`;
@@ -83,7 +81,6 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
     );
     return records.map(mapMatch);
   }, SCHEDULED_MATCHES_TTL_MS);
-  return data;
 }
 
 // ---------------------------------------------------------------------------
