@@ -1,13 +1,12 @@
 import type { Env } from "./env";
 import { getPlayerByEmail, getReferenceData } from "./reference";
-import { getPlayerFixtures, getUpcomingFixtures } from "./fixtures";
+import { getPlayerFixtures, getUpcomingFixtures, getPlayedMatchesForSeasons } from "./fixtures";
 import { getCached } from "./cache";
 import { HttpError } from "./http";
 import type { AuthorizedUser } from "./auth";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { availableLabel } from "../../shared/availableLabel";
-import { getPlayedMatches } from "./fixtures";
-import { currentSeason } from "./seasonContext";
+import { currentSeason, previousSeason } from "./seasonContext";
 import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 
 const MATCH_DURATION_MINUTES = 90;
@@ -21,8 +20,8 @@ type SquadEntry = { name: string; availabilityStatus?: string };
  * the same list.
  */
 async function withTeamRecords(env: Env, fixtures: any[]): Promise<any[]> {
-  const played = await getPlayedMatches(env);
   const season = currentSeason();
+  const played = await getPlayedMatchesForSeasons(env, [season, previousSeason(season) || ""]);
   return fixtures.map((f) => ({
     ...f,
     record: buildTeamRecord(played, f.hkfcTeam || "", f.opponent, season),
