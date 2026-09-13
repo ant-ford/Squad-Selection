@@ -27,9 +27,13 @@ export interface FakeAirtableHandle {
 /**
  * Evaluates the small subset of Airtable formula syntax this codebase
  * actually sends: `{Field}="value"`, `LOWER({Field})="value"`,
- * `{Field}=TRUE()` / `=FALSE()`, and `OR(clause, clause, ...)`. An
+ * `{Field}=TRUE()` / `=FALSE()`, and `AND(...)` / `OR(...)` over those. An
  * unrecognised formula matches everything rather than silently hiding data a
  * test would otherwise notice is missing.
+ *
+ * That fallback is why AND has to be here: without it a narrowing filter
+ * reads as "match everything", and a test written to prove the narrowing
+ * passes against data the real query would never have returned.
  *
  * `{Field}="value"` is deliberately CASE-SENSITIVE, because that is what
  * Airtable does. This fake used to lowercase both sides, which made a
@@ -40,6 +44,9 @@ export interface FakeAirtableHandle {
 function evaluateFormula(formula: string, record: FakeRecord): boolean {
   const or = formula.match(/^OR\((.*)\)$/s);
   if (or) return splitTopLevel(or[1]).some((clause) => evaluateFormula(clause, record));
+
+  const and = formula.match(/^AND\((.*)\)$/s);
+  if (and) return splitTopLevel(and[1]).every((clause) => evaluateFormula(clause, record));
 
   const lowerEq = formula.match(/^LOWER\(\{([^}]+)\}\)="((?:[^"\\]|\\.)*)"$/);
   if (lowerEq) {
