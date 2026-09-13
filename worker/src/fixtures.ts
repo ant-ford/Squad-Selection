@@ -58,6 +58,34 @@ export async function getPlayedMatches(env: Env): Promise<Match[]> {
   return data;
 }
 
+/**
+ * Played matches for two seasons, for the record and head-to-head shown on
+ * the calendar feed.
+ *
+ * Separate from getPlayedMatches because that one is unbounded - every result
+ * the club has ever recorded - and it pages 100 at a time. On the calendar
+ * path, which already does a lot before it gets here, that unbounded scan was
+ * enough to tip the whole request over its limits and return a 500. Two
+ * seasons is all the FORM section can say anything about anyway.
+ */
+export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): Promise<Match[]> {
+  const unique = [...new Set(seasons.filter(Boolean))].sort();
+  if (unique.length === 0) return [];
+  const key = `played-matches:${unique.join(",")}`;
+  const { data } = await getCached<Match[]>(key, async () => {
+    const seasonClause = unique.length === 1
+      ? `{Season}="${unique[0]}"`
+      : `OR(${unique.map((s) => `{Season}="${s}"`).join(",")})`;
+    const records = await airtableFindAll(
+      env,
+      TABLES.match,
+      `AND({Match Status}="Played",${seasonClause})`,
+    );
+    return records.map(mapMatch);
+  }, SCHEDULED_MATCHES_TTL_MS);
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Lowest-ranked team Goalkeeper schedule
 // ---------------------------------------------------------------------------
@@ -169,7 +197,11 @@ export interface PlayerFixtureView {
  * play-up and support candidates gated by the eligibility engine using the
  * true Registered Team.
  */
-export async function buildPlayerFixtureView(env: Env, user: Player): Promise<PlayerFixtureView> {
+export async function buildPlayerFixtureView(
+  env: Env,
+  user: Player,
+  opts: { freshAvailability?: boolean } = {},
+): Promise<PlayerFixtureView> {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
   // Display team (optics): Selected Team EOS -> SOS -> Registered Team. The
@@ -321,15 +353,20 @@ export async function buildPlayerFixtureView(env: Env, user: Player): Promise<Pl
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // Read past the cache. This is the player looking at their own answer, so
-  // it has to reflect the tap they just made. The cache is per-isolate, so a
-  // write only clears it where it happened: land on another isolate and a
-  // five-minute-old copy put the old status straight back, which is what
-  // "I can't change my availability" actually was.
+  // Read past the cache for the dashboard. That is the player looking at
+  // their own answer, so it has to reflect the tap they just made: the cache
+  // is per-isolate, so a write only clears it where it happened, and landing
+  // on another isolate put a five-minute-old copy of the old status straight
+  // back - which is what "I can't change my availability" actually was.
+  //
+  // The calendar feed is the opposite case. Its own output is cached for five
+  // minutes and no calendar client refreshes faster than hourly, so paying
+  // for an uncached scan of the whole season's exceptions there bought
+  // nothing at all - and it is the single most expensive read on the path.
   const allExceptions = await getExceptionsForSeasons(
     env,
     relevantCategorized.map((x) => x.side.match.season || ""),
-    { fresh: true },
+    { fresh: opts.freshAvailability ?? true },
   );
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
@@ -396,7 +433,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   if (!record) throw new HttpError("Player not found or inactive", 404);
   const player = mapPlayer(record);
   if (!player.active) throw new HttpError("Player not found or inactive", 404);
-  const view = await buildPlayerFixtureView(env, player);
+  const view = await buildPlayerFixtureView(env, player, { freshAvailability: false });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
     playerName: player.preferredName || player.givenNames || "Player",

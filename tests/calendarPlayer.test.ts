@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { handlePlayerCalendarFeed, handleTeamCalendarFeed } from "../worker/src/calendar";
-import { invalidateAll, invalidateCache } from "../worker/src/cache";
+import { invalidateAll, invalidateCache, invalidateCachePrefix } from "../worker/src/cache";
 import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 const ENV = {
@@ -308,6 +308,37 @@ describe("player calendar event detail", () => {
       },
     };
   }
+
+  // The feed returned a 500 in production because of how much it read per
+  // request. These two pin the reads that were removed.
+  it("reads played matches for the seasons it can speak about, not every result ever recorded", async () => {
+    state.matches = [match("recM_F", "F", 1), result("recR1", "F", "Opponent", 3, 1, -30)];
+    await feed();
+
+    // URLSearchParams encodes spaces as "+", which decodeURIComponent leaves
+    // alone - so undo that before matching on field names.
+    const playedQueries = fetchCalls
+      .map((c) => decodeURIComponent(c.url).replace(/\+/g, " "))
+      .filter((u) => u.includes('{Match Status}="Played"'));
+
+    expect(playedQueries.length).toBeGreaterThan(0);
+    // An unbounded scan of the Matches table is what tipped the request over.
+    for (const q of playedQueries) expect(q).toContain("{Season}=");
+  });
+
+  it("does not bypass the availability cache: its own output is already cached", async () => {
+    state.matches = [match("recM_F", "F", 1, ["recP1"])];
+    await feed();
+
+    // Drop only the built ICS, so the next call rebuilds the events but may
+    // still answer its data reads from cache.
+    invalidateCachePrefix("calendar:");
+    fetchCalls = [];
+    await feed();
+
+    const exceptionReads = fetchCalls.filter((c) => c.url.includes("Availability%20Exceptions"));
+    expect(exceptionReads).toHaveLength(0);
+  });
 
   it("carries the season record and the last meeting with these opponents", async () => {
     state.matches = [

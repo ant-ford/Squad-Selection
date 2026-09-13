@@ -64,7 +64,7 @@ export function getSameDayMatches(allMatches: Match[], targetDate: string): Matc
   return allMatches.filter((m) => hkDateKey(m.matchDate) === target);
 }
 
-function previousSeason(season: string): string | null {
+export function previousSeason(season: string): string | null {
   const m = season.match(/^(\d{4})-(\d{4})$/);
   if (!m) return null;
   const y = Number(m[1]);
