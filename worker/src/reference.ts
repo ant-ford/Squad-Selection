@@ -1,7 +1,7 @@
 import { airtableFindAll, escapeFormulaValue } from "./airtable";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
+import { getCached, getShared, invalidateCache, invalidateCachePrefix } from "./cache";
 import { TABLES } from "../../shared/schema/tableNames";
 import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../shared/mappers/playerMapper";
@@ -20,7 +20,7 @@ export interface ReferenceData {
 export const UNRANKED_TEAM_RANK = 99;
 
 export async function getReferenceData(env: Env): Promise<ReferenceData> {
-  const { data } = await getCached<ReferenceData>("club-reference", async () => {
+  return getShared<ReferenceData>(env, "club-reference", async () => {
     const [teamRecords, playerRecords] = await Promise.all([
       airtableFindAll(env, TABLES.team, "{Active}=TRUE()"),
       airtableFindAll(env, TABLES.player, "{Active}=TRUE()"),
@@ -41,8 +41,6 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
       teamNames: teams.map((t) => t.teamName || ""),
     };
   }, 10 * 60 * 1000); // 10 minutes
-
-  return data;
 }
 
 /**
@@ -211,8 +209,7 @@ export async function getExceptionsForSeasons(
     return records.map(mapAvailability);
   };
   if (opts?.fresh) return load();
-  const { data } = await getCached<AvailabilityException[]>(cacheKey, load, 5 * 60 * 1000);
-  return data;
+  return getShared<AvailabilityException[]>(env, cacheKey, load, 5 * 60 * 1000);
 }
 
 export { invalidateCache };

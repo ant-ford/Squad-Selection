@@ -15,7 +15,7 @@
 
 import { airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
 import type { Env } from "./env";
-import { getCached } from "./cache";
+import { getCached, getShared } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData } from "./reference";
 import { computeSuspensionStates, type CardSuspensionState } from "./suspension";
@@ -42,21 +42,19 @@ import type {
 
 // ── Season-scoped fetches ───────────────────────────────────────────────
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
-  const { data } = await getCached<Match[]>(`all-matches:${season}`, async () => {
+  return getShared<Match[]>(env, `all-matches:${season}`, async () => {
     const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
     const records = await airtableFindAll(env, TABLES.match, formula);
     return records.map(mapMatch);
   }, 10 * 60 * 1000);
-  return data;
 }
 
 async function getMatchCardsForSeason(env: Env, season: string): Promise<MatchCard[]> {
-  const { data } = await getCached<MatchCard[]>(`match-cards:${season}`, async () => {
+  return getShared<MatchCard[]>(env, `match-cards:${season}`, async () => {
     const formula = season ? `{${MATCHCARDS_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
     const records = await airtableFindAll(env, TABLES.matchCard, formula);
     return records.map(mapMatchCard);
   }, 10 * 60 * 1000);
-  return data;
 }
 
 export function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {

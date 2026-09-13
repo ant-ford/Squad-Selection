@@ -17,6 +17,20 @@ routes = [
 [observability]
 enabled = true
 
+# Shared cache for raw Airtable reads (see worker/src/cache.ts).
+#
+# The in-isolate cache alone cannot help a request that lands on a cold
+# isolate, which on this traffic is most of them - so most requests rebuilt
+# everything from Airtable and took many seconds. KV gives those isolates
+# something to share.
+#
+# The Worker treats this binding as optional and falls back to the
+# in-isolate cache without it, so commenting these lines out is a complete
+# rollback: no migration, no state to unwind, the entries simply expire.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "841b5bd54444493ba85e09bffd2f9f49"
+
 [vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 # Comma-separated allow-list. Both frontend hostnames are served during the

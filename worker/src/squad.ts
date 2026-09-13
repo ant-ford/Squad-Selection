@@ -1,6 +1,6 @@
 import { airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
 import type { Env } from "./env";
-import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
+import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
 import { getScheduledMatches } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
@@ -44,15 +44,18 @@ async function getMatchRecord(env: Env, matchId: string): Promise<any> {
  * eligibility for OTHER matches too, so a precise match-by-match key list
  * would need its own full-season match read just to build it.
  */
-function invalidateSelectionCaches(matchId: string, season?: string): void {
+async function invalidateSelectionCaches(env: Env, matchId: string, season?: string): Promise<void> {
   invalidateCache(`match:${matchId}`);
-  invalidateCache("scheduled-matches");
-  if (season) {
-    invalidateCache(`season-index:${season}`);
-    invalidateCache(`all-matches:${season}`);
-  }
+  if (season) invalidateCache(`season-index:${season}`);
   invalidateCachePrefix("players-for-match:");
   invalidateCachePrefix("calendar:");
+
+  // These two are shared, so dropping them only in this isolate is what let
+  // another one keep serving the selections this write just replaced.
+  await invalidateShared(env, [
+    "scheduled-matches",
+    ...(season ? [`all-matches:${season}`] : []),
+  ]);
 }
 
 // ── HKFC side resolution ────────────────────────────────────────────────
@@ -262,7 +265,7 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   // Invalidation fan-out (Invariant #11): a selection change can affect
   // same-day eligibility for OTHER matches too, so this is a coarse wipe
   // rather than a match-by-match computation.
-  invalidateSelectionCaches(matchId, match.season || "");
+  await invalidateSelectionCaches(env, matchId, match.season || "");
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {
@@ -271,7 +274,7 @@ export async function toggleAutoSelect(env: Env, matchId: string, enabled: boole
   await airtableUpdate(env, TABLES.match, matchId, {
     [MATCHES_FIELDS.autoSelectEnabled]: enabled,
   });
-  invalidateSelectionCaches(matchId);
+  await invalidateSelectionCaches(env, matchId);
   console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
   return { success: true, autoSelectEnabled: enabled };
 }
@@ -306,7 +309,7 @@ export async function setMatchKit(
 
   // Same invalidation set as the auto-select toggle: the fixture views and
   // the calendar feeds all read the kit off the cached match records.
-  invalidateSelectionCaches(matchId);
+  await invalidateSelectionCaches(env, matchId);
   console.log(`[Kit Audit] matchId=${matchId} side=${side} kit=${kit || "(cleared)"} actor=${actingEmail || "unknown"}`);
   return { success: true, side, kit };
 }
