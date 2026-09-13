@@ -15,6 +15,7 @@ import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import type { AuthorizedUser } from "./auth";
 import { hkfcSides, type SideInfo } from "./match";
+import { outcomeOf } from "./teamRecord";
 
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
@@ -526,7 +527,20 @@ export async function getUpcomingFixtures(
         unavailableCount: unavailableExcs.length,
         maybeNames,
         unavailableNames,
-
+        // The result, once there is one. The coach list could show past
+        // fixtures but never what happened in them, which the player's own
+        // past-fixture card has shown all along.
+        result:
+          m.matchStatus === "Played"
+            ? {
+                goalsFor: isHome ? m.homeTeamScore : m.awayTeamScore,
+                goalsAgainst: isHome ? m.awayTeamScore : m.homeTeamScore,
+                outcome: outcomeOf(
+                  isHome ? m.homeTeamScore : m.awayTeamScore,
+                  isHome ? m.awayTeamScore : m.homeTeamScore,
+                ),
+              }
+            : null,
       };
     };
     if (bothCoached && !opts.team) return [makeCard(matchSides.home!), makeCard(matchSides.away!)];

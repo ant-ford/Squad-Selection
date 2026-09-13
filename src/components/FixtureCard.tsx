@@ -5,6 +5,20 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 
+// Same wording and tones as the player's own past-fixture card, so a result
+// reads identically whichever side of the app you are on.
+const OUTCOME_STYLE: Record<'win' | 'draw' | 'loss', string> = {
+  win: 'bg-green-100 text-green-800 border-green-200',
+  draw: 'bg-muted text-muted-foreground border-border',
+  loss: 'bg-red-100 text-red-800 border-red-200',
+};
+
+const OUTCOME_LABEL: Record<'win' | 'draw' | 'loss', string> = {
+  win: 'Won',
+  draw: 'Drew',
+  loss: 'Lost',
+};
+
 /** Click-toggled name popover that positions above or below based on viewport space. */
 function NamePopover({
   names,
@@ -131,6 +145,7 @@ export default function FixtureCard({
   const maybeNames = fixture.maybeNames ?? [];
   const unavailNames = fixture.unavailableNames ?? [];
   const nowUnavailable = fixture.selectedUnavailableNames ?? [];
+  const result = fixture.result ?? null;
 
   return (
     <div
@@ -155,15 +170,25 @@ export default function FixtureCard({
           </p>
         </div>
         <div className="text-right shrink-0 ml-3">
-          <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-            {fixture.selectedCount} / {fixture.targetSquadSize}
-            {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
-          </span>
-          {(shortfall > 0 || fixture.maybeCount > 0) && (
-            <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
-              {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
-              {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
-            </p>
+          {/* Once a match is played the squad count is history; the result is
+              what a coach is scanning the past list for. */}
+          {result ? (
+            <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-semibold border ${OUTCOME_STYLE[result.outcome]}`}>
+              {OUTCOME_LABEL[result.outcome]} {result.goalsFor}–{result.goalsAgainst}
+            </span>
+          ) : (
+            <>
+              <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                {fixture.selectedCount} / {fixture.targetSquadSize}
+                {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
+              </span>
+              {(shortfall > 0 || fixture.maybeCount > 0) && (
+                <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
+                  {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
+                  {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
