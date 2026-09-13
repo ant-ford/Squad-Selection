@@ -13,6 +13,7 @@ vi.mock("../worker/src/reference", () => ({
 
 import { requireAuthorizedUser, requireCoach, normalizeEmail } from "../worker/src/auth";
 import { HttpError } from "../worker/src/http";
+import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
   AIRTABLE_TOKEN: "test-token",
@@ -66,8 +67,10 @@ function supabaseReturns(email: string) {
   );
 }
 
+// A fresh Response per call: the worker reads the body to log the failure,
+// and a single shared instance can only be read once.
 function supabaseRejects() {
-  vi.mocked(fetch).mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+  vi.mocked(fetch).mockImplementation(async () => new Response("Unauthorized", { status: 401 }));
 }
 
 function authedRequest(token = "valid.jwt.token"): Request {
@@ -84,6 +87,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("fetch", vi.fn());
   mocks.getTeamCoachLinks.mockResolvedValue({ ...teamLinks, cached: false });
+  // Verified sessions are cached briefly, and every test here signs in with
+  // the same bearer token - without this each test would be answered by the
+  // previous one's identity.
+  invalidateAll();
 });
 
 // ---------------------------------------------------------------------------
@@ -269,6 +276,42 @@ describe("requireAuthorizedUser", () => {
     const request = new Request("https://hkfc-api.test/api/my-profile");
 
     await expectError(requireAuthorizedUser(request, ENV), 401, "UNAUTHORIZED");
+  });
+
+  // Every authenticated route verifies first, so an uncached check put a
+  // blocking round trip to Supabase in front of every request - and a screen
+  // opening three endpoints at once paid for it three times.
+  it("verifies a repeated token with Supabase only once", async () => {
+    supabaseReturns("player@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activePlayer);
+
+    await requireAuthorizedUser(authedRequest(), ENV);
+    await requireAuthorizedUser(authedRequest(), ENV);
+    await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("never answers one token with another token's identity", async () => {
+    supabaseReturns("player@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activePlayer);
+    const first = await requireAuthorizedUser(authedRequest("token.one"), ENV);
+    expect(first.email).toBe("player@hkfc.com");
+
+    supabaseReturns("coach@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activeCoach);
+    const second = await requireAuthorizedUser(authedRequest("token.two"), ENV);
+
+    expect(second.email).toBe("coach@hkfc.com");
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a rejected token", async () => {
+    supabaseRejects();
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 401, "UNAUTHORIZED");
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 401, "UNAUTHORIZED");
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a session without an email with 401 UNAUTHORIZED", async () => {

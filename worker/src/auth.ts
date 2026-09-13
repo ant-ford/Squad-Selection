@@ -2,6 +2,7 @@ import { HttpError } from "./http";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import { getPlayerByEmail, getTeamCoachLinks } from "./reference";
+import { getCached } from "./cache";
 
 // One definition for the whole app, browser included - see the module for
 // why every store in this system disagrees about case.
@@ -109,9 +110,24 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
 }
 
 /**
+ * How long a verified token is trusted without re-asking Supabase.
+ *
+ * Short on purpose. This is the only thing standing between a revoked session
+ * and the API, so the window is measured in seconds - long enough to collapse
+ * the burst of calls one screen makes, far short of the token's own lifetime.
+ */
+const SESSION_VERIFY_TTL_MS = 60 * 1000;
+
+/**
  * Verifies the Supabase access token against /auth/v1/user and returns the
  * verified email. Throws 401 UNAUTHORIZED on any missing, invalid or
  * expired session.
+ *
+ * The verified result is cached briefly. Every authenticated route runs this
+ * first, so an uncached check put a blocking round trip to Supabase in front
+ * of every single request - and a screen that opens three endpoints at once
+ * paid for it three times before any of them started work. Only successes are
+ * cached; a rejected token throws before anything is stored.
  */
 async function verifySupabaseSession(request: Request, env: Env): Promise<string> {
   const header = request.headers.get("Authorization") || "";
@@ -122,20 +138,30 @@ async function verifySupabaseSession(request: Request, env: Env): Promise<string
     throw new HttpError("Server authentication not configured", 500);
   }
 
-  const resp = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: env.SUPABASE_ANON_KEY,
+  // Keyed on the token itself: an exact match is the only way to be certain
+  // one session is never answered with another's identity, and the token is
+  // already in this isolate's memory alongside the email it maps to.
+  const { data } = await getCached<string>(
+    `session:${token}`,
+    async () => {
+      const resp = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: env.SUPABASE_ANON_KEY,
+        },
+      });
+
+      if (!resp.ok) {
+        const detail = await resp.text();
+        console.error("Supabase auth verification failed:", resp.status, detail);
+        throw new HttpError("Invalid or expired session", 401, "UNAUTHORIZED");
+      }
+
+      const user = (await resp.json()) as { email?: string };
+      if (!user.email) throw new HttpError("Session has no associated email", 401, "UNAUTHORIZED");
+      return user.email;
     },
-  });
-
-  if (!resp.ok) {
-    const detail = await resp.text();
-    console.error("Supabase auth verification failed:", resp.status, detail);
-    throw new HttpError("Invalid or expired session", 401, "UNAUTHORIZED");
-  }
-
-  const user = (await resp.json()) as { email?: string };
-  if (!user.email) throw new HttpError("Session has no associated email", 401, "UNAUTHORIZED");
-  return user.email;
+    SESSION_VERIFY_TTL_MS,
+  );
+  return data;
 }
