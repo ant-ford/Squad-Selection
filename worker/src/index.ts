@@ -24,7 +24,7 @@ import {
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
-import { setMyAvailability, setMyAvailabilityForDate } from "./availability";
+import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch } from "./recommendations";
 import {
@@ -160,6 +160,24 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && matchAvailabilityMatch) {
       await requireCoach(request, env);
       return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
+    }
+    // A coach answering for a player who cannot get into the app. The only
+    // write that names another person, so it is coach-gated and the coach's
+    // identity - from the session, never the body - goes on the record.
+    if (method === "POST" && matchAvailabilityMatch) {
+      const user = await requireCoach(request, env);
+      const body = (await readJsonBody(request)) as { playerId?: string; status?: string; notes?: string };
+      return json(
+        await setPlayerAvailability(env, {
+          coachPersonId: user.personId,
+          playerId: String(body.playerId || ""),
+          matchId: matchAvailabilityMatch[1],
+          status: (body.status || "") as "Available" | "Maybe" | "Unavailable",
+          notes: typeof body.notes === "string" ? body.notes : undefined,
+        }),
+        200,
+        origin,
+      );
     }
 
     // ── Auto-Select Toggle (Write - Authenticated) ─────────────────────────

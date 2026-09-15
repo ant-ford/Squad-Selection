@@ -42,9 +42,17 @@ interface PlayerRowProps {
   onToggleSelection: () => void;
   /** Optional drill-in to this player's season stats (coach screens). */
   onShowStats?: () => void;
+  /** Optional: lets the coach change this player's availability for the fixture. */
+  onSetAvailability?: () => void;
 }
 
-const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSelection, onShowStats }: PlayerRowProps) {
+const PlayerRow = React.memo(function PlayerRow({
+  player,
+  selected,
+  onToggleSelection,
+  onShowStats,
+  onSetAvailability,
+}: PlayerRowProps) {
   const isBlocked = player.eligibilityStatus === 'blocked';
   const isUnavailable = player.availabilityStatus === 'Unavailable';
   const isMaybe = player.availabilityStatus === 'Maybe';
@@ -76,6 +84,10 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          {/* Shirt number ahead of the name, the way a team sheet reads. */}
+          {player.shirtNo && (
+            <span className="text-xs font-semibold tabular-nums text-muted-foreground shrink-0">#{player.shirtNo}</span>
+          )}
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1 py-0.5 rounded-sm shrink-0">U21</span>}
           {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm shrink-0">VP</span>}
@@ -83,7 +95,24 @@ const PlayerRow = React.memo(function PlayerRow({ player, selected, onToggleSele
         </div>
         <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
           <span>
-            {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} · {player.availabilityStatus}
+            {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} ·{' '}
+            {onSetAvailability ? (
+              // The status is the control: tap it to answer for the player.
+              // stopPropagation because the whole row toggles selection.
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSetAvailability();
+                }}
+                title={`Set availability for ${player.preferredName}`}
+                className="underline decoration-dotted underline-offset-2 hover:text-foreground transition-colors"
+              >
+                {player.availabilityStatus}
+              </button>
+            ) : (
+              player.availabilityStatus
+            )}
           </span>
           {onShowStats && (
             // Drill-in to this player's season stats. stopPropagation because

@@ -1,15 +1,52 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { safeFormat, isPastFixture } from '../src/lib/dateUtils';
+import { safeFormat, formatHkTime, isPastFixture, viewerIsOutsideHongKong } from '../src/lib/dateUtils';
 
-describe('dateUtils — safeFormat', () => {
-  it('formats a valid ISO date string', () => {
-    expect(safeFormat('2026-08-07T14:00:00', 'yyyy-MM-dd')).toBe('2026-08-07');
-    expect(safeFormat('2026-08-07T14:00:00', 'EEE d MMM yyyy')).toBe('Fri 7 Aug 2026');
-  });
+// Match times are Hong Kong times, whatever zone the device is in. Node
+// re-reads TZ on assignment, so each block below pins the "device" zone and
+// expects the same Hong Kong wall-clock output from every one of them.
+const ORIGINAL_TZ = process.env.TZ;
 
-  it('formats time portion', () => {
-    expect(safeFormat('2026-08-07T14:30:00', 'HH:mm')).toBe('14:30');
+function inZone(tz: string, run: () => void) {
+  describe(`device in ${tz}`, () => {
+    beforeEach(() => {
+      process.env.TZ = tz;
+    });
+    afterEach(() => {
+      if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+      else process.env.TZ = ORIGINAL_TZ;
+    });
+    run();
   });
+}
+
+// 06:30 UTC is 14:30 in Hong Kong on the same day.
+const KICK_OFF = '2026-08-07T06:30:00.000Z';
+// 17:00 UTC on the 6th is 01:00 on the 7th in Hong Kong - the case a UTC or
+// western device gets wrong by a whole day.
+const EARLY_HOURS = '2026-08-06T17:00:00.000Z';
+
+describe('dateUtils — safeFormat is pinned to Hong Kong time', () => {
+  for (const tz of ['Asia/Hong_Kong', 'Europe/London', 'America/New_York', 'Australia/Sydney', 'UTC']) {
+    inZone(tz, () => {
+      it('formats the kick-off in Hong Kong wall-clock time', () => {
+        expect(safeFormat(KICK_OFF, 'HH:mm')).toBe('14:30');
+        expect(safeFormat(KICK_OFF, 'EEE d MMM yyyy')).toBe('Fri 7 Aug 2026');
+        expect(safeFormat(KICK_OFF, 'yyyy-MM-dd')).toBe('2026-08-07');
+      });
+
+      it('puts a small-hours kick-off on its Hong Kong day', () => {
+        expect(safeFormat(EARLY_HOURS, 'EEE d MMM')).toBe('Fri 7 Aug');
+        expect(safeFormat(EARLY_HOURS, 'HH:mm')).toBe('01:00');
+      });
+
+      it('treats a bare date key as a Hong Kong calendar day', () => {
+        // Date keys come from hkDateKey and head the fixture groups. A device
+        // east of Hong Kong must not roll this back to the Thursday.
+        expect(safeFormat('2026-08-07', 'EEEE d MMM')).toBe('Friday 7 Aug');
+        expect(safeFormat('2026-08-07', 'yyyy-MM-dd')).toBe('2026-08-07');
+      });
+    });
+  }
 
   it('returns fallback for undefined', () => {
     expect(safeFormat(undefined, 'yyyy-MM-dd')).toBe('—');
@@ -30,55 +67,77 @@ describe('dateUtils — safeFormat', () => {
   it('returns custom fallback when provided', () => {
     expect(safeFormat(undefined, 'HH:mm', 'TBD')).toBe('TBD');
   });
+});
 
-  it('handles date-only ISO strings', () => {
-    expect(safeFormat('2026-08-07', 'yyyy-MM-dd')).toBe('2026-08-07');
+describe('dateUtils — formatHkTime labels the zone only when it would otherwise mislead', () => {
+  inZone('Asia/Hong_Kong', () => {
+    it('shows a bare time at home', () => {
+      expect(viewerIsOutsideHongKong()).toBe(false);
+      expect(formatHkTime(KICK_OFF)).toBe('14:30');
+    });
+  });
+
+  inZone('Europe/London', () => {
+    it('adds HKT for a device somewhere else', () => {
+      expect(viewerIsOutsideHongKong()).toBe(true);
+      expect(formatHkTime(KICK_OFF)).toBe('14:30 HKT');
+    });
+
+    it('never labels the fallback', () => {
+      expect(formatHkTime(undefined)).toBe('—');
+      expect(formatHkTime('', 'TBD')).toBe('TBD');
+    });
   });
 });
 
-describe('dateUtils — isPastFixture', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+describe('dateUtils — isPastFixture compares Hong Kong days', () => {
+  // 2026-08-07 12:00 UTC is 20:00 on the 7th in Hong Kong.
+  const now = new Date('2026-08-07T12:00:00Z');
 
   it('returns true for a date in the past', () => {
-    expect(isPastFixture('2026-08-06T19:00:00')).toBe(true);
+    expect(isPastFixture('2026-08-06T11:00:00Z', now)).toBe(true);
   });
 
-  it('returns false for today (same date)', () => {
-    vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
-    expect(isPastFixture('2026-08-07T19:00:00')).toBe(false);
+  it('returns false for a fixture earlier today, even once it has kicked off', () => {
+    expect(isPastFixture('2026-08-07T01:00:00Z', now)).toBe(false);
   });
 
   it('returns false for a future date', () => {
-    expect(isPastFixture('2026-08-08T19:00:00')).toBe(false);
+    expect(isPastFixture('2026-08-08T11:00:00Z', now)).toBe(false);
   });
 
   it('returns false for undefined', () => {
-    expect(isPastFixture(undefined as unknown as string)).toBe(false);
+    expect(isPastFixture(undefined as unknown as string, now)).toBe(false);
   });
 
   it('returns false for an invalid date string', () => {
-    expect(isPastFixture('bogus')).toBe(false);
+    expect(isPastFixture('bogus', now)).toBe(false);
   });
 
   it('returns false for an empty string', () => {
-    expect(isPastFixture('')).toBe(false);
+    expect(isPastFixture('', now)).toBe(false);
   });
 
-  it('returns true for yesterday at any hour', () => {
-    vi.setSystemTime(new Date('2026-08-07T00:05:00Z'));
-    expect(isPastFixture('2026-08-06T23:59:00')).toBe(true);
+  it('uses the Hong Kong day boundary, not UTC or the device', () => {
+    // 17:00 UTC on the 6th is already the 7th in Hong Kong: today, not past.
+    expect(isPastFixture('2026-08-06T17:00:00Z', now)).toBe(false);
+    // 15:00 UTC on the 6th is 23:00 on the 6th in Hong Kong: yesterday.
+    expect(isPastFixture('2026-08-06T15:00:00Z', now)).toBe(true);
   });
 
-  it('handles dates in different format that parse correctly', () => {
-    vi.setSystemTime(new Date('2026-08-07T12:00:00Z'));
-    expect(isPastFixture('2026-08-06')).toBe(true);
-    expect(isPastFixture('2026-08-09')).toBe(false);
+  it('handles bare date keys', () => {
+    expect(isPastFixture('2026-08-06', now)).toBe(true);
+    expect(isPastFixture('2026-08-07', now)).toBe(false);
+    expect(isPastFixture('2026-08-09', now)).toBe(false);
+  });
+
+  it('defaults to the current time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      expect(isPastFixture('2026-08-06T11:00:00Z')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { MapPin, Calendar, Clock } from 'lucide-react';
-import { safeFormat, countdownLabel, hkDaysUntil } from '@/lib/dateUtils';
+import { safeFormat, formatHkTime, countdownLabel, hkDaysUntil } from '@/lib/dateUtils';
 
 /**
  * Reusable date/venue/time meta row, with a countdown to the fixture.
@@ -37,7 +37,7 @@ export function MetaLine({ date, venue }: { date: string; venue: string }) {
       )}
       <span className="flex items-center gap-1">
         <Clock className="h-3 w-3" />
-        {safeFormat(date, 'HH:mm')}
+        {formatHkTime(date)}
       </span>
       {venue && (
         <span className="flex items-center gap-1">

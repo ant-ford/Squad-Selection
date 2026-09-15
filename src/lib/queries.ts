@@ -65,7 +65,11 @@ export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
 export function useMatchSquad(matchId: string, side: 'home' | 'away') {
   return useQuery({
     queryKey: ['matchSquad', matchId, side],
-    queryFn: () => apiGet<{ players: { name: string; position: string }[] }>(`/api/match/${matchId}/squad`, { side }),
+    queryFn: () =>
+      apiGet<{ players: { id: string; name: string; shirtNo?: string; position: string }[] }>(
+        `/api/match/${matchId}/squad`,
+        { side },
+      ),
     staleTime: 30_000,
   });
 }

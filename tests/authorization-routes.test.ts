@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     setTeamAutoSelectPlayers: vi.fn(),
     setMyAvailability: vi.fn(),
     setMyAvailabilityForDate: vi.fn(),
+    setPlayerAvailability: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     handleGetCalendarLink: vi.fn(),
     handlePlayerCalendarFeed: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock("../worker/src/squad", () => ({
 vi.mock("../worker/src/availability", () => ({
   setMyAvailability: mocks.setMyAvailability,
   setMyAvailabilityForDate: mocks.setMyAvailabilityForDate,
+  setPlayerAvailability: mocks.setPlayerAvailability,
 }));
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
@@ -568,6 +570,35 @@ describe("read routes require authentication", () => {
     const watchRes = await call("/api/playup-watch");
     expect(watchRes.status).toBe(200);
     expect(mocks.getPlayUpWatch).toHaveBeenCalled();
+  });
+});
+
+describe("a coach answering for a player is coach-only", () => {
+  it("denies a non-coach, and writes nothing", async () => {
+    mocks.requireCoach.mockRejectedValue(coachDenied());
+    const res = await call("/api/match/recM1/availability", jsonInit({ playerId: "recP2", status: "Unavailable" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(mocks.setPlayerAvailability).not.toHaveBeenCalled();
+  });
+
+  it("records the coach from the session, the match from the path, and the player from the body", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    mocks.setPlayerAvailability.mockResolvedValue({ success: true, exceptionId: "recX1" });
+    const res = await call(
+      "/api/match/recM1/availability",
+      // A forged coachPersonId in the body must be ignored.
+      jsonInit({ playerId: "recP2", status: "Maybe", notes: "Told me at training", coachPersonId: "recForged" }),
+    );
+    expect(res.status).toBe(200);
+    expect(mocks.setPlayerAvailability).toHaveBeenCalledTimes(1);
+    expect(mocks.setPlayerAvailability.mock.calls[0][1]).toEqual({
+      coachPersonId: "recCoach",
+      playerId: "recP2",
+      matchId: "recM1",
+      status: "Maybe",
+      notes: "Told me at training",
+    });
   });
 });
 

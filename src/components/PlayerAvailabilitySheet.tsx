@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { safeFormat } from '@/lib/dateUtils';
+import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { setMyAvailability } from '@/api/setMyAvailability';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -62,7 +62,7 @@ export default function PlayerAvailabilitySheet({
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
             <p className="text-xs text-muted-foreground">
-              {safeFormat(fixture.date, 'EEE d MMM')} • {safeFormat(fixture.date, 'HH:mm')} • {fixture.venue}
+              {safeFormat(fixture.date, 'EEE d MMM')} • {formatHkTime(fixture.date)} • {fixture.venue}
             </p>
             {fixture.selectionStatus && (
               <p className="text-xs font-medium text-primary mt-1">
@@ -128,6 +128,11 @@ export default function PlayerAvailabilitySheet({
                 {squad.map((m, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
+                    {/* Shirt number in a fixed column so the names line up
+                        whether or not everyone has one. */}
+                    <span className="w-7 text-right tabular-nums text-muted-foreground">
+                      {m.shirtNo ? `#${m.shirtNo}` : ''}
+                    </span>
                     <span className="flex-1 text-foreground truncate">{m.name}</span>
                   </div>
                 ))}
