@@ -74,6 +74,7 @@ function seed() {
 }
 
 let fetchCalls: { url: string; method: string }[] = [];
+let fetchMock: ReturnType<typeof fakeAirtable>["fetchMock"];
 
 function installFakeAirtable() {
   // Getters, not a snapshot: several tests reassign state.matches etc.
@@ -84,8 +85,9 @@ function installFakeAirtable() {
     get Matches() { return state.matches; },
     get "Availability Exceptions"() { return state.exceptions; },
   };
-  const { calls } = fakeAirtable(tables);
-  fetchCalls = calls;
+  const handle = fakeAirtable(tables);
+  fetchCalls = handle.calls;
+  fetchMock = handle.fetchMock;
 }
 
 async function sign(payload: string): Promise<string> {
@@ -138,7 +140,7 @@ afterEach(() => {
 });
 
 describe("player calendar (Selected Team view)", () => {
-  it("registered F + Selected E: E = My Team, D = Play-Up Opportunity, F hidden (selected for E same day)", async () => {
+  it("registered F + Selected E: E = My Team, D (unselected play-up) absent, F hidden (selected for E same day)", async () => {
     seedPeople({ selectedTeamEos: "E" });
     state.matches = [
       match("recM_E", "E", 1, ["recP1"]), // Jonny selected for E
@@ -154,9 +156,10 @@ describe("player calendar (Selected Team view)", () => {
     // My Team: the E fixture (selected) - no play-up badge.
     expect(eventsWith(ics, "E vs")).toHaveLength(1);
     expect(categoriesFor(ics, "E vs")).toEqual(["My Team"]);
-    // Play-Up Opportunity: the D fixture (one team above the display team).
-    expect(eventsWith(ics, "D vs")).toHaveLength(1);
-    expect(categoriesFor(ics, "D vs")).toEqual(["Play-Up Opportunity"]);
+    // The D fixture is a play-up opportunity on the dashboard, but Jonny has
+    // not been picked for it, so it is not his game and stays out of his
+    // calendar.
+    expect(eventsWith(ics, "D vs")).toHaveLength(0);
     // Jonny is SELECTED for the higher E fixture on the same day -> his own
     // F team's fixture is ineligible that day (same-day rule).
     expect(eventsWith(ics, "F vs")).toHaveLength(0);
@@ -179,7 +182,7 @@ describe("player calendar (Selected Team view)", () => {
     const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
     const ics = await res.text();
     expect(eventsWith(ics, "E vs")).toHaveLength(1);
-    expect(eventsWith(ics, "D vs")).toHaveLength(1);
+    expect(eventsWith(ics, "D vs")).toHaveLength(0); // play-up, not picked
     expect(eventsWith(ics, "F vs")).toHaveLength(1);
     expect(categoriesFor(ics, "F vs")).toEqual(["Support Fixture"]);
   });
@@ -188,13 +191,28 @@ describe("player calendar (Selected Team view)", () => {
     seedPeople({});
     state.matches = [
       match("recM_F", "F", 1),
-      match("recM_E", "E", 1), // one above display F -> play-up
+      match("recM_E", "E", 1), // one above display F -> play-up, not picked
     ];
     const sig = await sign(`player:recP1`);
     const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
     const ics = await res.text();
     expect(categoriesFor(ics, "F vs")).toEqual(["My Team"]);
-    expect(categoriesFor(ics, "E vs")).toEqual(["Play-Up Opportunity"]);
+    expect(eventsWith(ics, "E vs")).toHaveLength(0);
+  });
+
+  it("a play-up appears once the player is picked for it", async () => {
+    seedPeople({});
+    state.matches = [
+      match("recM_F", "F", 1),
+      match("recM_E", "E", 2, ["recP1"]), // picked to play up for E
+      match("recM_D", "D", 3), // could play up for D, but not picked
+    ];
+    const sig = await sign(`player:recP1`);
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
+    const ics = await res.text();
+    expect(eventsWith(ics, "E vs")).toHaveLength(1);
+    expect(eventsWith(ics, "E vs")[0]).toContain("✅");
+    expect(eventsWith(ics, "D vs")).toHaveLength(0);
   });
 
   it("changing Selected Team EOS changes the player calendar output", async () => {
@@ -205,11 +223,11 @@ describe("player calendar (Selected Team view)", () => {
     ];
     const sig = await sign(`player:recP1`);
 
-    // EOS = E: My Team = E, D = play-up.
+    // EOS = E: My Team = E; D is an unpicked play-up, so absent.
     const res1 = await handlePlayerCalendarFeed(ENV, "recP1", sig);
     const ics1 = await res1.text();
     expect(categoriesFor(ics1, "E vs")).toEqual(["My Team"]);
-    expect(categoriesFor(ics1, "D vs")).toEqual(["Play-Up Opportunity"]);
+    expect(eventsWith(ics1, "D vs")).toHaveLength(0);
 
     // The captain changes Selected Team EOS to D in Airtable.
     state.people[0].fields["Selected Team EOS"] = "D";
@@ -255,11 +273,24 @@ describe("player calendar event detail", () => {
     return res.text();
   };
 
-  function teammate(id: string, name: string) {
+  function teammate(id: string, name: string, shirtNo?: string) {
     state.people.push({
       id,
-      fields: { "Preferred Name": name, Email: `${name}@hkfc.com`, Active: true, "Registered Team": "F", "Playing Ability": "B", "Playing Position": "Midfielder" },
+      fields: {
+        "Preferred Name": name, Email: `${name}@hkfc.com`, Active: true, "Registered Team": "F",
+        "Playing Ability": "B", "Playing Position": "Midfielder",
+        ...(shirtNo ? { "Shirt No Value": shirtNo } : {}),
+      },
     });
+  }
+
+  /** The whole VEVENT block (unfolded lines) for the first event whose SUMMARY contains `needle`. */
+  function eventLines(ics: string, needle: string): string[] {
+    const lines = unfold(ics);
+    const i = lines.findIndex((l) => l.startsWith("SUMMARY:") && l.includes(needle));
+    const start = lines.lastIndexOf("BEGIN:VEVENT", i);
+    const end = lines.indexOf("END:VEVENT", i);
+    return lines.slice(start, end + 1);
   }
 
   function exception(id: string, matchId: string, playerId: string, status: string) {
@@ -281,9 +312,36 @@ describe("player calendar event detail", () => {
     state.matches = [match("recM_F", "F", 1)];
     const desc = descriptionFor(await feed(), "F vs");
     expect(desc.split("\n")[0]).toBe("F vs Opponent");
-    // Hong Kong time, spelled out rather than an ISO stamp.
-    expect(desc.split("\n")[1]).toMatch(/^[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+, \d{2}:\d{2}$/);
+    // Hong Kong time, spelled out rather than an ISO stamp, and labelled: a
+    // travelling player's calendar shifts the event itself into their zone.
+    expect(desc.split("\n")[1]).toMatch(/^[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+, \d{2}:\d{2} HKT$/);
     expect(desc.trimEnd().endsWith("Sent by Eddy · HKFC Men's Hockey squad management")).toBe(true);
+  });
+
+  it("still sends the events when the form lines cannot be built", async () => {
+    // A calendar client that gets an error keeps showing whatever it last
+    // fetched, so a failure in the one optional read must not take the
+    // whole feed with it.
+    state.matches = [match("recM_F", "F", 1, ["recP1"])];
+    const realFetch = fetchMock.getMockImplementation() as (url: any, init?: any) => Promise<Response>;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      // URLSearchParams encodes spaces as "+", which decodeURIComponent
+      // leaves alone - so undo that before matching on field names.
+      if (decodeURIComponent(String(url)).replace(/\+/g, " ").includes('{Match Status}="Played"')) {
+        return Promise.resolve(new Response("{}", { status: 500 }));
+      }
+      return realFetch(url, init);
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const sig = await sign("player:recP1");
+    const res = await handlePlayerCalendarFeed(ENV, "recP1", sig);
+    expect(res.status).toBe(200);
+    const ics = await res.text();
+    expect(eventsWith(ics, "F vs")).toHaveLength(1);
+    expect(descriptionFor(ics, "F vs")).toContain("SQUAD (1)");
+    expect(descriptionFor(ics, "F vs")).not.toContain("FORM");
+    expect(errors).toHaveBeenCalled();
   });
 
   it("drops a section whole when it has nothing to say", async () => {
@@ -396,6 +454,60 @@ describe("player calendar event detail", () => {
     expect(desc).not.toContain("Tom (");
   });
 
+  it("puts shirt numbers ahead of the names, where the player has one", async () => {
+    teammate("recP2", "Tom", "7");
+    teammate("recP3", "Raj", "23");
+    state.matches = [match("recM_F", "F", 1, ["recP1", "recP2", "recP3"])];
+    exception("recX2", "recM_F", "recP3", "Maybe");
+
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc).toContain("SQUAD (3)\nJonny\n#7 Tom\n#23 Raj (Maybe)");
+  });
+
+  it("keeps a declined own-team game in the calendar, marked, not cancelled", async () => {
+    // It used to go out as CANCELLED, which clients take literally: the
+    // fixture looked called off rather than declined by this one player.
+    state.matches = [match("recM_F", "F", 1)];
+    exception("recX1", "recM_F", "recP1", "Unavailable");
+    const ics = await feed();
+    const lines = eventLines(ics, "F vs");
+    expect(lines.find((l) => l.startsWith("SUMMARY:"))).toBe("SUMMARY:❌ F vs Opponent (declined)");
+    expect(lines).toContain("STATUS:CONFIRMED");
+    expect(lines).not.toContain("STATUS:CANCELLED");
+    // Declined, so it should not show the player as busy.
+    expect(lines).toContain("TRANSP:TRANSPARENT");
+    expect(descriptionFor(ics, "F vs")).toContain("Availability: Unavailable");
+  });
+
+  it("leaves the kit off a declined game and keeps it on one the player is in", async () => {
+    const m = match("recM_F", "F", 1);
+    m.fields["Home Kit"] = "Blue";
+    state.matches = [m];
+    exception("recX1", "recM_F", "recP1", "Unavailable");
+    expect(eventsWith(await feed(), "F vs")[0]).not.toContain("🔵");
+
+    invalidateAll();
+    state.exceptions = [];
+    expect(eventsWith(await feed(), "F vs")[0]).toContain("🔵");
+  });
+
+  it("being picked outranks a No: a selected player's game is never shown declined", async () => {
+    state.matches = [match("recM_F", "F", 1, ["recP1"])];
+    exception("recX1", "recM_F", "recP1", "Unavailable");
+    const lines = eventLines(await feed(), "F vs");
+    expect(lines.find((l) => l.startsWith("SUMMARY:"))).toContain("✅");
+    expect(lines.find((l) => l.startsWith("SUMMARY:"))).not.toContain("declined");
+    expect(lines).not.toContain("TRANSP:TRANSPARENT");
+  });
+
+  it("blocks the player's time for every game they have not declined", async () => {
+    state.matches = [match("recM_F", "F", 1)];
+    exception("recX1", "recM_F", "recP1", "Maybe");
+    const lines = eventLines(await feed(), "F vs");
+    expect(lines).toContain("STATUS:TENTATIVE");
+    expect(lines).not.toContain("TRANSP:TRANSPARENT");
+  });
+
   it("carries no squad block for a fixture nobody has been picked for", async () => {
     state.matches = [match("recM_F", "F", 1)];
     expect(descriptionFor(await feed(), "F vs")).not.toContain("SQUAD (");
@@ -452,5 +564,19 @@ describe("team calendar (coach subscriptions)", () => {
     expect(eventsWith(ics, "F vs")).toHaveLength(0);
     // Team events carry no player-category line.
     expect(unfold(ics).some((l) => l.includes("Category:"))).toBe(false);
+  });
+
+  it("lists the selected squad with shirt numbers", async () => {
+    state.people.push({
+      id: "recP2",
+      fields: { "Preferred Name": "Tom", Email: "tom@hkfc.com", Active: true, "Registered Team": "E", "Shirt No Value": "7" },
+    });
+    state.matches = [match("recM_E", "E", 1, ["recP1", "recP2"])];
+    const sig = await sign(`team:E`);
+    const res = await handleTeamCalendarFeed(ENV, "E", sig);
+    const desc = unfold(await res.text())
+      .find((l) => l.startsWith("DESCRIPTION:"))!
+      .replace(/\\n/g, "\n");
+    expect(desc).toContain("SQUAD (2)\nJonny\n#7 Tom");
   });
 });

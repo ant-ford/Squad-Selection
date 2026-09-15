@@ -1,4 +1,4 @@
-import { safeFormat } from '@/lib/dateUtils';
+import { formatHkTime } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
@@ -135,7 +135,7 @@ export default function FixtureCard({
   conflicts?: SameDayConflict[];
 }) {
   const navigate = useNavigate();
-  const time = safeFormat(fixture.date, 'HH:mm');
+  const time = formatHkTime(fixture.date);
   const shortfall = fixture.targetSquadSize - fixture.selectedCount;
   const isFull = shortfall <= 0;
 

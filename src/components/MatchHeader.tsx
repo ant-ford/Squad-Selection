@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { safeFormat } from '@/lib/dateUtils';
+import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { setMatchKit, type KitColour, type MatchInfo } from '@/api/getPlayersForMatch';
 import { toast } from 'sonner';
 
@@ -71,7 +71,7 @@ export default function MatchHeader({ match, matchId }: { match: MatchInfo; matc
             <span className={match.hkfcTeam === match.awayTeam ? 'font-bold' : ''}>{match.awayTeam}</span>
           </p>
           <p className="text-xs text-muted-foreground truncate">
-            {safeFormat(match.date, 'EEE d MMM')} · {safeFormat(match.date, 'HH:mm')} · {match.venue} · Division: {match.division}
+            {safeFormat(match.date, 'EEE d MMM')} · {formatHkTime(match.date)} · {match.venue} · Division: {match.division}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

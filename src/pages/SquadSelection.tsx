@@ -10,6 +10,7 @@ import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } fro
 import PlayerRow from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
+import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
 import type { FixtureBrief } from '@/lib/whatsapp';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
@@ -86,6 +87,7 @@ export default function SquadSelection() {
   const [showPriorityManager, setShowPriorityManager] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
   const [statsPlayer, setStatsPlayer] = useState<{ id: string; name: string } | null>(null);
+  const [availabilityTarget, setAvailabilityTarget] = useState<CoachAvailabilityTarget | null>(null);
   const [prioritySearch, setPrioritySearch] = useState('');
   const [savingPriority, setSavingPriority] = useState(false);
 
@@ -249,6 +251,44 @@ export default function SquadSelection() {
       )
       .sort((a, b) => a.preferredName.localeCompare(b.preferredName));
   }, [data?.players, priorityPlayers, prioritySearch]);
+
+  // A coach has answered for a player. Patch the cached list rather than
+  // refetching it: the list is rebuilt per isolate on a five-minute cache,
+  // so an immediate refetch could land on one that has not seen the write
+  // and put the old answer straight back. The 30s availability poll, which
+  // reads through the shared cache, is asked to refresh instead.
+  const handleAvailabilitySaved = (
+    playerId: string,
+    status: string,
+    notes: string,
+  ) => {
+    const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
+    queryClient.setQueryData(qk, (old: any) => {
+      if (!old) return old;
+      return {
+        ...old,
+        players: old.players.map((p: MatchPlayer) =>
+          p.id === playerId
+            ? { ...p, availabilityStatus: status, playerNotes: notes, availabilityFromRule: false }
+            : p,
+        ),
+      };
+    });
+    // The poll overlays its exceptions on the list. Setting Available deletes
+    // the exception, so drop the stale poll entry too or it would overlay the
+    // old status until the next tick.
+    queryClient.setQueryData(['availabilityPoll', matchId], (old: any) => {
+      if (!old?.exceptions) return old;
+      const rest = old.exceptions.filter((e: { playerId: string }) => e.playerId !== playerId);
+      return {
+        ...old,
+        exceptions: status === 'Available' ? rest : [...rest, { playerId, status, notes }],
+      };
+    });
+    queryClient.invalidateQueries({ queryKey: ['availabilityPoll', matchId] });
+    queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
+    setAvailabilityTarget(null);
+  };
 
   const hasChanges = pendingDeltas.length > 0;
 
@@ -630,6 +670,15 @@ export default function SquadSelection() {
                     selected={p.selectionStatus === 'Selected'}
                     onToggleSelection={() => handleToggleSelection(p.id)}
                     onShowStats={() => setStatsPlayer({ id: p.id, name: p.preferredName })}
+                    onSetAvailability={() =>
+                      setAvailabilityTarget({
+                        id: p.id,
+                        name: p.preferredName,
+                        availabilityStatus: p.availabilityStatus,
+                        availabilityFromRule: p.availabilityFromRule,
+                        playerNotes: p.playerNotes,
+                      })
+                    }
                   />
                 </div>
               );
@@ -686,6 +735,15 @@ export default function SquadSelection() {
         playerName={statsPlayer?.name}
         onClose={() => setStatsPlayer(null)}
       />
+
+      {availabilityTarget && matchId && (
+        <CoachAvailabilitySheet
+          matchId={matchId}
+          player={availabilityTarget}
+          onClose={() => setAvailabilityTarget(null)}
+          onSaved={(status, notes) => handleAvailabilitySaved(availabilityTarget.id, status, notes)}
+        />
+      )}
     </div>
   );
 }

@@ -132,11 +132,20 @@ export interface SetAvailabilityInput {
   matchIds: string[];
   status: AvailabilityStatus;
   notes?: string;
+  /**
+   * Who is making the change, for the exception's Updated By link. Defaults
+   * to the player: a coach answering on a player's behalf passes their own
+   * id, so the record says who actually spoke.
+   */
+  updatedById?: string;
 }
 
 export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   if (!input.playerId || !Array.isArray(input.matchIds)) {
     throw new HttpError("playerId and matchIds[] are required", 400);
+  }
+  if (input.matchIds.some((id) => typeof id !== "string" || !id)) {
+    throw new HttpError("matchIds[] must be record ids", 400);
   }
   validateStatus(input.status);
   const playerRecord = await airtableFindById(env, TABLES.player, input.playerId);
@@ -184,7 +193,7 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       playerId: input.playerId,
       status: input.status,
       notes: input.notes,
-      updatedById: input.playerId,
+      updatedById: input.updatedById || input.playerId,
     });
     if (existing) {
       toUpdate.push({ id: existing.id, fields });
@@ -232,6 +241,44 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     status: input.status,
     notes: input.notes,
   });
+  return { success: true, exceptionId: results[0]?.exceptionId ?? null };
+}
+
+// ── Coach on a player's behalf ──────────────────────────────────────────
+export interface SetPlayerAvailabilityInput {
+  /** The coach's People record id, from the verified session. */
+  coachPersonId: string;
+  playerId: string;
+  matchId: string;
+  status: AvailabilityStatus;
+  notes?: string;
+}
+
+/**
+ * A coach answers for a player who cannot get into the app - a message on
+ * the pitch, a phone call, a player without a login yet. Same write as the
+ * player's own tap, so every downstream view (the coach's list, the tiles,
+ * the calendar) moves together; the only difference is that Updated By
+ * records the coach.
+ *
+ * Note the exception model's one blind spot, which this inherits: Available
+ * is a deletion, so it cannot override a standing rule of the player's that
+ * says otherwise. That needs an Available choice on the Airtable field.
+ */
+export async function setPlayerAvailability(env: Env, input: SetPlayerAvailabilityInput) {
+  if (!input.coachPersonId) throw new HttpError("Coach identity is required", 400);
+  if (!input.playerId || !input.matchId) throw new HttpError("playerId and matchId are required", 400);
+  validateStatus(input.status);
+  const { results } = await setAvailability(env, {
+    playerId: input.playerId,
+    matchIds: [input.matchId],
+    status: input.status,
+    notes: input.notes,
+    updatedById: input.coachPersonId,
+  });
+  console.log(
+    `[Availability Audit] coach=${input.coachPersonId} player=${input.playerId} match=${input.matchId} status=${input.status}`,
+  );
   return { success: true, exceptionId: results[0]?.exceptionId ?? null };
 }
 

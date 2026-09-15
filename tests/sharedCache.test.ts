@@ -184,7 +184,7 @@ describe("only raw table reads are shared", () => {
     const shared = [...kv.store.keys()];
     expect(shared.length).toBeGreaterThan(0);
     for (const k of shared) {
-      expect(k).toMatch(/^(club-reference|scheduled-matches|played-matches|exceptions:|all-matches:|match-cards:)/);
+      expect(k).toMatch(/^(club-reference|scheduled-matches|played-matches|exceptions:|all-matches:|match-cards:|availability-rules)/);
     }
     // The ones that would have been silently flattened.
     expect(shared.some((k) => k.startsWith("season-index:"))).toBe(false);

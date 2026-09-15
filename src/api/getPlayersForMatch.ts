@@ -8,12 +8,16 @@ export interface EligibilityIssue {
 export interface MatchPlayer {
   id: string;
   preferredName: string;
+  /** Shirt number as stored (text). Blank when the player has none. */
+  shirtNo?: string;
   /** Raw stored mobile number; coach-only payload. May be blank or malformed. */
   mobile?: string;
   registeredTeam: string;
   playingPosition: string;
   playingAbility: string;
   availabilityStatus: string;
+  /** True when the status came from a standing preference, not an explicit answer. */
+  availabilityFromRule?: boolean;
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';

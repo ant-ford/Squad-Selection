@@ -154,6 +154,9 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     return {
       id: p.id,
       preferredName: name,
+      // Shirt number, as text: the Airtable field is a formula over a text
+      // value, so "7" and "07" are both possible. Blank when unassigned.
+      shirtNo: p.shirtNoValue || "",
       // Coaches build WhatsApp click-to-chat links in the browser, so the
       // number has to reach the client. This endpoint is coach-only; the
       // player-facing squad list (getSquadForMatch) never includes it.
@@ -402,13 +405,19 @@ export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSi
   const match = scheduled ?? mapMatch(await getMatchRecord(env, matchId));
   const ref = await getReferenceData(env);
   const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap, side);
-  const players = [] as { id: string; name: string; position: string; ability: string }[];
+  const players = [] as { id: string; name: string; shirtNo: string; position: string; ability: string }[];
   const playersById = new Map(ref.players.map((player) => [player.id, player]));
   for (const playerId of selectedIds) {
     const player = playersById.get(playerId);
     if (!player) continue;
     const name = [player.preferredName, player.surname].filter(Boolean).join(" ") || player.givenNames || "Unknown";
-    players.push({ id: player.id, name, position: player.playingPosition || "", ability: player.playingAbility || "" });
+    players.push({
+      id: player.id,
+      name,
+      shirtNo: player.shirtNoValue || "",
+      position: player.playingPosition || "",
+      ability: player.playingAbility || "",
+    });
   }
   players.sort((a, b) => {
     const posA = POSITION_ORDER[a.position] ?? 99;

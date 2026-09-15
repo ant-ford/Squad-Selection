@@ -2,7 +2,7 @@ import { HttpError } from "./http";
 import { AVAILABILITYRULES_FIELDS } from "../../shared/schema/fieldMaps";
 import { airtableCreate, airtableDelete, airtableFindAll } from "./airtable";
 import type { Env } from "./env";
-import { getCached, invalidateCache } from "./cache";
+import { getShared, invalidateShared } from "./cache";
 import { TABLES } from "../../shared/schema/tableNames";
 import { mapAvailabilityRule } from "../../shared/mappers/availabilityRuleMapper";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
@@ -139,19 +139,29 @@ const RULES_TTL_MS = 5 * 60 * 1000;
  * player's own view and a coach's whole-squad view; the table is small
  * (a handful of rows per player at most).
  *
- * A missing table is not an error: the feature is additive, and until the
- * table exists every fixture simply falls back to its normal default.
+ * Shared across isolates like the other raw table reads. Per-isolate, a
+ * player saving a preference cleared only the isolate that took the write,
+ * and every other one kept answering from its own copy.
+ *
+ * A failed read is NOT cached. It used to be: the read returned an empty
+ * list on any error and that empty list sat in the cache for five minutes,
+ * during which every unanswered fixture on that isolate silently reverted to
+ * "Available" - a player's "no to play-ups" simply stopped applying, with
+ * nothing on screen to say why. The dashboard path makes several Airtable
+ * calls in a burst, so a rate-limit reply here was never far-fetched. Now
+ * an error still degrades to "no rules" for that one request, and the next
+ * request reads again.
  */
 export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRule[]> {
-  const { data } = await getCached<AvailabilityRule[]>(RULES_CACHE_KEY, async () => {
-    try {
+  try {
+    return await getShared<AvailabilityRule[]>(env, RULES_CACHE_KEY, async () => {
       const records = await airtableFindAll(env, TABLES.availabilityRule);
       return records.map(mapAvailabilityRule);
-    } catch {
-      return [];
-    }
-  }, RULES_TTL_MS);
-  return data;
+    }, RULES_TTL_MS);
+  } catch (err) {
+    console.error("Availability rules unavailable for this request:", err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
 export async function getRulesForPlayer(env: Env, playerId: string): Promise<AvailabilityRule[]> {
@@ -159,8 +169,9 @@ export async function getRulesForPlayer(env: Env, playerId: string): Promise<Ava
   return all.filter((r) => (r.player ?? []).includes(playerId));
 }
 
-export function invalidateAvailabilityRules(): void {
-  invalidateCache(RULES_CACHE_KEY);
+/** Drop the rules everywhere - this isolate and the shared store. */
+export async function invalidateAvailabilityRules(env: Env): Promise<void> {
+  await invalidateShared(env, [RULES_CACHE_KEY]);
 }
 
 // ── Player-facing management ────────────────────────────────────────────
@@ -223,7 +234,7 @@ export async function createAvailabilityRule(
   if (input.notes) fields[AVAILABILITYRULES_FIELDS.notes] = input.notes;
 
   const created = await airtableCreate(env, TABLES.availabilityRule, fields);
-  invalidateAvailabilityRules();
+  await invalidateAvailabilityRules(env);
   return mapAvailabilityRule(created);
 }
 
@@ -237,6 +248,6 @@ export async function deleteAvailabilityRule(env: Env, playerId: string, ruleId:
     throw new HttpError("Rule not found", 404);
   }
   await airtableDelete(env, TABLES.availabilityRule, ruleId);
-  invalidateAvailabilityRules();
+  await invalidateAvailabilityRules(env);
   return { success: true };
 }

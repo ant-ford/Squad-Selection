@@ -376,7 +376,7 @@ export async function buildPlayerFixtureView(
     const pId = linkId(e.player);
     if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
   }
-  const squadNameById = new Map(ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]));
+  const squadPlayerById = new Map(ref.players.map((p) => [p.id, p]));
   const buildCard = (x: { side: Side; category: FixtureCategory }) => {
     const s = x.side;
     const team = teamsByName.get(s.team);
@@ -398,7 +398,8 @@ export async function buildPlayerFixtureView(
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
       squad: s.selectedIds.map((id) => ({
-        name: squadNameById.get(id) || "Player",
+        name: squadPlayerById.get(id)?.preferredName || squadPlayerById.get(id)?.givenNames || "Player",
+        shirtNo: squadPlayerById.get(id)?.shirtNoValue || "",
         availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
       })),
       // Kit follows the side being shown, so each half of a derby keeps its
@@ -528,6 +529,7 @@ export async function getUpcomingFixtures(
       const selectedPlayers = selectedIds.map((id) => ({
         id,
         name: nameOf(playerById.get(id)),
+        shirtNo: playerById.get(id)?.shirtNoValue || "",
         availabilityStatus: statusByPlayer.get(id) || "",
       }));
 

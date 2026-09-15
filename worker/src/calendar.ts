@@ -12,33 +12,52 @@ import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 const MATCH_DURATION_MINUTES = 90;
 
 /** A squad member as the calendar lists them. */
-type SquadEntry = { name: string; availabilityStatus?: string };
+type SquadEntry = { name: string; shirtNo?: string; availabilityStatus?: string };
 
 /**
  * Attach each fixture's season record and head-to-head. Played matches are
  * fetched once for the whole feed rather than per event - every fixture reads
  * the same list.
+ *
+ * Best effort. The FORM section is the one part of the feed that reads
+ * beyond the fixtures themselves, and it is where the feed once fell over.
+ * If that read fails the events still go out, without their form lines: a
+ * calendar client that gets an error keeps showing whatever it fetched last,
+ * so a failure here would freeze every subscriber on a stale feed.
  */
 async function withTeamRecords(env: Env, fixtures: any[]): Promise<any[]> {
   const season = currentSeason();
-  const played = await getPlayedMatchesForSeasons(env, [season, previousSeason(season) || ""]);
-  return fixtures.map((f) => ({
-    ...f,
-    record: buildTeamRecord(played, f.hkfcTeam || "", f.opponent, season),
-  }));
+  try {
+    const played = await getPlayedMatchesForSeasons(env, [season, previousSeason(season) || ""]);
+    return fixtures.map((f) => ({
+      ...f,
+      record: buildTeamRecord(played, f.hkfcTeam || "", f.opponent, season),
+    }));
+  } catch (err) {
+    console.error("Calendar feed: form lines skipped, played matches unavailable:", err instanceof Error ? err.message : err);
+    return fixtures;
+  }
 }
 
 /**
- * The squad, one per line, with the only status worth a reader's attention
- * marked. A selected player who answered "Maybe" is still in the side but is
- * not a certainty, and that is exactly what a teammate reading the invitation
- * wants to know.
+ * The squad, one per line, the way a team sheet reads: shirt number first
+ * where there is one, then the name. The only status worth a reader's
+ * attention is marked - a selected player who answered "Maybe" is still in
+ * the side but is not a certainty, and that is exactly what a teammate
+ * reading the invitation wants to know.
  */
-function formatSquadLines(squad: SquadEntry[]): string[] {
-  return squad.map((p) => (p.availabilityStatus === "Maybe" ? `${p.name} (Maybe)` : p.name));
+export function formatSquadLines(squad: SquadEntry[]): string[] {
+  return squad.map((p) => {
+    const name = p.shirtNo ? `#${p.shirtNo} ${p.name}` : p.name;
+    return p.availabilityStatus === "Maybe" ? `${name} (Maybe)` : name;
+  });
 }
 
-/** "Saturday 4 October, 15:00" in Hong Kong time. */
+/**
+ * "Saturday 4 October, 15:00 HKT". Match times are Hong Kong times, and the
+ * event itself is what a travelling player's calendar will shift into their
+ * local zone - so the body spells out the time everyone else is working to.
+ */
 function formatWhen(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Hong_Kong",
@@ -46,7 +65,7 @@ function formatWhen(date: Date): string {
     hour: "2-digit", minute: "2-digit", hour12: false,
   }).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
-  return `${get("weekday")} ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")}`;
+  return `${get("weekday")} ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")} HKT`;
 }
 
 /** "20 November 2026" in Hong Kong time. */
@@ -106,17 +125,42 @@ function escapeIcsText(text: string | undefined | null): string {
     .replace(/\n/g, "\\n");
 }
 
-function foldLine(line: string): string {
-  // RFC 5545: fold lines longer than 75 octets with CRLF + space.
-  if (line.length <= 75) return line;
-  let folded = line.substring(0, 75);
-  let remaining = line.substring(75);
-  while (remaining.length > 73) {
-    folded += `\r\n ${remaining.substring(0, 73)}`;
-    remaining = remaining.substring(73);
+/** UTF-8 length of one character, which is what RFC 5545's limit counts. */
+function octets(char: string): number {
+  const cp = char.codePointAt(0) ?? 0;
+  return cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+}
+
+const FOLD_LIMIT_OCTETS = 75;
+
+/**
+ * RFC 5545 line folding: no line longer than 75 octets, continuation lines
+ * begin with a space that counts towards their own 75.
+ *
+ * Counted in octets and split between whole characters, not at string
+ * indices. The previous version cut at 75 UTF-16 code units, so a line with
+ * emoji or curly punctuation went out over the limit, and a cut landing
+ * inside an emoji's surrogate pair produced two half-characters that came
+ * out as garbage in the client.
+ */
+export function foldLine(line: string): string {
+  const out: string[] = [];
+  let current = "";
+  let used = 0;
+  let limit = FOLD_LIMIT_OCTETS;
+  for (const char of line) {
+    const size = octets(char);
+    if (used + size > limit) {
+      out.push(current);
+      current = " ";
+      used = 1;
+      limit = FOLD_LIMIT_OCTETS;
+    }
+    current += char;
+    used += size;
   }
-  folded += `\r\n ${remaining}`;
-  return folded;
+  out.push(current);
+  return out.join("\r\n");
 }
 
 function formatIcsLocalTime(date: Date): string {
@@ -195,19 +239,31 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
 
   const teamName = fixture.hkfcTeam || (isHome ? fixture.homeTeam : fixture.awayTeam);
   let summaryPrefix = "";
+  let summarySuffix = "";
   // RFC 5545 only permits TENTATIVE | CONFIRMED | CANCELLED for VEVENT STATUS.
   let status = "CONFIRMED";
+  // Whether the event blocks the player's time. A game they have declined
+  // should not show them as busy.
+  let transparent = false;
+  const declined = isPlayerFeed
+    && fixture.selectionStatus !== "Selected"
+    && fixture.availabilityStatus === "Unavailable";
 
   if (isPlayerFeed) {
     const isSelected = fixture.selectionStatus === "Selected";
-    const isUnavailable = fixture.availabilityStatus === "Unavailable";
     const isMaybe = fixture.availabilityStatus === "Maybe";
     if (isSelected) {
       summaryPrefix = "✅ ";
       status = "CONFIRMED";
-    } else if (isUnavailable) {
+    } else if (declined) {
+      // The game is still on and still the team's, so it stays in the
+      // calendar as a real event - marked as one the player has said no to.
+      // It used to go out as CANCELLED, which most clients take literally
+      // and hide or strike through, so the fixture looked called off.
       summaryPrefix = "❌ ";
-      status = "CANCELLED";
+      summarySuffix = " (declined)";
+      status = "CONFIRMED";
+      transparent = true;
     } else if (isMaybe) {
       // A Maybe is a different thing from an unanswered fixture, and the one
       // the player most needs to come back to.
@@ -222,9 +278,10 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
   // Kit is shown as a coloured circle in the title rather than the iCalendar
   // COLOR property: COLOR (RFC 7986) is honoured by very few clients, and a
   // white event on a white grid is invisible in the ones that do. The emoji
-  // renders everywhere and survives the text-only views.
-  const kitIcon = fixture.kit === "Blue" ? " 🔵" : fixture.kit === "White" ? " ⚪" : "";
-  const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}${kitIcon}`;
+  // renders everywhere and survives the text-only views. Not on a declined
+  // game: which shirt to bring is not this player's question.
+  const kitIcon = declined ? "" : fixture.kit === "Blue" ? " 🔵" : fixture.kit === "White" ? " ⚪" : "";
+  const summary = `${summaryPrefix}${teamName} vs ${fixture.opponent}${summarySuffix}${kitIcon}`;
 
   const matchSection = [
     ...(fixture.kit ? [`Kit: ${fixture.kit}`] : []),
@@ -296,10 +353,25 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
     `LOCATION:${location}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     `STATUS:${status}`,
+    ...(transparent ? ["TRANSP:TRANSPARENT"] : []),
     "END:VEVENT",
   ];
 
   return lines.map(foldLine).join("\r\n");
+}
+
+/**
+ * Which of the dashboard's fixtures belong in a player's calendar.
+ *
+ * The dashboard shows a play-up opportunity so the player can say whether
+ * they could help; the calendar is for games they are actually part of. So
+ * a higher team's fixture appears only once the coach has picked them for
+ * it. Own-team fixtures always appear, including the ones they have
+ * declined - those are marked, above, rather than dropped. Support fixtures
+ * follow the dashboard as before.
+ */
+export function calendarWorthy<T extends { fixtureCategory?: string; selectionStatus?: string }>(fixtures: T[]): T[] {
+  return fixtures.filter((f) => f.fixtureCategory !== "play-up" || f.selectionStatus === "Selected");
 }
 
 // --- Route Handlers ---
@@ -331,7 +403,7 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   const cacheKey = `calendar:player:${id}:${displayTeam}`;
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
-    const events = (await withTeamRecords(env, fixtures)).map((f: any) => formatVEvent(f, true));
+    const events = (await withTeamRecords(env, calendarWorthy(fixtures))).map((f: any) => formatVEvent(f, true));
     return generateIcsPayload(events);
   }, 5 * 60 * 1000);
 
