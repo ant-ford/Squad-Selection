@@ -461,7 +461,25 @@ describe("player calendar event detail", () => {
     exception("recX2", "recM_F", "recP3", "Maybe");
 
     const desc = descriptionFor(await feed(), "F vs");
-    expect(desc).toContain("SQUAD (3)\nJonny\n#7 Tom\n#23 Raj (Maybe)");
+    // Tom and Raj are midfielders; Jonny is a forward, so he is listed after them.
+    expect(desc).toContain("SQUAD (3)\n#7 Tom\n#23 Raj (Maybe)\nJonny");
+  });
+
+  it("lists the squad in team-sheet order: GK, DEF, MID, FWD, then flexible", async () => {
+    const add = (id: string, name: string, position: string) =>
+      state.people.push({
+        id,
+        fields: { "Preferred Name": name, Email: `${name}@hkfc.com`, Active: true, "Registered Team": "F", "Playing Position": position },
+      });
+    add("recFlex", "Flex", "Flexible/Varies");
+    add("recDef", "Def", "Defender");
+    add("recGk", "Keeper", "Goalkeeper");
+    add("recMid", "Mid", "Midfielder");
+    // Picked in no particular order; Jonny (Forward) sits among them.
+    state.matches = [match("recM_F", "F", 1, ["recFlex", "recP1", "recDef", "recGk", "recMid"])];
+
+    const desc = descriptionFor(await feed(), "F vs");
+    expect(desc).toContain("SQUAD (5)\nKeeper\nDef\nMid\nJonny\nFlex");
   });
 
   it("keeps a declined own-team game in the calendar, marked, not cancelled", async () => {
@@ -577,6 +595,21 @@ describe("team calendar (coach subscriptions)", () => {
     const desc = unfold(await res.text())
       .find((l) => l.startsWith("DESCRIPTION:"))!
       .replace(/\\n/g, "\n");
+    // Tom has no recorded position, so he follows Jonny (a forward).
     expect(desc).toContain("SQUAD (2)\nJonny\n#7 Tom");
+  });
+
+  it("orders the team squad by position too, keeper first", async () => {
+    state.people.push({
+      id: "recGk",
+      fields: { "Preferred Name": "Keeper", Email: "gk@hkfc.com", Active: true, "Registered Team": "E", "Playing Position": "Goalkeeper", "Shirt No Value": "1" },
+    });
+    state.matches = [match("recM_E", "E", 1, ["recP1", "recGk"])]; // keeper picked last
+    const sig = await sign(`team:E`);
+    const res = await handleTeamCalendarFeed(ENV, "E", sig);
+    const desc = unfold(await res.text())
+      .find((l) => l.startsWith("DESCRIPTION:"))!
+      .replace(/\\n/g, "\n");
+    expect(desc).toContain("SQUAD (2)\n#1 Keeper\nJonny");
   });
 });

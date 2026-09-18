@@ -400,6 +400,7 @@ export async function buildPlayerFixtureView(
       squad: s.selectedIds.map((id) => ({
         name: squadPlayerById.get(id)?.preferredName || squadPlayerById.get(id)?.givenNames || "Player",
         shirtNo: squadPlayerById.get(id)?.shirtNoValue || "",
+        playingPosition: squadPlayerById.get(id)?.playingPosition || "",
         availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
       })),
       // Kit follows the side being shown, so each half of a derby keeps its
@@ -530,6 +531,7 @@ export async function getUpcomingFixtures(
         id,
         name: nameOf(playerById.get(id)),
         shirtNo: playerById.get(id)?.shirtNoValue || "",
+        playingPosition: playerById.get(id)?.playingPosition || "",
         availabilityStatus: statusByPlayer.get(id) || "",
       }));
 

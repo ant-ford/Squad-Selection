@@ -55,6 +55,30 @@ describe("ICS line folding", () => {
 });
 
 describe("squad lines", () => {
+  it("runs keeper, defence, midfield, attack, then the flexible players", () => {
+    expect(
+      formatSquadLines([
+        { name: "Fwd", playingPosition: "Forward" },
+        { name: "Flex", playingPosition: "Flexible/Varies" },
+        { name: "Mid", playingPosition: "Midfielder" },
+        { name: "Nobody" }, // no position recorded
+        { name: "Def", playingPosition: "Defender" },
+        { name: "Keeper", playingPosition: "Goalkeeper", shirtNo: "1" },
+      ]),
+    ).toEqual(["#1 Keeper", "Def", "Mid", "Fwd", "Flex", "Nobody"]);
+  });
+
+  it("keeps the coach's selection order within a position", () => {
+    expect(
+      formatSquadLines([
+        { name: "Third", playingPosition: "Defender" },
+        { name: "Striker", playingPosition: "Forward" },
+        { name: "First", playingPosition: "Defender" },
+        { name: "Second", playingPosition: "Defender" },
+      ]),
+    ).toEqual(["Third", "First", "Second", "Striker"]);
+  });
+
   it("reads like a team sheet: number, name, and a Maybe flag", () => {
     expect(
       formatSquadLines([
