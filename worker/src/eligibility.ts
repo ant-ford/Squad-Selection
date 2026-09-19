@@ -244,8 +244,6 @@ function checkSameDayMovement(
     // Only enforce when the other team sits above the player's registered team.
     if (playerRank <= sdmRank) continue;
 
-    sameDayHigherTeam = sdmTeam;
-
     if (isSelected) {
       // An actual selection for a higher team makes the player unavailable
       // for lower-team fixtures that day (§7.2).
@@ -256,6 +254,25 @@ function checkSameDayMovement(
         warnings: withAvailabilityWarning(),
       };
     }
+
+    // "Available for X" is a claim about the higher fixture, so it has to
+    // be true of the higher fixture. Two things make it false:
+    //
+    // The player has said no to that game. The key set carries explicit
+    // Unavailable answers and, from buildEvaluationContext, the ones a
+    // standing preference implies. This check was lost on 2026-09-04 when
+    // the block became a warning, and five goalkeepers who had marked
+    // themselves out were advertised to the A team.
+    if (ctx.unavailablePlayerMatchKeys.has(`${player.id}:${fixture.matchId}`)) continue;
+
+    // The higher team could not pick them anyway: the Premier movement
+    // restriction, the play-up limit and the rest are only ever evaluated
+    // for the fixture a coach has open, so without this the chip named a
+    // team that would have been blocked the moment it tried.
+    if (wouldBeBlockedFor(player, fixture, sdmTeam, sdmRank, playerRank, rankMap, ctx)) continue;
+
+    sameDayHigherTeam = sdmTeam;
+
     // Product decision 2026-09-03: mere AVAILABILITY for a higher team no
     // longer locks the player out of lower-team fixtures - the player remains
     // selectable by their own team. Surfaced as a planning warning instead;
@@ -263,7 +280,6 @@ function checkSameDayMovement(
     if (!availableForTeams.includes(sdmTeam)) {
       availableForTeams.push(sdmTeam);
     }
-    // Unavailable exception for the higher fixture releases the lock.
   }
 
   return {
@@ -272,6 +288,42 @@ function checkSameDayMovement(
     sameDayHigherTeam,
     warnings: withAvailabilityWarning(),
   };
+}
+
+/**
+ * Would the higher team be blocked from picking this player for its own
+ * same-day fixture?
+ *
+ * Runs the blocking steps that describe the player against THAT team and
+ * THAT match (§3, §8, §9-§14, §12.3), reusing the rule functions rather than
+ * restating them. Steps 1 and 2 are omitted on purpose: admin data and
+ * suspension have already been evaluated for the fixture in hand, and both
+ * block before this step is reached. The same-day step itself is not
+ * re-entered - that is exactly the question being answered here.
+ *
+ * Match-specific rules (visiting-player cup appearances, cup eligibility)
+ * need the other match record; when the context does not carry it they are
+ * skipped rather than guessed.
+ */
+function wouldBeBlockedFor(
+  player: Player,
+  fixture: SameDayTeamFixture,
+  team: string,
+  teamRank: number,
+  playerRank: number,
+  rankMap: RankMap,
+  ctx: EvaluationContext,
+): boolean {
+  const { isPremier } = teamRanks(team, rankMap, ctx.teamMap);
+  if (checkPremierRestriction(player, team, isPremier, ctx, rankMap)) return true;
+  if (checkPlayUpRules(player, teamRank, playerRank, ctx).block) return true;
+  if (checkU21DoubleGame(player, team, ctx)) return true;
+  const otherMatch = ctx.matchesById.get(fixture.matchId);
+  if (otherMatch) {
+    if (checkVisitingPlayer(player, team, otherMatch, ctx)) return true;
+    if (checkCupEligibility(player, otherMatch, team, ctx)) return true;
+  }
+  return false;
 }
 
 // ── Step 5: Premier Division Restrictions (§8) ──────────────────────────

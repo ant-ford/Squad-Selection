@@ -180,9 +180,15 @@ describe("Golden: every blocked reason string and rule ID", () => {
     expect(r.ruleId).toBe(RULE_IDS.VISITING_CUP_APPEARANCES);
   });
   it("SAME_DAY_AVAILABLE (availability surfaced as a warning, calendar-day)", () => {
+    // The warning names a team only if it could pick the player, so the
+    // Premier side needs its three league matches behind it (§8) - as does
+    // the player's own team.
     const r = evaluatePlayerEligibility(
       p(), m({ homeTeam: "HKFC C" }),
-      ctx({ sameDayMatches: [m({ id: "m2", homeTeam: "HKFC A" })] }),
+      ctx({
+        sameDayMatches: [m({ id: "m2", homeTeam: "HKFC A" })],
+        completedLeagueMatchesByTeam: new Map([["HKFC A", 3], ["HKFC C", 3]]),
+      }),
     );
     expect(r.status).toBe("warning");
     expect(r.warnings).toContain("Available for HKFC A on same day");

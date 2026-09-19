@@ -373,6 +373,13 @@ Mere AVAILABILITY for a higher-ranked team fixture (no Unavailable exception) no
 
 `Available for [Team] on same day`
 
+The warning is a statement about the higher team's fixture, and is only made when it is true of that fixture (updated 2026-09-19):
+
+* the player has NOT said no to it - neither an explicit Unavailable exception for that match nor a standing availability preference that resolves to Unavailable for it (an explicit answer of any kind, including Maybe, takes precedence over a preference; a Maybe does not suppress the warning);
+* the higher team could actually select the player for it - the player would not be blocked by the Premier Division restriction (§8), the play-up rules (§9-§13), cup eligibility (§14), the visiting-player rule (§3) or the U21 double-game limit (§12.3) when evaluated against that team and that match.
+
+A team failing either test is simply left out of the warning; when no team remains, no warning is raised. Selection by a higher team (`Selected for [Team] on same day`) blocks regardless of the player's answer.
+
 The availability exception model itself (Available = no exception, Maybe/Unavailable = exception) is unchanged.
 
 ## 7.3 Higher Team Priority
