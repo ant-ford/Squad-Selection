@@ -27,6 +27,7 @@ type MatchSide = "home" | "away";
 // syncSquad invalidates `match:${matchId}` immediately after each write —
 // so a coach can never be served stale selections post-update.
 const MATCH_RECORD_TTL_MS = 30 * 1000;
+const PLAYERS_FOR_MATCH_TTL_MS = 60 * 1000;
 
 async function getMatchRecord(env: Env, matchId: string): Promise<any> {
   const { data } = await getCached<any>(`match:${matchId}`, async () => {
@@ -93,11 +94,14 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
+  // Derived from shared reads, so held only briefly in this isolate: a
+  // longer hold is what let a squad saved on one isolate stay invisible on
+  // another for minutes.
   const cacheKey = `players-for-match:${matchId}:${side ?? "auto"}`;
   const { data: heavyData } = await getCached(cacheKey, async () => {
     const { ctx, exceptionsRaw } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
     return { ctx, allPlayers: ref.players, allExceptions: exceptionsRaw };
-  }, 5 * 60 * 1000);
+  }, PLAYERS_FOR_MATCH_TTL_MS);
   const { ctx, allPlayers, allExceptions } = heavyData;
 
   const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
@@ -354,7 +358,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   });
 
   // Invalidate reference data cache so match-info picks up the new list
-  invalidateReferenceData();
+  await invalidateReferenceData(env);
 
   console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);
   return { success: true, teamName, playerIds: validIds };

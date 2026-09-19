@@ -1,7 +1,8 @@
 import { airtableFindAll, escapeFormulaValue } from "./airtable";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, getShared, invalidateCache, invalidateCachePrefix } from "./cache";
+import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
+import { inBackground } from "./requestContext";
 import { TABLES } from "../../shared/schema/tableNames";
 import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../shared/mappers/playerMapper";
@@ -40,8 +41,10 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
       teamRankMap,
       teamNames: teams.map((t) => t.teamName || ""),
     };
-  }, 10 * 60 * 1000); // 10 minutes
+  }, rawReadTtl(env, REFERENCE_TTL_MS));
 }
+
+const REFERENCE_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Coach / Section Captain relationships across ALL team records â€” including
@@ -52,20 +55,29 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 export interface TeamCoachLinks {
   coachIds: string[];
   sectionCaptainIds: string[];
-  /** Team names each person coaches (Teams.Coach link), keyed by People record id. */
-  coachTeamNamesByPersonId: Map<string, string[]>;
+  /**
+   * Team names each person coaches (Teams.Coach link), keyed by People
+   * record id. A plain object rather than a Map so it survives the KV
+   * round trip (JSON turns a Map into {} without complaint).
+   */
+  coachTeamNamesByPersonId: Record<string, string[]>;
   /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
   allTeamNames: string[];
 }
 
-export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks & { cached: boolean }> {
-  const { data, fromCache } = await getCached<TeamCoachLinks>(
+/**
+ * Shared across isolates: every authenticated request needs this, and on a
+ * cold isolate it was one more Teams read before any route could start.
+ */
+export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
+  return getShared<TeamCoachLinks>(
+    env,
     "team-coach-links",
     async () => {
       const teamRecords = await airtableFindAll(env, TABLES.team);
       const coachIds = new Set<string>();
       const sectionCaptainIds = new Set<string>();
-      const coachTeamNamesByPersonId = new Map<string, string[]>();
+      const coachTeamNamesByPersonId: Record<string, string[]> = {};
       const allTeamNames: string[] = [];
       for (const record of teamRecords) {
         const teamName = record.fields?.[TEAMS_FIELDS.teamName] || "";
@@ -75,11 +87,7 @@ export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks & { ca
         for (const id of Array.isArray(coach) ? coach : []) {
           if (typeof id !== "string") continue;
           coachIds.add(id);
-          if (teamName) {
-            const names = coachTeamNamesByPersonId.get(id) ?? [];
-            names.push(teamName);
-            coachTeamNamesByPersonId.set(id, names);
-          }
+          if (teamName) (coachTeamNamesByPersonId[id] ??= []).push(teamName);
         }
         for (const id of Array.isArray(sectionCaptain) ? sectionCaptain : []) {
           if (typeof id === "string") sectionCaptainIds.add(id);
@@ -92,9 +100,8 @@ export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks & { ca
         allTeamNames,
       };
     },
-    10 * 60 * 1000, // 10 minutes, same TTL as the club-reference cache
+    rawReadTtl(env, REFERENCE_TTL_MS),
   );
-  return { ...data, cached: fromCache };
 }
 
 export async function getActivePlayers(env: Env): Promise<Player[]> {
@@ -102,14 +109,26 @@ export async function getActivePlayers(env: Env): Promise<Player[]> {
   return records.map(mapPlayer);
 }
 
+/**
+ * Without a webhook an access decision follows an Airtable correction
+ * within a minute; with one, a People edit drops these entries as it
+ * happens, and the TTL is capped at five minutes as a backstop.
+ */
 const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
+const PLAYER_BY_EMAIL_MAX_TTL_MS = 5 * 60 * 1000;
 
 function playerByEmailKey(email: string): string {
   return `player-by-email:${normalizeEmail(email)}`;
 }
 
-export function invalidatePlayerByEmail(email: string): void {
-  invalidateCache(playerByEmailKey(email));
+/**
+ * Drops the lookup in this isolate at once and, given `env`, in KV after
+ * the response - a rank change is already several Airtable writes long.
+ */
+export function invalidatePlayerByEmail(email: string, env?: Env): void {
+  const key = playerByEmailKey(email);
+  invalidateCache(key);
+  if (env?.CACHE) void inBackground(() => invalidateShared(env, [key]));
 }
 
 /**
@@ -117,18 +136,21 @@ export function invalidatePlayerByEmail(email: string): void {
  * coach links, ability/rank fields) - every read built on top of
  * getReferenceData/getTeamCoachLinks or a per-match player list would
  * otherwise keep serving the pre-write snapshot.
+ *
+ * The reference reads are shared, so the KV copies go too - otherwise every
+ * other isolate kept serving the pre-write roster for the rest of the TTL.
  */
-export function invalidateReferenceData(): void {
-  invalidateCache("club-reference");
-  invalidateCache("team-coach-links");
+export async function invalidateReferenceData(env: Env): Promise<void> {
   invalidateCachePrefix("players-for-match:");
+  await invalidateShared(env, ["club-reference", "team-coach-links"]);
 }
 
 /**
- * People-record lookup by email, cached for 60s. Every caller, including
- * the authorization path in worker/src/auth.ts, reuses that short-TTL entry,
- * so an Airtable correction takes up to a minute to change an access
- * decision. Pass { fresh: true } to bypass the cache for a live read.
+ * People-record lookup by email, shared across isolates. Every caller,
+ * including the authorization path in worker/src/auth.ts, reuses the entry;
+ * on a cold isolate this used to be a formula scan of the whole People
+ * table (every field of it) before any route could begin. Pass
+ * { fresh: true } to bypass the cache for a live read.
  */
 export async function getPlayerByEmail(
   env: Env,
@@ -138,12 +160,12 @@ export async function getPlayerByEmail(
   if (opts?.fresh) {
     return lookupPlayerByEmail(env, email);
   }
-  const { data } = await getCached<Player | null>(
+  return getShared<Player | null>(
+    env,
     playerByEmailKey(email),
     () => lookupPlayerByEmail(env, email),
-    PLAYER_BY_EMAIL_TTL_MS,
+    Math.min(rawReadTtl(env, PLAYER_BY_EMAIL_TTL_MS), PLAYER_BY_EMAIL_MAX_TTL_MS),
   );
-  return data;
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
@@ -209,7 +231,9 @@ export async function getExceptionsForSeasons(
     return records.map(mapAvailability);
   };
   if (opts?.fresh) return load();
-  return getShared<AvailabilityException[]>(env, cacheKey, load, 5 * 60 * 1000);
+  return getShared<AvailabilityException[]>(env, cacheKey, load, rawReadTtl(env, EXCEPTIONS_TTL_MS));
 }
+
+const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;
 
 export { invalidateCache };

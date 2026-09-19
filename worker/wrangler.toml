@@ -1,6 +1,10 @@
 name = "hkfc-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
+# AsyncLocalStorage, for the per-request instrumentation and background
+# cache invalidation in src/requestContext.ts. The narrowest Node flag that
+# provides it - not nodejs_compat, which the API does not otherwise need.
+compatibility_flags = ["nodejs_als"]
 
 # Serve the API from the club's own domain instead of *.workers.dev.
 # `custom_domain = true` makes `wrangler deploy` create the DNS record and
@@ -40,3 +44,13 @@ ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-sel
 
 SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
+# Optional: the Airtable webhook id from scripts/register-airtable-webhook.mjs.
+# Its MAC secret is the AIRTABLE_WEBHOOK_SECRET Worker secret. See README,
+# "Airtable Webhook".
+# AIRTABLE_WEBHOOK_ID = "ach..."
+
+# Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
+# does not lapse over a quiet fortnight. Harmless when no webhook is set up.
+# Last in the file on purpose: a TOML table header claims every key after it.
+[triggers]
+crons = ["0 3 * * *"]

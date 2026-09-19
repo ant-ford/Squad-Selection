@@ -1,7 +1,7 @@
 import { airtableFindAll, airtableFindById, linkId } from "./airtable";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
-import { getCached, getShared } from "./cache";
+import { getCached, getShared, rawReadTtl } from "./cache";
 import { HttpError } from "./http";
 import { TABLES } from "../../shared/schema/tableNames";
 import { mapMatch } from "../../shared/mappers/matchMapper";
@@ -10,7 +10,7 @@ import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/do
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
-import { buildEvaluationContext, getSeasonContext, currentSeason } from "./seasonContext";
+import { buildEvaluationContext, getSeasonContext, currentSeason, previousSeason } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import type { AuthorizedUser } from "./auth";
@@ -30,30 +30,29 @@ export async function getScheduledMatches(env: Env): Promise<Match[]> {
   return getShared<Match[]>(env, "scheduled-matches", async () => {
     const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
     return records.map(mapMatch);
-  }, SCHEDULED_MATCHES_TTL_MS);
+  }, rawReadTtl(env, SCHEDULED_MATCHES_TTL_MS));
 }
 
 /** How far back "show past" reaches on the coach fixture list. */
 export const PAST_FIXTURE_WINDOW_DAYS = 28;
 
 /**
- * Played matches, cached alongside the scheduled ones.
+ * Recently played matches, for the coach list's "Show past" toggle.
  *
  * A fixture stops being "Scheduled" the moment a result is entered, so
  * getScheduledMatches() cannot see last weekend's games however the caller
- * filters by date. That is why the coach list's "Show past" toggle appeared
- * to do nothing: the matches it was meant to reveal were never fetched.
+ * filters by date. That is why the toggle once appeared to do nothing: the
+ * matches it was meant to reveal were never fetched.
  *
- * Filtered by status rather than by date. A date formula would be tighter,
- * but every authenticated coach screen depends on this call, and status
- * equality is the one filter shape already proven against this base.
- * Narrowing to the recent window happens in JS, at the caller.
+ * Bounded to the current season and the one before it. The unbounded
+ * version - every Played match the club has ever recorded, a hundred at a
+ * time - grew by a season's worth of pages every year, and the 28-day
+ * window the caller applies can only ever straddle two seasons. Narrowing
+ * to that window still happens in JS, at the caller.
  */
 export async function getPlayedMatches(env: Env): Promise<Match[]> {
-  return getShared<Match[]>(env, "played-matches", async () => {
-    const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Played"');
-    return records.map(mapMatch);
-  }, SCHEDULED_MATCHES_TTL_MS);
+  const season = currentSeason();
+  return getPlayedMatchesForSeasons(env, [season, previousSeason(season) || ""]);
 }
 
 /**
@@ -80,7 +79,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
       `AND({Match Status}="Played",${seasonClause})`,
     );
     return records.map(mapMatch);
-  }, SCHEDULED_MATCHES_TTL_MS);
+  }, rawReadTtl(env, SCHEDULED_MATCHES_TTL_MS));
 }
 
 // ---------------------------------------------------------------------------

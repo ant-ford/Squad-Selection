@@ -73,7 +73,7 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // paths this used to be computed on, now the single definition.
   const coachTeams = isSectionCaptain
     ? links.allTeamNames
-    : links.coachTeamNamesByPersonId.get(player.id) ?? [];
+    : links.coachTeamNamesByPersonId[player.id] ?? [];
   const isCoach = isTeamCoach || isSectionCaptain;
 
   if (!isActive && !isCoach) {

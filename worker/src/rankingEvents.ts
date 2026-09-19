@@ -176,10 +176,16 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
         // Airtable rejects a single JSON-encoded `sort` parameter with HTTP
         // 422 - the sort must be passed as bracketed query parameters.
-        const records = await airtableFindAll(env, RANKING_EVENTS_TABLE, undefined, {
-          "sort[0][field]": RANKING_EVENTS_FIELDS.timestamp,
-          "sort[0][direction]": "desc",
-        });
+        const records = await airtableFindAll(
+          env,
+          RANKING_EVENTS_TABLE,
+          undefined,
+          {
+            "sort[0][field]": RANKING_EVENTS_FIELDS.timestamp,
+            "sort[0][direction]": "desc",
+          },
+          Object.values(RANKING_EVENTS_FIELDS),
+        );
         const fresh = records.filter((r) => {
           const at = r.fields?.[RANKING_EVENTS_FIELDS.timestamp];
           return typeof at === "string" && at >= since;
