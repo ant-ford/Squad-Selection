@@ -12,7 +12,26 @@ import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 const MATCH_DURATION_MINUTES = 90;
 
 /** A squad member as the calendar lists them. */
-type SquadEntry = { name: string; shirtNo?: string; availabilityStatus?: string };
+type SquadEntry = { name: string; shirtNo?: string; playingPosition?: string; availabilityStatus?: string };
+
+/**
+ * Team-sheet order: keeper first, then the lines from the back. A player
+ * with no position, or one the sheet does not know, goes after the
+ * flexible players rather than being guessed into a line.
+ */
+const SQUAD_POSITION_ORDER: Record<string, number> = {
+  Goalkeeper: 0,
+  Defender: 1,
+  Midfielder: 2,
+  Forward: 3,
+  "Flexible/Varies": 4,
+};
+
+/** Stable: within a position the coach's selection order is kept. */
+export function sortSquadForSheet<T extends { playingPosition?: string }>(squad: T[]): T[] {
+  const rank = (p: T) => SQUAD_POSITION_ORDER[p.playingPosition || ""] ?? 99;
+  return [...squad].sort((a, b) => rank(a) - rank(b));
+}
 
 /**
  * Attach each fixture's season record and head-to-head. Played matches are
@@ -47,7 +66,7 @@ async function withTeamRecords(env: Env, fixtures: any[]): Promise<any[]> {
  * reading the invitation wants to know.
  */
 export function formatSquadLines(squad: SquadEntry[]): string[] {
-  return squad.map((p) => {
+  return sortSquadForSheet(squad).map((p) => {
     const name = p.shirtNo ? `#${p.shirtNo} ${p.name}` : p.name;
     return p.availabilityStatus === "Maybe" ? `${name} (Maybe)` : name;
   });
