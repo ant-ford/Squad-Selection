@@ -1,47 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { getShared, invalidateShared, invalidateAll } from "../worker/src/cache";
-import type { CacheKv } from "../worker/src/env";
+import { fakeKv } from "./helpers/kv";
 
 // The in-isolate map is what this replaces, so "a different isolate" is
 // simulated by clearing it while the KV store keeps its contents.
-
-interface FakeKv extends CacheKv {
-  store: Map<string, { value: string; ttl?: number }>;
-  reads: string[];
-  writes: string[];
-  deletes: string[];
-}
-
-function fakeKv(overrides: Partial<CacheKv> = {}): FakeKv {
-  const store = new Map<string, { value: string; ttl?: number }>();
-  const kv: FakeKv = {
-    store,
-    reads: [],
-    writes: [],
-    deletes: [],
-    async get(key) {
-      kv.reads.push(key);
-      const hit = store.get(key);
-      return hit ? JSON.parse(hit.value) : null;
-    },
-    async put(key, value, options) {
-      kv.writes.push(key);
-      store.set(key, { value, ttl: options?.expirationTtl });
-    },
-    async delete(key) {
-      kv.deletes.push(key);
-      store.delete(key);
-    },
-    async list({ prefix }) {
-      return {
-        keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })),
-        list_complete: true as const,
-      };
-    },
-    ...overrides,
-  };
-  return kv;
-}
 
 /** A new isolate: same KV, empty local map. */
 function newIsolate() {

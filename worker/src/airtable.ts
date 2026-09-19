@@ -1,7 +1,46 @@
 // Low-level Airtable REST client for the Worker.
 import type { Env } from "./env";
+import { recordAirtableCall } from "./requestContext";
+import { TABLES } from "../../shared/schema/tableNames";
+import {
+  ABILITYGROUP_CONFIG_FIELDS,
+  AVAILABILITYEXCEPTIONS_FIELDS,
+  AVAILABILITYRULES_FIELDS,
+  MATCHCARDS_FIELDS,
+  MATCHES_FIELDS,
+  PEOPLE_FIELDS,
+  TEAMS_FIELDS,
+} from "../../shared/schema/fieldMaps";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
+
+/**
+ * Fields requested from each table on a list read.
+ *
+ * Without a projection Airtable returns every field of every record. People
+ * is a 300-plus-field membership CRM (attachments, lookups, formulas, Fillout
+ * links), and the app reads under thirty of them - so every reference-data
+ * or ranking read was downloading the whole CRM, and got slower each time a
+ * field was added for a purpose that had nothing to do with squads. The
+ * projection is the field map itself, so a field the mapper starts reading
+ * is requested automatically, and one it never reads is never sent.
+ *
+ * Tables without an entry (Ranking Events keeps its own field list in
+ * rankingEvents.ts) are read in full unless the caller passes `fields`.
+ */
+const PROJECTIONS: Record<string, readonly string[]> = {
+  [TABLES.player]: Object.values(PEOPLE_FIELDS),
+  [TABLES.team]: Object.values(TEAMS_FIELDS),
+  [TABLES.match]: Object.values(MATCHES_FIELDS),
+  [TABLES.matchCard]: Object.values(MATCHCARDS_FIELDS),
+  [TABLES.availabilityException]: Object.values(AVAILABILITYEXCEPTIONS_FIELDS),
+  [TABLES.availabilityRule]: Object.values(AVAILABILITYRULES_FIELDS),
+  [TABLES.abilityGroupConfiguration]: Object.values(ABILITYGROUP_CONFIG_FIELDS),
+};
+
+export function projectionFor(table: string): readonly string[] | undefined {
+  return PROJECTIONS[table];
+}
 
 export class AirtableError extends Error {
   status: number;
@@ -20,6 +59,8 @@ const MAX_RATE_LIMIT_RETRIES = 2;
 
 async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Promise<T | null> {
   let response: Response;
+  let rateLimited = 0;
+  const startedAt = Date.now();
   for (let attempt = 0; ; attempt++) {
     response = await fetch(url, {
       ...init,
@@ -32,26 +73,54 @@ async function airtableFetch<T>(env: Env, url: string, init?: RequestInit): Prom
 
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) break;
 
+    rateLimited += 1;
     const retryAfterSeconds = Number(response.headers.get("Retry-After"));
     const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 1000;
+    // Logged so contention from the base's OTHER consumers (Fillout, Make,
+    // automations) is visible: from inside the Worker a 429 otherwise just
+    // looks like a slow request.
+    console.warn(`Airtable 429 on ${init?.method ?? "GET"} ${tableFromUrl(url)}; retrying in ${delayMs}ms`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+    recordAirtableCall(Date.now() - startedAt, body.length, rateLimited);
     throw new AirtableError(
       `Airtable ${init?.method ?? "GET"} ${url} failed (${response.status}): ${body}`,
       response.status
     );
   }
 
-  if (response.status === 204) return null;
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    recordAirtableCall(Date.now() - startedAt, 0, rateLimited);
+    return null;
+  }
+  const text = await response.text();
+  recordAirtableCall(Date.now() - startedAt, text.length, rateLimited);
+  return JSON.parse(text) as T;
 }
 
-/** Single page of records (max 100, or whatever `params.pageSize` says). */
-export async function airtableList(env: Env, table: string, params?: Record<string, string>): Promise<{ records: any[]; offset?: string }> {
+/** Table segment of an Airtable URL, for logs - never the base id or token. */
+function tableFromUrl(url: string): string {
+  const m = url.match(/\/v0\/[^/]+\/([^/?]+)/);
+  return m ? decodeURIComponent(m[1]) : "?";
+}
+
+/**
+ * Single page of records (max 100, or whatever `params.pageSize` says).
+ *
+ * `fields` narrows the columns returned; when omitted the table's projection
+ * (see PROJECTIONS) applies, and a table with neither is read in full.
+ */
+export async function airtableList(
+  env: Env,
+  table: string,
+  params?: Record<string, string>,
+  fields?: readonly string[],
+): Promise<{ records: any[]; offset?: string }> {
   const search = new URLSearchParams(params);
+  for (const field of fields ?? PROJECTIONS[table] ?? []) search.append("fields[]", field);
   const result = await airtableFetch<{ records: any[]; offset?: string }>(env, `${tableUrl(env, table)}?${search.toString()}`);
   if (!result) { throw new Error("Unexpected null Airtable response"); }
   return result;
@@ -62,7 +131,8 @@ export async function airtableFindAll(
   env: Env,
   table: string,
   filterByFormula?: string,
-  extraParams?: Record<string, string>
+  extraParams?: Record<string, string>,
+  fields?: readonly string[],
 ): Promise<any[]> {
   const records: any[] = [];
   let offset: string | undefined;
@@ -71,7 +141,7 @@ export async function airtableFindAll(
     if (filterByFormula) params.filterByFormula = filterByFormula;
     if (extraParams) Object.assign(params, extraParams);
     if (offset) params.offset = offset;
-    const page = await airtableList(env, table, params);
+    const page = await airtableList(env, table, params, fields);
     records.push(...(page.records ?? []));
     offset = page.offset;
   } while (offset);
@@ -168,6 +238,15 @@ export async function airtableBatchDelete(
   return airtableFetch(env, `${tableUrl(env, table)}?${params.toString()}`, {
     method: "DELETE",
   });
+}
+
+/**
+ * A request against the base itself rather than one of its tables - the
+ * webhooks endpoints live at /v0/bases/{baseId}/webhooks/... (see
+ * airtableWebhook.ts). Same auth, retry and instrumentation as table reads.
+ */
+export async function airtableBaseRequest<T>(env: Env, pathUnderBase: string, init?: RequestInit): Promise<T | null> {
+  return airtableFetch<T>(env, `${AIRTABLE_API}/bases/${env.AIRTABLE_BASE_ID}/${pathUnderBase}`, init);
 }
 
 /** Guards against breaking a filterByFormula string via embedded quotes. */

@@ -46,6 +46,8 @@ import {
 import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getPlayUpWatch, getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
+import { handleAirtableWebhook, refreshAirtableWebhook, WEBHOOK_ROUTE } from "./airtableWebhook";
+import { newRequestStats, runWithRequestContext, serverTimingHeader } from "./requestContext";
 
 export type { Env };
 
@@ -58,7 +60,7 @@ async function readJsonBody(request: Request): Promise<any> {
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     if (parseAllowedOrigins(env.ALLOWED_ORIGIN).length === 0) {
       console.error("Server misconfigured: ALLOWED_ORIGIN is not set");
       return new Response(
@@ -66,12 +68,55 @@ export default {
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
-    try {
-      return await handleRequest(request, env);
-    } catch (err) {
-      console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
-      return errorJson("Internal Server Error", 500, resolveOrigin(request, env.ALLOWED_ORIGIN));
-    }
+
+    // Every request runs inside its own context (requestContext.ts): the
+    // Airtable client and the caches count what they do into it, and cache
+    // invalidation can hand slow KV housekeeping to ctx.waitUntil. The
+    // numbers go out as a Server-Timing header, readable in the browser's
+    // Timing tab, and as one structured log line per request in Workers
+    // Logs - the "is it Airtable or is it us" question, answered per call.
+    const stats = newRequestStats();
+    const startedAt = Date.now();
+    const waitUntil = ctx?.waitUntil ? (p: Promise<unknown>) => ctx.waitUntil(p) : undefined;
+    return runWithRequestContext({ stats, waitUntil }, async () => {
+      let response: Response;
+      try {
+        response = await handleRequest(request, env);
+      } catch (err) {
+        console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
+        response = errorJson("Internal Server Error", 500, resolveOrigin(request, env.ALLOWED_ORIGIN));
+      }
+      const totalMs = Date.now() - startedAt;
+      const { pathname } = new URL(request.url);
+      if (pathname !== "/health") {
+        console.log(
+          "request " +
+            JSON.stringify({
+              method: request.method,
+              path: pathname,
+              status: response.status,
+              ms: totalMs,
+              airtableCalls: stats.airtableCalls,
+              airtableMs: Math.round(stats.airtableMs),
+              airtableBytes: stats.airtableBytes,
+              airtable429s: stats.airtableRateLimited,
+              cacheHits: stats.cacheHits,
+              cacheMisses: stats.cacheMisses,
+              kvHits: stats.kvHits,
+            }),
+        );
+      }
+      const timed = new Response(response.body, response);
+      timed.headers.set("Server-Timing", serverTimingHeader(stats, totalMs));
+      // Without this a cross-origin caller (the app) cannot read the header.
+      timed.headers.set("Timing-Allow-Origin", resolveOrigin(request, env.ALLOWED_ORIGIN));
+      return timed;
+    });
+  },
+
+  /** Daily: keep the Airtable webhook from lapsing (airtableWebhook.ts). */
+  async scheduled(_event: unknown, env: Env): Promise<void> {
+    await refreshAirtableWebhook(env);
   },
 };
 
@@ -82,6 +127,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const method = request.method;
 
   if (method === "OPTIONS") return handleOptions(origin);
+
+  // Airtable's change notifications. Signed by Airtable, not by a user
+  // session, so it sits outside the authenticated routes; airtableWebhook.ts
+  // verifies the signature and answers 404 until a webhook is configured.
+  if (pathname === WEBHOOK_ROUTE) return handleAirtableWebhook(request, env);
 
   try {
     // ── Health Check (Public) ──────────────────────────────────────────────

@@ -8,3 +8,19 @@ export const TABLES = {
   selectionEvent: "Selection Events",
   availabilityRule: "Availability Rules",
 } as const;
+
+/**
+ * Airtable table ids for the tables the Worker caches, from
+ * docs/Airtable Schema.json. Webhook payloads name tables by id, never by
+ * name, so this is how a change notification is mapped back to the caches
+ * it invalidates (worker/src/airtableWebhook.ts).
+ */
+export const TABLE_IDS: Record<string, string> = {
+  tblsM3GD1o3ZrWyBE: TABLES.player,
+  tblcr6NEkaOfIdpqd: TABLES.team,
+  tbl7lDnqEmRUPV6Ah: TABLES.match,
+  tbljzQy4hl3IfMJp1: TABLES.availabilityException,
+  tblAfY7xhjkcKXlGq: TABLES.matchCard,
+  tblTc4kNMHmFBZn4Q: TABLES.abilityGroupConfiguration,
+  tblJ8GXEOY9YAluW4: "Ranking Events",
+};

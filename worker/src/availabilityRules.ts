@@ -2,7 +2,7 @@ import { HttpError } from "./http";
 import { AVAILABILITYRULES_FIELDS } from "../../shared/schema/fieldMaps";
 import { airtableCreate, airtableDelete, airtableFindAll } from "./airtable";
 import type { Env } from "./env";
-import { getShared, invalidateShared } from "./cache";
+import { getShared, invalidateShared, rawReadTtl } from "./cache";
 import { TABLES } from "../../shared/schema/tableNames";
 import { mapAvailabilityRule } from "../../shared/mappers/availabilityRuleMapper";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
@@ -157,7 +157,7 @@ export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRul
     return await getShared<AvailabilityRule[]>(env, RULES_CACHE_KEY, async () => {
       const records = await airtableFindAll(env, TABLES.availabilityRule);
       return records.map(mapAvailabilityRule);
-    }, RULES_TTL_MS);
+    }, rawReadTtl(env, RULES_TTL_MS));
   } catch (err) {
     console.error("Availability rules unavailable for this request:", err instanceof Error ? err.message : err);
     return [];

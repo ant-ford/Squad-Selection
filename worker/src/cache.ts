@@ -1,4 +1,24 @@
 import type { CacheKv } from "./env";
+import { inBackground, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
+
+/**
+ * How long a raw Airtable table read may be reused once a webhook announces
+ * Airtable-side edits (see airtableWebhook.ts). Before the webhook, a short
+ * TTL was the only way an edit made in Airtable itself - a result entered,
+ * a player moved between teams - reached the app, and every expiry meant a
+ * full re-read of the table. With the webhook doing that job the TTL is a
+ * safety net, not the mechanism.
+ */
+export const WEBHOOK_BACKED_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * TTL for a raw table read: `shortTtlMs` until a webhook is configured,
+ * hours afterwards. Writes the Worker makes itself invalidate explicitly
+ * either way, so this only governs edits made directly in Airtable.
+ */
+export function rawReadTtl(env: { AIRTABLE_WEBHOOK_SECRET?: string }, shortTtlMs: number): number {
+  return env.AIRTABLE_WEBHOOK_SECRET ? Math.max(shortTtlMs, WEBHOOK_BACKED_TTL_MS) : shortTtlMs;
+}
 
 // In-memory cache for Cloudflare Worker isolate.
 // Data persists within a single isolate's lifetime and is refreshed after TTL.
@@ -30,15 +50,18 @@ export async function getCached<T>(
   const existing = store.get(key);
 
   if (existing && existing.expiresAt > now) {
+    recordCacheHit();
     return { data: existing.data as T, fromCache: true };
   }
 
   const inFlight = pending.get(key);
   if (inFlight) {
+    recordCacheHit();
     const data = (await inFlight.promise) as T;
     return { data, fromCache: true };
   }
 
+  recordCacheMiss();
   const token = {};
   const fetchPromise: Promise<T> = (async () => {
     try {
@@ -99,6 +122,16 @@ export function invalidateAll() {
 /** Below this, KV rejects the write - and nothing this cache shares is shorter. */
 const KV_MIN_TTL_SECONDS = 60;
 
+/**
+ * How long an isolate may reuse its own copy of a shared entry before
+ * asking KV again. Invalidation reaches KV and the isolate that did the
+ * invalidating; every OTHER isolate only notices when its copy expires, so
+ * this - not the KV TTL - bounds how long a stale copy can survive
+ * elsewhere. A KV read a minute per key is cheap; ten minutes of a squad
+ * another coach has already changed is not.
+ */
+const SHARED_LOCAL_TTL_MS = 60 * 1000;
+
 export async function getShared<T>(
   env: { CACHE?: CacheKv },
   key: string,
@@ -113,7 +146,10 @@ export async function getShared<T>(
   const { data } = await getCached<T>(key, async () => {
     try {
       const cached = (await kv.get(key, { type: "json" })) as T | null;
-      if (cached !== null && cached !== undefined) return cached;
+      if (cached !== null && cached !== undefined) {
+        recordKvHit();
+        return cached;
+      }
     } catch (err) {
       console.error("KV cache read failed:", key, err);
     }
@@ -128,18 +164,24 @@ export async function getShared<T>(
       console.error("KV cache write failed:", key, err);
     }
     return fresh;
-  }, ttlMs);
+  }, Math.min(ttlMs, SHARED_LOCAL_TTL_MS));
   return data;
 }
 
 /**
  * Drop shared entries after a write, in KV as well as in this isolate.
  *
- * Awaited rather than fired and forgotten: the caller has just changed the
- * data these keys describe, and the next read must not be served the copy it
- * replaced. KV is eventually consistent, so this is "promptly" rather than
- * "instantly" - still far tighter than the old behaviour, where another
- * isolate kept its own copy for the full TTL and no write could reach it.
+ * The named keys are deleted before this returns: the caller has just
+ * changed the data they describe, and the next read must not be served the
+ * copy it replaced. KV is eventually consistent, so this is "promptly"
+ * rather than "instantly" - still far tighter than the old behaviour, where
+ * another isolate kept its own copy for the full TTL and no write could
+ * reach it.
+ *
+ * Prefix wipes need a KV list() first, which is the slow part, so they run
+ * after the response has gone out (ctx.waitUntil, via requestContext) and
+ * inline only where there is no request to hand them to. The in-isolate
+ * copies under the prefix are still dropped synchronously.
  */
 export async function invalidateShared(
   env: { CACHE?: CacheKv },
@@ -153,6 +195,11 @@ export async function invalidateShared(
   if (!kv) return;
   try {
     await Promise.all(keys.map((key) => kv.delete(key)));
+  } catch (err) {
+    console.error("KV cache invalidation failed:", err);
+  }
+  if (prefixes.length === 0) return;
+  await inBackground(async () => {
     for (const prefix of prefixes) {
       // list() pages; a prefix with more keys than one page returns would
       // otherwise leave the tail in place.
@@ -163,7 +210,5 @@ export async function invalidateShared(
         cursor = page.list_complete ? undefined : page.cursor;
       } while (cursor);
     }
-  } catch (err) {
-    console.error("KV cache invalidation failed:", err);
-  }
+  });
 }

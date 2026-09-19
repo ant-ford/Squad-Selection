@@ -35,10 +35,10 @@ const teamLinks = {
   // a blank Team Name, so it contributes no entry to coachTeamNamesByPersonId.
   coachIds: ["recCoach", "recInactiveCoach", "recUnnamedTeamCoach"],
   sectionCaptainIds: ["recSectionCaptain"],
-  coachTeamNamesByPersonId: new Map([
-    ["recCoach", ["Men's 1s"]],
-    ["recInactiveCoach", ["Men's 2s"]],
-  ]),
+  coachTeamNamesByPersonId: {
+    recCoach: ["Men's 1s"],
+    recInactiveCoach: ["Men's 2s"],
+  },
   allTeamNames: ["Men's 1s", "Men's 2s", "Men's 3s"],
 };
 

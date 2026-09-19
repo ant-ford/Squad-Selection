@@ -27,7 +27,7 @@ import {
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import { invalidateCache, getCached } from "./cache";
+import { getShared, invalidateShared, rawReadTtl } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
@@ -66,6 +66,18 @@ const AIRTABLE_WRITE_CONCURRENCY = 1;
 // ── Internal helpers ─────────────────────────────────────────────────────
 function rankingCacheKey(active: boolean): string {
   return active ? "ranking:active" : "ranking:inactive";
+}
+
+const RANKING_CONFIG_KEY = "ranking:config";
+
+/**
+ * Drop the ranking lists and config everywhere. They are shared through KV
+ * now (every coach on the ranking screen used to cost each isolate its own
+ * People read every thirty seconds), so a write has to reach the other
+ * isolates too, not just this one.
+ */
+async function invalidateRankingCaches(env: Env): Promise<void> {
+  await invalidateShared(env, [rankingCacheKey(true), rankingCacheKey(false), RANKING_CONFIG_KEY]);
 }
 
 async function fetchActiveRankingFromAirtable(env: Env): Promise<Player[]> {
@@ -130,8 +142,9 @@ async function batchUpdatePlayers(
 export async function getAbilityGroupConfig(
   env: Env,
 ): Promise<AbilityGroupConfigMap> {
-  const { data } = await getCached<AbilityGroupConfigMap>(
-    "ranking:config",
+  return getShared<AbilityGroupConfigMap>(
+    env,
+    RANKING_CONFIG_KEY,
     async () => {
       const records = await airtableFindAll(env, TABLES.abilityGroupConfiguration);
       const rows = records.map(mapAbilityGroupConfiguration);
@@ -142,9 +155,8 @@ export async function getAbilityGroupConfig(
       }
       return map;
     },
-    CONFIG_CACHE_TTL_MS,
+    rawReadTtl(env, CONFIG_CACHE_TTL_MS),
   );
-  return data;
 }
 
 export async function setAbilityGroupConfig(
@@ -186,13 +198,14 @@ export async function setAbilityGroupConfig(
     await airtableBatchCreate(env, TABLES.abilityGroupConfiguration, creates.slice(i, i + 10));
   }
 
-  invalidateCache("ranking:config");
+  await invalidateRankingCaches(env);
   return recomputeDerivedFields(env);
 }
 
 // ── Public read ──────────────────────────────────────────────────────────
 export async function getActiveRanking(env: Env): Promise<RankingList> {
-  const { data } = await getCached<RankingList>(
+  const data = await getShared<RankingList>(
+    env,
     rankingCacheKey(true),
     async () => {
       const raw = await fetchActiveRankingFromAirtable(env);
@@ -205,7 +218,7 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
         version: Date.now(),
       };
     },
-    RANKING_CACHE_TTL_MS,
+    rawReadTtl(env, RANKING_CACHE_TTL_MS),
   );
   // Display substitution at the response boundary: the cache keeps the true
   // Registered Team for business rules; clients see the Selected Team.
@@ -213,12 +226,12 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
 }
 
 export async function getInactiveRanking(env: Env): Promise<InactiveRankingEntry[]> {
-  const { data } = await getCached<InactiveRankingEntry[]>(
+  return getShared<InactiveRankingEntry[]>(
+    env,
     rankingCacheKey(false),
     async () => fetchInactiveRankingFromAirtable(env),
-    RANKING_CACHE_TTL_MS,
+    rawReadTtl(env, RANKING_CACHE_TTL_MS),
   );
-  return data;
 }
 
 // ── Public writes ────────────────────────────────────────────────────────
@@ -268,7 +281,7 @@ export async function movePlayerToRank(
     throw new HttpError("newRank must be a positive integer", 400);
   }
   const note = validateJustification(justification);
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   const players = await fetchActiveRankingFromAirtable(env);
   if (newRank > players.length) {
     throw new HttpError(`newRank ${newRank} exceeds active player count ${players.length}`, 400);
@@ -287,7 +300,7 @@ export async function movePlayerRelative(
   if (sourceId === targetId) {
     throw new HttpError("Cannot move a player relative to themselves", 400);
   }
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   const players = await fetchActiveRankingFromAirtable(env);
   const src = players.find((p) => p.id === sourceId);
   const tgt = players.find((p) => p.id === targetId);
@@ -314,7 +327,7 @@ export async function reorderRanking(
   if (!Array.isArray(playerIds) || playerIds.length === 0) {
     throw new HttpError("playerIds must be a non-empty array", 400);
   }
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   const players = await fetchActiveRankingFromAirtable(env);
   const n = players.length;
   if (playerIds.length !== n) {
@@ -372,7 +385,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
       [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
     });
     const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
-    if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+    if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
     invalidateRankingEventsCache();
     await recordRankingEvents(env, [
       { playerId, actorEmail: actingEmail, kind: "activate", oldRank: hasExistingRank ? newRank : null, newRank },
@@ -381,7 +394,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     // Safety net: renumber the whole pool to a contiguous 1..N, the same
     // batch-update machinery reorderRanking uses. A no-op when already
     // contiguous (the common case after the fix above).
-    invalidateCache(rankingCacheKey(true));
+    await invalidateRankingCaches(env);
     const afterActivation = await fetchActiveRankingFromAirtable(env);
     const contiguousUpdates: { id: string; rank: number; oldRank: number }[] = [];
     afterActivation.forEach((p, i) => {
@@ -395,7 +408,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     }
   }
 
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   return recomputeDerivedFields(env);
 }
 
@@ -405,7 +418,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   const player = mapPlayer(record);
   if (player.active === false) return getActiveRanking(env);
 
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   const players = await fetchActiveRankingFromAirtable(env);
   const idx = players.findIndex((p) => p.id === playerId);
   
@@ -433,13 +446,13 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   });
 
   const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
-  if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail);
+  if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
   invalidateRankingEventsCache();
   await recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
   ]);
 
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
   return recomputeDerivedFields(env);
 }
 
@@ -490,8 +503,8 @@ async function recomputeDerivedFieldsFromList(
   }
 
   await batchUpdatePlayers(env, fieldUpdates);
-  invalidateCache(rankingCacheKey(true));
-  invalidateReferenceData();
+  await invalidateRankingCaches(env);
+  await invalidateReferenceData(env);
 
   return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };
 }
@@ -525,7 +538,7 @@ async function applySectionRankUpdates(
   }));
   
   await batchUpdatePlayers(env, stamped);
-  invalidateCache(rankingCacheKey(true));
+  await invalidateRankingCaches(env);
 
   // Ranking history: fire-and-forget, after the commit succeeded. The
   // browser never stamps time - every event gets a server timestamp here.

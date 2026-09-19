@@ -70,7 +70,22 @@ function evaluateFormula(formula: string, record: FakeRecord): boolean {
     return want === "TRUE" ? actual : !actual;
   }
 
+  // `{Field}!=""` - "has a value". Airtable renders a multiple select as its
+  // values joined by commas, so an empty list compares equal to "".
+  const notEmpty = formula.match(/^\{([^}]+)\}!=""$/);
+  if (notEmpty) {
+    const value = record.fields?.[notEmpty[1]];
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && String(value) !== "";
+  }
+
   return true;
+}
+
+/** The `fields[]` projection a request asked for, or null when it asked for whole records. */
+export function requestedFields(url: string): string[] | null {
+  const fields = new URLSearchParams(url.split("?")[1] ?? "").getAll("fields[]");
+  return fields.length ? fields : null;
 }
 
 /** Top-level comma split for OR(...) args - ignores commas inside nested quotes/parens. */

@@ -8,14 +8,15 @@
  * virtual-selection indexes - is built once per season and shared by every
  * match+side opened that season.
  *
- * Cache key: `season-index:<season>` (10 minutes).
+ * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
+ * reads underneath it are shared through KV and live much longer).
  * Invalidated by: syncSquad (selections changed), setAvailability and
- * setMyAvailability (exceptions changed).
+ * setMyAvailability (exceptions changed), and the Airtable webhook.
  */
 
 import { airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
 import type { Env } from "./env";
-import { getCached, getShared } from "./cache";
+import { getCached, getShared, rawReadTtl } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -42,20 +43,41 @@ import type {
 } from "../../shared/schema/domainTypes";
 
 // ── Season-scoped fetches ───────────────────────────────────────────────
+const SEASON_READ_TTL_MS = 10 * 60 * 1000;
+
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
   return getShared<Match[]>(env, `all-matches:${season}`, async () => {
     const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
     const records = await airtableFindAll(env, TABLES.match, formula);
     return records.map(mapMatch);
-  }, 10 * 60 * 1000);
+  }, rawReadTtl(env, SEASON_READ_TTL_MS));
 }
 
-async function getMatchCardsForSeason(env: Env, season: string): Promise<MatchCard[]> {
-  return getShared<MatchCard[]>(env, `match-cards:${season}`, async () => {
-    const formula = season ? `{${MATCHCARDS_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
+/**
+ * A season's Match Cards. A Match Card is an appearance record, not just a
+ * disciplinary one, so a full season is two-thousand-odd rows - twenty-plus
+ * sequential pages under Airtable's rate limit, and the single largest cost
+ * of a cold season index.
+ *
+ * `cardedOnly` narrows that to appearances that actually carry a card. The
+ * previous season is only ever read to carry an outstanding suspension
+ * forward (suspension.ts), and an appearance with no card contributes
+ * nothing to that - so last season shrinks from twenty pages to one.
+ */
+async function getMatchCardsForSeason(
+  env: Env,
+  season: string,
+  opts: { cardedOnly?: boolean } = {},
+): Promise<MatchCard[]> {
+  const key = opts.cardedOnly ? `match-cards:${season}:carded` : `match-cards:${season}`;
+  return getShared<MatchCard[]>(env, key, async () => {
+    const clauses: string[] = [];
+    if (season) clauses.push(`{${MATCHCARDS_FIELDS.season}}="${escapeFormulaValue(season)}"`);
+    if (opts.cardedOnly) clauses.push(`{${MATCHCARDS_FIELDS.cards}}!=""`);
+    const formula = clauses.length === 0 ? undefined : clauses.length === 1 ? clauses[0] : `AND(${clauses.join(",")})`;
     const records = await airtableFindAll(env, TABLES.matchCard, formula);
     return records.map(mapMatchCard);
-  }, 10 * 60 * 1000);
+  }, rawReadTtl(env, SEASON_READ_TTL_MS));
 }
 
 export function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
@@ -99,6 +121,15 @@ export interface SeasonContext {
   suspensionByPlayer: Map<string, CardSuspensionState>;
 }
 
+/**
+ * The derived indexes live in this isolate only (Maps and Sets do not
+ * survive KV's JSON round trip), so their lifetime is short: every input is
+ * a shared raw read, and rebuilding from KV costs a few parallel gets plus
+ * some CPU. A longer lifetime here is what let one isolate keep showing
+ * selections another isolate's write had already replaced.
+ */
+const SEASON_INDEX_TTL_MS = 60 * 1000;
+
 export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
   const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
     const prevSeason = previousSeason(season);
@@ -106,7 +137,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       getExceptionsForSeasons(env, [season]),
       getMatchCardsForSeason(env, season),
       getAllMatches(env, season),
-      prevSeason ? getMatchCardsForSeason(env, prevSeason) : Promise.resolve([] as MatchCard[]),
+      prevSeason ? getMatchCardsForSeason(env, prevSeason, { cardedOnly: true }) : Promise.resolve([] as MatchCard[]),
       prevSeason ? getAllMatches(env, prevSeason) : Promise.resolve([] as Match[]),
       getReferenceData(env),
     ]);
@@ -187,7 +218,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       previousMatches: prevMatches,
       suspensionByPlayer,
     };
-  }, 10 * 60 * 1000);
+  }, SEASON_INDEX_TTL_MS);
   return data;
 }
 

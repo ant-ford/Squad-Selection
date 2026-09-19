@@ -88,11 +88,14 @@ This application intentionally optimises for **coach workflow** over technical p
 - âœ” Cached Worker with targeted invalidation
 - âœ” Audit logging (rankings, selections)
 
+- âœ” Per-request instrumentation: `Server-Timing` header and one structured log line per request (Airtable calls, bytes, wait time, cache hits)
+- âœ” Airtable reads project only the fields the app maps (People is a 300-field CRM; the app reads 27)
+- âœ” Optional Airtable webhook for event-driven cache invalidation
+
 **Active development focus:**
 
-- â€¢ Observability: cache hit ratios, endpoint latency percentiles
 - â€¢ Feature flags for dark launches
-- â€¢ Structured logging with correlation IDs
+- â€¢ Correlation IDs across frontend and Worker logs
 
 ---
 
@@ -434,6 +437,22 @@ cd worker
 npx wrangler secret put AIRTABLE_TOKEN
 npx wrangler secret put CALENDAR_SECRET
 ```
+
+### Airtable Webhook (optional, recommended)
+
+The Worker caches raw Airtable table reads in KV (`worker/src/cache.ts`). Its own writes invalidate those caches explicitly; edits made directly in Airtable (a result entered, a player moved between teams) can only be noticed two ways: a short TTL, which means re-reading every table every few minutes, or a webhook. With a webhook registered the TTLs stretch to hours and a table is re-read only when it changes (`worker/src/airtableWebhook.ts`).
+
+Register it once with a token that has the `webhook:manage` scope:
+
+```bash
+AIRTABLE_TOKEN=pat... AIRTABLE_BASE_ID=app... node scripts/register-airtable-webhook.mjs create https://api.eddy.global/api/internal/airtable-webhook
+```
+
+It prints the webhook id and MAC secret. Set the secret with `npx wrangler secret put AIRTABLE_WEBHOOK_SECRET` (from `worker/`) and add `AIRTABLE_WEBHOOK_ID = "ach..."` under `[vars]` in `worker/wrangler.toml`, then deploy the API. Until both are set the route answers 404 and the caches keep their short TTLs, so nothing depends on this step. The Worker refreshes the webhook on every ping and from a daily cron trigger, so it does not lapse over a quiet fortnight.
+
+### Request instrumentation
+
+Every API response carries a `Server-Timing` header (visible in the browser's Network → Timing tab) with the Airtable calls, bytes and wait time behind it, the cache hits and misses, and the total. Workers Logs get the same numbers as one `request {...}` line per call, and every Airtable 429 is logged with the table it hit. When a screen is slow, that line says whether the time went to Airtable, to a cold cache, or to the Worker itself.
 
 ### Run Locally
 
