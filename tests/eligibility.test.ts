@@ -301,6 +301,14 @@ describe("evaluatePlayerEligibility", () => {
   // ─── Step 4: Same-Day Movement ────────────────────────────────────
 
   describe("Step 4: Same-Day Movement (§7)", () => {
+    // HKFC A is the Premier side. Crossing into or out of Premier is blocked
+    // until both teams have three league matches behind them (§8), and the
+    // availability warning only names a team that could actually pick the
+    // player - so these tests put the season past that point.
+    const settledSeason = new Map([
+      ["HKFC A", 3], ["HKFC B", 3], ["HKFC C", 3], ["HKFC D", 3], ["HKFC E", 3],
+    ]);
+
     it("warns (does not block) when player is available for higher team same day", () => {
       const sameDayMatches = [
         m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
@@ -308,7 +316,7 @@ describe("evaluatePlayerEligibility", () => {
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
         m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches })
+        ctx({ sameDayMatches, completedLeagueMatchesByTeam: settledSeason })
       );
       // Product decision 2026-09-03: availability for a higher team no longer
       // locks the player out of lower-team fixtures.
@@ -330,7 +338,7 @@ describe("evaluatePlayerEligibility", () => {
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC E" }),
         m({ homeTeam: "HKFC E", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches })
+        ctx({ sameDayMatches, completedLeagueMatchesByTeam: settledSeason })
       );
 
       const sameDayWarnings = r.warnings.filter((w) => w.endsWith("on same day"));
@@ -339,7 +347,11 @@ describe("evaluatePlayerEligibility", () => {
       expect(sameDayWarnings[0]).toBe("Available for HKFC A, HKFC B, HKFC C on same day");
     });
 
-    it("allows lower team when player has Unavailable exception for higher team", () => {
+    // The warning is a claim about the HIGHER fixture: it must be silent
+    // when the player has said no to that game. This check was lost when the
+    // block became a warning, and players who had marked themselves out
+    // were advertised to the A team anyway.
+    it("says nothing when the player is Unavailable for the higher fixture", () => {
       const sameDayMatches = [
         m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
       ];
@@ -349,9 +361,103 @@ describe("evaluatePlayerEligibility", () => {
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
         m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches, allExceptions })
+        ctx({ sameDayMatches, allExceptions, completedLeagueMatchesByTeam: settledSeason })
       );
+      expect(r.status).toBe("eligible");
+      expect(r.warnings).toEqual([]);
+      // No "Available: A" chip either - that is driven off this field.
+      expect(r.sameDayHigherTeam).toBeNull();
+    });
+
+    it("drops only the teams the player has declined, and keeps the rest", () => {
+      const sameDayMatches = [
+        m({ id: "m3", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
+        m({ id: "m4", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
+      ];
+      const allExceptions = [
+        { playerId: "p1", matchId: "m3", status: "Unavailable" },
+      ];
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC E" }),
+        m({ homeTeam: "HKFC E", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches, allExceptions, completedLeagueMatchesByTeam: settledSeason })
+      );
+      expect(r.warnings).toEqual(["Available for HKFC B on same day"]);
+      expect(r.sameDayHigherTeam).toBe("HKFC B");
+    });
+
+    // A Maybe is not a no: the higher team may still want to ask.
+    it("still warns when the player is only a Maybe for the higher fixture", () => {
+      const sameDayMatches = [
+        m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
+      ];
+      const allExceptions = [
+        { playerId: "p1", matchId: "m2", status: "Maybe" },
+      ];
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches, allExceptions, completedLeagueMatchesByTeam: settledSeason })
+      );
+      expect(r.warnings).toContain("Available for HKFC A on same day");
+    });
+
+    // The warning also has to be true in the other direction: the higher
+    // team must be able to pick the player. These were the chips that
+    // advertised non-Premier goalkeepers to the A team in the first three
+    // matches of the season.
+    it("does not name a Premier team the player is barred from joining yet", () => {
+      const sameDayMatches = [
+        m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
+        m({ id: "m3", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
+      ];
+      // Two matches in for everyone: Premier movement is still restricted (§8).
+      const earlySeason = new Map([["HKFC A", 2], ["HKFC B", 2], ["HKFC C", 2]]);
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches, completedLeagueMatchesByTeam: earlySeason })
+      );
+      // B is not Premier, so B stays; A goes.
+      expect(r.warnings).toEqual(["Available for HKFC B on same day"]);
+      expect(r.sameDayHigherTeam).toBe("HKFC B");
+    });
+
+    it("does not name a higher team once the play-up limit is reached", () => {
+      const sameDayMatches = [
+        m({ id: "m2", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
+      ];
+      const playUps = Array.from({ length: 4 }, (_, i) =>
+        mc({ id: `pu${i}`, match: [`played${i}`], team: "HKFC B", playerTeam: "HKFC C", playUp: true }),
+      );
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches, matchCards: playUps, completedLeagueMatchesByTeam: settledSeason })
+      );
+      // Own-team fixture: still fine to pick. Just no claim about B.
       expect(r.status).not.toBe("blocked");
+      expect(r.warnings.some((w) => w.startsWith("Available for"))).toBe(false);
+      expect(r.sameDayHigherTeam).toBeNull();
+    });
+
+    it("being picked by the higher team still blocks, whatever the player answered", () => {
+      const sameDayMatches = [
+        m({ id: "m2", homeTeam: "HKFC A", matchDate: "2026-07-05" }),
+      ];
+      const allSelections = [
+        sel({ id: "s2", player: ["p1"], match: ["m2"], selectionStatus: "Selected" }),
+      ];
+      const allExceptions = [
+        { playerId: "p1", matchId: "m2", status: "Unavailable" },
+      ];
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC C", matchDate: "2026-07-05" }),
+        ctx({ sameDayMatches, allSelections, allExceptions })
+      );
+      expect(r.status).toBe("blocked");
+      expect(r.reason).toBe("Selected for HKFC A on same day");
     });
 
     it("blocks when already selected by higher team same day", () => {

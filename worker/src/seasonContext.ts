@@ -17,7 +17,8 @@ import { airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
 import type { Env } from "./env";
 import { getCached, getShared } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
-import { getExceptionsForSeasons, getReferenceData } from "./reference";
+import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
+import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import { computeSuspensionStates, type CardSuspensionState } from "./suspension";
 import {
   computeCompletedLeagueMatchCounts,
@@ -227,6 +228,38 @@ export async function buildEvaluationContext(
     }
   }
 
+  // Who has said no to the day's other fixtures. The season index carries
+  // the explicit Unavailable answers; standing preferences are added here,
+  // because they depend on how each fixture relates to the player (a
+  // play-up, a support game, a midweek date) and the season index does not
+  // know that. Without them a goalkeeper whose preference says "no
+  // play-ups" was advertised to every higher team playing that day.
+  //
+  // An explicit answer of any kind wins over a preference, exactly as it
+  // does everywhere else the two meet.
+  const unavailablePlayerMatchKeys = new Set(season.unavailablePlayerMatchKeys);
+  const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
+  if (rulesByPlayer.size > 0 && sameDayFixtures.length > 0) {
+    const answered = new Set(season.exceptionIndex.map((e) => `${e.playerId}:${e.matchId}`));
+    const dateByMatch = new Map(sameDayMatches.map((m) => [m.id, hkDateKey(m.matchDate)]));
+    for (const [playerId, rules] of rulesByPlayer) {
+      const player = playersById.get(playerId);
+      if (!player) continue;
+      const playerRank = teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
+      for (const fixture of sameDayFixtures) {
+        const key = `${playerId}:${fixture.matchId}`;
+        if (answered.has(key)) continue;
+        const fixtureRank = teamRankMap[fixture.teamName] ?? UNRANKED_TEAM_RANK;
+        const { status } = effectiveAvailability("", rules, {
+          date: dateByMatch.get(fixture.matchId) || "",
+          isPlayUp: fixtureRank < playerRank,
+          isSupport: fixtureRank > playerRank,
+        });
+        if (status === "Unavailable") unavailablePlayerMatchKeys.add(key);
+      }
+    }
+  }
+
   const ctx: EvaluationContext = {
     teamMap,
     rankMap: teamRankMap,
@@ -234,7 +267,7 @@ export async function buildEvaluationContext(
     sameDayFixtures,
     selectionsByPlayer: season.selectionsByPlayer,
     sameDaySelectionsByTeam,
-    unavailablePlayerMatchKeys: season.unavailablePlayerMatchKeys,
+    unavailablePlayerMatchKeys,
     matchCards: season.matchCards,
     matchCardsByPlayer: season.matchCardsByPlayer,
     matchesById: season.matchesById,
