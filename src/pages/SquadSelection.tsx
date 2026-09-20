@@ -707,6 +707,7 @@ export default function SquadSelection() {
                         name: p.preferredName,
                         availabilityStatus: p.availabilityStatus,
                         availabilityFromRule: p.availabilityFromRule,
+                        optInOnly: p.optInOnly,
                         playerNotes: p.playerNotes,
                       })
                     }

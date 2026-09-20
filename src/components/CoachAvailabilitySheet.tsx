@@ -4,7 +4,9 @@ import { CheckCircle2, HelpCircle, XCircle, Loader2, Info } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useQueryClient } from '@tanstack/react-query';
 import { setPlayerAvailability, type AvailabilityStatus } from '@/api/setPlayerAvailability';
+import { setPlayerOptInOnly } from '@/api/setPlayerOptInOnly';
 
 const OPTIONS: { value: AvailabilityStatus; label: string; Icon: typeof CheckCircle2 }[] = [
   { value: 'Available', label: 'Available', Icon: CheckCircle2 },
@@ -17,6 +19,8 @@ export interface CoachAvailabilityTarget {
   name: string;
   availabilityStatus: string;
   availabilityFromRule?: boolean;
+  /** Coach has inverted this player's default to opt-in only. */
+  optInOnly?: boolean;
   playerNotes: string;
 }
 
@@ -44,6 +48,31 @@ export default function CoachAvailabilitySheet({
   );
   const [notes, setNotes] = useState(player.playerNotes);
   const [saving, setSaving] = useState(false);
+  const [optInOnly, setOptInOnly] = useState(player.optInOnly === true);
+  const [togglingOptIn, setTogglingOptIn] = useState(false);
+  const queryClient = useQueryClient();
+
+  /**
+   * Optimistic, because a coach flipping this wants to see it move. It
+   * changes the default answer on every unanswered fixture, so the whole
+   * squad list is refetched rather than patched.
+   */
+  const toggleOptInOnly = async () => {
+    const next = !optInOnly;
+    setOptInOnly(next);
+    setTogglingOptIn(true);
+    try {
+      await setPlayerOptInOnly(player.id, next);
+      toast.success(next ? `${player.name} is now opt-in only` : `${player.name} is back to the normal default`);
+      queryClient.invalidateQueries({ queryKey: ['playersForMatch'] });
+      queryClient.invalidateQueries({ queryKey: ['availabilityPoll'] });
+    } catch (err: unknown) {
+      setOptInOnly(!next);
+      toast.error(err instanceof Error ? err.message : 'Could not change the default');
+    } finally {
+      setTogglingOptIn(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -90,15 +119,18 @@ export default function CoachAvailabilitySheet({
             ))}
           </div>
 
-          {/* Available is stored as "no answer", so it cannot beat a standing
-              preference of the player's. Say so before the coach saves and
-              wonders why nothing changed. */}
+          {/* Available used to be stored as "no answer", so it could not beat
+              a standing preference and the coach was warned it would do
+              nothing. It is now recorded explicitly whenever something would
+              otherwise contradict it, so the note says the opposite. */}
           {status === 'Available' && player.availabilityFromRule && (
-            <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-1.5">
+            <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-1.5">
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
-                This player's preferences make them {player.availabilityStatus} for this fixture.
-                Available clears any answer for the fixture, but the preference will still apply.
+                {player.optInOnly
+                  ? `${player.name} is opt-in only, so they count as Unavailable until they answer.`
+                  : `Their preferences make them ${player.availabilityStatus} for this fixture.`}{' '}
+                Saving Available records an answer for this fixture only, which overrides that.
               </span>
             </div>
           )}
@@ -118,6 +150,43 @@ export default function CoachAvailabilitySheet({
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Save for {player.name}
           </Button>
+
+          {/* Season-long, and about the player rather than this fixture, so
+              it sits below a divider instead of among the three answers. */}
+          <div className="mt-5 pt-4 border-t border-border">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Opt-in only</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Counts {player.name} as Unavailable for every fixture they have not answered,
+                  instead of Available. For players who are rarely around and do not update their
+                  status. They can still mark themselves available for any fixture.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={optInOnly}
+                aria-label={`Opt-in only for ${player.name}`}
+                disabled={togglingOptIn}
+                onClick={toggleOptInOnly}
+                className={`relative shrink-0 mt-0.5 h-6 w-11 rounded-full transition-colors disabled:opacity-50 ${
+                  optInOnly ? 'bg-primary' : 'bg-muted-foreground/30'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                    optInOnly ? 'translate-x-[22px]' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+            {optInOnly && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Only a coach can turn this off.
+              </p>
+            )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>

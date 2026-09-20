@@ -128,7 +128,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       date: matchDateKey,
       isPlayUp: thisTeamRank < playerRank,
       isSupport: thisTeamRank > playerRank,
-    });
+    }, { optInOnly: p.optInOnly });
     const availabilityStatus = effective.status;
     const playerNotes = exc?.note || exc?.playerNotes || "";
     const eligibility = evaluatePlayerEligibility(p, match, ctx);
@@ -173,6 +173,12 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       availabilityStatus,
       /** True when the status came from a standing rule, not an explicit tap. */
       availabilityFromRule: effective.fromRule,
+      /**
+       * True when a coach has inverted this player's default, so anything
+       * they have not answered reads as Unavailable. Coaches need to tell
+       * that apart from a player who actually declined.
+       */
+      optInOnly: p.optInOnly === true,
       supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,

@@ -50,5 +50,6 @@ export function mapPlayer(record: any): Player {
     photo: firstAttachmentUrl(f[PEOPLE_FIELDS.photo]),
     sportsBackground: f[PEOPLE_FIELDS.sportsBackground] || undefined,
     selectionComments: f[PEOPLE_FIELDS.selectionComments] || undefined,
+    optInOnly: f[PEOPLE_FIELDS.optInOnly] === true,
   };
 }

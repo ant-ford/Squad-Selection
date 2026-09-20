@@ -386,7 +386,7 @@ export async function buildPlayerFixtureView(
       date: hkDateKey(s.match.matchDate),
       isPlayUp: x.category === "play-up",
       isSupport: x.category === "support",
-    });
+    }, { optInOnly: user.optInOnly });
     return {
       id: s.match.id, date: s.match.matchDate || "", homeTeam: s.match.homeTeam || "", awayTeam: s.match.awayTeam || "",
       hkfcTeam: s.team, opponent: s.opponent, isHome: s.isHome, venue: s.match.venue || "", division: s.match.division || "",

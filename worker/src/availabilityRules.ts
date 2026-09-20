@@ -98,20 +98,47 @@ export function resolveRuleStatus(
 }
 
 /**
- * Availability for one fixture: an explicit exception if the player set one,
- * otherwise whatever their rules imply, otherwise Available.
+ * Availability for one fixture, in precedence order:
+ *
+ *   1. an explicit answer for this fixture           (the player, or a coach)
+ *   2. the player's Opt-In Only flag                 (a coach, People record)
+ *   3. the player's own standing rules
+ *   4. the club default, Available
+ *
+ * Opt-In Only sits ABOVE the player's own rules deliberately. It exists
+ * because a player is not keeping their status up to date, so a standing
+ * rule of theirs saying "Available for everything" - which is what the
+ * club default already assumes - must not be able to switch the inversion
+ * back off. Answering an actual fixture still wins, because that is the
+ * opting in the flag is named for, and it is the one action that proves
+ * the player is present and paying attention.
  */
 export function effectiveAvailability(
   explicitStatus: string | undefined | null,
   rules: AvailabilityRule[],
   fixture: RuleFixtureContext,
+  opts: { optInOnly?: boolean } = {},
 ): { status: ResolvedStatus; fromRule: boolean } {
   if (explicitStatus) {
     return { status: explicitStatus as ResolvedStatus, fromRule: false };
   }
+  if (opts.optInOnly) return { status: "Unavailable", fromRule: true };
   const ruleStatus = resolveRuleStatus(rules, fixture);
   if (ruleStatus) return { status: ruleStatus, fromRule: true };
   return { status: "Available", fromRule: false };
+}
+
+/**
+ * Would this fixture be anything other than Available if the player gave no
+ * answer? If so, an answer of "Available" has to be STORED rather than
+ * expressed by deleting the record - see setAvailability.
+ */
+export function needsExplicitAvailable(
+  rules: AvailabilityRule[],
+  fixture: RuleFixtureContext,
+  opts: { optInOnly?: boolean } = {},
+): boolean {
+  return effectiveAvailability(null, rules, fixture, opts).status !== "Available";
 }
 
 /** Index rules by player id for per-match resolution across a whole squad. */
