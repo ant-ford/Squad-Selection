@@ -21,7 +21,7 @@ import { getPlayedMatches } from "../worker/src/fixtures";
 import { getRankingEvents, RANKING_EVENTS_FIELDS } from "../worker/src/rankingEvents";
 import { PEOPLE_FIELDS, MATCHCARDS_FIELDS } from "../shared/schema/fieldMaps";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
-import { handleAirtableWebhook, signWebhookBody, WEBHOOK_ROUTE } from "../worker/src/airtableWebhook";
+import { handleAirtableWebhook, signWebhookBody, webhookConfigured, WEBHOOK_ROUTE } from "../worker/src/airtableWebhook";
 import worker from "../worker/src/index";
 
 const ENV = {
@@ -139,9 +139,32 @@ describe("season scans", () => {
 });
 
 describe("shared cache lifetimes", () => {
-  it("keeps the short TTL until a webhook is configured, hours after", () => {
+  it("stretches the TTL only when BOTH webhook settings are present", () => {
     expect(rawReadTtl({}, 600_000)).toBe(600_000);
-    expect(rawReadTtl({ AIRTABLE_WEBHOOK_SECRET: "x" }, 600_000)).toBe(WEBHOOK_BACKED_TTL_MS);
+    // The half-configured states are the dangerous ones, and they are not
+    // hypothetical - the first real set-up stored the secret while the id
+    // was still commented out. Keying on the secret alone stretched every
+    // cache to six hours with no working route to invalidate it, which is
+    // worse than having no webhook at all.
+    expect(rawReadTtl({ AIRTABLE_WEBHOOK_SECRET: "x" }, 600_000)).toBe(600_000);
+    expect(rawReadTtl({ AIRTABLE_WEBHOOK_ID: "achTest" }, 600_000)).toBe(600_000);
+    expect(rawReadTtl({ AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x" }, 600_000)).toBe(
+      WEBHOOK_BACKED_TTL_MS,
+    );
+  });
+
+  // The two predicates must move together; this is what makes every
+  // partial set-up safe rather than merely currently-correct.
+  it("agrees with the route's own view of whether a webhook is configured", () => {
+    for (const env of [
+      {},
+      { AIRTABLE_WEBHOOK_SECRET: "x" },
+      { AIRTABLE_WEBHOOK_ID: "achTest" },
+      { AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x" },
+    ]) {
+      const stretched = rawReadTtl(env, 600_000) === WEBHOOK_BACKED_TTL_MS;
+      expect(stretched, `disagreement for ${JSON.stringify(env)}`).toBe(webhookConfigured(env as any));
+    }
   });
 
   it("caps the in-isolate copy of a shared entry at a minute whatever KV's TTL is", async () => {
