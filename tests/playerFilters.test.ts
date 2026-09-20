@@ -4,6 +4,8 @@ import {
   filtersToParams,
   paramsToFilters,
   type FilterState,
+  DEFAULT_ELIGIBILITY,
+  isDefaultEligibility,
 } from '../src/components/PlayerFilters';
 
 describe('PlayerFilters', () => {
@@ -128,6 +130,27 @@ describe('PlayerFilters', () => {
 
     it('OR within category: selecting GK and DEF shows both', () => {
       expect(true).toBe(true);
+    });
+  });
+
+  // The squad screen opens on Eligible + Warning. It has to be able to tell
+  // that default apart from a coach who happens to have picked the same two
+  // chips by hand, because only its own default is safe to drop again.
+  describe('default eligibility', () => {
+    it("recognises the default the squad screen applies", () => {
+      expect(isDefaultEligibility(new Set(DEFAULT_ELIGIBILITY))).toBe(true);
+    });
+
+    it("does not mistake a wider or narrower set for the default", () => {
+      expect(isDefaultEligibility(new Set())).toBe(false);
+      expect(isDefaultEligibility(new Set(['eligible']))).toBe(false);
+      expect(isDefaultEligibility(new Set(['eligible', 'warning', 'blocked']))).toBe(false);
+      expect(isDefaultEligibility(new Set(['eligible', 'blocked']))).toBe(false);
+    });
+
+    it("round-trips through the URL as the same set", () => {
+      const f: FilterState = { ...EMPTY_FILTERS, eligibility: new Set(DEFAULT_ELIGIBILITY) };
+      expect(isDefaultEligibility(paramsToFilters(filtersToParams(f)).eligibility)).toBe(true);
     });
   });
 });

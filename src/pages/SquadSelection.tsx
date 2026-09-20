@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { apiPost, apiGet } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
-import PlayerFilters, { filtersToParams, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
-import PlayerRow from '@/components/PlayerRow';
+import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
+import PlayerRow, { canToggleSelection } from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
@@ -55,10 +55,14 @@ export default function SquadSelection() {
     // An explicit eligibility param always wins, so a shared link still
     // shows exactly what the person who sent it was looking at.
     if (!searchParams.get('eligibility')) {
-      fromUrl.eligibility = new Set(['eligible', 'warning']);
+      fromUrl.eligibility = new Set(DEFAULT_ELIGIBILITY);
     }
     return fromUrl;
   });
+  // True while the eligibility chips are still the default this page applied
+  // rather than anything the coach or a shared link asked for. Cleared the
+  // moment either of those touches the filters.
+  const eligibilityDefaultedRef = useRef(!searchParams.get('eligibility'));
   const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
 
@@ -77,6 +81,24 @@ export default function SquadSelection() {
     }
     return Array.from(map.values());
   }, [data, pollData, pendingDeltas]);
+
+  // A player picked for the Es and then taken by the Cs comes back blocked on
+  // the E sheet - and the default eligibility chips would hide the very row
+  // the E coach has to clear. So when a selection is about to disappear behind
+  // the default, drop the default and show the whole list instead. Only ever
+  // undoes a default this page applied: filters the coach set, or ones that
+  // arrived on a shared link, are left exactly as they are.
+  useEffect(() => {
+    if (!eligibilityDefaultedRef.current) return;
+    const hasHiddenSelection = mergedPlayers.some(
+      p => p.selectionStatus === 'Selected' && p.eligibilityStatus === 'blocked',
+    );
+    if (!hasHiddenSelection) return;
+    eligibilityDefaultedRef.current = false;
+    setFilters(prev => (isDefaultEligibility(prev.eligibility)
+      ? { ...prev, eligibility: new Set<string>() }
+      : prev));
+  }, [mergedPlayers]);
 
   // ── Auto-Select state ────────────────────────────────────────────────
   const [autoSelectEnabled, setAutoSelectEnabled] = useState<boolean>(false);
@@ -136,10 +158,11 @@ export default function SquadSelection() {
 
   const handleToggleSelection = (playerId: string) => {
     const player = mergedPlayers.find(p => p.id === playerId);
-    if (!player || player.eligibilityStatus === 'blocked') return;
+    if (!player) return;
 
     const serverStatus = data?.players.find(p => p.id === playerId)?.selectionStatus === 'Selected';
     const isCurrentlySelected = player.selectionStatus === 'Selected';
+    if (!canToggleSelection(player.eligibilityStatus === 'blocked', isCurrentlySelected)) return;
     const nextAction: Delta['action'] = isCurrentlySelected ? 'remove' : 'select';
 
     if (nextAction === 'remove' && autoSelectEnabled && priorityPlayerIds.has(playerId)) {
@@ -302,6 +325,7 @@ export default function SquadSelection() {
   const blocker = useBlocker(hasChanges);
 
   const handleFilterChange = useCallback((f: FilterState) => {
+    eligibilityDefaultedRef.current = false;
     setFilters(f);
     setSearchParams(prev => {
       const params = new URLSearchParams(prev);
@@ -396,8 +420,15 @@ export default function SquadSelection() {
     const allSelected = eligiblePlayers.every(p => p.selectionStatus === 'Selected');
     const action: Delta['action'] = allSelected ? 'remove' : 'select';
 
+    // Selecting reaches only the pickable players; clearing reaches the whole
+    // visible sheet, blocked-but-already-selected rows included. Leaving those
+    // behind is how a coach ends up unable to empty their own list.
+    const affected = action === 'remove'
+      ? filteredPlayers.filter(p => canToggleSelection(p.eligibilityStatus === 'blocked', p.selectionStatus === 'Selected'))
+      : eligiblePlayers;
+
     if (action === 'remove' && autoSelectEnabled) {
-      const affectedIds = new Set(eligiblePlayers.filter(p => priorityPlayerIds.has(p.id)).map(p => p.id));
+      const affectedIds = new Set(affected.filter(p => priorityPlayerIds.has(p.id)).map(p => p.id));
       if (affectedIds.size > 0) {
         setSuppressedPlayerIds(prev => new Set([...prev, ...affectedIds]));
       }
@@ -405,11 +436,11 @@ export default function SquadSelection() {
     if (action === 'select') {
       setSuppressedPlayerIds(prev => {
         const next = new Set(prev);
-        for (const p of eligiblePlayers) next.delete(p.id);
+        for (const p of affected) next.delete(p.id);
         return next;
       });
     }
-    updateDeltas(eligiblePlayers.map(p => ({ playerId: p.id, action })));
+    updateDeltas(affected.map(p => ({ playerId: p.id, action })));
   };
 
   const handleSave = async () => {
