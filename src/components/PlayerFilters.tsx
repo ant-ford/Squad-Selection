@@ -24,6 +24,18 @@ export const EMPTY_FILTERS: FilterState = {
 };
 
 /**
+ * What the squad screen opens on when the URL says nothing: the players a
+ * coach can actually pick. Lives next to the filter shape so the page, and
+ * the code that has to recognise an untouched default, share one definition.
+ */
+export const DEFAULT_ELIGIBILITY: readonly string[] = ['eligible', 'warning'];
+
+/** True when this eligibility set is still exactly the default above. */
+export function isDefaultEligibility(set: Set<string>): boolean {
+  return set.size === DEFAULT_ELIGIBILITY.length && DEFAULT_ELIGIBILITY.every(v => set.has(v));
+}
+
+/**
  * Returns a URLSearchParams, not a string: callers merge it into the page's
  * search params via URLSearchParams methods (params.set(k, v)), so a value
  * is only ever percent-encoded once. Building a string here and re-parsing

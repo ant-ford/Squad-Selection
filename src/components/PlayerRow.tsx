@@ -36,6 +36,17 @@ export function conflictsWorthShowing(
   return list.filter((c) => c.type === 'selected' || !sameDayWarning.includes(c.team));
 }
 
+/**
+ * Blocked stops a coach making a pick; it must never strand one already
+ * made. A player picked for the Es can afterwards be taken by the Cs, which
+ * blocks them for the Es - and the E coach still has to be able to take them
+ * back off their own sheet. So the row stays clickable while it is selected,
+ * whatever the eligibility says.
+ */
+export function canToggleSelection(isBlocked: boolean, selected: boolean): boolean {
+  return !isBlocked || selected;
+}
+
 interface PlayerRowProps {
   player: MatchPlayer;
   selected: boolean;
@@ -68,14 +79,15 @@ const PlayerRow = React.memo(function PlayerRow({
   // Unavailable ones no longer do: dimming a pale tint was most of why these
   // were hard to read in daylight, and the colour already says enough.
   const dimmed = isBlocked;
+  const toggleable = canToggleSelection(isBlocked, selected);
   const visibleConflicts = conflictsWorthShowing(player.conflicts, player.warnings);
   const isDoubleBooked = player.selectionStatus === 'Selected'
     && (player.conflicts ?? []).some(c => c.type === 'selected');
 
   return (
     <div
-      className={`flex items-center gap-2 sm:gap-3 py-1.5 pl-2 border-b border-border border-l-4 ${dimmed ? 'opacity-70' : ''} ${bgClass} cursor-pointer hover:bg-muted/50 transition-colors`}
-      onClick={!isBlocked ? onToggleSelection : undefined}
+      className={`flex items-center gap-2 sm:gap-3 py-1.5 pl-2 border-b border-border border-l-4 ${dimmed ? 'opacity-70' : ''} ${bgClass} ${toggleable ? 'cursor-pointer hover:bg-muted/50' : ''} transition-colors`}
+      onClick={toggleable ? onToggleSelection : undefined}
     >
       <div className="shrink-0">
         {selected ? <CheckCircle2 className="h-5 w-5 text-primary" /> :

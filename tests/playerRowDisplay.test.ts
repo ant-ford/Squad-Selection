@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { displayWarning, conflictsWorthShowing } from "../src/components/PlayerRow";
+import { displayWarning, conflictsWorthShowing, canToggleSelection } from "../src/components/PlayerRow";
 
 // The coach's player row showed the same fact twice: one "Available: X" chip
 // per team, then a sentence naming all of them. These are the two pure
@@ -61,5 +61,23 @@ describe("player row: same-day availability shown once", () => {
     const conflicts = [{ type: "available", team: "HKFC C" }];
     expect(conflictsWorthShowing(conflicts, [])).toEqual(conflicts);
     expect(conflictsWorthShowing(conflicts, undefined)).toEqual(conflicts);
+  });
+});
+
+// A player picked for the Es can afterwards be taken by the Cs. That blocks
+// them for the E fixture, and the E coach was then stuck: the row would not
+// respond, so the selection could not be taken off their own sheet.
+describe("player row: blocked never strands an existing selection", () => {
+  it("lets a blocked player who is already selected be taken back off", () => {
+    expect(canToggleSelection(true, true)).toBe(true);
+  });
+
+  it("still refuses to pick a blocked player who is not selected", () => {
+    expect(canToggleSelection(true, false)).toBe(false);
+  });
+
+  it("leaves unblocked rows toggling either way", () => {
+    expect(canToggleSelection(false, false)).toBe(true);
+    expect(canToggleSelection(false, true)).toBe(true);
   });
 });
