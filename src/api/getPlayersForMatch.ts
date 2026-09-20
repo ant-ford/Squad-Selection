@@ -18,6 +18,11 @@ export interface MatchPlayer {
   availabilityStatus: string;
   /** True when the status came from a standing preference, not an explicit answer. */
   availabilityFromRule?: boolean;
+  /**
+   * True when a coach has set this player to opt-in only, so every fixture
+   * they have not answered counts as Unavailable.
+   */
+  optInOnly?: boolean;
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';

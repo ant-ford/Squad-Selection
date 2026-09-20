@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { fakeKv } from "./helpers/kv";
 import { getShared, invalidateAll, invalidateShared, rawReadTtl, WEBHOOK_BACKED_TTL_MS } from "../worker/src/cache";
+import { resetMissingFieldCache } from "../worker/src/airtable";
 import { getPlayerByEmail, getReferenceData, getTeamCoachLinks } from "../worker/src/reference";
 import { getSeasonContext } from "../worker/src/seasonContext";
 import { getPlayedMatches } from "../worker/src/fixtures";
@@ -318,5 +319,45 @@ describe("instrumentation", () => {
     expect(timing).toMatch(/cache;desc="hits=0 misses=1 kv=0"/);
     expect(timing).toMatch(/total;dur=\d+/);
     expect(res.headers.get("Timing-Allow-Origin")).toBe("https://app.test");
+  });
+});
+
+describe("a mapped field the base does not have", () => {
+  // shared/schema/ is hand-maintained against the base, so it can run ahead
+  // of it - a field mapped in code before an administrator adds it, or one
+  // renamed in Airtable. The projection is derived from that map, so without
+  // this the People table (which backs authorization) would 422 on every
+  // read and take the whole app down over one absent checkbox.
+  it("drops the field, retries, and keeps serving", async () => {
+    resetMissingFieldCache();
+    let rejected = 0;
+    const real = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn((url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("fields%5B%5D=Opt-In+Only") || u.includes("fields[]=Opt-In Only")) {
+        rejected++;
+        return Promise.resolve(new Response(
+          JSON.stringify({ error: { type: "UNKNOWN_FIELD_NAME", message: 'Unknown field name: "Opt-In Only"' } }),
+          { status: 422 },
+        ));
+      }
+      return (real as any)(url, init);
+    }));
+
+    const ref = await getReferenceData(ENV);
+    expect(rejected).toBe(1);
+    expect(ref.players.length).toBeGreaterThan(0);
+    expect(ref.players[0].optInOnly).toBe(false);
+  });
+
+  it("does not swallow an error that is not about a field we asked for", async () => {
+    resetMissingFieldCache();
+    vi.stubGlobal("fetch", vi.fn(() =>
+      Promise.resolve(new Response(
+        JSON.stringify({ error: { type: "UNKNOWN_FIELD_NAME", message: 'Unknown field name: "Some Formula Field"' } }),
+        { status: 422 },
+      )),
+    ));
+    await expect(getReferenceData(ENV)).rejects.toThrow();
   });
 });

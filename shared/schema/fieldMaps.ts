@@ -26,6 +26,7 @@ export const PEOPLE_FIELDS = {
   sportsBackground: "Sports Background / Involvement",
   selectionComments: "Selection Comments/Coach Requests",
   mobileNo: "Mobile No.",
+  optInOnly: "Opt-In Only",
 } as const;
 
 export const TEAMS_FIELDS = {

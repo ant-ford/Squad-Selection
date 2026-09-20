@@ -113,17 +113,73 @@ function tableFromUrl(url: string): string {
  * `fields` narrows the columns returned; when omitted the table's projection
  * (see PROJECTIONS) applies, and a table with neither is read in full.
  */
+/**
+ * Fields Airtable has told us do not exist, per table.
+ *
+ * `shared/schema/` is hand-maintained against the base (invariant 8), so it
+ * can legitimately run ahead of it: a field is mapped in the code before an
+ * administrator has added it, or someone renames one in Airtable. Because
+ * the projection is derived from that map, either case would otherwise make
+ * EVERY read of that table fail with 422 - the People table alone backs
+ * authorization, so the whole app would go down over one absent checkbox.
+ *
+ * Instead the unknown field is dropped and the read retried, once per field
+ * per isolate, with a loud log. A field the base does not have is one the
+ * mapper reads as undefined, which is what it would have been anyway.
+ */
+const missingFields = new Map<string, Set<string>>();
+
+/** Field name from Airtable's UNKNOWN_FIELD_NAME message, if that is the error. */
+function unknownFieldFrom(err: unknown): string | null {
+  if (!(err instanceof AirtableError) || err.status !== 422) return null;
+  if (!err.message.includes("UNKNOWN_FIELD_NAME")) return null;
+  // The name arrives inside the raw JSON body, so its quotes are still
+  // backslash-escaped: Unknown field name: \"Opt-In Only\"
+  const m = err.message.match(/Unknown field names?:\s*[\\"]*([^"\\]+)/i);
+  return m ? m[1].trim() : null;
+}
+
 export async function airtableList(
   env: Env,
   table: string,
   params?: Record<string, string>,
   fields?: readonly string[],
 ): Promise<{ records: any[]; offset?: string }> {
-  const search = new URLSearchParams(params);
-  for (const field of fields ?? PROJECTIONS[table] ?? []) search.append("fields[]", field);
-  const result = await airtableFetch<{ records: any[]; offset?: string }>(env, `${tableUrl(env, table)}?${search.toString()}`);
-  if (!result) { throw new Error("Unexpected null Airtable response"); }
-  return result;
+  const requested = fields ?? PROJECTIONS[table] ?? [];
+
+  for (let attempt = 0; ; attempt++) {
+    const absent = missingFields.get(table);
+    const search = new URLSearchParams(params);
+    for (const field of requested) {
+      if (absent?.has(field)) continue;
+      search.append("fields[]", field);
+    }
+    try {
+      const result = await airtableFetch<{ records: any[]; offset?: string }>(
+        env,
+        `${tableUrl(env, table)}?${search.toString()}`,
+      );
+      if (!result) throw new Error("Unexpected null Airtable response");
+      return result;
+    } catch (err) {
+      const unknown = attempt < requested.length ? unknownFieldFrom(err) : null;
+      // Only a field WE asked for is safe to drop. Anything else - a rename
+      // inside a formula, say - is a real error and must still surface.
+      if (!unknown || !requested.includes(unknown)) throw err;
+      console.error(
+        `Airtable has no field "${unknown}" on ${table}. Dropping it from the read and ` +
+          `retrying; add it in Airtable or correct shared/schema/fieldMaps.ts.`,
+      );
+      const set = missingFields.get(table) ?? new Set<string>();
+      set.add(unknown);
+      missingFields.set(table, set);
+    }
+  }
+}
+
+/** Test seam: forget which fields Airtable said were missing. */
+export function resetMissingFieldCache(): void {
+  missingFields.clear();
 }
 
 /** Fetches every record matching an optional formula, following pagination. */

@@ -33,6 +33,16 @@ export interface Player {
   sportsBackground?: string;
   /** People."Selection Comments/Coach Requests" — free-text coach notes. */
   selectionComments?: string;
+  /**
+   * People."Opt-In Only" - this player counts as Unavailable for any fixture
+   * they have not answered, inverting the club-wide default.
+   *
+   * For the player who is out most of the season and never updates anything:
+   * left alone they show Available on every coach sheet, which is worse than
+   * no information because it reads as an answer. A coach sets this; only the
+   * player answering a specific fixture overrides it.
+   */
+  optInOnly?: boolean;
 }
 
 export interface Team {

@@ -295,6 +295,25 @@ Exception-based: no record = Available. Only "Maybe" and "Unavailable" are store
 
 **Date-level availability** (`POST /api/set-my-availability-for-date`) applies one status to every HKFC fixture on a date, so "I'm away this Saturday" is a single tap rather than one per card — including the play-up and support pools. It began as a goalkeeper-cohort shortcut and is now open to every authorized player; the player dashboard surfaces the control on any date where the player has more than one fixture in play. Individual fixtures stay independently overridable afterwards.
 
+### Opt-In Only (inverting the default for one player)
+
+The club runs on opt-out: a player is Available unless they say otherwise, because nobody fills in forms for thirty fixtures. That assumption fails for the player who is out most of the season and never opens the app. They show Available on every squad sheet, which is worse than silence, because it reads as an answer.
+
+`People."Opt-In Only"` (checkbox) inverts the default for that player alone. Every fixture they have not answered counts as Unavailable, and they have to actively say they are available. Coaches set it from the same sheet they already use to answer on a player's behalf, via `POST /api/player/:id/opt-in-only` (coach-only, audit-logged).
+
+Resolution order, in [`availabilityRules.ts`](worker/src/availabilityRules.ts):
+
+1. an explicit answer for that fixture, from the player or a coach
+2. the Opt-In Only flag
+3. the player's own standing rules
+4. the club default, Available
+
+The flag deliberately outranks the player's own standing rules. It exists because the player is not keeping their status current, so a rule of theirs — particularly one that merely restates the club default — must not switch it back off. Answering a real fixture still wins, because that is the opting in it is named for, and it is the one action that proves the player is actually there.
+
+Two consequences worth knowing. The payload carries `optInOnly` alongside `availabilityFromRule`, so a coach can tell "set to opt-in only" from "actually declined" from "never asked". And because absence no longer means Available for these players, an Available answer is stored as a real record — see invariant 5.
+
+**This needs two Airtable changes, both additive.** Add `Opt-In Only` as a checkbox on `People`, and add `Available` to the `Availability Status` single-select on `Availability Exceptions`. Until the checkbox exists the toggle returns a 501 naming the missing field, and everything else behaves exactly as before.
+
 ### Season Statistics (`worker/src/playerStats.ts`)
 
 `GET /api/player-stats/:playerId` (self or coach) backs the panel on the player dashboard and the coach drill-in from the ranking row menu. It reads entirely off the cached season context, so it costs no extra Airtable calls.
@@ -375,7 +394,7 @@ These MUST NOT be broken. For the fuller historical list of invariants with stab
 
 4. **Section Rank is the only persisted ranking.** Team Rank, Positional Rank, Playing Ability MUST be derived. Never persist independently.
 
-5. **Availability is exception-based.** MUST NOT create "Available" records. No record = Available.
+5. **Availability is exception-based.** No record = Available, and an "Available" record MUST NOT be created where that already says it. The one exception is where something else supplies a different default for that fixture — the player's own standing rule, or a coach setting them Opt-In Only. There, deleting the record hands the fixture straight back to that default, so the answer has to be stored. `needsExplicitAvailable()` is the single place that decides, and `setAvailability` is its only caller.
 
 6. **Selections live on `Matches.Selected Players Home/Away`.** MUST NOT reintroduce a separate selections table.
 

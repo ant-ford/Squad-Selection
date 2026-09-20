@@ -24,7 +24,7 @@ import {
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
-import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability } from "./availability";
+import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch } from "./recommendations";
 import {
@@ -224,6 +224,29 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           matchId: matchAvailabilityMatch[1],
           status: (body.status || "") as "Available" | "Maybe" | "Unavailable",
           notes: typeof body.notes === "string" ? body.notes : undefined,
+        }),
+        200,
+        origin,
+      );
+    }
+
+    // ── Opt-In Only (Write - Coach) ────────────────────────────────────────
+    // Inverts the club's opt-out default for one player, so every fixture
+    // they have not answered counts as Unavailable. Coach-only on purpose:
+    // it exists for players who are not maintaining their own status, so it
+    // must not be something they can switch off.
+    const optInOnlyMatch = pathname.match(/^\/api\/player\/([^/]+)\/opt-in-only$/);
+    if (method === "POST" && optInOnlyMatch) {
+      const user = await requireCoach(request, env);
+      const body = (await readJsonBody(request)) as { optInOnly?: unknown };
+      if (typeof body.optInOnly !== "boolean") {
+        throw new HttpError("optInOnly must be a boolean", 400);
+      }
+      return json(
+        await setPlayerOptInOnly(env, {
+          coachEmail: user.email,
+          playerId: optInOnlyMatch[1],
+          optInOnly: body.optInOnly,
         }),
         200,
         origin,

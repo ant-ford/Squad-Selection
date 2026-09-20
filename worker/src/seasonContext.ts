@@ -270,12 +270,22 @@ export async function buildEvaluationContext(
   // does everywhere else the two meet.
   const unavailablePlayerMatchKeys = new Set(season.unavailablePlayerMatchKeys);
   const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
-  if (rulesByPlayer.size > 0 && sameDayFixtures.length > 0) {
+  // Everyone whose default is not simply "Available": someone with a standing
+  // rule, and someone a coach has set to Opt-In Only. The latter need not have
+  // a single rule to their name, so iterating the rule index alone would have
+  // advertised them to every higher team playing that day - the exact opposite
+  // of what the flag is for.
+  const nonDefaultPlayerIds = new Set<string>([
+    ...rulesByPlayer.keys(),
+    ...allPlayers.filter((p) => p.optInOnly).map((p) => p.id),
+  ]);
+  if (nonDefaultPlayerIds.size > 0 && sameDayFixtures.length > 0) {
     const answered = new Set(season.exceptionIndex.map((e) => `${e.playerId}:${e.matchId}`));
     const dateByMatch = new Map(sameDayMatches.map((m) => [m.id, hkDateKey(m.matchDate)]));
-    for (const [playerId, rules] of rulesByPlayer) {
+    for (const playerId of nonDefaultPlayerIds) {
       const player = playersById.get(playerId);
       if (!player) continue;
+      const rules = rulesByPlayer.get(playerId) ?? [];
       const playerRank = teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
       for (const fixture of sameDayFixtures) {
         const key = `${playerId}:${fixture.matchId}`;
@@ -285,7 +295,7 @@ export async function buildEvaluationContext(
           date: dateByMatch.get(fixture.matchId) || "",
           isPlayUp: fixtureRank < playerRank,
           isSupport: fixtureRank > playerRank,
-        });
+        }, { optInOnly: player.optInOnly });
         if (status === "Unavailable") unavailablePlayerMatchKeys.add(key);
       }
     }

@@ -1,23 +1,33 @@
 import {
+  AirtableError,
   airtableFindById,
+  airtableUpdate,
   airtableBatchCreate,
   airtableBatchUpdate,
   airtableBatchDelete,
   linkId,
 } from "./airtable";
 import type { Env } from "./env";
-import { getPlayerByEmail, getReferenceData, getExceptionsForSeasons } from "./reference";
+import {
+  getPlayerByEmail,
+  getReferenceData,
+  getExceptionsForSeasons,
+  invalidatePlayerByEmail,
+  invalidateReferenceData,
+  UNRANKED_TEAM_RANK,
+} from "./reference";
 import { getScheduledMatches } from "./fixtures";
+import { getRulesForPlayer, needsExplicitAvailable } from "./availabilityRules";
 import { HttpError } from "./http";
 import { TABLES } from "../../shared/schema/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS } from "../../shared/schema/fieldMaps";
+import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS, PEOPLE_FIELDS } from "../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../shared/mappers/playerMapper";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
-import type { AvailabilityException } from "../../shared/schema/domainTypes";
+import type { AvailabilityException, Player } from "../../shared/schema/domainTypes";
 
-type ExceptionStatus = "Maybe" | "Unavailable";
-type AvailabilityStatus = "Available" | ExceptionStatus;
+type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
+type AvailabilityStatus = ExceptionStatus;
 
 const VALID_STATUSES: AvailabilityStatus[] = ["Available", "Maybe", "Unavailable"];
 
@@ -108,6 +118,60 @@ async function findPlayerExceptions(
 }
 
 /**
+ * Of these fixtures, which ones would read as something other than Available
+ * if the player gave no answer at all?
+ *
+ * Available is normally expressed by DELETING the exception, which works
+ * only while "no record" and "Available" mean the same thing. They stop
+ * meaning the same thing the moment something supplies a different default:
+ * a coach setting the player Opt-In Only, or one of the player's own
+ * standing rules. Deleting the record there would hand the fixture straight
+ * back to that default, so the player taps Available, the screen does not
+ * change, and nothing explains why. For those fixtures the answer has to be
+ * written down.
+ */
+async function fixturesNeedingExplicitAvailable(
+  env: Env,
+  player: Player,
+  matchIds: string[],
+): Promise<Set<string>> {
+  const rules = await getRulesForPlayer(env, player.id);
+  if (!player.optInOnly && rules.length === 0) return new Set();
+
+  const ref = await getReferenceData(env);
+  const matchesById = new Map((await getScheduledMatches(env)).map((m) => [m.id, m]));
+  const playerRank = ref.teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
+  const needed = new Set<string>();
+  for (const matchId of matchIds) {
+    const match = matchesById.get(matchId);
+    if (!match) continue;
+    // Which HKFC side this fixture is for the player decides whether it
+    // counts as a play-up or a support game, exactly as the coach screens
+    // resolve it.
+    const sides = [match.homeTeam, match.awayTeam].filter(
+      (t): t is string => Boolean(t) && ref.teamRankMap[t] !== undefined,
+    );
+    const fixtureRank = sides.length
+      ? Math.min(...sides.map((t) => ref.teamRankMap[t] ?? UNRANKED_TEAM_RANK))
+      : UNRANKED_TEAM_RANK;
+    if (
+      needsExplicitAvailable(
+        rules,
+        {
+          date: hkDateKey(match.matchDate),
+          isPlayUp: fixtureRank < playerRank,
+          isSupport: fixtureRank > playerRank,
+        },
+        { optInOnly: player.optInOnly },
+      )
+    ) {
+      needed.add(matchId);
+    }
+  }
+  return needed;
+}
+
+/**
  * Invalidation fan-out for availability writes.
  * Now correctly scoped to only invalidate the specific seasons involved.
  */
@@ -180,10 +244,20 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   const toCreate: { matchId: string; fields: Record<string, unknown> }[] = [];
   const results: { matchId: string; exceptionId: string | null }[] = [];
 
+  // Which of these fixtures would NOT be Available if this player said
+  // nothing - because a coach set them Opt-In Only, or because one of their
+  // own standing rules covers it. Only those need an Available answer to be
+  // written down; everywhere else the absence of a record still says it.
+  const overrideNeeded =
+    input.status === "Available"
+      ? await fixturesNeedingExplicitAvailable(env, player, input.matchIds)
+      : new Set<string>();
+
   for (const matchId of input.matchIds) {
     const existing = exceptionByMatch.get(matchId);
-    if (input.status === "Available") {
-      // No exception = Available: delete rather than create an Available record.
+    if (input.status === "Available" && !overrideNeeded.has(matchId)) {
+      // Nothing would contradict it, so absence still means Available and
+      // the table stays sparse - the model the whole app is built on.
       if (existing) toDelete.push(existing.id);
       results.push({ matchId, exceptionId: null });
       continue;
@@ -333,4 +407,71 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
     notes: input.notes,
   });
   return { success: true, updated: results.length, results };
+}
+// ---------------------------------------------------------------------
+// Opt-In Only (coach-controlled default inversion)
+// ---------------------------------------------------------------------
+
+/**
+ * Flip one player between the club default (available unless they say
+ * otherwise) and opt-in only (unavailable unless they say otherwise).
+ *
+ * The club runs on opt-out because nobody fills in forms for thirty
+ * fixtures. That breaks down for the player who is out most of the season
+ * and never touches the app: they show Available on every coach sheet,
+ * which is worse than silence, because it reads as an answer. This inverts
+ * the default for that player alone.
+ *
+ * Deliberately a People field a coach controls rather than one of the
+ * player's own standing rules. The players it exists for are the ones not
+ * keeping their status current, so it must not be something they can
+ * quietly switch off - and a standing rule is self-service by design.
+ * Answering an actual fixture still wins over it, because that is the
+ * opting in the whole thing is named for.
+ */
+export async function setPlayerOptInOnly(
+  env: Env,
+  input: { coachEmail: string; playerId: string; optInOnly: boolean },
+) {
+  if (!input.playerId) throw new HttpError("playerId is required", 400);
+  if (typeof input.optInOnly !== "boolean") {
+    throw new HttpError("optInOnly must be a boolean", 400);
+  }
+  const record = await airtableFindById(env, TABLES.player, input.playerId);
+  if (!record) throw new HttpError("Player not found", 404);
+
+  try {
+    await airtableUpdate(env, TABLES.player, input.playerId, {
+      [PEOPLE_FIELDS.optInOnly]: input.optInOnly,
+    });
+  } catch (err) {
+    // The field is added by hand in Airtable (see README). Until it exists
+    // every write here fails, and "422" tells a coach nothing - so say what
+    // is actually missing.
+    if (err instanceof AirtableError && (err.status === 422 || err.status === 404)) {
+      console.error(`People."${PEOPLE_FIELDS.optInOnly}" missing or not a checkbox:`, err.message);
+      throw new HttpError(
+        `This needs the "${PEOPLE_FIELDS.optInOnly}" checkbox on the People table in Airtable.`,
+        501,
+        "OPT_IN_ONLY_NOT_CONFIGURED",
+      );
+    }
+    throw err;
+  }
+
+  console.log(
+    `[Availability Audit] optInOnly=${input.optInOnly} player=${input.playerId} coach=${input.coachEmail}`,
+  );
+
+  // The flag changes the default answer on every unanswered fixture, so
+  // every derived view of this player has to be rebuilt: the roster it is
+  // read from, the coach sheets, the season index and the calendar feeds.
+  const email = record.fields?.[PEOPLE_FIELDS.email];
+  if (typeof email === "string") invalidatePlayerByEmail(email, env);
+  invalidateCachePrefix("players-for-match:");
+  invalidateCachePrefix("season-index:");
+  invalidateCachePrefix("calendar:");
+  await invalidateReferenceData(env);
+
+  return { success: true, playerId: input.playerId, optInOnly: input.optInOnly };
 }
