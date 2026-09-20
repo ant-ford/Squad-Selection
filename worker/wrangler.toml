@@ -44,10 +44,12 @@ ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-sel
 
 SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
-# Optional: the Airtable webhook id from scripts/register-airtable-webhook.mjs.
-# Its MAC secret is the AIRTABLE_WEBHOOK_SECRET Worker secret. See README,
-# "Airtable Webhook".
-# AIRTABLE_WEBHOOK_ID = "ach..."
+# The Airtable webhook from scripts/register-airtable-webhook.mjs. Its MAC
+# secret is the AIRTABLE_WEBHOOK_SECRET Worker secret (set with
+# `wrangler secret put`, never in this file). See README, "Airtable Webhook".
+# Both must be present before the webhook does anything: the route stays 404
+# and the cache TTLs stay short until then.
+AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
 
 # Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
 # does not lapse over a quiet fortnight. Harmless when no webhook is set up.

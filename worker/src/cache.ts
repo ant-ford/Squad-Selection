@@ -15,9 +15,25 @@ export const WEBHOOK_BACKED_TTL_MS = 6 * 60 * 60 * 1000;
  * TTL for a raw table read: `shortTtlMs` until a webhook is configured,
  * hours afterwards. Writes the Worker makes itself invalidate explicitly
  * either way, so this only governs edits made directly in Airtable.
+ *
+ * Requires BOTH settings, exactly as webhookConfigured() does, and the two
+ * MUST agree. Keying this on the secret alone meant a half-finished set-up
+ * - secret stored, id still commented out in wrangler.toml, which is
+ * precisely how the first attempt went - stretched every cache to six
+ * hours while the notification route stayed 404. Nothing would then have
+ * told the Worker the base had changed, so a result entered in Airtable
+ * could have taken six hours to reach the app: strictly worse than having
+ * no webhook at all. Every partial state must fall back to short TTLs.
+ *
+ * Duplicated rather than imported because airtableWebhook.ts imports this
+ * module; a cycle between them is not worth one predicate.
  */
-export function rawReadTtl(env: { AIRTABLE_WEBHOOK_SECRET?: string }, shortTtlMs: number): number {
-  return env.AIRTABLE_WEBHOOK_SECRET ? Math.max(shortTtlMs, WEBHOOK_BACKED_TTL_MS) : shortTtlMs;
+export function rawReadTtl(
+  env: { AIRTABLE_WEBHOOK_ID?: string; AIRTABLE_WEBHOOK_SECRET?: string },
+  shortTtlMs: number,
+): number {
+  const configured = Boolean(env.AIRTABLE_WEBHOOK_ID && env.AIRTABLE_WEBHOOK_SECRET);
+  return configured ? Math.max(shortTtlMs, WEBHOOK_BACKED_TTL_MS) : shortTtlMs;
 }
 
 // In-memory cache for Cloudflare Worker isolate.
