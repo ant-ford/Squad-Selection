@@ -83,6 +83,10 @@ const PlayerRow = React.memo(function PlayerRow({
   const visibleConflicts = conflictsWorthShowing(player.conflicts, player.warnings);
   const isDoubleBooked = player.selectionStatus === 'Selected'
     && (player.conflicts ?? []).some(c => c.type === 'selected');
+  // Gated like the conflicts row above it: the container carries mt-1, so
+  // rendering it empty put a few pixels of dead space under every row that
+  // has nothing to say - most of them - and made the list's rhythm uneven.
+  const hasReasonChips = (player.blocks ?? []).length > 0 || (player.warnings ?? []).length > 0;
 
   return (
     <div
@@ -166,18 +170,20 @@ const PlayerRow = React.memo(function PlayerRow({
           </div>
         )}
 
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {(player.blocks ?? []).map((b, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-xs text-red-900 bg-red-50 border border-red-400 px-1.5 py-0.5 rounded">
-              <Ban className="h-3 w-3 shrink-0" /> {b.reason}
-            </span>
-          ))}
-          {(player.warnings ?? []).map((w, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-900 bg-amber-50 border border-amber-400 px-1.5 py-0.5 rounded">
-              <AlertCircle className="h-3 w-3 shrink-0" /> {displayWarning(w)}
-            </span>
-          ))}
-        </div>
+        {hasReasonChips && (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {(player.blocks ?? []).map((b, i) => (
+              <span key={i} className="inline-flex items-center gap-1 text-xs text-red-900 bg-red-50 border border-red-400 px-1.5 py-0.5 rounded">
+                <Ban className="h-3 w-3 shrink-0" /> {b.reason}
+              </span>
+            ))}
+            {(player.warnings ?? []).map((w, i) => (
+              <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-900 bg-amber-50 border border-amber-400 px-1.5 py-0.5 rounded">
+                <AlertCircle className="h-3 w-3 shrink-0" /> {displayWarning(w)}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {selected && <span className="text-xs px-2 py-0.5 rounded shrink-0 bg-primary text-primary-foreground">Selected</span>}
     </div>
