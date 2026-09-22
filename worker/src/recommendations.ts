@@ -3,7 +3,6 @@ import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { HttpError } from "./http";
 import { ABILITY_RANK } from "../../shared/abilityRank";
-import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 export interface RecommendationCandidate {
   id: string;
@@ -11,6 +10,12 @@ export interface RecommendationCandidate {
   playingPosition: string;
   playingAbility: string;
   playUpCount: number;
+  /**
+   * The team this candidate is RANKED as - getPlayersForMatch's display
+   * team (Selected Team EOS -> SOS -> Registered Team), not necessarily
+   * People.Registered Team. Named for the field it falls back to; see the
+   * proximity score in buildRecommendations for why it is the display one.
+   */
   registeredTeam: string;
   eligibilityStatus: string;
   availabilityStatus: string;
@@ -66,6 +71,24 @@ export function buildRecommendations(
     }
 
     // 2c. Club Proximity Score (20 points max)
+    //
+    // Scored on the candidate's DISPLAY team - Selected Team EOS -> SOS ->
+    // Registered Team, which is what getPlayersForMatch puts in this field.
+    // That is a decision, not an oversight. When a Section Captain moves
+    // someone to a new side for the season, People.Registered Team lags
+    // behind: re-registration is separate, slower admin. Scoring on
+    // Registered Team in the meantime ranks a player the club has been
+    // fielding as a C as though they were a visiting D, and buries them
+    // below the side they actually play for - which is the complaint this
+    // ordering exists to answer.
+    //
+    // The BLOCKING rules go the other way and must stay that way:
+    // eligibility, play-up counting and automatic re-registration all read
+    // People.Registered Team (eligibility.ts, playerRanks), because those
+    // are league obligations rather than optics. The same appearance can
+    // therefore score as a same-team pick here and still count towards the
+    // four-play-up limit there. Do not "align" the two.
+    //
     // An unknown candidate team must not be treated as the target team: no
     // rank is invented for it, so it gets no proximity credit (and distance
     // stays 0, keeping the play-up logic neutral).
@@ -126,8 +149,10 @@ export function buildRecommendations(
       playingPosition: p.playingPosition,
       playingAbility: p.playingAbility,
       playUpCount: playUpCount,
-      // Display value (optics); scoring used the true Registered Team.
-      registeredTeam: selectedDisplayTeam(p),
+      // Already the display value: getPlayersForMatch resolved it before
+      // this pool was built, and it is what the score above was computed
+      // from - so the coach sees the team the ranking actually used.
+      registeredTeam: p.registeredTeam,
       eligibilityStatus: p.eligibilityStatus as 'eligible' | 'warning' | 'blocked',
       score: totalScore,
       reasons: reasons.slice(0, 3),
