@@ -362,9 +362,33 @@ export default function SquadSelection() {
   );
 
   const listRef = useRef<HTMLDivElement>(null);
+  /**
+   * Measured row heights are cached against THIS key, so it has to be the
+   * same thing React keys the row by - the player.
+   *
+   * Left at the default (the index), the two disagreed the moment the list
+   * reordered, which it does constantly: the 30s availability poll, the
+   * recommendations arriving after the players query, and every selection
+   * toggle all resort it. React moves a row's existing DOM node to its new
+   * position rather than remounting it, so the measuring ref never fires
+   * again, and the virtualizer went on using whatever height it had cached
+   * for that SLOT. A tall row landing where a short one had been was given
+   * the short one's height, and the next row was positioned on top of it -
+   * which is what put "Available for B" across the row beneath it.
+   *
+   * Keyed by id, a height belongs to the player whose chips produced it and
+   * follows them wherever they sort to.
+   */
+  const getItemKey = useCallback(
+    (index: number) => sortedPlayers[index]?.id ?? index,
+    [sortedPlayers],
+  );
   const virtualizer = useVirtualizer({
     count: sortedPlayers.length,
     getScrollElement: () => listRef.current,
+    getItemKey,
+    // Only ever used for a row that has not been measured yet. A bare row is
+    // about this tall; the chip rows measure themselves on mount.
     estimateSize: () => 72,
     overscan: 10,
   });
@@ -685,7 +709,10 @@ export default function SquadSelection() {
               const p = sortedPlayers[virtualRow.index];
               return (
                 <div
-                  key={p.id}
+                  // virtualRow.key is getItemKey(index) - the player id. It
+                  // must stay in step with the virtualizer's own key or row
+                  // heights are cached against the wrong row.
+                  key={virtualRow.key}
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                   style={{
