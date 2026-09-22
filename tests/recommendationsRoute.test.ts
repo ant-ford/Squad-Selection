@@ -82,3 +82,55 @@ describe("getRecommendationsForMatch: HKFC-away fixture", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Which team a candidate is RANKED as.
+//
+// getPlayersForMatch hands this module a pool whose `registeredTeam` is
+// already the DISPLAY team (Selected Team EOS -> SOS -> Registered Team), and
+// the proximity score is scored on it deliberately - see the comment on 2c in
+// recommendations.ts. A player the Section Captain has moved up to HKFC C
+// while People.Registered Team still reads HKFC D must rank as a C, because
+// re-registration lags the actual move and the C coach expects them near the
+// top of the list rather than buried among visiting Ds.
+//
+// buildRecommendations' own unit tests cannot pin this: a candidate carries
+// one team field, so only the wiring here can say which team filled it.
+// ---------------------------------------------------------------------------
+describe("getRecommendationsForMatch: ranking basis", () => {
+  it("ranks a player moved to HKFC C as a C, not as a D playing up", async () => {
+    mocks.getReferenceData.mockResolvedValue({
+      teamRankMap: { "HKFC C": 3, "HKFC D": 4 },
+    });
+    mocks.getPlayersForMatch.mockResolvedValue({
+      match: { hkfcTeam: "HKFC C", homeTeam: "HKFC C", awayTeam: "Valley Hockey Club" },
+      players: [
+        // Registered HKFC D, Selected Team C - getPlayersForMatch has already
+        // resolved the display team, so this is what the pool carries.
+        player("moved-up", "HKFC C"),
+        player("stayed-down", "HKFC D"),
+      ],
+    });
+
+    const result = await getRecommendationsForMatch(ENV, "recM1", undefined, undefined, 10);
+
+    const moved = result.recommendations.find((r) => r.id === "moved-up")!;
+    const stayed = result.recommendations.find((r) => r.id === "stayed-down")!;
+
+    // Same team as the fixture: full proximity credit (20) and full play-up
+    // headroom (10) => round(41.67 + 20 + 20 + 10) = 92.
+    expect(moved.score).toBe(92);
+    // One rank below: proximity 20 - 1*5 = 15, headroom still 10 (no play-ups
+    // recorded) => round(41.67 + 20 + 15 + 10) = 87.
+    expect(stayed.score).toBe(87);
+    expect(result.recommendations[0].id).toBe("moved-up");
+
+    // The row shows the team the score was computed from, so the ordering is
+    // explicable to the coach reading it.
+    expect(moved.registeredTeam).toBe("HKFC C");
+
+    // ... and only the genuine play-up carries the play-up tag.
+    expect(moved.reasons).not.toContain("Play-Up Capacity");
+    expect(stayed.reasons).toContain("Play-Up Capacity");
+  });
+});
