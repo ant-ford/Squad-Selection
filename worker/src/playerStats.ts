@@ -1,12 +1,14 @@
-import type { AvailabilityException, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
+import type { AvailabilityException, AvailabilityRule, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { Env } from "./env";
 import { HttpError } from "./http";
 import { isFriendly, matchForCard } from "./playUp";
 import { parseCardValue, yellowPointsFor } from "./suspension";
 import { getReferenceData } from "./reference";
 import { getSeasonContext, currentSeason } from "./seasonContext";
+import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { linkId } from "../../shared/airtableValueUtils";
+import { hkDateKey } from "../../shared/hkDateKey";
 
 /**
  * Season statistics for one player.
@@ -41,12 +43,22 @@ export interface PlayerSeasonStats {
   /** Team the participation figures are measured against. */
   team: string;
   gamesPlayed: number;
+  /**
+   * The team's games, split four ways (they sum to teamGames):
+   * played for the team, available but not picked, picked but never turned
+   * up (no Match Card), and unavailable.
+   */
+  gamesPlayedForTeam: number;
   gamesAvailableNotSelected: number;
+  gamesNoShow: number;
   gamesUnavailable: number;
   teamGames: number;
   /** gamesPlayed / teamGames, 0-100. null when the team has played nothing. */
   participationPct: number | null;
-  /** (gamesPlayed + gamesAvailableNotSelected) / teamGames, 0-100. */
+  /**
+   * (gamesPlayedForTeam + gamesAvailableNotSelected) / teamGames, 0-100.
+   * A no-show is not availability: the player said yes and did not come.
+   */
   availabilityPct: number | null;
   goals: number;
   cardPoints: number;
@@ -64,6 +76,8 @@ export interface PlayerStatsInput {
   matchesById: Map<string, Match>;
   /** Every availability exception in the season. */
   exceptions: Pick<AvailabilityException, "player" | "match" | "availabilityStatus">[];
+  /** This player's standing availability rules. */
+  rules?: AvailabilityRule[];
   /** How many recent results to return. */
   recentLimit?: number;
 }
@@ -98,7 +112,7 @@ function realCards(value: unknown): string[] {
  * whole thing is testable without Airtable.
  */
 export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonStats {
-  const { player, team, season, cards, matchesById, exceptions } = input;
+  const { player, team, season, cards, matchesById, exceptions, rules = [] } = input;
   const recentLimit = input.recentLimit ?? DEFAULT_RECENT_LIMIT;
 
   // ── Appearances ──────────────────────────────────────────────────────
@@ -112,7 +126,8 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
   let goals = 0;
   let cardPoints = 0;
   const results: PlayerGameResult[] = [];
-  const playedMatchIdsForTeam = new Set<string>();
+  const cardedMatchIds = new Set<string>();
+  const cardedDates = new Set<string>();
 
   for (const card of seasonCards) {
     goals += card.goals ?? 0;
@@ -122,7 +137,8 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
     const match = matchForCard(card, matchesById);
     const matchId = linkId(card.match);
     const playedFor = card.team || "";
-    if (playedFor === team && matchId) playedMatchIdsForTeam.add(matchId);
+    if (matchId) cardedMatchIds.add(matchId);
+    if (match?.matchDate) cardedDates.add(hkDateKey(match.matchDate));
 
     if (!match || !matchId) continue;
     // A result needs a played match with both scores and a resolvable side.
@@ -160,21 +176,52 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
     if (isCountableTeamGame(m, team)) teamGameIds.add(id);
   }
 
-  let gamesUnavailable = 0;
+  const answerByMatch = new Map<string, string>();
   for (const exc of exceptions) {
     if (linkId(exc.player) !== player.id) continue;
     const matchId = linkId(exc.match);
-    if (!matchId || !teamGameIds.has(matchId)) continue;
-    // "Maybe" is not a refusal, so it counts as available.
-    if ((exc.availabilityStatus || "") === "Unavailable") gamesUnavailable++;
+    if (matchId) answerByMatch.set(matchId, exc.availabilityStatus || "");
+  }
+
+  // Each team game lands in exactly one bucket, in this order.
+  let gamesPlayedForTeam = 0;
+  let gamesUnavailable = 0;
+  let gamesNoShow = 0;
+  let gamesAvailableNotSelected = 0;
+  for (const matchId of teamGameIds) {
+    const m = matchesById.get(matchId)!;
+    // 1. On the Match Card: they played, whatever else was recorded.
+    if (cardedMatchIds.has(matchId)) {
+      gamesPlayedForTeam++;
+      continue;
+    }
+    // 2. Unavailable - resolved the same way as for selection, so a standing
+    //    rule or Opt-In Only counts, not just an explicit answer. "Maybe" is
+    //    not a refusal, so it counts as available.
+    const date = hkDateKey(m.matchDate);
+    const { status } = effectiveAvailability(
+      answerByMatch.get(matchId),
+      rules,
+      { date, isPlayUp: false, isSupport: false },
+      { optInOnly: player.optInOnly },
+    );
+    if (status === "Unavailable") {
+      gamesUnavailable++;
+      continue;
+    }
+    // 3. Available and picked, but not on the Match Card: a no-show. Unless
+    //    they turned out for another side that day - then they were moved,
+    //    not missing.
+    const side = m.homeTeam === team ? m.selectedPlayersHome : m.selectedPlayersAway;
+    if ((side ?? []).includes(player.id) && !cardedDates.has(date)) {
+      gamesNoShow++;
+      continue;
+    }
+    // 4. Available and not picked.
+    gamesAvailableNotSelected++;
   }
 
   const teamGames = teamGameIds.size;
-  const playedForTeam = [...playedMatchIdsForTeam].filter((id) => teamGameIds.has(id)).length;
-  // Whatever is left over: the player was available for their team's game and
-  // was not picked.
-  const gamesAvailableNotSelected = Math.max(0, teamGames - playedForTeam - gamesUnavailable);
-
   const gamesPlayed = seasonCards.length;
   const pct = (n: number) => (teamGames === 0 ? null : Math.round((n / teamGames) * 100));
 
@@ -184,14 +231,16 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
     season,
     team,
     gamesPlayed,
+    gamesPlayedForTeam,
     gamesAvailableNotSelected,
+    gamesNoShow,
     gamesUnavailable,
     teamGames,
     // Measured against the player's own team's fixtures. Appearances for
     // other teams (play-ups and support games) are included in gamesPlayed,
     // so a busy player can exceed 100%.
     participationPct: pct(gamesPlayed),
-    availabilityPct: pct(gamesPlayed + gamesAvailableNotSelected),
+    availabilityPct: pct(gamesPlayedForTeam + gamesAvailableNotSelected),
     goals,
     cardPoints,
     recentGames: results.slice(0, recentLimit),
@@ -214,7 +263,10 @@ export async function getPlayerSeasonStats(
   if (!player) throw new HttpError("Player record not found", 404);
 
   const season = currentSeason();
-  const ctx = await getSeasonContext(env, season);
+  const [ctx, rules] = await Promise.all([
+    getSeasonContext(env, season),
+    getRulesForPlayer(env, player.id),
+  ]);
 
   const stats = computePlayerSeasonStats({
     player,
@@ -223,6 +275,7 @@ export async function getPlayerSeasonStats(
     cards: ctx.matchCardsByPlayer.get(player.id) ?? [],
     matchesById: ctx.matchesById,
     exceptions: ctx.exceptionsRaw,
+    rules,
   });
 
   return {

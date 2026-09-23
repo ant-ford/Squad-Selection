@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computePlayerSeasonStats } from "../worker/src/playerStats";
+import { mapMatchCard } from "../shared/mappers/matchCardMapper";
 import type { Match, MatchCard, Player } from "../shared/schema/domainTypes";
 
 const SEASON = "2026-2027";
@@ -170,10 +171,101 @@ describe("participation", () => {
 
     expect(stats.teamGames).toBe(4);
     expect(stats.gamesPlayed).toBe(2);
+    expect(stats.gamesPlayedForTeam).toBe(2);
     expect(stats.gamesUnavailable).toBe(1);
     expect(stats.gamesAvailableNotSelected).toBe(1); // the Maybe game
+    expect(stats.gamesNoShow).toBe(0);
     expect(stats.participationPct).toBe(50); // 2/4
     expect(stats.availabilityPct).toBe(75); // (2+1)/4
+  });
+
+  it("counts a selected, available player missing from the Match Card as a no-show", () => {
+    const matchesById = build([
+      match("recM1", { selectedPlayersHome: ["recP1"] }), // played
+      match("recM2", { selectedPlayersHome: ["recP1"] }), // picked, never came
+      match("recM3", { homeTeam: "Opponent", awayTeam: TEAM, selectedPlayersAway: ["recP1"] }), // away no-show
+      match("recM4"), // not picked
+    ]);
+    const stats = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [card("recM1")],
+      matchesById,
+      exceptions: [],
+    });
+    expect(stats.gamesNoShow).toBe(2);
+    expect(stats.gamesAvailableNotSelected).toBe(1);
+    expect(stats.gamesPlayedForTeam).toBe(1);
+    // A no-show is not availability.
+    expect(stats.availabilityPct).toBe(50); // (1+1)/4
+  });
+
+  it("does not call a selected player a no-show once they said they were unavailable", () => {
+    const matchesById = build([match("recM1", { selectedPlayersHome: ["recP1"] })]);
+    const stats = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [],
+      matchesById,
+      exceptions: [{ player: ["recP1"], match: ["recM1"], availabilityStatus: "Unavailable" }],
+    });
+    expect(stats.gamesNoShow).toBe(0);
+    expect(stats.gamesUnavailable).toBe(1);
+  });
+
+  it("does not call a player a no-show when they turned out for another side that day", () => {
+    const matchesById = build([
+      match("recM1", { matchDate: "2026-09-05", selectedPlayersHome: ["recP1"] }),
+      match("recM2", { matchDate: "2026-09-05", homeTeam: "HKFC A", awayTeam: "Opponent" }),
+    ]);
+    const stats = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [card("recM2", { team: "HKFC A" })],
+      matchesById,
+      exceptions: [],
+    });
+    expect(stats.gamesNoShow).toBe(0);
+    expect(stats.gamesAvailableNotSelected).toBe(1);
+  });
+
+  it("counts standing rules and Opt-In Only as unavailable, as selection does", () => {
+    const matchesById = build([match("recM1", { matchDate: "2026-09-01" }), match("recM2", { matchDate: "2026-09-02" })]);
+    const withRule = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [],
+      matchesById,
+      exceptions: [],
+      rules: [{
+        id: "recR1",
+        player: ["recP1"],
+        ruleType: "Date range",
+        availability: "Unavailable",
+        active: true,
+        startDate: "2026-09-01",
+        endDate: "2026-09-01",
+        notes: "",
+        lastModified: "",
+      }],
+    });
+    expect(withRule.gamesUnavailable).toBe(1);
+    expect(withRule.gamesAvailableNotSelected).toBe(1);
+
+    const optIn = computePlayerSeasonStats({
+      player: player({ optInOnly: true }),
+      team: TEAM,
+      season: SEASON,
+      cards: [],
+      matchesById,
+      exceptions: [{ player: ["recP1"], match: ["recM2"], availabilityStatus: "Available" }],
+    });
+    expect(optIn.gamesUnavailable).toBe(1); // recM1: never opted in
+    expect(optIn.gamesAvailableNotSelected).toBe(1); // recM2: opted in
   });
 
   it("ignores another player's exceptions", () => {
@@ -281,5 +373,23 @@ describe("season boundary", () => {
     });
     expect(stats.gamesPlayed).toBe(1);
     expect(stats.goals).toBe(0);
+  });
+
+  it("counts cards read from Airtable, where Season is a lookup array", () => {
+    const raw = mapMatchCard({
+      id: "recC1",
+      fields: { Player: ["recP1"], Match: ["recM1"], Team: TEAM, Season: [SEASON], "Goals Scored": 2 },
+    });
+    expect(raw.season).toBe(SEASON);
+    const stats = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [raw],
+      matchesById: build([match("recM1")]),
+      exceptions: [],
+    });
+    expect(stats.gamesPlayed).toBe(1);
+    expect(stats.goals).toBe(2);
   });
 });

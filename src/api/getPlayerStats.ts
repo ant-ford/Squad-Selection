@@ -21,7 +21,10 @@ export interface PlayerSeasonStats {
   team: string;
   playerName: string;
   gamesPlayed: number;
+  gamesPlayedForTeam: number;
   gamesAvailableNotSelected: number;
+  /** Available and selected, but not on the Match Card. */
+  gamesNoShow: number;
   gamesUnavailable: number;
   teamGames: number;
   participationPct: number | null;

@@ -6,6 +6,8 @@ import {
   MATCHCARDS_FIELDS
 } from "../schema/fieldMaps";
 
+import { linkId } from "../airtableValueUtils";
+
 export function mapMatchCard(
   record: any
 ): MatchCard {
@@ -51,8 +53,11 @@ export function mapMatchCard(
     captain:
       f[MATCHCARDS_FIELDS.captain],
 
+    // A lookup from the Match, so Airtable returns it as an array. Left as
+    // one, every `card.season === season` check failed - which dropped every
+    // card from season stats and play-up counts.
     season:
-      f[MATCHCARDS_FIELDS.season],
+      linkId(f[MATCHCARDS_FIELDS.season]),
 
     fixtureId:
       f[MATCHCARDS_FIELDS.fixtureId],
