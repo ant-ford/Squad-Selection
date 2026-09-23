@@ -484,6 +484,22 @@ cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate termin
 
 The `cloudflare()` Vite plugin is applied to **builds only** ([`vite.config.ts`](vite.config.ts) switches on `command`). In dev its ProxyController deadlocks on Windows and the dev server accepts connections but answers none — no error, no log, just a hang. Nothing is lost: the root `wrangler.jsonc` is assets-only and the API runs separately on 8787. Builds and deploys still get the plugin. If the API ever moves into this Worker, dev will need it back and this has to be revisited.
 
+### Branch Preview
+
+To check a branch in a browser without running the Worker locally, deploy it to the preview API from GitHub: **Actions → Preview API → Run workflow**, then pick the branch. That deploys `hkfc-api-preview` ([`.github/workflows/preview.yml`](.github/workflows/preview.yml)), a separate Worker kept away from production by `[env.preview]` in [`worker/wrangler.toml`](worker/wrangler.toml):
+
+- no custom domain, no cron, no shared KV cache;
+- a read-only Airtable token, so saves fail rather than change club data;
+- CORS only for `http://localhost:5173`.
+
+Then run the frontend against it:
+
+```bash
+npm run dev:preview-api   # Frontend: http://localhost:5173, API: the preview Worker
+```
+
+Secrets live in the `preview` GitHub environment (`CLOUDFLARE_API_TOKEN`, `AIRTABLE_TOKEN`). The Cloudflare token cannot be limited to one Worker, so the environment should require the owner's approval for each run. The workflow refuses to run on `main`, which the CI deploy job owns.
+
 ### Build & Test
 
 ```bash

@@ -11,6 +11,7 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "verify": "npm run typecheck && npm run typecheck:worker && npm run typecheck:shell && npm run typecheck:redirect && npm run typecheck:tests && npm test && npm run build",
     "dev": "vite",
+    "dev:preview-api": "vite --mode preview-api",
     "dev:api": "wrangler dev --config worker/wrangler.toml --port 8787",
     "build": "vite build",
     "preview": "npm run build && wrangler dev",
