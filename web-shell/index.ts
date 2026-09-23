@@ -48,6 +48,11 @@ export default {
     // bookmarked). Hand back the app shell and let the router take over.
     // Requested by path rather than by rewriting the incoming request so the
     // response is index.html itself, headers and all.
-    return env.ASSETS.fetch(new Request(new URL("/index.html", url.origin), request));
+    //
+    // Asked for as "/", not "/index.html": the assets binding's default HTML
+    // handling answers "/index.html" with a 307 to "/", and that redirect went
+    // straight back to the browser - so every refresh of a coach page landed
+    // on the player dashboard.
+    return env.ASSETS.fetch(new Request(new URL("/", url.origin), request));
   },
 };
