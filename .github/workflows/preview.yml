@@ -52,6 +52,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
+          # pipefail: without it the pipe reports tee's status, so a failed
+          # deploy surfaced as "could not find the preview URL" instead of
+          # wrangler's own error.
+          set -o pipefail
           npx wrangler deploy --config worker/wrangler.toml --env preview | tee deploy.log
           url=$(grep -oE 'https://hkfc-api-preview\.[a-z0-9-]+\.workers\.dev' deploy.log | head -1)
           if [ -z "$url" ]; then
