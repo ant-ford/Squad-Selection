@@ -17,8 +17,8 @@ import { fakeKv } from "./helpers/kv";
 import { getShared, invalidateAll, invalidateShared, rawReadTtl, WEBHOOK_BACKED_TTL_MS } from "../worker/src/cache";
 import { resetMissingFieldCache } from "../worker/src/airtable";
 import { getPlayerByEmail, getReferenceData, getTeamCoachLinks } from "../worker/src/reference";
-import { getSeasonContext } from "../worker/src/seasonContext";
-import { getPlayedMatches } from "../worker/src/fixtures";
+import { getAllMatches, getSeasonContext } from "../worker/src/seasonContext";
+import { getPlayedMatches, getScheduledMatches, SCHEDULED_MATCHES_KEY } from "../worker/src/fixtures";
 import { getRankingEvents, RANKING_EVENTS_FIELDS } from "../worker/src/rankingEvents";
 import { PEOPLE_FIELDS, MATCHCARDS_FIELDS } from "../shared/schema/fieldMaps";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
@@ -140,6 +140,25 @@ describe("season scans", () => {
 });
 
 describe("shared cache lifetimes", () => {
+  // Selections live in match records. When an invalidation fails - the KV
+  // quota ran out on 2026-09-23 - a six-hour copy showed the coach dashboard
+  // 0/14 for a squad saved hours before. These reads stay at ten minutes.
+  it("keeps the reads that carry selections short, even with the webhook set up", async () => {
+    const kv = fakeKv();
+    const env = { ...ENV, AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x", CACHE: kv };
+    await getScheduledMatches(env);
+    await getAllMatches(env, THIS_SEASON);
+    expect(kv.store.get(SCHEDULED_MATCHES_KEY)?.ttl).toBe(600);
+    expect(kv.store.get(`all-matches:${THIS_SEASON}@0`)?.ttl).toBe(600);
+  });
+
+  it("retires the old scheduled-matches entry by reading a new key", async () => {
+    const kv = fakeKv();
+    await kv.put("scheduled-matches", JSON.stringify([{ id: "stale" }]));
+    const matches = await getScheduledMatches({ ...ENV, CACHE: kv });
+    expect(matches.map((m) => m.id)).not.toContain("stale");
+  });
+
   it("stretches the TTL only when BOTH webhook settings are present", () => {
     expect(rawReadTtl({}, 600_000)).toBe(600_000);
     // The half-configured states are the dangerous ones, and they are not
