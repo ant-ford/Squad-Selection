@@ -35,8 +35,9 @@ export function detectSameDayConflicts(fixtures: UpcomingFixture[]): SameDayConf
   return out;
 }
 
-export function playUpWatchLabel(count: number): { label: string; severity: 'warning' | 'critical' } {
-  if (count >= 4) return { label: 'Registration required', severity: 'critical' };
-  if (count === 3) return { label: 'Next appearance triggers re-registration', severity: 'critical' };
+/** `allowance` is the player's season play-up allowance (3, or 8 for a U21). */
+export function playUpWatchLabel(count: number, allowance = 3): { label: string; severity: 'warning' | 'critical' } {
+  if (count > allowance) return { label: 'Registration required', severity: 'critical' };
+  if (count === allowance) return { label: 'Next appearance triggers re-registration', severity: 'critical' };
   return { label: 'Approaching play-up limit', severity: 'warning' };
 }

@@ -226,7 +226,94 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   return { match: matchInfo, players };
 }
 
-export async function syncSquad(env: Env, matchId: string, targetPlayerIds: string[], actingEmail?: string, side?: MatchSide) {
+/** A same-day lower-team selection that a higher team's pick replaced. */
+export interface DisplacedSelection {
+  playerId: string;
+  playerName: string;
+  team: string;
+  matchId: string;
+}
+
+/**
+ * Bye-Law 7.1 (Sept 2026): nobody plays for more than one team on a match
+ * day, U21s included. When a higher team picks a player that a same-day
+ * lower team has already selected, the higher team wins (spec §7.3): the
+ * player is taken out of the lower squad. The opposite direction never gets
+ * this far - the engine blocks a lower team from picking someone a higher
+ * team has selected (Selected for [Team] on same day).
+ *
+ * Which lower squads to look at comes from the evaluation context's season
+ * index, which can be a few seconds behind. Each affected match is re-read
+ * fresh before it is written, so nothing is removed that is not really
+ * there; a lower selection made in the last few seconds on another isolate
+ * can be missed, and then shows up as the double-booked chip as before.
+ *
+ * A lower match already marked Played is left alone: that appearance
+ * happened, and rewriting its squad would not undo it.
+ */
+async function releaseFromLowerSameDaySquads(
+  env: Env,
+  ctx: EvaluationContext,
+  targetTeam: string,
+  playerIds: string[],
+  rankMap: Record<string, number>,
+  playersById: Map<string, Player>,
+): Promise<DisplacedSelection[]> {
+  const targetRank = rankMap[targetTeam] ?? UNRANKED_TEAM_RANK;
+  const byMatch = new Map<string, { team: string; playerIds: Set<string> }[]>();
+  for (const fixture of ctx.sameDayFixtures) {
+    if ((rankMap[fixture.teamName] ?? UNRANKED_TEAM_RANK) <= targetRank) continue;
+    const key = `${fixture.matchId}:${fixture.teamName}`;
+    const ids = playerIds.filter((id) => ctx.selectionsByPlayer.get(id)?.has(key));
+    if (ids.length === 0) continue;
+    const list = byMatch.get(fixture.matchId) ?? [];
+    list.push({ team: fixture.teamName, playerIds: new Set(ids) });
+    byMatch.set(fixture.matchId, list);
+  }
+
+  const displaced: DisplacedSelection[] = [];
+  for (const [lowerMatchId, teams] of byMatch) {
+    const record = await airtableFindById(env, TABLES.match, lowerMatchId);
+    if (!record) continue;
+    const lower = mapMatch(record);
+    if (lower.matchStatus === "Played") continue;
+    const updates: Record<string, string[]> = {};
+    for (const { team, playerIds: ids } of teams) {
+      const sides: [string | undefined, string, string[] | undefined][] = [
+        [lower.homeTeam, MATCHES_FIELDS.selectedPlayersHome, lower.selectedPlayersHome],
+        [lower.awayTeam, MATCHES_FIELDS.selectedPlayersAway, lower.selectedPlayersAway],
+      ];
+      for (const [sideTeam, field, current] of sides) {
+        if (sideTeam !== team) continue;
+        const removed = (current ?? []).filter((id) => ids.has(id));
+        if (removed.length === 0) continue;
+        updates[field] = (current ?? []).filter((id) => !ids.has(id));
+        for (const id of removed) {
+          const p = playersById.get(id);
+          displaced.push({
+            playerId: id,
+            playerName: [p?.preferredName, p?.surname].filter(Boolean).join(" ") || p?.givenNames || "Player",
+            team,
+            matchId: lowerMatchId,
+          });
+        }
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      await airtableUpdate(env, TABLES.match, lowerMatchId, updates);
+      invalidateCache(`match:${lowerMatchId}`);
+    }
+  }
+  return displaced;
+}
+
+export async function syncSquad(
+  env: Env,
+  matchId: string,
+  targetPlayerIds: string[],
+  actingEmail?: string,
+  side?: MatchSide,
+): Promise<{ displaced: DisplacedSelection[] }> {
   if (!Array.isArray(targetPlayerIds)) throw new HttpError("selectedIds must be an array", 400);
   // WRITE PATH: always read the record fresh — never from the 30s cache —
   // so the derby-safety merge below operates on the current opposite side.
@@ -240,7 +327,10 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
     // ── Server-side eligibility revalidation (INV-003) ──────────────────
   const currentSelectedBefore = getSelectedPlayerIds(match, ref.teamRankMap, side);
   const newlyAddedIds = cleanIds.filter((id) => !currentSelectedBefore.includes(id));
-  
+  // Set when newly added players pass revalidation; the same-day release
+  // below runs only after this squad has been written.
+  let release: { ctx: EvaluationContext; hkfcTeam: string; playersById: Map<string, Player> } | null = null;
+
   if (newlyAddedIds.length > 0) {
     const teamMap = new Map<string, Team>(ref.teams.map((t) => [t.teamName || "", t]));
     const hkfcTeam = hkfcTeamName(match, ref.teamRankMap, side);
@@ -264,6 +354,8 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
     if (violations.length > 0) {
       throw new HttpError(`Selection rejected — ineligible player(s): ${violations.join("; ")}`, 422);
     }
+
+    release = { ctx, hkfcTeam, playersById };
   }
 
   // Derby safety: ensure a player isn't selected for BOTH sides of the same match
@@ -275,10 +367,23 @@ export async function syncSquad(env: Env, matchId: string, targetPlayerIds: stri
   }
   await airtableUpdate(env, TABLES.match, matchId, updates);
 
+  // Higher team priority (Bye-Law 7.1 / spec §7.3). After the write above,
+  // so a failed save never leaves a player removed from both squads.
+  let displaced: DisplacedSelection[] = [];
+  if (release) {
+    displaced = await releaseFromLowerSameDaySquads(
+      env, release.ctx, release.hkfcTeam, newlyAddedIds, ref.teamRankMap, release.playersById,
+    );
+    for (const d of displaced) {
+      console.log(`[Same-Day Audit] action=release playerId=${d.playerId} from=${d.team} matchId=${d.matchId} for=${release.hkfcTeam} forMatchId=${matchId} actor=${actingEmail || "unknown"}`);
+    }
+  }
+
   // Invalidation fan-out (Invariant #11): a selection change can affect
   // same-day eligibility for OTHER matches too, so this is a coarse wipe
   // rather than a match-by-match computation.
   await invalidateSelectionCaches(env, matchId, match.season || "");
+  return { displaced };
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {

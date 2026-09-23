@@ -2,13 +2,16 @@ import type { Env } from "./env";
 import { getReferenceData } from "./reference";
 import { getSeasonContext, currentSeason } from "./seasonContext";
 import { getRankingEvents } from "./rankingEvents";
-import { isQualifyingPlayUpCard } from "./playUp";
+import { isQualifyingPlayUpCard, playUpAllowance } from "./playUp";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 
 /**
- * Play-Up Watch: players with 2+ adjusted play-up appearances this season.
- * 2 = approaching the limit (warning)
- * 3 = next appearance triggers re-registration (critical)
+ * Play-Up Watch: players within one appearance of their play-up allowance
+ * this season (Bye-Law 7.2(b): 3 for most players, 8 for U21s).
+ * allowance - 1 = approaching the limit (warning)
+ * allowance     = next appearance triggers re-registration (critical)
+ * Each row carries its allowance so the client labels a U21 on seven the
+ * same way it labels anyone else on two.
  * Purely informational — no positional recommendations are made here.
  * Uses the same counting rules as the eligibility engine
  * (Play Up? = true, Goalkeeper excluded, current season only).
@@ -17,24 +20,27 @@ export async function getPlayUpWatch(env: Env) {
   const ref = await getReferenceData(env);
   const season = currentSeason();
   const ctx = await getSeasonContext(env, season);
-  const watch: { id: string; name: string; registeredTeam: string; playUpCount: number }[] = [];
+  const watch: { id: string; name: string; registeredTeam: string; playUpCount: number; playUpAllowance: number }[] = [];
   
   for (const p of ref.players) {
     if (!p.active) continue;
     const cards = ctx.matchCardsByPlayer.get(p.id) ?? [];
     const count = cards.filter((mc) => isQualifyingPlayUpCard(mc, season, ctx.matchesById)).length;
-    if (count >= 2) {
+    const allowance = playUpAllowance(p);
+    if (count >= allowance - 1) {
       watch.push({
         id: p.id,
         name: p.preferredName || p.givenNames || "Player",
         // Display value (optics); the count uses the true Registered Team.
         registeredTeam: selectedDisplayTeam(p),
         playUpCount: count,
+        playUpAllowance: allowance,
       });
     }
   }
   
-  watch.sort((a, b) => b.playUpCount - a.playUpCount);
+  // Closest to (or furthest past) their own allowance first.
+  watch.sort((a, b) => (b.playUpCount - b.playUpAllowance) - (a.playUpCount - a.playUpAllowance));
   return { season, watch: watch.slice(0, 10) };
 }
 

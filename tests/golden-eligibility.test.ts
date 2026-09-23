@@ -253,27 +253,34 @@ describe("Golden: every blocked reason string and rule ID", () => {
     expect(r.reason).toBe("Already played in a Cup for HKFC D this season");
     expect(r.ruleId).toBe(RULE_IDS.CROSS_CUP);
   });
-  it("U21_DOUBLE_GAME_LIMIT", () => {
-    const sameDayMatches = [
-      m({ id: "m1", homeTeam: "HKFC B" }), m({ id: "m2", homeTeam: "HKFC D" }), m({ id: "m3", homeTeam: "HKFC E" }),
-    ];
-    const allSelections = [
-      sel({ player: ["u1"], match: ["m1"] }), sel({ player: ["u1"], match: ["m2"] }),
-      sel({ player: ["u2"], match: ["m1"] }), sel({ player: ["u2"], match: ["m3"] }),
-      sel({ player: ["u3"], match: ["m1"] }), sel({ player: ["u3"], match: ["m2"] }),
-    ];
-    const playersById = new Map([
-      ["u1", p({ id: "u1", u21Eligible: true, registeredTeam: "HKFC D" })],
-      ["u2", p({ id: "u2", u21Eligible: true, registeredTeam: "HKFC E" })],
-      ["u3", p({ id: "u3", u21Eligible: true, registeredTeam: "HKFC D" })],
-    ]);
-    const r = evaluatePlayerEligibility(
-      p({ u21Eligible: true, registeredTeam: "HKFC E" }),
-      m({ id: "m1", homeTeam: "HKFC B" }),
-      ctx({ sameDayMatches, allSelections, playersById }),
+  it("PLAYUP_LIMIT (U21: blocked only after the 9th, Bye-Law 7.2(b) Sept 2026)", () => {
+    const cards = (n: number) => Array.from({ length: n }, (_, i) =>
+      mc({ id: `mc${i}`, team: "HKFC B", playerTeam: "HKFC C", playUp: true, goalkeeper: false }),
     );
-    expect(r.reason).toBe("U21 double-game limit reached");
-    expect(r.ruleId).toBe(RULE_IDS.U21_DOUBLE_GAME_LIMIT);
+    const u21 = p({ u21Eligible: true });
+    const onFour = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(4) }));
+    expect(onFour.status).not.toBe("blocked");
+    const onEight = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(8) }));
+    expect(onEight.status).not.toBe("blocked");
+    const onNine = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(9) }));
+    expect(onNine.reason).toBe("Play-up limit reached — re-registration required");
+    expect(onNine.ruleId).toBe(RULE_IDS.PLAYUP_LIMIT);
+    expect(onNine.playUpCount).toBe(9);
+  });
+  it("SAME_DAY_SELECTED applies to U21s too (Bye-Law 7.1 Sept 2026: no U21 exception)", () => {
+    const r = evaluatePlayerEligibility(
+      p({ u21Eligible: true, registeredTeam: "HKFC D" }), m({ homeTeam: "HKFC D" }),
+      ctx({
+        sameDayMatches: [m({ id: "m2", homeTeam: "HKFC B" })],
+        allSelections: [sel({ player: ["p1"], match: ["m2"] })],
+      }),
+    );
+    expect(r.reason).toBe("Selected for HKFC B on same day");
+    expect(r.ruleId).toBe(RULE_IDS.SAME_DAY_SELECTED);
+  });
+  it("the U21 double-game rule is gone", () => {
+    expect(Object.keys(RULE_IDS)).not.toContain("U21_DOUBLE_GAME_LIMIT");
+    expect(Object.keys(RULE_IDS)).not.toContain("WARN_U21_APPROACHING");
   });
 });
 
@@ -294,23 +301,17 @@ describe("Golden: every warning string and rule ID", () => {
     );
     expect(r.warnings).toContain("Visiting player early-season requirement at risk");
   });
-  it("WARN_U21_APPROACHING", () => {
-    const sameDayMatches = [m({ id: "m1", homeTeam: "HKFC B" }), m({ id: "m2", homeTeam: "HKFC D" }), m({ id: "m3", homeTeam: "HKFC E" })];
-    const allSelections = [
-      sel({ player: ["u1"], match: ["m1"] }), sel({ player: ["u1"], match: ["m2"] }),
-      sel({ player: ["u2"], match: ["m1"] }), sel({ player: ["u2"], match: ["m3"] }),
-    ];
-    const playersById = new Map([
-      ["u1", p({ id: "u1", u21Eligible: true, registeredTeam: "HKFC D" })],
-      ["u2", p({ id: "u2", u21Eligible: true, registeredTeam: "HKFC E" })],
-    ]);
-    const r = evaluatePlayerEligibility(
-      p({ u21Eligible: true, registeredTeam: "HKFC E" }),
-      m({ id: "m1", homeTeam: "HKFC B" }),
-      ctx({ sameDayMatches, allSelections, playersById }),
+  it("WARN_PLAYUP for a U21 names the larger allowance (7th / 8th)", () => {
+    const cards = (n: number) => Array.from({ length: n }, (_, i) =>
+      mc({ id: `mc${i}`, team: "HKFC B", playerTeam: "HKFC C", playUp: true }),
     );
-    expect(r.status).toBe("warning");
-    expect(r.warnings).toContain("U21 double-game limit approaching");
+    const u21 = p({ u21Eligible: true });
+    const r2 = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(2) }));
+    const r7 = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(7) }));
+    const r8 = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: cards(8) }));
+    expect(r2.warnings.some((w) => w.includes("play-up"))).toBe(false);
+    expect(r7.warnings).toContain("Seventh play-up appearance (U21 limit 8)");
+    expect(r8.warnings).toContain("Eighth play-up appearance (U21 limit 8)");
   });
   it("reason and ruleId are null when not blocked", () => {
     const r = evaluatePlayerEligibility(p(), m(), ctx());

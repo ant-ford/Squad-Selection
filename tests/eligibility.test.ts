@@ -746,35 +746,33 @@ describe("evaluatePlayerEligibility", () => {
     });
   });
 
-  // ─── Step 8: U21 Double-Game ──────────────────────────────────────
+  // ─── U21 players (Bye-Laws 7.1 / 7.2(b), Sept 2026) ─────────────────
 
-  describe("Step 8: U21 Double-Game Limits (§12.3)", () => {
-    it("skips check for non-U21 players", () => {
+  describe("U21 players (Sept 2026 bye-laws)", () => {
+    const playUps = (n: number) => Array.from({ length: n }, (_, i) =>
+      mc({ id: `mc${i}`, player: ["p1"], team: "HKFC B", playerTeam: "HKFC C", playUp: true, goalkeeper: false }),
+    );
+
+    it("gets no same-day exception: selected for a higher team blocks their own team", () => {
       const r = evaluatePlayerEligibility(
-        p({ u21Eligible: false, registeredTeam: "HKFC C" }),
-        m({ homeTeam: "HKFC B" }),
-        ctx()
+        p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC E" }),
+        m({ id: "m3", homeTeam: "HKFC E", matchDate: "2026-07-05" }),
+        ctx({
+          sameDayMatches: [m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" })],
+          allSelections: [sel({ id: "s1", player: ["p1"], match: ["m1"], selectionStatus: "Selected" })],
+        })
       );
-      expect(r.reason).not.toBe("U21 double-game limit reached");
+      expect(r.status).toBe("blocked");
+      expect(r.reason).toBe("Selected for HKFC B on same day");
     });
 
-    it("skips check when playing for registered team", () => {
-      const r = evaluatePlayerEligibility(
-        p({ u21Eligible: true, registeredTeam: "HKFC C" }),
-        m({ homeTeam: "HKFC C" }),
-        ctx()
-      );
-      expect(r.reason).not.toBe("U21 double-game limit reached");
-    });
-
-    it("blocks when 3 U21 double-game players already exist for target team", () => {
+    it("is not blocked by how many other U21s are playing twice (the old 7.6 cap is gone)", () => {
       const sameDayMatches = [
         m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
         m({ id: "m2", homeTeam: "HKFC D", matchDate: "2026-07-05" }),
         m({ id: "m3", homeTeam: "HKFC E", matchDate: "2026-07-05" }),
       ];
       const allSelections = [
-        // 3 U21 players already double-gaming for HKFC B
         sel({ id: "s1", player: ["u21a"], match: ["m1"], selectionStatus: "Selected" }),
         sel({ id: "s2", player: ["u21a"], match: ["m2"], selectionStatus: "Selected" }),
         sel({ id: "s3", player: ["u21b"], match: ["m1"], selectionStatus: "Selected" }),
@@ -793,29 +791,37 @@ describe("evaluatePlayerEligibility", () => {
         m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
         ctx({ sameDayMatches, allSelections, playersById })
       );
-      expect(r.status).toBe("blocked");
-      expect(r.reason).toBe("U21 double-game limit reached");
+      expect(r.status).not.toBe("blocked");
+      expect(r.warnings.join(" ")).not.toMatch(/double-game/);
     });
 
-    it("does not count U21 playing only one match (not double-gaming)", () => {
-      const sameDayMatches = [
-        m({ id: "m2", homeTeam: "HKFC D", matchDate: "2026-07-05" }),
-      ];
-      const allSelections = [
-        sel({ id: "s1", player: ["u21a"], match: ["m1"], selectionStatus: "Selected" }),
-        // u21a only selected for m1 (HKFC B), no double-game
-      ];
-      const playersById = new Map([
-        ["u21a", p({ id: "u21a", u21Eligible: true, registeredTeam: "HKFC C" })],
-        ["p1", p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC E" })],
-      ]);
+    it("may play up eight times; the ninth selection above is blocked", () => {
+      const u21 = p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC C" });
+      for (const n of [4, 5, 8]) {
+        const r = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: playUps(n) }));
+        expect(r.status, `${n} play-ups`).not.toBe("blocked");
+      }
+      const r9 = evaluatePlayerEligibility(u21, m({ homeTeam: "HKFC B" }), ctx({ matchCards: playUps(9) }));
+      expect(r9.status).toBe("blocked");
+      expect(r9.reason).toBe("Play-up limit reached — re-registration required");
+    });
+
+    it("keeps the standard allowance of three when not U21", () => {
       const r = evaluatePlayerEligibility(
-        p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC E" }),
-        m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches, allSelections, playersById })
+        p({ id: "p1", u21Eligible: false, registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC B" }),
+        ctx({ matchCards: playUps(4) })
       );
-      // 0 U21 double-game players for HKFC B
-      expect(r.status).not.toBe("blocked");
+      expect(r.status).toBe("blocked");
+    });
+
+    it("still cannot move down: the larger allowance is for playing up only", () => {
+      const r = evaluatePlayerEligibility(
+        p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC B" }),
+        m({ homeTeam: "HKFC D" }),
+        ctx()
+      );
+      expect(r.reason).toBe("Higher-to-lower movement requires Committee approval");
     });
   });
 
@@ -875,31 +881,16 @@ describe("evaluatePlayerEligibility", () => {
       expect(r.warnings).not.toContain("Visiting player early-season requirement at risk");
     });
 
-    it("generates U21 double-game approaching warning at 2", () => {
-      const sameDayMatches = [
-        m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
-        m({ id: "m2", homeTeam: "HKFC D", matchDate: "2026-07-05" }),
-        m({ id: "m3", homeTeam: "HKFC E", matchDate: "2026-07-05" }),
-      ];
-      const allSelections = [
-        sel({ id: "s1", player: ["u21a"], match: ["m1"], selectionStatus: "Selected" }),
-        sel({ id: "s2", player: ["u21a"], match: ["m2"], selectionStatus: "Selected" }),
-        sel({ id: "s3", player: ["u21b"], match: ["m1"], selectionStatus: "Selected" }),
-        sel({ id: "s4", player: ["u21b"], match: ["m3"], selectionStatus: "Selected" }),
-      ];
-      const playersById = new Map([
-        ["u21a", p({ id: "u21a", u21Eligible: true, registeredTeam: "HKFC D" })],
-        ["u21b", p({ id: "u21b", u21Eligible: true, registeredTeam: "HKFC E" })],
-        ["p1", p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC E" })],
-      ]);
-      const r = evaluatePlayerEligibility(
-        p({ id: "p1", u21Eligible: true, registeredTeam: "HKFC E" }),
-        m({ id: "m1", homeTeam: "HKFC B", matchDate: "2026-07-05" }),
-        ctx({ sameDayMatches, allSelections, playersById })
+    it("gives a U21 on two or three play-ups no play-up warning (allowance is 8)", () => {
+      const matchCards = [1, 2, 3].map((i) =>
+        mc({ id: `mc${i}`, player: ["p1"], team: "HKFC B", playerTeam: "HKFC C", playUp: true, goalkeeper: false }),
       );
-      // 2 U21 double-game players for HKFC B → warning
-      expect(r.status).toBe("warning");
-      expect(r.warnings).toContain("U21 double-game limit approaching");
+      const r = evaluatePlayerEligibility(
+        p({ u21Eligible: true, registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC B" }),
+        ctx({ matchCards })
+      );
+      expect(r.warnings.some((w) => w.includes("play-up"))).toBe(false);
     });
 
     it("reason is null for non-blocked results", () => {

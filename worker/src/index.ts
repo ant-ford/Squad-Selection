@@ -443,8 +443,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         selectedIds: string[];
         side?: "home" | "away";
       };
-      await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
-      return json({ success: true }, 200, origin);
+      const { displaced } = await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
+      return json({ success: true, displaced }, 200, origin);
     }
 
     // ── Ranking ────────────────────────────────────────────────────────────

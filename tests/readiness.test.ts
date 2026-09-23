@@ -35,4 +35,11 @@ describe('playUpWatchLabel', () => {
     expect(playUpWatchLabel(3).label).toBe('Next appearance triggers re-registration');
     expect(playUpWatchLabel(4).label).toBe('Registration required');
   });
+
+  it('labels against a U21 allowance of 8', () => {
+    expect(playUpWatchLabel(7, 8).severity).toBe('warning');
+    expect(playUpWatchLabel(4, 8).severity).toBe('warning');
+    expect(playUpWatchLabel(8, 8).label).toBe('Next appearance triggers re-registration');
+    expect(playUpWatchLabel(9, 8).label).toBe('Registration required');
+  });
 });

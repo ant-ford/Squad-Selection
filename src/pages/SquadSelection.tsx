@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
 import { compareSelected, sortSquadList } from '@/lib/squadSort';
-import { POS_SHORT, initials } from '@/lib/format';
+import { POS_SHORT, initials, shortTeam } from '@/lib/format';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
@@ -472,7 +472,7 @@ export default function SquadSelection() {
     setSaving(true);
     try {
       const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
-      await apiPost('/api/squad/sync', {
+      const result = await apiPost<{ displaced?: { playerName: string; team: string }[] }>('/api/squad/sync', {
         matchId,
         selectedIds,
         side: side,
@@ -490,6 +490,16 @@ export default function SquadSelection() {
         };
       });
       toast.success('Squad synced successfully');
+      // Higher team priority (Bye-Law 7.1): anyone this squad took from a
+      // same-day lower squad has been removed from it. Say so, so the coach
+      // can let that team know.
+      const displaced = result?.displaced ?? [];
+      if (displaced.length > 0) {
+        const names = displaced.map(d => `${d.playerName} (${shortTeam(d.team)})`).join(', ');
+        toast.info(`Removed from same-day squad: ${names}. One match per day - Bye-law 7.1.`, { duration: 10_000 });
+        // The lower squads changed too; drop any of them this browser holds.
+        queryClient.invalidateQueries({ queryKey: ['playersForMatch'] });
+      }
       setPendingDeltas([]);
       setSuppressedPlayerIds(new Set());
       queryClient.invalidateQueries({ queryKey: qk });
