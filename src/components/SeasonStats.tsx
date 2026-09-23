@@ -170,10 +170,16 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
 
       <div className="mt-3 divide-y divide-border">
         <DetailRow label="Team games" value={String(stats.teamGames)} />
+        <DetailRow label="Played" hint="for the team" value={String(stats.gamesPlayedForTeam)} />
         <DetailRow
           label="Available"
           hint="not selected"
           value={String(stats.gamesAvailableNotSelected)}
+        />
+        <DetailRow
+          label="No show"
+          hint="selected, not on the match card"
+          value={String(stats.gamesNoShow)}
         />
         <DetailRow label="Unavailable" value={String(stats.gamesUnavailable)} />
         <DetailRow label="Card points" value={String(stats.cardPoints)} />
