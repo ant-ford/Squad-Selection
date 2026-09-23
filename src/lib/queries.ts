@@ -205,10 +205,11 @@ export function useRecommendations(
   position?: string,
   limit?: number,
   enabled = true,
+  includeSelected = false,
 ) {
   return useQuery({
-    queryKey: ['recommendations', matchId, side, position, limit],
-    queryFn: () => getRecommendations(matchId, side, position, limit),
+    queryKey: ['recommendations', matchId, side, position, limit, includeSelected],
+    queryFn: () => getRecommendations(matchId, side, position, limit, includeSelected),
     enabled,
     staleTime: 300_000,
   });

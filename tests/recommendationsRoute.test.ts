@@ -67,9 +67,9 @@ describe("getRecommendationsForMatch: HKFC-away fixture", () => {
     // making candidateTeamRank(4) - targetTeamRank(12) = -8 (play-down,
     // zero proximity credit) rather than the correct same-team match.
     expect(result.recommendations).toHaveLength(1);
-    // B ability (20) -> 20/24*50=41.67, neutral position 20, same-team
-    // proximity 20, full play-up headroom 10 => round(41.67+20+20+10)=92.
-    expect(result.recommendations[0].score).toBe(92);
+    // B ability (20) -> 20/24*60=50, neutral position 20, same-team
+    // proximity 10, full play-up headroom 10 => 90.
+    expect(result.recommendations[0].score).toBe(90);
   });
 
   it("throws a 400 instead of fabricating rank 12 when the HKFC team's rank is unknown", async () => {
@@ -117,11 +117,11 @@ describe("getRecommendationsForMatch: ranking basis", () => {
     const moved = result.recommendations.find((r) => r.id === "moved-up")!;
     const stayed = result.recommendations.find((r) => r.id === "stayed-down")!;
 
-    // Same team as the fixture: full proximity credit (20) and full play-up
-    // headroom (10) => round(41.67 + 20 + 20 + 10) = 92.
-    expect(moved.score).toBe(92);
-    // One rank below: proximity 20 - 1*5 = 15, headroom still 10 (no play-ups
-    // recorded) => round(41.67 + 20 + 15 + 10) = 87.
+    // Same team as the fixture: full proximity credit (10) and full play-up
+    // headroom (10) => 50 + 20 + 10 + 10 = 90.
+    expect(moved.score).toBe(90);
+    // One rank below: proximity 10 - 1*3 = 7, headroom still 10 (no play-ups
+    // recorded) => 50 + 20 + 7 + 10 = 87.
     expect(stayed.score).toBe(87);
     expect(result.recommendations[0].id).toBe("moved-up");
 

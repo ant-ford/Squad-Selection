@@ -42,7 +42,9 @@ export default function SquadSelection() {
 
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT);
+  // includeSelected: the current squad is ranked too, so a player taken out
+  // of it before saving drops back into their natural place in the list.
+  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT, true, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => {

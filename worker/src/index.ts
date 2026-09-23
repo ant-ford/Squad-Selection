@@ -200,6 +200,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           side ?? undefined,
           position,
           limitParam ? Number(limitParam) : undefined,
+          url.searchParams.get("includeSelected") === "1",
         ),
         200,
         origin,

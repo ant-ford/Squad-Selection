@@ -24,6 +24,9 @@ export async function getRecommendations(
   side?: 'home' | 'away',
   position?: string,
   limit?: number,
+  includeSelected?: boolean,
 ) {
-  return apiGet<GetRecommendationsOutput>(`/api/match/${matchId}/recommendations`, { side, position, limit });
+  return apiGet<GetRecommendationsOutput>(`/api/match/${matchId}/recommendations`, {
+    side, position, limit, includeSelected: includeSelected ? '1' : undefined,
+  });
 }

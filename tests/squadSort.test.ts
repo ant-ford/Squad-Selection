@@ -59,10 +59,22 @@ describe("sortSquadList", () => {
     expect(sorted[0].id).toBe("ranked");
   });
 
-  it("holds a just-deselected player above the unavailable despite having no rank", () => {
-    // Recommendations are computed server-side and exclude whoever was
-    // selected at the last save, so a player taken out of the squad in this
-    // session has no rank until the next sync.
+  it("puts a just-deselected player back at their rank, not below every ranked player", () => {
+    // The screen asks for the current squad to be ranked too
+    // (includeSelected), so a player taken out before saving already has a
+    // rank. On a full club list, sorting them after every ranked player put
+    // them ~150 rows down, which read as the player vanishing.
+    const pool = [
+      player({ id: "rank-2" }),
+      player({ id: "deselected" }),
+      player({ id: "rank-0" }),
+      player({ id: "rank-3" }),
+    ];
+    const ranks = new Map([["rank-0", 0], ["deselected", 1], ["rank-2", 2], ["rank-3", 3]]);
+    expect(ids(sortSquadList(pool, ranks))).toEqual(["rank-0", "deselected", "rank-2", "rank-3"]);
+  });
+
+  it("holds an unranked player above the unavailable (ranking not loaded yet)", () => {
     const pool = [
       player({ id: "unavailable", availabilityStatus: "Unavailable", playingAbility: "A+" }),
       player({ id: "deselected", playingAbility: "C" }),

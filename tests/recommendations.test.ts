@@ -140,9 +140,9 @@ describe("buildRecommendations", () => {
   it("uses the authoritative Team Rank when the candidate team resolves", () => {
     const pool = [candidate({ id: "same", playingAbility: "B", registeredTeam: "HKFC C" })];
     const result = buildRecommendations(pool, 3, { "HKFC C": 3 });
-    // B = 20 -> ability (20/24*50) + position 20 (neutral) + proximity 20 (same team) + play-up 10
-    expect(result[0].score).toBe(Math.round((20 / 24) * 50 + 20 + 20 + 10));
-    expect(result[0].score).toBe(92);
+    // B = 20 -> ability (20/24*60) + position 20 (neutral) + proximity 10 (same team) + play-up 10
+    expect(result[0].score).toBe(Math.round((20 / 24) * 60 + 20 + 10 + 10));
+    expect(result[0].score).toBe(90);
   });
 
   it("does not fabricate a team rank when the candidate team is unknown", () => {
@@ -152,9 +152,63 @@ describe("buildRecommendations", () => {
     ];
     const result = buildRecommendations(pool, 3, { "HKFC C": 3 });
     const byId = Object.fromEntries(result.map((r) => [r.id, r]));
-    // The same-team candidate keeps its 20-point proximity credit; the
+    // The same-team candidate keeps its 10-point proximity credit; the
     // unknown team is not silently treated as the target team (which would
     // have fabricated distance 0 / full proximity points).
-    expect(byId["known"].score - byId["unknown-team"].score).toBe(20);
+    expect(byId["known"].score - byId["unknown-team"].score).toBe(10);
+  });
+
+  // The HKFC F list of 27 Sep 2026: players shown in a team above ranked
+  // below much weaker F and G players, because being from above earned no
+  // proximity credit at all.
+  describe("players shown in a team above the fixture", () => {
+    const ranks = { "HKFC D": 4, "HKFC E": 5, "HKFC F": 6, "HKFC G": 7 };
+
+    it("rank on ability over weaker players of the target team and below", () => {
+      const pool = [
+        candidate({ id: "own-E-", preferredName: "Pagey", playingAbility: "E-", registeredTeam: "HKFC F" }),
+        candidate({ id: "above-D-", preferredName: "Guillaume", playingAbility: "D-", registeredTeam: "HKFC E" }),
+        candidate({ id: "above-C-", preferredName: "Boulty", playingAbility: "C-", registeredTeam: "HKFC D" }),
+        candidate({ id: "up-G+", preferredName: "Anson", playingAbility: "G+", registeredTeam: "HKFC G" }),
+      ];
+      const order = buildRecommendations(pool, 6, ranks).map((r) => r.id);
+      expect(order).toEqual(["above-C-", "above-D-", "own-E-", "up-G+"]);
+    });
+
+    it("sit just behind the target team's own player of the same grade", () => {
+      const pool = [
+        candidate({ id: "above", preferredName: "Aaron", playingAbility: "E-", registeredTeam: "HKFC E" }),
+        candidate({ id: "own", preferredName: "Zed", playingAbility: "E-", registeredTeam: "HKFC F" }),
+        candidate({ id: "own-weaker", preferredName: "Abe", playingAbility: "F", registeredTeam: "HKFC F" }),
+      ];
+      const order = buildRecommendations(pool, 6, ranks).map((r) => r.id);
+      expect(order).toEqual(["own", "above", "own-weaker"]);
+    });
+  });
+
+  describe("includeSelected", () => {
+    const pool = [
+      candidate({ id: "picked", preferredName: "Amy", selectionStatus: "Selected" }),
+      candidate({ id: "free", preferredName: "Bea" }),
+    ];
+
+    it("leaves the current squad out by default", () => {
+      expect(buildRecommendations(pool, 3, { "HKFC C": 3 }).map((r) => r.id)).toEqual(["free"]);
+    });
+
+    it("ranks the current squad too, so a player taken out keeps a place", () => {
+      const ids = buildRecommendations(pool, 3, { "HKFC C": 3 }, { includeSelected: true }).map((r) => r.id);
+      expect(ids).toEqual(["picked", "free"]);
+    });
+
+    it("still leaves out blocked and unavailable players", () => {
+      const withOthers = [
+        ...pool,
+        candidate({ id: "blocked", eligibilityStatus: "blocked", selectionStatus: "Selected" }),
+        candidate({ id: "out", availabilityStatus: "Unavailable" }),
+      ];
+      const ids = buildRecommendations(withOthers, 3, { "HKFC C": 3 }, { includeSelected: true }).map((r) => r.id);
+      expect(ids).toEqual(["picked", "free"]);
+    });
   });
 });
