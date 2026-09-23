@@ -62,17 +62,20 @@ describe("shared cache against real KV", () => {
     expect(await getShared(env, "mf:inv", async () => value)).toBe("after");
   });
 
-  it("clears a prefix using the runtime's own list()", async () => {
+  // Prefixes are cleared by writing a new generation, never by list(). This
+  // namespace is Miniflare's own, so the real prefix names are safe to use.
+  it("clears a prefix by generation against the real runtime", async () => {
     const env = { CACHE: kv };
-    await getShared(env, "mf:exceptions:2026-2027", async () => ["a"]);
-    await getShared(env, "mf:exceptions:2025-2026", async () => ["b"]);
-    await getShared(env, "mf:club-reference", async () => ["kept"]);
+    let value = "old";
+    await getShared(env, "exceptions:2026-2027", async () => [value]);
+    await getShared(env, "mf:club-reference", async () => [value]);
+    value = "new";
 
-    await invalidateShared(env, [], ["mf:exceptions:"]);
+    await invalidateShared(env, [], ["exceptions:"]);
+    invalidateAll();
 
-    expect(await kv.get("mf:exceptions:2026-2027", { type: "json" })).toBeNull();
-    expect(await kv.get("mf:exceptions:2025-2026", { type: "json" })).toBeNull();
-    expect(await kv.get("mf:club-reference", { type: "json" })).toEqual(["kept"]);
+    expect(await getShared(env, "exceptions:2026-2027", async () => [value])).toEqual(["new"]);
+    expect(await getShared(env, "mf:club-reference", async () => [value])).toEqual(["old"]);
   });
 
   it("treats a missing key as a miss, not as a cached null", async () => {

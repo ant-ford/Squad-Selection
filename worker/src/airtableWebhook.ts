@@ -24,7 +24,7 @@
  * Without both the route answers 404 and nothing here runs.
  */
 import { airtableBaseRequest } from "./airtable";
-import { invalidateCachePrefix, invalidateShared } from "./cache";
+import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
@@ -58,7 +58,7 @@ function constantTimeEqual(a: string, b: string): boolean {
  * per-match player lists, calendar feeds, the 25 s poll cache) are dropped
  * here and rebuilt from the freshly re-read raw tables.
  */
-const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: string[]; localPrefixes?: string[] }> = {
+const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPrefix[]; localPrefixes?: string[] }> = {
   [TABLES.player]: {
     keys: ["club-reference", "ranking:active", "ranking:inactive"],
     sharedPrefixes: ["player-by-email:"],
@@ -96,7 +96,7 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: string[];
 /** Drop every cache an edit to these tables can have made stale. */
 export async function invalidateForTables(env: Env, tables: Iterable<string>): Promise<void> {
   const keys = new Set<string>();
-  const sharedPrefixes = new Set<string>();
+  const sharedPrefixes = new Set<SharedPrefix>();
   for (const table of tables) {
     const rule = INVALIDATION[table];
     if (!rule) continue;
