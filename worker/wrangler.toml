@@ -56,3 +56,31 @@ AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
 # Last in the file on purpose: a TOML table header claims every key after it.
 [triggers]
 crons = ["0 3 * * *"]
+
+# ── Branch preview (.github/workflows/preview.yml) ──────────────────────
+# A separate Worker, hkfc-api-preview, deployed by hand from the Actions
+# tab so a branch can be checked in a browser before it merges. It reads the
+# production Airtable base with its own READ-ONLY token (the AIRTABLE_TOKEN
+# secret of the `preview` GitHub environment), so it cannot change club
+# data even by mistake; saving a squad through it fails, by design.
+#
+# Kept away from production on purpose:
+#   - no custom domain (routes are inherited unless overridden);
+#   - no cron (it would refresh the production Airtable webhook);
+#   - no KV cache binding, so a branch never writes entries production
+#     reads (the Worker falls back to its in-isolate cache without it);
+#   - no AIRTABLE_WEBHOOK_ID, so the webhook route answers 404;
+#   - CORS only for the local dev frontend (npm run dev:preview-api).
+# vars are not inherited by an environment, so the ones it needs are
+# restated here.
+[env.preview]
+routes = []
+
+[env.preview.vars]
+AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
+ALLOWED_ORIGIN = "http://localhost:5173"
+SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
+
+[env.preview.triggers]
+crons = []

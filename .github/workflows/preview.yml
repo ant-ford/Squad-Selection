@@ -1,0 +1,101 @@
+name: Preview API
+
+# Deploys the API from a branch to its own Worker, hkfc-api-preview, so the
+# branch can be checked in a browser before it merges: run the frontend
+# locally with `npm run dev:preview-api` and it talks to this Worker.
+#
+# Started by hand only (Actions tab -> Preview API -> Run workflow, pick the
+# branch). Never on push or pull_request: the repo is public, and this job
+# holds a Cloudflare token. That token cannot be limited to one Worker, so
+# the `preview` environment should require the owner's approval per run.
+#
+# What keeps the preview away from production is in worker/wrangler.toml
+# under [env.preview]: its own Worker name, no custom domain, no cron, no
+# shared KV cache, and CORS only for http://localhost:5173. Its Airtable
+# token is a separate, read-only one, so it cannot change club data.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    environment: preview
+    # A later run replaces an earlier one; there is only one preview Worker.
+    concurrency:
+      group: deploy-preview
+      cancel-in-progress: true
+    steps:
+      - name: Refuse main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "::error::main is deployed by CI. Pick the branch you want to preview."
+          exit 1
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      # Cheap guard: a branch that does not typecheck is not worth looking at.
+      - name: Typecheck API
+        run: npm run typecheck:worker
+
+      - name: Deploy API Worker (hkfc-api-preview)
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npx wrangler deploy --config worker/wrangler.toml --env preview | tee deploy.log
+          url=$(grep -oE 'https://hkfc-api-preview\.[a-z0-9-]+\.workers\.dev' deploy.log | head -1)
+          if [ -z "$url" ]; then
+            echo "::error::Could not find the preview URL in the deploy output."
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # Set on every run so rotating the GitHub secret is all it takes. Read
+      # from stdin, so the value never appears in the command line or log.
+      - name: Set Airtable token (read-only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+        run: printf '%s' "$AIRTABLE_TOKEN" | npx wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml --env preview
+
+      # A CORS preflight needs no sign-in and proves the two things the
+      # local frontend depends on: the Worker answers, and it accepts
+      # http://localhost:5173. Retried briefly while the deploy propagates.
+      - name: Smoke test
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            origin=$(curl -s -o /dev/null -D - -X OPTIONS -H "Origin: http://localhost:5173" \
+              "$URL/api/my-fixtures" | tr -d '\r' | awk -F': ' 'tolower($1)=="access-control-allow-origin"{print $2}')
+            if [ "$origin" = "http://localhost:5173" ]; then
+              echo "Preview API is up and accepts http://localhost:5173."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$URL did not answer the preflight for http://localhost:5173."
+          exit 1
+
+      - name: Summary
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "### Preview API deployed"
+            echo ""
+            echo "- Branch: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
+            echo "- URL: $URL"
+            echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173"
+            echo "- Airtable access is read-only: saves will fail."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -15,6 +15,7 @@ worker/.wrangler/
 .env.*
 !.env.example
 !.env.production
+!.env.preview-api
 
 # Cloudflare Worker local secrets
 .dev.vars*
