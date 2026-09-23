@@ -67,14 +67,25 @@ crons = ["0 3 * * *"]
 # Kept away from production on purpose:
 #   - no custom domain (routes are inherited unless overridden);
 #   - no cron (it would refresh the production Airtable webhook);
-#   - no KV cache binding, so a branch never writes entries production
-#     reads (the Worker falls back to its in-isolate cache without it);
+#   - its OWN KV cache namespace (hkfc-api-preview-cache), so a branch never
+#     writes entries production reads. Without one every preview request
+#     re-read the season from Airtable, which was slow and ate into the
+#     5-requests-a-second limit production shares with it;
 #   - no AIRTABLE_WEBHOOK_ID, so the webhook route answers 404;
 #   - CORS only for the local dev frontend (npm run dev:preview-api).
-# vars are not inherited by an environment, so the ones it needs are
-# restated here.
+# vars and kv_namespaces are not inherited by an environment, so the ones it
+# needs are restated here.
+#
+# The KV operation quota is per Cloudflare ACCOUNT, so this namespace shares
+# it with production. Preview a branch that includes the generation-based
+# prefix clearing (cache.ts SHARED_PREFIXES); an older branch still clears
+# prefixes with list(), and the free plan's 1,000 lists a day ran out once.
 [env.preview]
 routes = []
+
+[[env.preview.kv_namespaces]]
+binding = "CACHE"
+id = "00df7f19eb074e5ab538ea2180b91932"
 
 [env.preview.vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
