@@ -319,15 +319,6 @@ export function useUpdateAbilityConfig() {
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────
-export interface PlayUpWatchEntry {
-  id: string;
-  name: string;
-  registeredTeam: string;
-  playUpCount: number;
-  /** Season play-up allowance, Bye-law 7.2(b): 3, or 8 for a U21. */
-  playUpAllowance: number;
-}
-
 /** A persisted Section Rank change (see worker/src/rankingEvents.ts). */
 export interface RankingChange {
   id: string;
@@ -339,14 +330,6 @@ export interface RankingChange {
   newRank: number | null;
   note: string;
   at: string;
-}
-
-export function usePlayUpWatch() {
-  return useQuery({
-    queryKey: ['playUpWatch'],
-    queryFn: () => apiGet<{ season: string; watch: PlayUpWatchEntry[] }>('/api/playup-watch'),
-    staleTime: 300_000,
-  });
 }
 
 export function useRecentChanges(days = 7) {

@@ -2,39 +2,57 @@ import React from 'react';
 import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { POS_SHORT, shortTeam } from '@/lib/format';
+import { playUpAllowance } from '@shared/playUpAllowance';
 
-/**
- * The eligibility engine's warning reads "Available for HKFC X, HKFC Y on
- * same day". That exact string is pinned by the golden tests and must not
- * change, so the trim happens here, at the point of display. On a screen that
- * is already about one specific HKFC fixture, "on same day" and the club
- * prefix are both things a coach can take as read.
- */
-const SAME_DAY_SUFFIX = ' on same day';
-
+/** Engine strings are written with the club prefix; on this screen it goes without saying. */
 export function displayWarning(warning: string): string {
-  const trimmed = warning.endsWith(SAME_DAY_SUFFIX)
-    ? warning.slice(0, -SAME_DAY_SUFFIX.length)
-    : warning;
-  return shortTeam(trimmed);
+  return shortTeam(warning);
 }
 
 /**
- * Drops the per-team "Available: X" chips when the same-day warning below
- * already names those teams. Both were saying the same thing, one team per
- * chip and then all of them again in a sentence, which is what made the row
- * look cluttered. "Selected: X" chips always stay - being picked elsewhere
- * is a different fact from merely being free.
+ * Warnings the row does not show (owner request, 2026-09-23). The engine
+ * still returns them, and the golden tests still pin their exact strings -
+ * this is display only.
+ *
+ *  - "Available for X on same day": a coach assumes a player is free for the
+ *    teams above; saying so on most rows buried everything else.
+ *  - "Second / Third play-up appearance" (and the U21 wording): the play-up
+ *    count on the row is coloured instead, see playUpTone.
+ */
+export function warningsWorthShowing(warnings: string[] | undefined): string[] {
+  return (warnings ?? []).filter(
+    (w) => !w.startsWith('Available for ') && !w.includes(' play-up appearance'),
+  );
+}
+
+/**
+ * Only "Selected: X" chips are shown. Being picked elsewhere is the fact a
+ * coach must not miss; merely being available for another team is assumed.
  */
 export function conflictsWorthShowing(
   conflicts: { type: string; team: string }[] | undefined,
-  warnings: string[] | undefined,
 ): { type: string; team: string }[] {
-  const list = conflicts ?? [];
-  const sameDayWarning = (warnings ?? []).find((w) => w.startsWith('Available for '));
-  if (!sameDayWarning) return list;
-  return list.filter((c) => c.type === 'selected' || !sameDayWarning.includes(c.team));
+  return (conflicts ?? []).filter((c) => c.type === 'selected');
 }
+
+/**
+ * How the row colours its play-up count, in place of the old warning chips:
+ * amber one play-up short of the player's allowance, red at or past it. For
+ * most players that is amber at 2 and red from 3; for a U21 (allowance 8,
+ * Bye-law 7.2(b)) amber at 7 and red from 8.
+ */
+export function playUpTone(playUpCount: number, isU21: boolean | undefined): 'none' | 'amber' | 'red' {
+  const allowance = playUpAllowance({ u21Eligible: isU21 });
+  if (playUpCount >= allowance) return 'red';
+  if (playUpCount === allowance - 1) return 'amber';
+  return 'none';
+}
+
+const PLAY_UP_TONE_CLASS = {
+  none: '',
+  amber: 'font-semibold text-amber-700',
+  red: 'font-semibold text-red-700',
+} as const;
 
 /**
  * Blocked stops a coach making a pick; it must never strand one already
@@ -80,7 +98,10 @@ const PlayerRow = React.memo(function PlayerRow({
   // were hard to read in daylight, and the colour already says enough.
   const dimmed = isBlocked;
   const toggleable = canToggleSelection(isBlocked, selected);
-  const visibleConflicts = conflictsWorthShowing(player.conflicts, player.warnings);
+  const visibleConflicts = conflictsWorthShowing(player.conflicts);
+  const visibleWarnings = warningsWorthShowing(player.warnings);
+  const playUpAllowed = playUpAllowance({ u21Eligible: player.isU21 });
+  const playUpClass = PLAY_UP_TONE_CLASS[playUpTone(player.playUpCount, player.isU21)];
   const isDoubleBooked = player.selectionStatus === 'Selected'
     && (player.conflicts ?? []).some(c => c.type === 'selected');
   // A selectable player already picked by another team that day can only be
@@ -90,7 +111,7 @@ const PlayerRow = React.memo(function PlayerRow({
   // Gated like the conflicts row above it: the container carries mt-1, so
   // rendering it empty put a few pixels of dead space under every row that
   // has nothing to say - most of them - and made the list's rhythm uneven.
-  const hasReasonChips = (player.blocks ?? []).length > 0 || (player.warnings ?? []).length > 0;
+  const hasReasonChips = (player.blocks ?? []).length > 0 || visibleWarnings.length > 0;
 
   return (
     <div
@@ -115,7 +136,11 @@ const PlayerRow = React.memo(function PlayerRow({
         </div>
         <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
           <span>
-            {player.registeredTeam || '–'} · {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''} ·{' '}
+            {player.registeredTeam || '–'} ·{' '}
+            <span className={playUpClass} title={`${player.playUpCount} of ${playUpAllowed} play-ups this season`}>
+              {player.playUpCount} play-up{player.playUpCount !== 1 ? 's' : ''}
+            </span>{' '}
+            ·{' '}
             {onSetAvailability ? (
               // The status is the control: tap it to answer for the player.
               // stopPropagation because the whole row toggles selection.
@@ -163,14 +188,10 @@ const PlayerRow = React.memo(function PlayerRow({
           <div className="mt-1 flex flex-wrap gap-1.5">
             {visibleConflicts.map((c, i) => (
               <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border ${
-                c.type === 'selected' && isDoubleBooked ? 'text-red-900 bg-red-100 border-red-500 font-medium'
-                : c.type === 'selected' ? 'text-blue-900 bg-blue-50 border-blue-400'
-                : 'text-amber-900 bg-amber-50 border-amber-400'
+                isDoubleBooked ? 'text-red-900 bg-red-100 border-red-500 font-medium' : 'text-blue-900 bg-blue-50 border-blue-400'
                 }`}>
-                {c.type === 'selected' && isDoubleBooked && <AlertCircle className="h-3 w-3" />}
-                {c.type === 'selected'
-                  ? `Selected: ${shortTeam(c.team)}${movesOnPick ? ' - moves here if picked' : ''}`
-                  : `Available: ${shortTeam(c.team)}`}
+                {isDoubleBooked && <AlertCircle className="h-3 w-3" />}
+                {`Selected: ${shortTeam(c.team)}${movesOnPick ? ' - moves here if picked' : ''}`}
               </span>
             ))}
           </div>
@@ -183,7 +204,7 @@ const PlayerRow = React.memo(function PlayerRow({
                 <Ban className="h-3 w-3 shrink-0" /> {b.reason}
               </span>
             ))}
-            {(player.warnings ?? []).map((w, i) => (
+            {visibleWarnings.map((w, i) => (
               <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-900 bg-amber-50 border border-amber-400 px-1.5 py-0.5 rounded">
                 <AlertCircle className="h-3 w-3 shrink-0" /> {displayWarning(w)}
               </span>

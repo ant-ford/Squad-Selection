@@ -192,7 +192,7 @@ Squad-Selection/
 â”œâ”€â”€ src/                           # React frontend
 â”‚   â”œâ”€â”€ pages/                     # Route-level components
 â”‚   â”‚   â”œâ”€â”€ PlayerDashboard.tsx        # Player fixture/availability view
-â”‚   â”‚   â”œâ”€â”€ CoachDashboard.tsx         # Coach landing: Play-Up Watch + fixture list
+â”‚   â”‚   â”œâ”€â”€ CoachDashboard.tsx         # Coach landing: fixture list
 â”‚   â”‚   â”œâ”€â”€ FixtureList.tsx            # Browse fixtures by team (embedded in CoachDashboard)
 â”‚   â”‚   â”œâ”€â”€ SquadSelection.tsx         # Core squad building workflow
 â”‚   â”‚   â””â”€â”€ PlayerRanking.tsx          # Section ranking management
@@ -616,7 +616,7 @@ When the Airtable schema changes:
 The app **displays** a player''s team as `People."Selected Team EOS"`, falling back to `People."Selected Team SOS"`, then the true `People.Registered Team`. The Section Captain manages both fields directly in Airtable: SOS stays static for the season; EOS may be adjusted to change the optics mid-season.
 
 - **Display only.** Every business rule - eligibility (play-up limits, higher-to-lower blocks, Premier restrictions), suspensions, recommendation scoring and play-up counting - keeps using the true `People.Registered Team`.
-- The substitution happens server-side at the API response boundary (squad selection rows, ranking lists, play-up watch, player portal, recommendations), so the true registration never reaches the browser.
+- The substitution happens server-side at the API response boundary (squad selection rows, ranking lists, player portal, recommendations), so the true registration never reaches the browser.
 - `T#` / team blocks in the ranking view are grouped by the displayed team so ordering stays consistent with the optics.
 - Fixtures and selection legality are always computed against the true registration - a player displayed in a higher team still needs legitimate play-up eligibility to be selected there.
 - The player dashboard shows a **per-day, at most three fixture options** model: **My Team / Upcoming Fixture** (the fixture they are selected for, else their Selected Team EOS fixture), **Support Fixture** (their Registered Team fixture, when the Registered Team is below the selected/EOS team) and **Play-Up Opportunities** (teams immediately above the relevant team, closest first, filling the remaining places). Play-up and support candidates must pass the eligibility engine; the same-day availability rule is neutralised for this portal presentation (players plan availability here) while selection-time evaluation keeps every rule including same-day blocks.

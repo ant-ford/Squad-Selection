@@ -42,7 +42,6 @@ const mocks = vi.hoisted(() => {
     reorderRanking: vi.fn(),
     activatePlayer: vi.fn(),
     deactivatePlayer: vi.fn(),
-    getPlayUpWatch: vi.fn(),
     getRecentChanges: vi.fn(),
   };
 });
@@ -93,7 +92,6 @@ vi.mock("../worker/src/ranking", () => ({
 }));
 vi.mock("../worker/src/playerStats", () => ({ getPlayerSeasonStats: mocks.getPlayerSeasonStats }));
 vi.mock("../worker/src/dashboard", () => ({
-  getPlayUpWatch: mocks.getPlayUpWatch,
   getRecentChanges: mocks.getRecentChanges,
 }));
 
@@ -544,7 +542,6 @@ describe("read routes require authentication", () => {
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
     ["/api/recent-changes", () => mocks.getRecentChanges],
-    ["/api/playup-watch", () => mocks.getPlayUpWatch],
   ])("denies %s to a non-coach", async (path, handler) => {
     const res = await call(path);
     expect(res.status).toBe(403);
@@ -560,16 +557,19 @@ describe("read routes require authentication", () => {
     expect(mocks.getActiveRanking).toHaveBeenCalled();
   });
 
-  it("allows a coach through to recent-changes and playup-watch", async () => {
+  it("allows a coach through to recent-changes", async () => {
     mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
     mocks.getRecentChanges.mockResolvedValue({ changes: [] });
-    mocks.getPlayUpWatch.mockResolvedValue({ season: "2025-2026", watch: [] });
     const changesRes = await call("/api/recent-changes");
     expect(changesRes.status).toBe(200);
     expect(mocks.getRecentChanges).toHaveBeenCalled();
-    const watchRes = await call("/api/playup-watch");
-    expect(watchRes.status).toBe(200);
-    expect(mocks.getPlayUpWatch).toHaveBeenCalled();
+  });
+
+  // The Play-Up Watch was removed (2026-09-23); its route must not linger.
+  it("no longer serves /api/playup-watch", async () => {
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    const res = await call("/api/playup-watch");
+    expect(res.status).toBe(404);
   });
 });
 

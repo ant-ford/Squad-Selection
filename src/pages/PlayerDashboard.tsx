@@ -88,10 +88,11 @@ export default function PlayerDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  // Declared before the query that reads it: results are extra payload on a
-  // screen most players open to answer an upcoming fixture, so they are
-  // fetched only while this is on.
-  const [showPast, setShowPast] = useState(false);
+  // Declared before the query that reads it: results are fetched only while
+  // this is on. Open by default (owner request, 2026-09-23) - players want to
+  // see how the last games went. The payload is a few recent fixtures, and
+  // the played-matches read behind it is shared through KV.
+  const [showPast, setShowPast] = useState(true);
   const { data, isLoading: loading } = useMyFixtures(showPast);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
