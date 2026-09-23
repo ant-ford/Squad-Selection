@@ -2,7 +2,7 @@ import { airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, 
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
-import { getScheduledMatches } from "./fixtures";
+import { getScheduledMatches, SCHEDULED_MATCHES_KEY } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
 import { HttpError } from "./http";
 import { TABLES } from "../../shared/schema/tableNames";
@@ -54,7 +54,7 @@ async function invalidateSelectionCaches(env: Env, matchId: string, season?: str
   // These two are shared, so dropping them only in this isolate is what let
   // another one keep serving the selections this write just replaced.
   await invalidateShared(env, [
-    "scheduled-matches",
+    SCHEDULED_MATCHES_KEY,
     ...(season ? [`all-matches:${season}`] : []),
   ]);
 }

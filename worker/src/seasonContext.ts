@@ -45,12 +45,15 @@ import type {
 // ── Season-scoped fetches ───────────────────────────────────────────────
 const SEASON_READ_TTL_MS = 10 * 60 * 1000;
 
+// Always the short TTL, never the webhook-backed six hours: these records
+// carry squad selections, which the eligibility engine's same-day checks
+// read. See SCHEDULED_MATCHES_TTL_MS in fixtures.ts for why.
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
   return getShared<Match[]>(env, `all-matches:${season}`, async () => {
     const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
     const records = await airtableFindAll(env, TABLES.match, formula);
     return records.map(mapMatch);
-  }, rawReadTtl(env, SEASON_READ_TTL_MS));
+  }, SEASON_READ_TTL_MS);
 }
 
 /**
