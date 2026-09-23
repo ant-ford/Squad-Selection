@@ -1,5 +1,5 @@
 import type { CacheKv } from "./env";
-import { inBackground, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
+import { recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
 
 /**
  * How long a raw Airtable table read may be reused once a webhook announces
@@ -116,6 +116,7 @@ export function invalidateCachePrefix(prefix: string) {
 export function invalidateAll() {
   store.clear();
   pending.clear();
+  generations.clear();
 }
 
 // ── Shared cache (KV) ───────────────────────────────────────────────────
@@ -148,6 +149,84 @@ const KV_MIN_TTL_SECONDS = 60;
  */
 const SHARED_LOCAL_TTL_MS = 60 * 1000;
 
+/**
+ * The prefixes whose KV entries are cleared together, by invalidateShared.
+ *
+ * Clearing one used to mean a KV list() of every key under it, then a delete
+ * per key - and that ran on every availability answer and every Airtable
+ * webhook ping. On the free plan an account gets 1,000 list operations a
+ * day, shared by every Worker in it, and the club used them up (2026-09-23),
+ * after which the cache quietly stopped working and every request went to
+ * Airtable.
+ *
+ * Instead each prefix has a GENERATION, stored under `cache-gen:<prefix>`,
+ * and entries under the prefix are stored in KV with the generation in
+ * their key (`exceptions:2026-2027@<gen>`). Clearing the prefix writes a
+ * new generation: one put, no list, no deletes. Entries of the old
+ * generation are never read again and expire on the TTL they were written
+ * with.
+ *
+ * Only these prefixes can be cleared (invalidateShared's parameter type
+ * says so), and only keys under them pay for the generation lookup.
+ */
+export const SHARED_PREFIXES = [
+  "player-by-email:",
+  "all-matches:",
+  "played-matches:",
+  "match-cards:",
+  "exceptions:",
+] as const;
+export type SharedPrefix = (typeof SHARED_PREFIXES)[number];
+
+const GENERATION_KEY_PREFIX = "cache-gen:";
+
+/**
+ * This isolate's copy of each prefix's generation, reused for the same
+ * minute as a shared entry. Another isolate's clear therefore reaches this
+ * one within SHARED_LOCAL_TTL_MS - the same bound the old list-and-delete
+ * had, since KV itself may serve a read up to a minute old at the edge. The
+ * isolate that clears a prefix sees the new generation at once.
+ */
+const generations = new Map<SharedPrefix, { value: string; expiresAt: number }>();
+
+function sharedPrefixOf(key: string): SharedPrefix | undefined {
+  return SHARED_PREFIXES.find((prefix) => key.startsWith(prefix));
+}
+
+/**
+ * The prefix's current generation, or null when it cannot be read. A key
+ * under a prefix is never read from or written to KV without one: guessing
+ * a generation could serve an entry an invalidation had already retired.
+ */
+async function generationOf(kv: CacheKv, prefix: SharedPrefix): Promise<string | null> {
+  const now = Date.now();
+  const local = generations.get(prefix);
+  if (local && local.expiresAt > now) return local.value;
+  try {
+    const stored = await kv.get(GENERATION_KEY_PREFIX + prefix, { type: "json" });
+    // Never cleared yet: generation 0.
+    const value = typeof stored === "string" && stored ? stored : "0";
+    generations.set(prefix, { value, expiresAt: now + SHARED_LOCAL_TTL_MS });
+    return value;
+  } catch (err) {
+    console.error("KV generation read failed:", prefix, err);
+    return null;
+  }
+}
+
+/** The KV key for a shared entry, or null to skip KV for this read. */
+async function kvKeyFor(kv: CacheKv, key: string): Promise<string | null> {
+  const prefix = sharedPrefixOf(key);
+  if (!prefix) return key;
+  const generation = await generationOf(kv, prefix);
+  return generation === null ? null : `${key}@${generation}`;
+}
+
+/** Unique enough: one isolate never clears the same prefix twice in a millisecond and hits the same random suffix. */
+function newGeneration(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
 export async function getShared<T>(
   env: { CACHE?: CacheKv },
   key: string,
@@ -160,24 +239,27 @@ export async function getShared<T>(
   // Wrapped in getCached so the in-isolate hit and the in-flight de-dup both
   // still apply; only a miss reaches KV, and only a KV miss reaches Airtable.
   const { data } = await getCached<T>(key, async () => {
+    const kvKey = await kvKeyFor(kv, key);
+    if (kvKey === null) return fetcher();
+
     try {
-      const cached = (await kv.get(key, { type: "json" })) as T | null;
+      const cached = (await kv.get(kvKey, { type: "json" })) as T | null;
       if (cached !== null && cached !== undefined) {
         recordKvHit();
         return cached;
       }
     } catch (err) {
-      console.error("KV cache read failed:", key, err);
+      console.error("KV cache read failed:", kvKey, err);
     }
 
     const fresh = await fetcher();
     try {
-      await kv.put(key, JSON.stringify(fresh), {
+      await kv.put(kvKey, JSON.stringify(fresh), {
         expirationTtl: Math.max(KV_MIN_TTL_SECONDS, Math.round(ttlMs / 1000)),
       });
     } catch (err) {
       // A cache that cannot be written is still a working request.
-      console.error("KV cache write failed:", key, err);
+      console.error("KV cache write failed:", kvKey, err);
     }
     return fresh;
   }, Math.min(ttlMs, SHARED_LOCAL_TTL_MS));
@@ -194,15 +276,14 @@ export async function getShared<T>(
  * another isolate kept its own copy for the full TTL and no write could
  * reach it.
  *
- * Prefix wipes need a KV list() first, which is the slow part, so they run
- * after the response has gone out (ctx.waitUntil, via requestContext) and
- * inline only where there is no request to hand them to. The in-isolate
- * copies under the prefix are still dropped synchronously.
+ * A prefix is cleared by writing it a new generation (see SHARED_PREFIXES):
+ * one KV write, whatever the number of keys under it, and no list(). It is
+ * awaited like the named keys, because it is now as cheap as they are.
  */
 export async function invalidateShared(
   env: { CACHE?: CacheKv },
   keys: string[],
-  prefixes: string[] = [],
+  prefixes: SharedPrefix[] = [],
 ): Promise<void> {
   for (const key of keys) invalidateCache(key);
   for (const prefix of prefixes) invalidateCachePrefix(prefix);
@@ -214,17 +295,16 @@ export async function invalidateShared(
   } catch (err) {
     console.error("KV cache invalidation failed:", err);
   }
-  if (prefixes.length === 0) return;
-  await inBackground(async () => {
-    for (const prefix of prefixes) {
-      // list() pages; a prefix with more keys than one page returns would
-      // otherwise leave the tail in place.
-      let cursor: string | undefined;
-      do {
-        const page = await kv.list({ prefix, cursor });
-        await Promise.all(page.keys.map((k) => kv.delete(k.name)));
-        cursor = page.list_complete ? undefined : page.cursor;
-      } while (cursor);
+  for (const prefix of prefixes) {
+    const generation = newGeneration();
+    // This isolate moves to the new generation even if the write fails: its
+    // own next read must not be served what this write just replaced.
+    generations.set(prefix, { value: generation, expiresAt: Date.now() + SHARED_LOCAL_TTL_MS });
+    try {
+      // No TTL: five small keys that must outlive every entry they govern.
+      await kv.put(GENERATION_KEY_PREFIX + prefix, JSON.stringify(generation));
+    } catch (err) {
+      console.error("KV prefix invalidation failed:", prefix, err);
     }
-  });
+  }
 }

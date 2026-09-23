@@ -34,12 +34,6 @@ export function fakeKv(overrides: Partial<CacheKv> = {}): FakeKv {
       kv.deletes.push(key);
       store.delete(key);
     },
-    async list({ prefix }) {
-      return {
-        keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })),
-        list_complete: true as const,
-      };
-    },
     ...overrides,
   };
   return kv;
