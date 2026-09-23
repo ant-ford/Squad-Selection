@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -18,3 +21,54 @@ jobs:
         run: npm ci
       - name: Verify
         run: npm run verify
+
+  # Deploys both Workers on a merge to main. Nothing deploys from a
+  # developer machine: the Cloudflare token lives in the `production`
+  # environment, whose deployment-branch policy admits main and nothing
+  # else, so a pull request cannot reach it even by editing this file.
+  #
+  # `needs: verify` is what stops a red build reaching the club. The
+  # pull_request trigger above already ran the same checks, but a merge
+  # commit is not either parent, so it is verified on its own terms.
+  deploy:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    # One deploy at a time, and never cancel one in flight: a half-applied
+    # Worker upload is worse than a queued run.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run deploy` would build and deploy in one step, but the build
+      # has to be its own step here so a bundling failure is reported as a
+      # build failure rather than a deploy one.
+      - name: Build web bundle
+        run: npm run build
+
+      # wrangler comes from the lockfile rather than an action that fetches
+      # its own copy, so CI deploys with exactly the version developed
+      # against. It reads CLOUDFLARE_API_TOKEN from the environment, which
+      # is why no `wrangler login` is involved.
+      #
+      # CLOUDFLARE_ACCOUNT_ID is deliberately absent: wrangler resolves the
+      # account itself when the token can see exactly one. Add it as an
+      # environment secret only if a run fails asking to choose.
+      - name: Deploy web Worker (hkfc-squad-selection)
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy API Worker (hkfc-api)
+        run: npx wrangler deploy --config worker/wrangler.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
