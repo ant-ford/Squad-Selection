@@ -488,7 +488,8 @@ The `cloudflare()` Vite plugin is applied to **builds only** ([`vite.config.ts`]
 
 To check a branch in a browser without running the Worker locally, deploy it to the preview API from GitHub: **Actions → Preview API → Run workflow**, then pick the branch. That deploys `hkfc-api-preview` ([`.github/workflows/preview.yml`](.github/workflows/preview.yml)), a separate Worker kept away from production by `[env.preview]` in [`worker/wrangler.toml`](worker/wrangler.toml):
 
-- no custom domain, no cron, no shared KV cache;
+- no custom domain and no cron;
+- its own KV cache namespace (`hkfc-api-preview-cache`), never production's. KV quotas are per Cloudflare account, so preview branches that include generation-based prefix clearing ([#48](https://github.com/ant-ford/Squad-Selection/pull/48)), not older ones that still `list()`;
 - a read-only Airtable token, so saves fail rather than change club data;
 - CORS only for `http://localhost:5173`.
 
