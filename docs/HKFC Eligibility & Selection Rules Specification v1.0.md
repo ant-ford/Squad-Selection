@@ -2,9 +2,11 @@
 
 **Purpose:** Eligibility engine specification for the HKFC Squad Selection App.
 
+**Revised 2026-09-23 for the September 2026 bye-laws.** U21 players lose the same-day exemption (Bye-Law 7.1) and the double-game rule is gone; U21s get a play-up allowance of eight (7.2(b)); a player without a valid HKID is Non-Local and falls under the visiting-player rules (5.1). Bye-law clause numbers below follow the 2026 document.
+
 **Source Documents:**
 
-* HockeyHKMS Competition Bye-Laws (July 2024)
+* HockeyHKMS Competition Bye-Laws (updated 10 September 2026)
 * HKFC Operational Rules and Committee Decisions
 * HKFC Squad Selection MVP Blueprint
 * Implementation Roadmap v2
@@ -298,22 +300,25 @@ Either blocks the player; neither clears the other.
 
 # 6. Visiting Players
 
-Reference: Bye-Laws 6.1–6.6
+Reference: Bye-Laws 5.1 and 6.1–6.6
 
 ## 6.1 Definition
 
-Visiting Players are players without:
+Visiting Players are players without a valid Hong Kong Identity Card (HKID). This covers a player who has applied for one and holds only the receipt: under Bye-Law 5.1 (September 2026) such a player is a Non-Local Player and falls under the visiting-player rules, including the three-per-team registration cap.
 
-* Hong Kong Identity Card
-* Recognizance (Form 8)
-
-and are flagged:
+They are flagged:
 
 ```text
 Is Visiting Player = true
 ```
 
+HKFC interpretation (2026-09-23): a Recognizance (Form 8) does not make a player Local. Bye-Law 6.1 still names it alongside the HKID, but 5.1 is the later rule and says only a valid HKID does. The club follows 5.1.
+
+A Non-Local player may apply to be reclassified as Local once he has the HKID. Reclassification takes effect from the Committee's approval date and is not backdated, so `Is Visiting Player` is cleared on the approval date, not on the day the HKID arrives.
+
 ## 6.2 Team Restriction
+
+Reference: Bye-Law 6.3
 
 Visiting Players may only play for their registered team.
 
@@ -324,6 +329,8 @@ Reason:
 `Visiting player — fixed to registered team`
 
 ## 6.3 Cup Eligibility
+
+Reference: Bye-Law 6.4
 
 Visiting Players require:
 
@@ -351,9 +358,7 @@ Reference: Bye-Laws 7.1 and HKFC interpretation.
 
 Players may not represent more than one team on the same calendar day.
 
-Exception:
-
-U21 double-game rules.
+There are no exceptions. Since the September 2026 bye-laws this includes U21 players, who could previously play a second match for a higher team (old Bye-Law 7.6, now deleted).
 
 ## 7.2 Selection Lock (updated 2026-09-03)
 
@@ -376,7 +381,7 @@ Mere AVAILABILITY for a higher-ranked team fixture (no Unavailable exception) no
 The warning is a statement about the higher team's fixture, and is only made when it is true of that fixture (updated 2026-09-19):
 
 * the player has NOT said no to it - neither an explicit Unavailable exception for that match nor a standing availability preference that resolves to Unavailable for it (an explicit answer of any kind, including Maybe, takes precedence over a preference; a Maybe does not suppress the warning);
-* the higher team could actually select the player for it - the player would not be blocked by the Premier Division restriction (§8), the play-up rules (§9-§13), cup eligibility (§14), the visiting-player rule (§3) or the U21 double-game limit (§12.3) when evaluated against that team and that match.
+* the higher team could actually select the player for it - the player would not be blocked by the Premier Division restriction (§8), the play-up rules (§9-§13), cup eligibility (§14), or the visiting-player rule (§3) when evaluated against that team and that match.
 
 A team failing either test is simply left out of the warning; when no team remains, no warning is raised. Selection by a higher team (`Selected for [Team] on same day`) blocks regardless of the player's answer.
 
@@ -400,11 +405,20 @@ then:
 
 This reflects HKFC's hierarchy principle that higher teams take priority.
 
+Implementation (2026-09-23), in `syncSquad`:
+
+* Only players newly added to the higher squad in that save are moved. Re-saving a squad does not reach into other squads again.
+* The higher squad is written first, then the lower one, so a failed save never leaves a player in neither squad.
+* Each lower match is re-read fresh before it is changed. A lower match already marked Played is left alone.
+* The saving coach is told who was removed from which squad. There is no email or push channel, so the lower team's coach finds out in the app: the player shows as blocked with `Selected for [Team] on same day`.
+* On the selection screen, a player picked by a same-day lower team shows `Selected: [Team] - moves here if picked`.
+* Every move is logged (`[Same-Day Audit] action=release`).
+
 ---
 
 # 8. Premier Division Restrictions
 
-Reference: Bye-Law 7.4
+Reference: Bye-Law 7.5
 
 Movement between:
 
@@ -470,7 +484,7 @@ There is only one play-up count.
 
 # 11. Goalkeeper Exemption
 
-Reference: Bye-Law 7.5
+Reference: Bye-Law 7.6
 
 ## 11.1 Eligibility
 
@@ -504,53 +518,31 @@ standard play-up rules apply.
 
 ---
 
-# 12. U21 Movement Rules
+# 12. U21 Rules
 
-Reference: Bye-Law 7.6 and HKFC operational interpretation.
+Reference: Bye-Laws 7.1 and 7.2(b) (September 2026).
 
-## 12.1 Same-Day Exception
+## 12.1 No Same-Day Exception
 
-U21 players may play:
+U21 players may not play for more than one team on a match day (§7.1). The old U21 same-day exception and the cap of three U21 double-game players per team (old Bye-Law 7.6) no longer exist, and the app no longer has a double-game block or warning.
 
-* For their registered team
+## 12.2 Play-Up Allowance
 
-and
+A U21 player may play up for a higher-ranked team up to eight times in a season. The ninth play-up re-registers him to that team, and he can no longer play for a lower-ranked team without the Committee's written approval.
 
-* For any higher-ranked team
+Play-ups are counted exactly as in §10: goalkeeper appearances are excluded, cup appearances count and friendlies do not.
 
-on the same day.
+U21 status is `People.U21 Eligible`: under 21 on 1 September of the season. The bye-laws do not say what date U21 is measured from; the club follows the 1 September reference date that Bye-Law 5.3 uses for juniors (HKFC interpretation, 2026-09-23).
 
-This exemption does not permit:
+Warnings:
 
-* Two higher teams
-* Two lower teams
-* Two unrelated teams
+`Seventh play-up appearance (U21 limit 8)`
 
-## 12.2 Play-Up Limits
+`Eighth play-up appearance (U21 limit 8)`
 
-U21 players remain subject to standard play-up counting rules.
+Block after the ninth: the standard `Play-up limit reached — re-registration required`.
 
-The U21 exemption applies only to same-day participation.
-
-It does not create additional play-up allowances.
-
-## 12.3 Team Limit
-
-Maximum:
-
-Three U21 double-game players
-
-per team per day.
-
-A double-game player is a U21 player appearing in a second match on the same day.
-
-Warning:
-
-`U21 double-game limit approaching`
-
-Block:
-
-`U21 double-game limit reached`
+The larger allowance is for playing up only. Moving down is still blocked (§9.1).
 
 ---
 
@@ -560,11 +552,13 @@ Reference: Bye-Law 7.2
 
 ## 13.1 Threshold
 
-When a player records four qualifying play-up appearances above their registered team (excluding goalkeeper appearances), the player becomes unavailable for their registered team.
+When a player's qualifying play-up appearances above their registered team (excluding goalkeeper appearances) pass their allowance, the player becomes unavailable for their registered team. The allowance is three, so the fourth play-up re-registers the player; for a U21 it is eight, so the ninth does (§12.2).
 
-## 13.2 Automatic Re-registration (implemented)
+## 13.2 Automatic Re-registration (removed)
 
-The fourth qualifying play-up is an automatic registration EVENT, not a manual administrator step:
+**Removed.** The automatic re-registration service was never enabled in production and was deleted in the Phase 1 cleanup (see README, Removed Features). Re-registration is now an administrator update of `People.Registered Team`, and the fail-safe block in §13.4 is what the app enforces. The rest of this section and §13.3 describe what the removed service did and are kept only as guidance for administrators.
+
+The play-up after the allowance was an automatic registration EVENT, not a manual administrator step:
 
 - The Worker detects the 4th qualifying appearance from actual Match Cards (never from squad selections, availability or recommendations).
 - The player's `People.Registered Team` is automatically updated to the destination team (see 13.3).
@@ -589,7 +583,7 @@ Examples (Team Rank: A = 1, B = 2, C = 3, D = 4, E = 5):
 
 ## 13.4 Fail-safe Block
 
-Until the automatic registration event has been safely processed, selections for a team above the player's registered team are blocked with:
+Until an administrator has re-registered the player, selections for a team above the player's registered team are blocked with:
 
 `Play-up limit reached - re-registration required`
 
@@ -696,7 +690,6 @@ Admin data incomplete
 Suspended
 Visiting player — fixed to registered team
 Visiting player — fewer than 5 appearances for registered team
-Available for [Team] on same day
 Selected for [Team] on same day
 Higher-to-lower movement requires Committee approval
 Premier movement restriction — team has not completed 3 matches
@@ -704,7 +697,6 @@ Play-up limit reached — re-registration required
 Cup ban — ever registered to Premier Division
 Already played in a Cup for [Team] this season
 Fewer than 2 league appearances — ineligible for Cup
-U21 double-game limit reached
 ```
 
 ## Warnings
@@ -712,8 +704,10 @@ U21 double-game limit reached
 ```text
 Second play-up appearance
 Third play-up appearance
+Seventh play-up appearance (U21 limit 8)
+Eighth play-up appearance (U21 limit 8)
 Visiting player early-season requirement at risk
-U21 double-game limit approaching
+Available for [Team] on same day
 ```
 
 Applications must use these exact strings.
@@ -743,7 +737,7 @@ Must:
 2. Reject blocked players
 3. Apply higher-team priority rules
 4. Remove conflicting lower-team selections where required
-5. Generate coach notifications
+5. Tell the saving coach which lower squads lost a player (see §7.3)
 
 Client-side validation alone is not sufficient.
 
@@ -754,15 +748,15 @@ Client-side validation alone is not sufficient.
 Mandatory test coverage:
 
 * Same-day higher-team priority
-* U21 same-day exemption
-* U21 double-game limits
+* No U21 same-day exemption
+* U21 play-up allowance (8)
 * Goalkeeper exemption
 * Premier movement restrictions
 * Visiting player restrictions
 * Cross-cup eligibility
 * Cup appearance minimums
 * Play-up counts
-* Automatic re-registration logic
+* Re-registration fail-safe block
 * Data validation failures
 * Suspension enforcement
 
@@ -776,9 +770,9 @@ The following interpretations are deliberate HKFC operational decisions:
 | ------------------------- | -------------------------------------------------- |
 | Team hierarchy            | Determined by Team Rank                            |
 | Higher-team conflicts     | Higher team always takes priority                  |
-| Automatic re-registration | 4th qualifying play-up triggers an automatic registration event; destination = highest-frequency team, lowest-ranked (Team Rank) on ties |
+| Play-up allowance         | 3 play-ups (8 for U21s); further play-ups above the registered team are blocked until re-registration |
 | Goalkeeper exemption      | Only when actually playing as goalkeeper           |
-| U21 same-day exemption    | Registered team + higher team only                 |
+| U21 same-day              | No exemption (Bye-Law 7.1, September 2026)         |
 | Cup play-ups              | Count toward play-up quota                         |
 | Availability lock         | No unavailable exception = available               |
 | Coach conflict handling   | Automatic lower-team deselection with notification |
