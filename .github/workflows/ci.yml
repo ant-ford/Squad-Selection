@@ -68,6 +68,35 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
+      # wrangler reports a failed trigger deploy as "a request to the
+      # Cloudflare API ... failed" and drops the API's own error, which is
+      # not enough to act on - it cannot distinguish a permission problem
+      # from a conflicting DNS record. This asks the API the three
+      # questions that tell those apart, and prints only parsed fields:
+      # no request headers, so the token cannot reach a log that is public.
+      - name: Explain a failed deploy
+        if: failure()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          api() {
+            curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/$1"
+          }
+          err='[.errors[]? | {code, message}]'
+
+          echo "::group::Is the token valid and active?"
+          api "user/tokens/verify" | jq -c "{success, status: .result.status, errors: $err}"
+          echo "::endgroup::"
+
+          echo "::group::Can it see the eddy.global zone?"
+          api "zones?name=eddy.global" | jq -c "{success, errors: $err, zones: [.result[]? | {id, name, status, account: .account.name}]}"
+          echo "::endgroup::"
+
+          account=$(api "accounts" | jq -r '.result[0].id // empty')
+          echo "::group::Which Worker owns each custom domain?"
+          api "accounts/$account/workers/domains" | jq -c "{success, errors: $err, domains: [.result[]? | {hostname, service, environment}]}"
+          echo "::endgroup::"
+
       - name: Deploy API Worker (hkfc-api)
         run: npx wrangler deploy --config worker/wrangler.toml
         env:
