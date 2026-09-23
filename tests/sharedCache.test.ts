@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { getShared, invalidateShared, invalidateAll } from "../worker/src/cache";
 import { fakeKv } from "./helpers/kv";
 
@@ -92,16 +92,106 @@ describe("invalidation after a write", () => {
     expect(await getShared(env, "scheduled-matches", fetcher)).toBe("after");
   });
 
-  it("clears every key under a prefix", async () => {
+  it("clears every key under a prefix, and nothing outside it", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };
-    await getShared(env, "exceptions:2026-2027", async () => ["old"]);
-    await getShared(env, "exceptions:2025-2026", async () => ["old"]);
-    await getShared(env, "club-reference", async () => ["kept"]);
+    let value = "old";
+    await getShared(env, "exceptions:2026-2027", async () => [value]);
+    await getShared(env, "exceptions:2025-2026", async () => [value]);
+    await getShared(env, "club-reference", async () => [value]);
+    value = "new";
+
+    await invalidateShared(env, [], ["exceptions:"]);
+    newIsolate();
+
+    expect(await getShared(env, "exceptions:2026-2027", async () => [value])).toEqual(["new"]);
+    expect(await getShared(env, "exceptions:2025-2026", async () => [value])).toEqual(["new"]);
+    expect(await getShared(env, "club-reference", async () => [value])).toEqual(["old"]);
+  });
+});
+
+// Clearing a prefix used to be a KV list() plus a delete per key, on every
+// availability answer and every Airtable webhook ping. The free plan allows
+// 1,000 lists a day per account and the club ran out (2026-09-23).
+describe("prefix clears by generation", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("costs one write: no list, no deletes, however many keys are under it", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    for (const season of ["2024-2025", "2025-2026", "2026-2027"]) {
+      await getShared(env, `exceptions:${season}`, async () => [season]);
+    }
+    const writesBefore = kv.writes.length;
 
     await invalidateShared(env, [], ["exceptions:"]);
 
-    expect([...kv.store.keys()]).toEqual(["club-reference"]);
+    expect(kv.writes.slice(writesBefore)).toEqual(["cache-gen:exceptions:"]);
+    expect(kv.deletes).toEqual([]);
+  });
+
+  it("reads a prefix's generation at most once a minute in an isolate", async () => {
+    vi.useFakeTimers();
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    const genReads = () => kv.reads.filter((k) => k === "cache-gen:exceptions:").length;
+
+    await getShared(env, "exceptions:2026-2027", async () => ["a"], 5_000);
+    await getShared(env, "exceptions:2025-2026", async () => ["b"], 5_000);
+    expect(genReads()).toBe(1);
+
+    vi.advanceTimersByTime(61_000);
+    await getShared(env, "exceptions:2026-2027", async () => ["a"], 5_000);
+    expect(genReads()).toBe(2);
+  });
+
+  it("reaches another isolate once its copy of the generation expires", async () => {
+    vi.useFakeTimers();
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    let value = "old";
+    await getShared(env, "exceptions:2026-2027", async () => value, 5_000);
+
+    // Isolate B has read the generation; isolate A then clears the prefix.
+    // Simulated in one process: B's copy is what `generations` holds, so
+    // write the new generation straight to KV as A would have.
+    value = "new";
+    await kv.put("cache-gen:exceptions:", JSON.stringify("gen-from-A"));
+
+    vi.advanceTimersByTime(61_000);
+    expect(await getShared(env, "exceptions:2026-2027", async () => value, 5_000)).toBe("new");
+  });
+
+  it("serves the clearing isolate fresh data at once", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    let value = "old";
+    await getShared(env, "exceptions:2026-2027", async () => value);
+    value = "new";
+
+    await invalidateShared(env, [], ["exceptions:"]);
+
+    expect(await getShared(env, "exceptions:2026-2027", async () => value)).toBe("new");
+  });
+
+  it("skips KV rather than guess when the generation cannot be read", async () => {
+    const kv = fakeKv();
+    const realGet = kv.get.bind(kv);
+    kv.get = async (key, options) => {
+      if (key.startsWith("cache-gen:")) throw new Error("over quota");
+      return realGet(key, options);
+    };
+    const env = { CACHE: kv };
+
+    expect(await getShared(env, "exceptions:2026-2027", async () => "live")).toBe("live");
+    expect(kv.writes).toEqual([]);
+  });
+
+  it("leaves keys outside the prefixes without a generation lookup", async () => {
+    const kv = fakeKv();
+    await getShared({ CACHE: kv }, "club-reference", async () => "v");
+    expect(kv.reads).toEqual(["club-reference"]);
+    expect(kv.writes).toEqual(["club-reference"]);
   });
 });
 

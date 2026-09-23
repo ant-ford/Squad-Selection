@@ -189,29 +189,18 @@ describe("shared cache lifetimes", () => {
     expect(fetches).toBe(1);
   });
 
-  it("deletes named keys before returning and prefixes after the response", async () => {
+  it("clears named keys and prefixes before returning, with nothing left for after the response", async () => {
     const kv = fakeKv();
-    // A real KV list() takes a network round trip; the fake answers in a
-    // microtask, which would let the background work finish before the
-    // assertion and prove nothing.
-    const instantList = kv.list.bind(kv);
-    kv.list = async (options) => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      return instantList(options);
-    };
     await kv.put("scheduled-matches", "[]");
-    await kv.put("exceptions:2026-2027", "[]");
     const pending: Promise<unknown>[] = [];
 
     await runWithRequestContext({ stats: newRequestStats(), waitUntil: (p) => { pending.push(p); } }, () =>
       invalidateShared({ CACHE: kv }, ["scheduled-matches"], ["exceptions:"]),
     );
     expect(kv.store.has("scheduled-matches")).toBe(false);
-    expect(kv.store.has("exceptions:2026-2027")).toBe(true);
-    expect(pending.length).toBe(1);
-
-    await Promise.all(pending);
-    expect(kv.store.has("exceptions:2026-2027")).toBe(false);
+    // The prefix is one generation write, done inline: no background list().
+    expect(kv.writes).toContain("cache-gen:exceptions:");
+    expect(pending.length).toBe(0);
   });
 
   it("shares the per-request auth lookups across isolates", async () => {
@@ -298,7 +287,9 @@ describe("Airtable webhook", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ invalidated: ["Match Cards"] });
 
-    expect(kv.store.has(`match-cards:${THIS_SEASON}`)).toBe(false);
+    // Match Cards' prefix moved to a new generation (one write, no list);
+    // nothing else the ping did not touch was cleared.
+    expect(kv.writes.filter((k) => k.startsWith("cache-gen:"))).toEqual(["cache-gen:match-cards:"]);
     expect(kv.store.has("club-reference")).toBe(true);
     expect(JSON.parse(kv.store.get("airtable-webhook:cursor")!.value)).toBe(7);
     await vi.waitFor(() => expect(seen.refresh).toBe(1));

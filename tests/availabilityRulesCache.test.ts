@@ -34,12 +34,6 @@ function fakeKv(): CacheKv & { store: Map<string, string> } {
     async delete(key) {
       store.delete(key);
     },
-    async list({ prefix }) {
-      return {
-        keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })),
-        list_complete: true as const,
-      };
-    },
   };
 }
 

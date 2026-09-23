@@ -7,9 +7,8 @@ export interface CacheKv {
   get(key: string, options: { type: "json" }): Promise<unknown>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
   delete(key: string): Promise<void>;
-  list(options: { prefix: string; cursor?: string }): Promise<
-    { keys: { name: string }[] } & ({ list_complete: true } | { list_complete: false; cursor: string })
-  >;
+  // No list(): the cache never lists keys (see SHARED_PREFIXES in cache.ts).
+  // Leaving it out of this slice means a new list() call does not compile.
 }
 
 // Compile-time proof that the real binding satisfies the slice above. If
