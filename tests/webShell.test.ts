@@ -19,14 +19,22 @@ import worker from "../web-shell/index";
 
 const SHELL_HTML = "<!doctype html><html><body>app shell</body></html>";
 
-/** Stands in for the ASSETS binding, recording what the Worker asked it for. */
+/**
+ * Stands in for the ASSETS binding, recording what the Worker asked it for.
+ * Mirrors the real binding's default HTML handling, which redirects
+ * "/index.html" to "/" rather than serving it.
+ */
 function fakeAssets() {
   const requested: string[] = [];
   return {
     requested,
     binding: {
       fetch: async (request: Request) => {
-        requested.push(new URL(request.url).pathname);
+        const path = new URL(request.url).pathname;
+        requested.push(path);
+        if (path === "/index.html") {
+          return new Response(null, { status: 307, headers: { Location: "/" } });
+        }
         return new Response(SHELL_HTML, {
           status: 200,
           headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -83,25 +91,25 @@ describe("frontend Worker front door", () => {
       const res = await response;
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("app shell");
-      expect(assets.requested).toEqual(["/index.html"]);
+      expect(assets.requested).toEqual(["/"]);
     });
 
     it("serves the app shell at the root", async () => {
       const { assets, response } = call("/");
       expect((await response).status).toBe(200);
-      expect(assets.requested).toEqual(["/index.html"]);
+      expect(assets.requested).toEqual(["/"]);
     });
 
     it("serves the app shell for a match deep link", async () => {
       const { assets, response } = call("/coach/match/recABC123");
       expect((await response).status).toBe(200);
-      expect(assets.requested).toEqual(["/index.html"]);
+      expect(assets.requested).toEqual(["/"]);
     });
 
     it("does not mistake a path merely containing 'assets' for build output", async () => {
       const { assets, response } = call("/coach/assets-report");
       expect((await response).status).toBe(200);
-      expect(assets.requested).toEqual(["/index.html"]);
+      expect(assets.requested).toEqual(["/"]);
     });
   });
 
