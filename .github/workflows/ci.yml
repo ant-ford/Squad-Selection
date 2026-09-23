@@ -84,8 +84,12 @@ jobs:
           }
           err='[.errors[]? | {code, message}]'
 
-          echo "::group::Is the token valid and active?"
-          api "user/tokens/verify" | jq -c "{success, status: .result.status, errors: $err}"
+          # The id says WHICH token this is. Cloudflare shows a token's id
+          # in the URL of its edit page, so a mismatch between the token
+          # that was edited and the one the secret holds - which looks
+          # identical to a permissions problem - can be settled by eye.
+          echo "::group::Is the token valid and active, and which token is it?"
+          api "user/tokens/verify" | jq -c "{success, id: .result.id, status: .result.status, errors: $err}"
           echo "::endgroup::"
 
           echo "::group::Can it see the eddy.global zone?"
