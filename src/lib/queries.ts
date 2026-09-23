@@ -318,7 +318,14 @@ export function useUpdateAbilityConfig() {
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────
-export interface PlayUpWatchEntry { id: string; name: string; registeredTeam: string; playUpCount: number }
+export interface PlayUpWatchEntry {
+  id: string;
+  name: string;
+  registeredTeam: string;
+  playUpCount: number;
+  /** Season play-up allowance, Bye-law 7.2(b): 3, or 8 for a U21. */
+  playUpAllowance: number;
+}
 
 /** A persisted Section Rank change (see worker/src/rankingEvents.ts). */
 export interface RankingChange {

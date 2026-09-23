@@ -1,5 +1,5 @@
 import { linkId } from "./airtable";
-import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
+import { isFriendly, isQualifyingPlayUpCard, playUpAllowance } from "./playUp";
 import { hkfcSides } from "./match";
 import { UNRANKED_TEAM_RANK } from "./reference";
 import type { CardSuspensionState } from "./suspension";
@@ -22,11 +22,9 @@ export const RULE_IDS = {
   CUP_BAN_PREMIER: "CUP_BAN_PREMIER",
   CUP_MIN_LEAGUE_APPEARANCES: "CUP_MIN_LEAGUE_APPEARANCES",
   CROSS_CUP: "CROSS_CUP",
-  U21_DOUBLE_GAME_LIMIT: "U21_DOUBLE_GAME_LIMIT",
   WARN_PLAYUP_SECOND: "WARN_PLAYUP_SECOND",
   WARN_PLAYUP_THIRD: "WARN_PLAYUP_THIRD",
   WARN_VISITING_EARLY_SEASON: "WARN_VISITING_EARLY_SEASON",
-  WARN_U21_APPROACHING: "WARN_U21_APPROACHING",
 } as const;
 
 export interface EligibilityResult {
@@ -295,7 +293,7 @@ function checkSameDayMovement(
  * same-day fixture?
  *
  * Runs the blocking steps that describe the player against THAT team and
- * THAT match (§3, §8, §9-§14, §12.3), reusing the rule functions rather than
+ * THAT match (§3, §8, §9-§14), reusing the rule functions rather than
  * restating them. Steps 1 and 2 are omitted on purpose: admin data and
  * suspension have already been evaluated for the fixture in hand, and both
  * block before this step is reached. The same-day step itself is not
@@ -317,7 +315,6 @@ function wouldBeBlockedFor(
   const { isPremier } = teamRanks(team, rankMap, ctx.teamMap);
   if (checkPremierRestriction(player, team, isPremier, ctx, rankMap)) return true;
   if (checkPlayUpRules(player, teamRank, playerRank, ctx).block) return true;
-  if (checkU21DoubleGame(player, team, ctx)) return true;
   const otherMatch = ctx.matchesById.get(fixture.matchId);
   if (otherMatch) {
     if (checkVisitingPlayer(player, team, otherMatch, ctx)) return true;
@@ -374,18 +371,6 @@ export function computeCompletedLeagueMatchCounts(
   return counts;
 }
 
-function indexedU21DoubleGameCount(targetHkfcTeam: string, ctx: EvaluationContext): number | null {
-  const selectedForTarget = ctx.sameDaySelectionsByTeam?.get(targetHkfcTeam);
-  if (!selectedForTarget) return null;
-  let count = 0;
-  for (const playerId of selectedForTarget) {
-    const selectedPlayer = ctx.playersById.get(playerId);
-    if (!selectedPlayer?.u21Eligible || !selectedPlayer.registeredTeam || selectedPlayer.registeredTeam === targetHkfcTeam) continue;
-    if (ctx.sameDaySelectionsByTeam?.get(selectedPlayer.registeredTeam)?.has(playerId)) count++;
-  }
-  return count;
-}
-
 // ── Step 6: Play-Up Rules (§9-11, §13) ─────────────────────────────────
 function checkPlayUpRules(
   player: Player,
@@ -401,9 +386,11 @@ function checkPlayUpRules(
       playUpCount,
     };
   }
-  // §9.2 / §13 — Lower-to-higher: play-up limit at 4
+  // §9.2 / §13 — Lower-to-higher: blocked once the season's allowance has
+  // been used and the play-up after it has re-registered the player
+  // (Bye-Law 7.2(b): 3 for most players, 8 for U21s).
   if (targetRank < playerRank) {
-    if (playUpCount >= 4) {
+    if (playUpCount > playUpAllowance(player)) {
       return {
         block: { ruleId: RULE_IDS.PLAYUP_LIMIT, reason: "Play-up limit reached — re-registration required" },
         playUpCount,
@@ -456,38 +443,33 @@ function checkCupEligibility(
   return null;
 }
 
-// ── Step 8: U21 Double-Game Limits (§12.3) ─────────────────────────────
-function checkU21DoubleGame(
-  player: Player,
-  targetHkfcTeam: string,
-  ctx: EvaluationContext,
-): RuleBlock | null {
-  if (!player.u21Eligible) return null;
-  if (targetHkfcTeam === player.registeredTeam) return null;
-  const count = indexedU21DoubleGameCount(targetHkfcTeam, ctx);
-  if (count === null) return null;
-  const alreadySelected = ctx.sameDaySelectionsByTeam.get(targetHkfcTeam)?.has(player.id) ?? false;
-  return count >= 3 && !alreadySelected
-    ? { ruleId: RULE_IDS.U21_DOUBLE_GAME_LIMIT, reason: "U21 double-game limit reached" }
-    : null;
+// ── Warnings (§16) ─────────────────────────────────────────────────────
+const ORDINALS = ["", "First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth"];
+
+/**
+ * The play-up warnings fire on the last two appearances of the allowance.
+ * For most players that is the 2nd and 3rd, and the wording is exactly what
+ * it always was. A U21's warnings name the larger allowance, so a coach
+ * used to "third means stop" is not surprised by a U21 still being
+ * selectable at five or six.
+ */
+function playUpWarning(player: Player, playUpCount: number): string | null {
+  const allowance = playUpAllowance(player);
+  if (playUpCount !== allowance - 1 && playUpCount !== allowance) return null;
+  const text = `${ORDINALS[playUpCount] ?? `${playUpCount}th`} play-up appearance`;
+  return player.u21Eligible === true ? `${text} (U21 limit ${allowance})` : text;
 }
 
-// ── Warnings (§16) ─────────────────────────────────────────────────────
 function generateWarnings(
   player: Player,
   playUpCount: number,
   matchCards: MatchCard[],
   currentSeason: string,
-  targetHkfcTeam: string,
-  u21DoubleGameCount: number,
   matchesById: Map<string, Match>,
 ): string[] {
   const warnings: string[] = [];
-  if (playUpCount === 2) {
-    warnings.push("Second play-up appearance");
-  } else if (playUpCount === 3) {
-    warnings.push("Third play-up appearance");
-  }
+  const playUp = playUpWarning(player, playUpCount);
+  if (playUp) warnings.push(playUp);
   if (player.isVisitingPlayer) {
     const apps = matchCards.filter((mc) => {
       const pId = linkId(mc.player);
@@ -502,9 +484,6 @@ function generateWarnings(
     if (apps < 5) {
       warnings.push("Visiting player early-season requirement at risk");
     }
-  }
-  if (player.u21Eligible && targetHkfcTeam !== player.registeredTeam && u21DoubleGameCount >= 2) {
-    warnings.push("U21 double-game limit approaching");
   }
   return warnings;
 }
@@ -561,7 +540,10 @@ export interface EvaluationContext {
 // ── Main evaluation entry point ─────────────────────────────────────────
 /**
  * Full eligibility evaluation following the HKFC Eligibility & Selection
- * Rules Specification v1.0 §4 evaluation order (8 steps + warnings).
+ * Rules Specification v1.0 §4 evaluation order (7 steps + warnings).
+ * The U21 double-game step that used to be Step 8 was removed with the
+ * Sept 2026 bye-laws: Bye-Law 7.1 no longer exempts U21s, so nobody plays
+ * twice in a day.
  * Steps are evaluated in sequence, short-circuiting on the first block.
  * ORDER IS FROZEN — do not reorder checks (Roadmap v3 Invariant #1).
  */
@@ -636,23 +618,10 @@ export function evaluatePlayerEligibility(
     });
   }
 
-  // ── Step 8: U21 Double-Game ──
-  const u21Block = checkU21DoubleGame(player, targetHkfcTeam, ctx);
-  if (u21Block) {
-    return blockedResult(u21Block, {
-      playUpCount: playUpResult.playUpCount,
-      selectedByTeam: sameDayResult.selectedByTeam,
-      sameDayHigherTeam: sameDayResult.sameDayHigherTeam,
-    });
-  }
-
-  // ── Count U21 double-games for warning threshold ──
-  const u21DoubleGameCount = indexedU21DoubleGameCount(targetHkfcTeam, ctx) ?? 0;
-
   // ── Generate Warnings ──
   const warnings = generateWarnings(
     player, playUpResult.playUpCount, ctx.matchCards, ctx.currentSeason,
-    targetHkfcTeam, u21DoubleGameCount, ctx.matchesById,
+    ctx.matchesById,
   );
   for (const w of sameDayWarnings) {
     if (!warnings.includes(w)) warnings.push(w);

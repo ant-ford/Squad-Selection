@@ -10,6 +10,23 @@ function candidate(overrides: Partial<RecommendationCandidate> = {}): Recommenda
 }
 
 describe("buildRecommendations", () => {
+  it("measures play-up capacity against a U21's allowance of eight (Bye-Law 7.2(b))", () => {
+    // Recommending for HKFC B (rank 2) from HKFC C (rank 3): a play-up.
+    const pool = [
+      candidate({ id: "std", preferredName: "Std", playUpCount: 3 }),
+      candidate({ id: "u21", preferredName: "U21", playUpCount: 3, isU21: true }),
+    ];
+    const result = buildRecommendations(pool, 2, { "HKFC B": 2, "HKFC C": 3 });
+    const byId = Object.fromEntries(result.map((r) => [r.id, r]));
+    // Three play-ups exhausts a standard allowance but not a U21's.
+    expect(byId.u21.score).toBeGreaterThan(byId.std.score);
+    expect(byId.u21.reasons).toContain("Play-Up Capacity");
+    expect(byId.std.reasons).toContain("Play-Up Capacity");
+
+    const onFive = buildRecommendations([candidate({ playUpCount: 5, isU21: true })], 2, { "HKFC B": 2, "HKFC C": 3 });
+    expect(onFive[0].reasons).toContain("Play-Up Capacity");
+  });
+
   it("excludes blocked, unavailable, and already-selected players", () => {
     const pool = [
       candidate({ id: "a", eligibilityStatus: "blocked" }),

@@ -254,7 +254,7 @@ Squad-Selection/
 
 ### Eligibility Engine (`worker/src/eligibility.ts`)
 
-The **sole authority** on whether a player can be selected. Evaluates every active player against a fixed 8-step pipeline:
+The **sole authority** on whether a player can be selected. Evaluates every active player against a fixed 7-step pipeline, then generates warnings:
 
 1. Admin Data Validation
 2. Suspension Checks
@@ -263,7 +263,8 @@ The **sole authority** on whether a player can be selected. Evaluates every acti
 5. Premier Division Restrictions
 6. Play-Up Rules
 7. Cup Eligibility
-8. U21 Double-Game Limits â†’ Generate Warnings
+
+The U21 double-game step (formerly step 8) was removed for the September 2026 bye-laws: Bye-Law 7.1 no longer exempts U21s. Play-up limits are per player - 3, or 8 for a U21 (Bye-Law 7.2(b)) - and come from `playUpAllowance()` in `worker/src/playUp.ts`.
 
 Each blocked result includes an exact reason string (e.g., `"Suspended"`) and a source-citable rule tag. **MUST NOT reword these strings** â€” coaches and golden tests depend on them.
 
@@ -286,6 +287,8 @@ Read-only, advisory. Consumes eligibility output. Scores candidates by ability (
 ### Selection Engine (`worker/src/squad.ts`)
 
 Selections stored directly on `Matches.Selected Players Home/Away`. The `syncSquad` endpoint handles: fresh Airtable read (never cached on write path), HKFC side resolution, derby safety, Airtable update, audit logging, and cache invalidation across 6+ namespaces.
+
+**Higher team priority (Bye-Law 7.1).** When a save adds a player that a same-day lower-ranked HKFC team has already selected, `syncSquad` takes them out of that lower squad after the higher squad is written, and returns them as `displaced` so the saving coach is told. A lower match already marked Played is left alone.
 
 â†’ Background: [`Implementation_Roadmap_v4.md Â§7.5`](docs/Implementation_Roadmap_v4.md)
 

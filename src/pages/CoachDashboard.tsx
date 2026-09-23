@@ -44,7 +44,7 @@ export default function CoachDashboard() {
           </div>
           <div className="space-y-1.5">
             {watch.map((w) => {
-              const info = playUpWatchLabel(w.playUpCount);
+              const info = playUpWatchLabel(w.playUpCount, w.playUpAllowance);
               const critical = info.severity === 'critical';
               return (
                 <div
@@ -60,7 +60,7 @@ export default function CoachDashboard() {
                       critical ? 'text-red-700' : 'text-amber-700'
                     }`}
                   >
-                    {w.playUpCount} play-ups — {info.label}
+                    {w.playUpCount}/{w.playUpAllowance} play-ups — {info.label}
                   </span>
                 </div>
               );

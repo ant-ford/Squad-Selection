@@ -3,6 +3,7 @@ import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { HttpError } from "./http";
 import { ABILITY_RANK } from "../../shared/abilityRank";
+import { playUpAllowance } from "./playUp";
 
 export interface RecommendationCandidate {
   id: string;
@@ -10,6 +11,8 @@ export interface RecommendationCandidate {
   playingPosition: string;
   playingAbility: string;
   playUpCount: number;
+  /** U21s have a larger play-up allowance (Bye-Law 7.2(b), Sept 2026). */
+  isU21?: boolean;
   /**
    * The team this candidate is RANKED as - getPlayersForMatch's display
    * team (Selected Team EOS -> SOS -> Registered Team), not necessarily
@@ -108,10 +111,13 @@ export function buildRecommendations(
 
     // 2d. Play-Up Capacity Score (10 points max)
     const playUpCount = p.playUpCount ?? 0;
+    const allowance = playUpAllowance({ u21Eligible: p.isU21 });
     let playUpScore = 10;
     if (distance > 0) {
-      // Player is playing up from a lower tier squad -> reduce score based on workload
-      playUpScore = Math.max(0, 10 - playUpCount * 3);
+      // Player is playing up from a lower tier squad -> reduce score based on
+      // workload, relative to their own allowance: 3 points a play-up for
+      // most players (10, 7, 4, 1), smaller steps across a U21's eight.
+      playUpScore = Math.max(0, 10 - playUpCount * (9 / allowance));
     } else {
       // Registered in the target team or a higher team -> automatically gets full headroom points
       playUpScore = 10;
@@ -131,7 +137,7 @@ export function buildRecommendations(
     if (rankValue >= 22) reasons.push("Top Ability");
     
     // Rebranded from "Fresh Legs" to "Play-Up Capacity" and limited strictly to lower-squad players
-    if (distance > 0 && playUpCount < 4) {
+    if (distance > 0 && playUpCount <= allowance) {
       reasons.push("Play-Up Capacity");
     }
     

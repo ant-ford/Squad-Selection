@@ -83,6 +83,10 @@ const PlayerRow = React.memo(function PlayerRow({
   const visibleConflicts = conflictsWorthShowing(player.conflicts, player.warnings);
   const isDoubleBooked = player.selectionStatus === 'Selected'
     && (player.conflicts ?? []).some(c => c.type === 'selected');
+  // A selectable player already picked by another team that day can only be
+  // in a lower squad - a higher team's pick would block this row. Saving
+  // takes them out of that squad (Bye-law 7.1, higher team priority).
+  const movesOnPick = !isBlocked && !isDoubleBooked;
   // Gated like the conflicts row above it: the container carries mt-1, so
   // rendering it empty put a few pixels of dead space under every row that
   // has nothing to say - most of them - and made the list's rhythm uneven.
@@ -164,7 +168,9 @@ const PlayerRow = React.memo(function PlayerRow({
                 : 'text-amber-900 bg-amber-50 border-amber-400'
                 }`}>
                 {c.type === 'selected' && isDoubleBooked && <AlertCircle className="h-3 w-3" />}
-                {c.type === 'selected' ? `Selected: ${shortTeam(c.team)}` : `Available: ${shortTeam(c.team)}`}
+                {c.type === 'selected'
+                  ? `Selected: ${shortTeam(c.team)}${movesOnPick ? ' - moves here if picked' : ''}`
+                  : `Available: ${shortTeam(c.team)}`}
               </span>
             ))}
           </div>
