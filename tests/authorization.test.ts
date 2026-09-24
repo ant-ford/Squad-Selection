@@ -272,6 +272,22 @@ describe("requireAuthorizedUser", () => {
     await expectError(requireAuthorizedUser(authedRequest("expired.token"), ENV), 401, "UNAUTHORIZED");
   });
 
+  // The app signs a user out on 401, so only Supabase saying the token is
+  // invalid may produce one. An outage or rate limit on Supabase's side is
+  // not the user's session failing.
+  it.each([500, 502, 503, 429])(
+    "answers 503 AUTH_UNAVAILABLE, not 401, when Supabase itself returns %i",
+    async (status) => {
+      vi.mocked(fetch).mockImplementation(async () => new Response("upstream trouble", { status }));
+      await expectError(requireAuthorizedUser(authedRequest(), ENV), 503, "AUTH_UNAVAILABLE");
+    },
+  );
+
+  it("still answers 401 when Supabase says the token is forbidden", async () => {
+    vi.mocked(fetch).mockImplementation(async () => new Response("Forbidden", { status: 403 }));
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 401, "UNAUTHORIZED");
+  });
+
   it("rejects a missing Authorization header with 401 UNAUTHORIZED", async () => {
     const request = new Request("https://hkfc-api.test/api/my-profile");
 

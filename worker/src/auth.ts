@@ -154,7 +154,14 @@ async function verifySupabaseSession(request: Request, env: Env): Promise<string
       if (!resp.ok) {
         const detail = await resp.text();
         console.error("Supabase auth verification failed:", resp.status, detail);
-        throw new HttpError("Invalid or expired session", 401, "UNAUTHORIZED");
+        // Only Supabase saying "this token is not valid" is a 401. The app
+        // signs a user out on 401, so answering one for a Supabase outage or
+        // rate limit (5xx, 429) signed people out for something that was not
+        // their session's fault. Those are a 503 the app can simply retry.
+        if (resp.status === 401 || resp.status === 403) {
+          throw new HttpError("Invalid or expired session", 401, "UNAUTHORIZED");
+        }
+        throw new HttpError("Sign-in service unavailable, please try again", 503, "AUTH_UNAVAILABLE");
       }
 
       const user = (await resp.json()) as { email?: string };
