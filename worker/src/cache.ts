@@ -1,5 +1,5 @@
 import type { CacheKv } from "./env";
-import { recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
+import { currentRequestContext, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
 
 /**
  * How long a raw Airtable table read may be reused once a webhook announces
@@ -57,6 +57,39 @@ const pending = new Map<string, PendingEntry<any>>();
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * How long a request waits on a fetch another request started before giving
+ * up on it and fetching for itself.
+ *
+ * The shared fetch belongs to the request that started it. When that
+ * request's client goes away - a coach leaves the page mid-load, a timeout -
+ * Cloudflare cancels the request and the Airtable/KV calls it had in
+ * flight, and the shared promise never settles. Before this, everyone
+ * waiting on it waited forever: on 2026-09-24 one aborted load on the
+ * preview left every later request on that isolate pending for 15+ minutes
+ * while Airtable itself answered in 1.6 s.
+ *
+ * Long enough for an honest cold read (a season's tables, a 429 or two) to
+ * be shared; short enough that a stranded one costs a coach seconds.
+ */
+const SHARED_WAIT_TIMEOUT_MS = 20 * 1000;
+
+type Settled<T> = { settled: true; ok: true; value: T } | { settled: true; ok: false; error: unknown } | { settled: false };
+
+function settleWithin<T>(promise: Promise<T>, ms: number): Promise<Settled<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<Settled<T>>((resolve) => {
+    timer = setTimeout(() => resolve({ settled: false }), ms);
+  });
+  const outcome = promise.then(
+    (value): Settled<T> => ({ settled: true, ok: true, value }),
+    (error): Settled<T> => ({ settled: true, ok: false, error }),
+  );
+  return Promise.race([outcome, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 export async function getCached<T>(
   key: string,
   fetcher: () => Promise<T>,
@@ -72,9 +105,17 @@ export async function getCached<T>(
 
   const inFlight = pending.get(key);
   if (inFlight) {
-    recordCacheHit();
-    const data = (await inFlight.promise) as T;
-    return { data, fromCache: true };
+    const shared = await settleWithin(inFlight.promise as Promise<T>, SHARED_WAIT_TIMEOUT_MS);
+    if (shared.settled) {
+      recordCacheHit();
+      if (shared.ok) return { data: shared.value, fromCache: true };
+      throw shared.error;
+    }
+    // Stranded (see SHARED_WAIT_TIMEOUT_MS). Take the key over, so later
+    // callers wait on this fetch instead of the dead one; if the old one
+    // does finish, its token no longer matches and it commits nothing.
+    console.warn(`Shared fetch for ${key} still pending after ${SHARED_WAIT_TIMEOUT_MS}ms; fetching independently`);
+    if (pending.get(key) === inFlight) pending.delete(key);
   }
 
   recordCacheMiss();
@@ -93,6 +134,9 @@ export async function getCached<T>(
     }
   })();
   pending.set(key, { promise: fetchPromise, token });
+  // Other requests may be waiting on this fetch, so it must not die with
+  // this request: waitUntil lets it finish if this client goes away first.
+  currentRequestContext()?.waitUntil?.(fetchPromise.catch(() => undefined));
 
   const data = await fetchPromise;
   return { data, fromCache: false };
