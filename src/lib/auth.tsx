@@ -26,9 +26,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * inherits the previous user's cached responses - and ['myProfile'] is
  * staleTime: Infinity, so they would keep someone else's coach status until
  * the tab was reloaded.
+ *
+ * THIS DEVICE ONLY (scope: 'local'). Without a scope Supabase signs the user
+ * out everywhere - revoking the refresh token their phone relies on - so one
+ * late 401 on a laptop, or pressing Log out on a shared machine, signed them
+ * out of the app on every device (2026-09-23). Signing out here should never
+ * cost them anything anywhere else.
  */
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: 'local' });
   queryClient.clear();
   // A denial belongs to the session that earned it. Left set, the next
   // person to sign in on a shared phone would meet someone else's refusal.
