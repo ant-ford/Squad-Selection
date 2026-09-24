@@ -26,6 +26,7 @@
 import { airtableBaseRequest } from "./airtable";
 import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
+import { SCHEDULED_MATCHES_KEY } from "./fixtures";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
 
@@ -69,7 +70,7 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
     localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
   },
   [TABLES.match]: {
-    keys: ["scheduled-matches"],
+    keys: [SCHEDULED_MATCHES_KEY],
     sharedPrefixes: ["all-matches:", "played-matches:"],
     localPrefixes: ["match:", "players-for-match:", "season-index:", "calendar:", "availability:"],
   },

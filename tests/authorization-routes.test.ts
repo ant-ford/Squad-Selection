@@ -55,6 +55,7 @@ vi.mock("../worker/src/profile", () => ({ getMyProfile: mocks.getMyProfile }));
 vi.mock("../worker/src/fixtures", () => ({
   getMyFixtures: mocks.getMyFixtures,
   getUpcomingFixtures: mocks.getUpcomingFixtures,
+  SCHEDULED_MATCHES_KEY: "scheduled-matches:v2",
 }));
 vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
