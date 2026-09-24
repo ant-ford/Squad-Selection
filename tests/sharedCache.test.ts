@@ -162,6 +162,37 @@ describe("prefix clears by generation", () => {
     expect(await getShared(env, "exceptions:2026-2027", async () => value, 5_000)).toBe("new");
   });
 
+  // The bug #48 shipped with: syncSquad clears `all-matches:<season>` by
+  // name, but the KV entry is stored as `all-matches:<season>@<gen>`, so a
+  // plain delete removed nothing and other isolates kept the old selections.
+  it("clears a named key under a versioned prefix, for every other isolate", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    let value = "before";
+    await getShared(env, "all-matches:2026-2027", async () => value);
+    value = "after";
+
+    await invalidateShared(env, ["all-matches:2026-2027"]);
+    newIsolate();
+
+    expect(await getShared(env, "all-matches:2026-2027", async () => value)).toBe("after");
+    expect(kv.writes).toContain("cache-gen:all-matches:");
+    expect(kv.deletes).toEqual([]);
+  });
+
+  it("does the same for a player-by-email lookup", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv };
+    let role = "player";
+    await getShared(env, "player-by-email:cy@hkfc.com", async () => role);
+    role = "coach";
+
+    await invalidateShared(env, ["player-by-email:cy@hkfc.com"]);
+    newIsolate();
+
+    expect(await getShared(env, "player-by-email:cy@hkfc.com", async () => role)).toBe("coach");
+  });
+
   it("serves the clearing isolate fresh data at once", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };

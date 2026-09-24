@@ -279,23 +279,38 @@ export async function getShared<T>(
  * A prefix is cleared by writing it a new generation (see SHARED_PREFIXES):
  * one KV write, whatever the number of keys under it, and no list(). It is
  * awaited like the named keys, because it is now as cheap as they are.
+ *
+ * A named key that falls under a versioned prefix (`all-matches:2026-2027`,
+ * `player-by-email:...`) is cleared the same way, by moving its prefix to a
+ * new generation. Its KV entry is stored as `<key>@<generation>`, so
+ * deleting the plain key removed nothing - which is how, for a few hours on
+ * 2026-09-23, a squad save left other isolates serving the old selections.
+ * Moving the whole prefix also clears its siblings; for these keys that is
+ * at most a handful of re-reads, and it is always correct.
  */
 export async function invalidateShared(
   env: { CACHE?: CacheKv },
   keys: string[],
   prefixes: SharedPrefix[] = [],
 ): Promise<void> {
-  for (const key of keys) invalidateCache(key);
+  const plainKeys: string[] = [];
+  const bump = new Set<SharedPrefix>(prefixes);
+  for (const key of keys) {
+    invalidateCache(key);
+    const prefix = sharedPrefixOf(key);
+    if (prefix) bump.add(prefix);
+    else plainKeys.push(key);
+  }
   for (const prefix of prefixes) invalidateCachePrefix(prefix);
 
   const kv = env.CACHE;
   if (!kv) return;
   try {
-    await Promise.all(keys.map((key) => kv.delete(key)));
+    await Promise.all(plainKeys.map((key) => kv.delete(key)));
   } catch (err) {
     console.error("KV cache invalidation failed:", err);
   }
-  for (const prefix of prefixes) {
+  for (const prefix of bump) {
     const generation = newGeneration();
     // This isolate moves to the new generation even if the write fails: its
     // own next read must not be served what this write just replaced.
