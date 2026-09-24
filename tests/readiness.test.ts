@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectSameDayConflicts, playUpWatchLabel } from '../src/lib/readiness';
+import { detectSameDayConflicts } from '../src/lib/readiness';
 import type { UpcomingFixture } from '../src/api/getUpcomingFixtures';
 
 const f = (over: Partial<UpcomingFixture>): UpcomingFixture => ({
@@ -29,17 +29,3 @@ describe('detectSameDayConflicts', () => {
     expect(detectSameDayConflicts([f({ id: 'a' }), f({ id: 'b', date: '2026-08-11T19:00:00' })])).toHaveLength(0));
 });
 
-describe('playUpWatchLabel', () => {
-  it('maps counts', () => {
-    expect(playUpWatchLabel(2).severity).toBe('warning');
-    expect(playUpWatchLabel(3).label).toBe('Next appearance triggers re-registration');
-    expect(playUpWatchLabel(4).label).toBe('Registration required');
-  });
-
-  it('labels against a U21 allowance of 8', () => {
-    expect(playUpWatchLabel(7, 8).severity).toBe('warning');
-    expect(playUpWatchLabel(4, 8).severity).toBe('warning');
-    expect(playUpWatchLabel(8, 8).label).toBe('Next appearance triggers re-registration');
-    expect(playUpWatchLabel(9, 8).label).toBe('Registration required');
-  });
-});

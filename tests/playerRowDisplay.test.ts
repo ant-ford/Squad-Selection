@@ -1,66 +1,69 @@
 import { describe, it, expect } from "vitest";
-import { displayWarning, conflictsWorthShowing, canToggleSelection } from "../src/components/PlayerRow";
+import {
+  displayWarning,
+  conflictsWorthShowing,
+  warningsWorthShowing,
+  playUpTone,
+  canToggleSelection,
+} from "../src/components/PlayerRow";
 
-// The coach's player row showed the same fact twice: one "Available: X" chip
-// per team, then a sentence naming all of them. These are the two pure
-// helpers behind the de-duplication, kept here so the rule is pinned even
-// though the row itself is JSX.
-//
-// The engine's warning string is deliberately NOT changed - the golden tests
-// pin it, and invariant 2 says reason strings are added to, never reworded.
+// The coach's player row is decluttered at the point of display. The
+// engine's strings are deliberately NOT changed - the golden tests pin them,
+// and invariant 2 says reason strings are added to, never reworded.
 
-describe("player row: same-day availability shown once", () => {
-  const warning = "Available for HKFC B, HKFC C on same day";
-
-  it("trims the suffix and the club prefix a coach can take as read", () => {
-    expect(displayWarning(warning)).toBe("Available for B, C");
+describe("player row: what it leaves out (owner request, 2026-09-23)", () => {
+  it("does not say a player is available for the teams above", () => {
+    expect(warningsWorthShowing(["Available for HKFC B, HKFC C on same day"])).toEqual([]);
   });
 
-  it("drops the club prefix even where there is no suffix to trim", () => {
-    expect(displayWarning("Selected for HKFC A on same day")).toBe("Selected for A");
+  it("does not show play-up warnings; the count is coloured instead", () => {
+    expect(
+      warningsWorthShowing([
+        "Second play-up appearance",
+        "Third play-up appearance",
+        "Seventh play-up appearance (U21 limit 8)",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps every other warning", () => {
+    expect(warningsWorthShowing(["Visiting player early-season requirement at risk"])).toEqual([
+      "Visiting player early-season requirement at risk",
+    ]);
+    expect(warningsWorthShowing(undefined)).toEqual([]);
+  });
+
+  it("shows only Selected chips, never Available ones", () => {
+    const out = conflictsWorthShowing([
+      { type: "selected", team: "HKFC B" },
+      { type: "available", team: "HKFC C" },
+    ]);
+    expect(out).toEqual([{ type: "selected", team: "HKFC B" }]);
+    expect(conflictsWorthShowing(undefined)).toEqual([]);
+  });
+
+  it("drops the club prefix a coach can take as read", () => {
     expect(displayWarning("Already played in a Cup for HKFC D this season")).toBe(
       "Already played in a Cup for D this season",
     );
-  });
-
-  it("leaves every other warning exactly as the engine wrote it", () => {
-    expect(displayWarning("Play-up limit reached")).toBe("Play-up limit reached");
     expect(displayWarning("Suspended")).toBe("Suspended");
   });
+});
 
-  it("drops the availability chips the warning already names", () => {
-    const out = conflictsWorthShowing(
-      [
-        { type: "available", team: "HKFC B" },
-        { type: "available", team: "HKFC C" },
-      ],
-      [warning],
-    );
-    expect(out).toEqual([]);
+describe("player row: play-up count colour", () => {
+  it("is amber at 2 and red from 3 for most players", () => {
+    expect(playUpTone(0, false)).toBe("none");
+    expect(playUpTone(1, false)).toBe("none");
+    expect(playUpTone(2, false)).toBe("amber");
+    expect(playUpTone(3, false)).toBe("red");
+    expect(playUpTone(4, false)).toBe("red");
   });
 
-  // Being picked elsewhere is a different fact from merely being free, and
-  // it is the one a coach must not miss.
-  it("keeps Selected chips even when the same team is in the warning", () => {
-    const out = conflictsWorthShowing(
-      [
-        { type: "selected", team: "HKFC B" },
-        { type: "available", team: "HKFC C" },
-      ],
-      [warning],
-    );
-    expect(out).toEqual([{ type: "selected", team: "HKFC B" }]);
-  });
-
-  it("keeps an availability chip the warning does not mention", () => {
-    const out = conflictsWorthShowing([{ type: "available", team: "HKFC A" }], [warning]);
-    expect(out).toEqual([{ type: "available", team: "HKFC A" }]);
-  });
-
-  it("keeps every chip when there is no same-day warning at all", () => {
-    const conflicts = [{ type: "available", team: "HKFC C" }];
-    expect(conflictsWorthShowing(conflicts, [])).toEqual(conflicts);
-    expect(conflictsWorthShowing(conflicts, undefined)).toEqual(conflicts);
+  it("is amber at 7 and red from 8 for a U21 (allowance 8, Bye-law 7.2(b))", () => {
+    expect(playUpTone(2, true)).toBe("none");
+    expect(playUpTone(6, true)).toBe("none");
+    expect(playUpTone(7, true)).toBe("amber");
+    expect(playUpTone(8, true)).toBe("red");
   });
 });
 

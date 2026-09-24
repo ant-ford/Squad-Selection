@@ -44,7 +44,7 @@ import {
   deactivatePlayer,
 } from "./ranking";
 import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
-import { getPlayUpWatch, getRecentChanges } from "./dashboard";
+import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { handleAirtableWebhook, refreshAirtableWebhook, WEBHOOK_ROUTE } from "./airtableWebhook";
 import { newRequestStats, runWithRequestContext, serverTimingHeader } from "./requestContext";
@@ -386,10 +386,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         200,
         origin,
       );
-    }
-    if (method === "GET" && pathname === "/api/playup-watch") {
-      await requireCoach(request, env);
-      return json(await getPlayUpWatch(env), 200, origin);
     }
 
     // Player self-service availability: identity comes from the session, so a

@@ -91,8 +91,8 @@ const router = createBrowserRouter([
             ),
           },
           {
-            // The dashboard (index route above) already IS Play-Up Watch +
-            // fixture list - this only exists so an old bookmark/link lands
+            // The dashboard (index route above) already IS the fixture
+            // list - this only exists so an old bookmark/link lands
             // somewhere real instead of a 404.
             path: 'fixtures',
             element: <Navigate to="/coach" replace />,

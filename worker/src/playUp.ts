@@ -1,24 +1,9 @@
 import { linkId } from "../../shared/airtableValueUtils";
-import type { Match, MatchCard, Player } from "../../shared/schema/domainTypes";
+import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 
-/**
- * How many play-ups a player may make in a season (Bye-Law 7.2(b), Sept
- * 2026). The appearance after the last one allowed re-registers the player
- * to the higher team, so selection above the registered team is blocked
- * once the count passes this number.
- *
- * U21 players get eight; everyone else three. U21 status is
- * `People.U21 Eligible` (under 21 on 1 September of the season).
- *
- * There must be exactly one definition of the allowance. The eligibility
- * engine and the Play-Up Watch both read it from here.
- */
-export const STANDARD_PLAY_UP_ALLOWANCE = 3;
-export const U21_PLAY_UP_ALLOWANCE = 8;
-
-export function playUpAllowance(player: Pick<Player, "u21Eligible">): number {
-  return player.u21Eligible === true ? U21_PLAY_UP_ALLOWANCE : STANDARD_PLAY_UP_ALLOWANCE;
-}
+// The play-up allowance (Bye-Law 7.2(b): 3, or 8 for a U21) is defined once,
+// in shared/, because the squad screen needs it too.
+export { STANDARD_PLAY_UP_ALLOWANCE, U21_PLAY_UP_ALLOWANCE, playUpAllowance } from "../../shared/playUpAllowance";
 
 /**
  * Friendlies are not competitive fixtures and must never count towards any
