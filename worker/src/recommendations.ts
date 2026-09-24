@@ -41,23 +41,32 @@ export function buildRecommendations(
   pool: RecommendationCandidate[],
   targetTeamRank: number,
   teamRankMap: Record<string, number>,
-  options: { neededPosition?: string; limit?: number } = {}
+  options: { neededPosition?: string; limit?: number; includeSelected?: boolean } = {}
 ): Recommendation[] {
-  const { neededPosition, limit } = options;
+  const { neededPosition, limit, includeSelected } = options;
 
-  // 1. Exclusion pass: Remove blocked, unavailable, or already selected players
+  // 1. Exclusion pass: Remove blocked, unavailable, or already selected players.
+  //
+  // `includeSelected` keeps the selected ones. The squad screen orders its
+  // unselected rows by this ranking, and a player the coach has just taken
+  // out of the squad is still Selected on the server until the save - so
+  // without a rank of their own they sank below every ranked player, which
+  // on a full club list looked like they had vanished.
   const filtered = pool.filter((p) => {
     if (p.eligibilityStatus === "blocked") return false;
     if (p.availabilityStatus === "Unavailable") return false;
-    if (p.selectionStatus === "Selected") return false;
+    if (!includeSelected && p.selectionStatus === "Selected") return false;
     return true;
   });
 
   // 2. Score calculations
   const scored: Recommendation[] = filtered.map((p) => {
-    // 2a. Ability Score (50 points max)
+    // 2a. Ability Score (60 points max) - the dominant factor, about 2.5
+    // points per grade. It was 50, which let the proximity score below
+    // outweigh several grades: a D- shown in the team above ranked under G
+    // players playing up.
     const rankValue = ABILITY_RANK[p.playingAbility] ?? 12; // Default to E+ if missing
-    const abilityScore = (rankValue / 24) * 50;
+    const abilityScore = (rankValue / 24) * 60;
 
     // 2b. Position Fit Score (20 points max)
     let positionScore = 0;
@@ -73,7 +82,16 @@ export function buildRecommendations(
       positionScore = 20; // Neutral state: don't penalize anyone if no filter is set
     }
 
-    // 2c. Club Proximity Score (20 points max)
+    // 2c. Club Proximity Score (10 points max)
+    //
+    //   same team        10
+    //   from above        8   (shown in a higher team, eligible here)
+    //   playing up    10-3d   (d levels below the target team)
+    //
+    // A player shown above the target team used to get nothing here, which
+    // is what buried them: they are eligible (blocked players never reach
+    // this pool) and usually the strongest option. They now sit a notch
+    // behind the target team's own players, so ability decides between them.
     //
     // Scored on the candidate's DISPLAY team - Selected Team EOS -> SOS ->
     // Registered Team, which is what getPlayersForMatch puts in this field.
@@ -101,11 +119,11 @@ export function buildRecommendations(
     if (candidateTeamRank !== undefined) {
       distance = candidateTeamRank - targetTeamRank;
       if (distance === 0) {
-        teamDistanceScore = 20; // Same team context
+        teamDistanceScore = 10; // Same team context
       } else if (distance > 0) {
-        teamDistanceScore = Math.max(0, 20 - distance * 5); // Play-up penalty scaling
+        teamDistanceScore = Math.max(0, 10 - distance * 3); // Play-up penalty scaling
       } else {
-        teamDistanceScore = 0; // Play-down scenario
+        teamDistanceScore = 8; // Shown in a higher team, eligible for this one
       }
     }
 
@@ -181,7 +199,8 @@ export async function getRecommendationsForMatch(
   matchId: string,
   side?: "home" | "away",
   position?: string,
-  limit?: number
+  limit?: number,
+  includeSelected = false,
 ) {
   // Leverage existing getPlayersForMatch engine for eligibility checking
   const playerData = await getPlayersForMatch(env, matchId, side);
@@ -201,6 +220,7 @@ export async function getRecommendationsForMatch(
   const recommendations = buildRecommendations(playerData.players, targetTeamRank, teamRankMap, {
     neededPosition: position,
     limit: limit ?? 10,
+    includeSelected,
   });
 
   return {

@@ -41,10 +41,11 @@ function isPickable(p: SortablePlayer): boolean {
  * the next best pick is always the next row down.
  *
  * `recRankById` is the position of each player in the recommendations
- * response (0 = best fit). It only covers players who were unselected *on the
- * server*, so a player deselected since the last save has no rank; they keep
- * their place above the unavailable and blocked rather than dropping to the
- * bottom of the list the moment they are taken out of the squad.
+ * response (0 = best fit). The screen asks for the current squad to be ranked
+ * too, so a player deselected since the last save already has a rank and goes
+ * straight back to their natural place. A player with no rank at all (the
+ * ranking not loaded yet) sorts after the ranked ones, above the unavailable
+ * and blocked.
  */
 export function sortSquadList<T extends SortablePlayer>(
   players: T[],
