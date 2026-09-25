@@ -2,24 +2,23 @@ import { ClipboardCheck, ExternalLink } from 'lucide-react';
 import type { MyTask } from '@/api/getMyTasks';
 import { useMyTasks } from '@/lib/queries';
 
-const COPY: Record<MyTask['key'], { title: string; body: string; noLink: string }> = {
+const COPY: Record<MyTask['key'], { title: string; noLink: string }> = {
   statement: {
     title: 'Complete your Player Statement',
-    body: 'Your commitment review is open. Fill in your Commitment Form so your sponsor and the Membership Officer can finish theirs.',
     noLink: 'Use the Commitment Form link in your review email.',
   },
   waivers: {
     title: "Complete this season's Waivers & Declarations",
-    body: 'Needed once every season, from 1 July.',
     noLink: 'Ask the Membership Officer for your form link.',
   },
 };
 
 /**
- * Forms the member still owes, at the top of their player page. There is
- * no close button on purpose (owner request, 2026-09-26): each item goes
- * once the base shows the form submitted. The query rechecks when the tab
- * regains focus, so coming back from the form is usually enough.
+ * Forms the member still owes, at the top of their player page: a heading
+ * and a button per form (owner request, 2026-09-26). There is no close
+ * button on purpose: each item goes once the base shows the form
+ * submitted. The query rechecks when the tab regains focus, so coming back
+ * from the form is usually enough.
  */
 export default function MyTasksBanner() {
   const { data } = useMyTasks();
@@ -34,11 +33,12 @@ export default function MyTasksBanner() {
       {tasks.map((task) => {
         const copy = COPY[task.key];
         return (
-          <div key={task.key} className="flex items-start gap-3 p-3">
-            <ClipboardCheck className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" aria-hidden />
+          <div key={task.key} className="flex items-center gap-3 p-3">
+            <ClipboardCheck className="h-5 w-5 text-amber-600 shrink-0" aria-hidden />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">{copy.title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{task.url ? copy.body : `${copy.body} ${copy.noLink}`}</p>
+              {/* Only when there is no button to press. */}
+              {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{copy.noLink}</p>}
             </div>
             {task.url && (
               <a
