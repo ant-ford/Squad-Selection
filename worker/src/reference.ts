@@ -138,10 +138,11 @@ export interface OfficerLinks {
 export const OFFICER_LINKS_KEY = "officer-links";
 
 /**
- * The membership board (membership.ts). Declared here rather than there so
- * airtableWebhook.ts can name it without a circular import.
+ * The applicant records behind the membership board and Insights
+ * (membership.ts). Declared here rather than there so airtableWebhook.ts can
+ * name it without a circular import.
  */
-export const MEMBERSHIP_BOARD_KEY = "membership-board";
+export const MEMBERSHIP_RECORDS_KEY = "membership-records";
 
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(

@@ -27,7 +27,7 @@ import { airtableBaseRequest } from "./airtable";
 import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
 import { SCHEDULED_MATCHES_KEY } from "./fixtures";
-import { MEMBERSHIP_BOARD_KEY, OFFICER_LINKS_KEY } from "./reference";
+import { MEMBERSHIP_RECORDS_KEY, OFFICER_LINKS_KEY } from "./reference";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
 
@@ -62,7 +62,7 @@ function constantTimeEqual(a: string, b: string): boolean {
  */
 const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPrefix[]; localPrefixes?: string[] }> = {
   [TABLES.player]: {
-    keys: ["club-reference", "ranking:active", "ranking:inactive", MEMBERSHIP_BOARD_KEY],
+    keys: ["club-reference", "ranking:active", "ranking:inactive", MEMBERSHIP_RECORDS_KEY],
     sharedPrefixes: ["player-by-email:"],
     localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:"],
   },

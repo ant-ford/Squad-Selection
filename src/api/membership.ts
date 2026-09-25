@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { BoardColumn } from '@shared/membershipStages';
+import type { InsightFact, TeamSquad } from '@shared/membershipInsights';
 
 /** Mirrors worker/src/membership.ts ApplicantCard. */
 export interface ApplicantCard {
@@ -58,6 +59,17 @@ export interface NumberHolder {
   id: string;
   name: string;
   status: string;
+}
+
+export interface MembershipInsightsData {
+  facts: InsightFact[];
+  teams: TeamSquad[];
+  hasStageDates: boolean;
+  generatedAt: string;
+}
+
+export function getMembershipInsights(): Promise<MembershipInsightsData> {
+  return apiGet<MembershipInsightsData>('/api/membership/insights');
 }
 
 export function getMembershipBoard(): Promise<MembershipBoard> {

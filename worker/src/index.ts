@@ -12,7 +12,7 @@ import {
   resolveOrigin,
 } from "./http";
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
-import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getNumberHolders } from "./membership";
+import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
 import {
@@ -537,6 +537,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/membership/board") {
       await requireSection(request, env, "membership");
       return json(await getMembershipBoard(env), 200, origin);
+    }
+    if (method === "GET" && pathname === "/api/membership/insights") {
+      await requireSection(request, env, "membership");
+      return json(await getMembershipInsights(env), 200, origin);
     }
     if (method === "GET" && pathname === "/api/membership/active-members") {
       const user = await requireSection(request, env, "membership");

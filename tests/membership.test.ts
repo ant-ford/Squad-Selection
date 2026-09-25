@@ -356,3 +356,43 @@ describe("Approve", () => {
     expect(patches()).toHaveLength(0);
   });
 });
+
+describe("Insights", () => {
+  it("is for the membership section only", async () => {
+    expect((await as("charles@personal.com", "/api/membership/insights")).status).toBe(403);
+    expect((await as("pat@hkfc.com", "/api/membership/insights")).status).toBe(403);
+    expect((await as("cap@personal.com", "/api/membership/insights")).status).toBe(200);
+  });
+
+  it("sends countable facts only - no contact details, notes or attachments", async () => {
+    const res = await body(await as("olive@personal.com", "/api/membership/insights"));
+    const sam = res.facts.find((f: any) => f.name === "Sam Sponsorwait");
+    expect(sam).toEqual({
+      name: "Sam Sponsorwait",
+      stage: "3. Club Application (Signed)",
+      column: "3. Club Application (Signed)",
+      appliedOn: "2026-08-26",
+      days: 30,
+      sponsor: "Chris",
+    });
+    expect(JSON.stringify(res)).not.toMatch(/9123|dl\.airtable\.com|HKID|Bank/);
+    // Every season, not just the board's last 12 months.
+    expect(res.facts.map((f: any) => f.name)).toContain("Old Hand");
+  });
+
+  it("counts each team's Active players by position, against its matchday squad size", async () => {
+    data.Teams.push(
+      { id: "recTeamC", fields: { "Team Name": "HKFC C", "Team Rank": 3, Active: true, "Target Squad Size": 16 } },
+      { id: "recTeamD", fields: { "Team Name": "HKFC D", "Team Rank": 4, Active: true } },
+    );
+    Object.assign(data.People.find((r) => r.id === ID.player)!.fields, { "Registered Team": "HKFC D", "Selected Team EOS": "HKFC C", "Playing Position": "Goalkeeper" });
+    Object.assign(data.People.find((r) => r.id === ID.longMember)!.fields, { "Registered Team": "HKFC C", "Playing Position": "Defender" });
+    Object.assign(data.People.find((r) => r.id === ID.acceptedRecent)!.fields, { "Registered Team": "HKFC D" });
+
+    const { teams } = await body(await as("olive@personal.com", "/api/membership/insights"));
+    expect(teams).toEqual([
+      { team: "HKFC C", teamRank: 3, targetSquadSize: 16, active: 2, byPosition: { Goalkeeper: 1, Defender: 1 } },
+      { team: "HKFC D", teamRank: 4, targetSquadSize: 16, active: 1, byPosition: { "Not set": 1 } },
+    ]);
+  });
+});

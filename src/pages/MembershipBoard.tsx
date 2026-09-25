@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Search, User, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,6 +11,9 @@ import { downloadActiveMembers, type ApplicantCard as Card } from '@/api/members
 import { useMembershipBoard, useMyProfile } from '@/lib/queries';
 import { NEEDS_FIXING } from '@shared/membershipStages';
 
+// Its own chunk: an officer checking the board never downloads the charts.
+const MembershipInsights = lazy(() => import('@/components/membership/MembershipInsights'));
+
 /** Filters live in the address, so a view can be bookmarked or shared. */
 const FILTERS = [
   { key: 'type', label: 'Applicant type', of: (c: Card) => c.applicantType },
@@ -22,17 +25,18 @@ export default function MembershipBoard() {
   const navigate = useNavigate();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.sections?.includes('membership') ?? false;
-  const { data: board, isLoading, isError, refetch } = useMembershipBoard(allowed);
   const [params, setParams] = useSearchParams();
+  const tab = params.get('view') === 'insights' ? 'insights' : 'board';
+  const { data: board, isLoading, isError, refetch } = useMembershipBoard(allowed && tab === 'board');
   const [openId, setOpenId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
 
   // On a phone only one column is on screen, and the one the officer acts
-  // on (stage 6) is the sixth. The chips above the board jump straight to it.
-  // Scrolls the board itself, to the column's left edge less the gutter.
-  // scrollIntoView is unreliable inside a snapping container and can move
-  // the whole page as well.
+  // on (stage 6) is the sixth, so the chips above the board jump to a
+  // column. They scroll the board itself, to the column's left edge less the
+  // gutter: scrollIntoView is unreliable inside a snapping container and can
+  // move the whole page as well.
   const jumpTo = (column: string) => {
     const board = boardRef.current;
     const target = board?.querySelector<HTMLElement>(`[data-column="${CSS.escape(column)}"]`);
@@ -121,6 +125,35 @@ export default function MembershipBoard() {
       </AppHeader>
 
       <main className="flex-1 container mx-auto px-4 py-4">
+        <div role="tablist" aria-label="Membership views" className="flex gap-1 mb-4 border-b border-border">
+          {(['board', 'insights'] as const).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => {
+                // Each view keeps only its own settings in the address.
+                const next = new URLSearchParams();
+                if (t === 'insights') next.set('view', 'insights');
+                setParams(next, { replace: true });
+              }}
+              className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${
+                tab === t
+                  ? 'border-primary text-foreground font-medium'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t === 'board' ? 'Board' : 'Insights'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'insights' ? (
+          <Suspense fallback={<BoardColumnsSkeleton />}>
+            <MembershipInsights />
+          </Suspense>
+        ) : (
+        <>
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <label className="relative flex-1 min-w-[12rem]">
             <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -225,6 +258,8 @@ export default function MembershipBoard() {
             })}
           </div>
           </>
+        )}
+        </>
         )}
       </main>
 

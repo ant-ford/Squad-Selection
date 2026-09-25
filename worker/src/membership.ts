@@ -10,7 +10,9 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { airtableCreate, airtableFindAll, airtableUpdate, escapeFormulaValue } from "./airtable";
 import { getShared } from "./cache";
-import { MEMBERSHIP_BOARD_KEY } from "./reference";
+import { MEMBERSHIP_RECORDS_KEY, getReferenceData } from "./reference";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import type { InsightFact, TeamSquad } from "../../shared/membershipInsights";
 import { HttpError } from "./http";
 import { invalidateForTables } from "./airtableWebhook";
 import { TABLES } from "../../shared/schema/tableNames";
@@ -28,12 +30,12 @@ import {
 } from "../../shared/membershipStages";
 
 /**
- * Short and fixed, not webhook-extended like the raw squad reads: the cards
+ * Short and fixed, not webhook-extended like the raw squad reads: the records
  * carry Airtable attachment URLs (photo, application form), which Airtable
  * expires after a couple of hours. The webhook still drops the entry the
  * moment People changes.
  */
-const BOARD_TTL_MS = 5 * 60 * 1000;
+const RECORDS_TTL_MS = 5 * 60 * 1000;
 
 /** Accepted and parked applicants stay on the board this long. */
 const RECENT_DAYS = 365;
@@ -170,34 +172,111 @@ export function belongsOnBoard(card: ApplicantCard, today: string): boolean {
   return true;
 }
 
-export async function getMembershipBoard(env: Env): Promise<MembershipBoard> {
-  return getShared<MembershipBoard>(
+/**
+ * Everyone who has ever had an Applicant Stage and has not resigned. One
+ * shared read feeds both the board and Insights, so opening Insights costs
+ * no Airtable call of its own.
+ */
+async function getMembershipRecords(env: Env): Promise<any[]> {
+  return getShared<any[]>(
     env,
-    MEMBERSHIP_BOARD_KEY,
-    async () => {
-      const records = await airtableFindAll(
+    MEMBERSHIP_RECORDS_KEY,
+    () =>
+      airtableFindAll(
         env,
         TABLES.player,
-        // Narrows the scan; belongsOnBoard below is the rule itself.
+        // Narrows the scan; belongsOnBoard / the insight facts are the rules.
         `AND({${F.applicantStage}}!="", {${F.status}}!="Resigned")`,
         undefined,
         Object.values(F),
-      );
-      const today = hkDateKey(new Date().toISOString());
-      const cards = records
-        .map((r) => toCard(r, today))
-        .filter((c) => belongsOnBoard(c, today))
-        // Longest-waiting first within each column.
-        .sort((a, b) => (b.days ?? -1) - (a.days ?? -1) || a.name.localeCompare(b.name));
-      return {
-        columns: { pipeline: PIPELINE_STAGES, parked: PARKED_STAGES },
-        cards,
-        hasStageDates: records.some((r) => text(r.fields?.[F.stageUpdatedAt]) !== undefined),
-        generatedAt: new Date().toISOString(),
-      };
-    },
-    BOARD_TTL_MS,
+      ),
+    RECORDS_TTL_MS,
   );
+}
+
+const hasStageDates = (records: any[]) => records.some((r) => text(r.fields?.[F.stageUpdatedAt]) !== undefined);
+
+export async function getMembershipBoard(env: Env): Promise<MembershipBoard> {
+  const records = await getMembershipRecords(env);
+  const today = hkDateKey(new Date().toISOString());
+  const cards = records
+    .map((r) => toCard(r, today))
+    .filter((c) => belongsOnBoard(c, today))
+    // Longest-waiting first within each column.
+    .sort((a, b) => (b.days ?? -1) - (a.days ?? -1) || a.name.localeCompare(b.name));
+  return {
+    columns: { pipeline: PIPELINE_STAGES, parked: PARKED_STAGES },
+    cards,
+    hasStageDates: hasStageDates(records),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// ── Insights ────────────────────────────────────────────────────────────
+
+/**
+ * One row per applicant, every season, with only what the charts count
+ * (no contact details, notes or attachments), plus each team's current
+ * roster. The app slices the rows by the period the officer picks, so a new
+ * period is instant and costs no request; shared/membershipInsights.ts does
+ * the counting.
+ */
+export interface MembershipInsights {
+  facts: InsightFact[];
+  teams: TeamSquad[];
+  hasStageDates: boolean;
+  generatedAt: string;
+}
+
+export async function getMembershipInsights(env: Env): Promise<MembershipInsights> {
+  const [records, ref] = await Promise.all([getMembershipRecords(env), getReferenceData(env)]);
+  const today = hkDateKey(new Date().toISOString());
+  const facts: InsightFact[] = records.map((r) => {
+    const c = toCard(r, today);
+    return {
+      name: c.name,
+      stage: c.stage,
+      column: c.column,
+      appliedOn: c.appliedOn,
+      joinDate: c.joinDate,
+      stageSince: c.stageSince,
+      days: c.days,
+      team: c.team,
+      playingPosition: c.playingPosition,
+      applicantType: c.applicantType,
+      categoryType: c.categoryType,
+      gender: c.gender,
+      sponsor: c.sponsor,
+    };
+  });
+
+  const byTeam = new Map<string, TeamSquad>();
+  for (const t of ref.teams) {
+    if (!t.teamName) continue;
+    byTeam.set(t.teamName, {
+      team: t.teamName,
+      teamRank: t.teamRank ?? 99,
+      targetSquadSize: t.targetSquadSize || 16,
+      active: 0,
+      byPosition: {},
+    });
+  }
+  // ref.players is Active players only. Counted against the team the app
+  // shows them in (Selected Team EOS -> SOS -> Registered).
+  for (const p of ref.players) {
+    const squad = byTeam.get(selectedDisplayTeam(p) || p.registeredTeam || "");
+    if (!squad) continue;
+    squad.active += 1;
+    const position = p.playingPosition || "Not set";
+    squad.byPosition[position] = (squad.byPosition[position] ?? 0) + 1;
+  }
+
+  return {
+    facts,
+    teams: [...byTeam.values()].sort((a, b) => a.teamRank - b.teamRank),
+    hasStageDates: hasStageDates(records),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 // ── Active-members export ───────────────────────────────────────────────

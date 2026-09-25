@@ -9,7 +9,7 @@ import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/g
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { getPlayerStats } from '@/api/getPlayerStats';
 import { getPlayerAttendance } from '@/api/getPlayerAttendance';
-import { approveApplicant, getMembershipBoard, type ApproveInput } from '@/api/membership';
+import { approveApplicant, getMembershipBoard, getMembershipInsights, type ApproveInput } from '@/api/membership';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -365,12 +365,21 @@ export function useMembershipBoard(enabled = true) {
   });
 }
 
+export function useMembershipInsights() {
+  return useQuery({
+    queryKey: ['membershipInsights'],
+    queryFn: getMembershipInsights,
+    staleTime: 60_000,
+  });
+}
+
 export function useApproveApplicant() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: ApproveInput) => approveApplicant(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['membershipBoard'] });
+      queryClient.invalidateQueries({ queryKey: ['membershipInsights'] });
       // Status and stage also feed the ranking lists.
       queryClient.invalidateQueries({ queryKey: ['ranking'] });
     },
