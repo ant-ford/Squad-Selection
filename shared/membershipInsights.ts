@@ -8,8 +8,7 @@
  * What the data can and cannot say: the base keeps each applicant's CURRENT
  * stage, not the stages they passed through (until a stage history table
  * exists). So "how far applicants got" is inferred from where they are now,
- * and an applicant parked as Pending, On Hold or Rejected is only known to
- * have applied.
+ * and a Rejected applicant is only known to have applied.
  */
 import { NEEDS_FIXING, PIPELINE_STAGES, type BoardColumn } from "./membershipStages";
 
@@ -128,7 +127,7 @@ export function joinedIn(facts: InsightFact[], r: DateRange): InsightFact[] {
 
 /**
  * For the applications made in the period: how many reached at least each
- * stage, judged by where they are now. A parked applicant counts as having
+ * stage, judged by where they are now. A Rejected applicant counts as having
  * applied and no further.
  */
 export function funnel(facts: InsightFact[], r: DateRange): { stage: string; reached: number }[] {

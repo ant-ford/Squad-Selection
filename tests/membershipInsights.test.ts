@@ -106,7 +106,7 @@ describe("right now", () => {
     fact({ column: "6. Membership Officer (Signed)", days: 31, name: "C" }),
     fact({ column: "6. Membership Officer (Signed)", days: null, name: "D" }),
     fact({ column: "Accepted", days: 100 }), // done: not waiting
-    fact({ column: "Pending", days: 200 }), // parked: not in the pipeline
+    fact({ column: "Rejected", days: 200 }), // parked: not in the pipeline
   ];
 
   it("summarises the open applications", () => {

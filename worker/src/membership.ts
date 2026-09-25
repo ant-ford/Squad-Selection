@@ -158,9 +158,10 @@ export function toCard(record: any, today: string): ApplicantCard {
  * Which records belong on the board:
  *  - stages 1-6: always, however old - an application in progress
  *  - Accepted: joined in the last 12 months
- *  - Pending / On Hold / Rejected / Temporary: stage set (or, without a stage
- *    date, applied) in the last 12 months
- *  - any other non-empty stage ("undefined"): always, as Needs fixing
+ *  - Rejected / Temporary: stage set (or, without a stage date, applied) in
+ *    the last 12 months
+ *  - any other non-empty stage ("undefined", or a retired Pending / On Hold):
+ *    always, as Needs fixing
  * Resigned people and records with no stage (long-standing members) never.
  */
 export function belongsOnBoard(card: ApplicantCard, today: string): boolean {

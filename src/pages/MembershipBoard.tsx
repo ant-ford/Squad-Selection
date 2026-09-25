@@ -15,11 +15,7 @@ import { NEEDS_FIXING } from '@shared/membershipStages';
 const MembershipInsights = lazy(() => import('@/components/membership/MembershipInsights'));
 
 /** Filters live in the address, so a view can be bookmarked or shared. */
-const FILTERS = [
-  { key: 'type', label: 'Applicant type', of: (c: Card) => c.applicantType },
-  { key: 'pos', label: 'Position', of: (c: Card) => c.playingPosition },
-  { key: 'gender', label: 'Gender', of: (c: Card) => c.gender },
-] as const;
+const FILTERS = [{ key: 'type', label: 'Applicant type', of: (c: Card) => c.applicantType }] as const;
 
 export default function MembershipBoard() {
   const navigate = useNavigate();
@@ -79,7 +75,11 @@ export default function MembershipBoard() {
   const byColumn = (column: string) => cards.filter((c) => c.column === column);
   const broken = byColumn(NEEDS_FIXING);
   const parkedCount = (board?.columns.parked ?? []).reduce((n, col) => n + byColumn(col).length, 0);
-  const columns = [...(board?.columns.pipeline ?? []), ...(showParked ? board?.columns.parked ?? [] : [])];
+  // Empty stages are hidden (owner request, 2026-09-25): a column of "None"
+  // costs a swipe on a phone and says nothing the stage chips do not.
+  const columns = [...(board?.columns.pipeline ?? []), ...(showParked ? board?.columns.parked ?? [] : [])].filter(
+    (column) => byColumn(column).length > 0,
+  );
   const open = cards.find((c) => c.id === openId) ?? null;
 
   const exportCsv = async () => {
@@ -143,7 +143,7 @@ export default function MembershipBoard() {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              {t === 'board' ? 'Board' : 'Insights'}
+              {t === 'board' ? 'Process' : 'Insights'}
             </button>
           ))}
         </div>
@@ -213,10 +213,16 @@ export default function MembershipBoard() {
           <BoardColumnsSkeleton />
         ) : isError || !board ? (
           <div className="text-center py-12 border border-dashed border-border rounded-xl">
-            <p className="text-muted-foreground mb-2">Could not load the board.</p>
+            <p className="text-muted-foreground mb-2">Could not load the applications.</p>
             <button onClick={() => refetch()} className="text-sm text-primary underline">
               Try again
             </button>
+          </div>
+        ) : columns.length === 0 ? (
+          <div className="text-center py-12 border border-dashed border-border rounded-xl">
+            <p className="text-muted-foreground">
+              {query || FILTERS.some((f) => params.get(f.key)) ? 'No applicants match.' : 'No applications in progress.'}
+            </p>
           </div>
         ) : (
           <>
@@ -246,12 +252,10 @@ export default function MembershipBoard() {
                     <h2 className="text-xs font-semibold text-foreground truncate">{column}</h2>
                     <span className="text-xs text-muted-foreground shrink-0">{list.length}</span>
                   </header>
-                  <div className="space-y-2 bg-muted/40 rounded-lg p-2 min-h-[4rem]">
-                    {list.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">None</p>
-                    ) : (
-                      list.map((card) => <ApplicantCard key={card.id} card={card} onOpen={() => setOpenId(card.id)} />)
-                    )}
+                  <div className="space-y-2 bg-muted/40 rounded-lg p-2">
+                    {list.map((card) => (
+                      <ApplicantCard key={card.id} card={card} onOpen={() => setOpenId(card.id)} />
+                    ))}
                   </div>
                 </section>
               );

@@ -256,7 +256,7 @@ export default function MembershipInsights() {
 
         <ChartCard
           title="How far applicants got"
-          caption="Applications made in this period, by the furthest stage they have reached. Judged by each applicant's current stage, so anyone Pending, On Hold or Rejected counts as having applied only."
+          caption="Applications made in this period, by the furthest stage they have reached. Judged by each applicant's current stage, so anyone Rejected counts as having applied only."
           table={
             <DataTable
               head={['Stage', 'Reached', 'Of applicants']}

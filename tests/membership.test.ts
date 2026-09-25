@@ -159,7 +159,8 @@ describe("the board", () => {
       [ID.atSponsor]: "3. Club Application (Signed)",
       [ID.atStage6]: "6. Membership Officer (Signed)",
       [ID.acceptedRecent]: "Accepted", // joined within 12 months
-      [ID.pendingRecent]: "Pending", // applied within 12 months
+      // Pending was retired from the base; a record still set to it is flagged.
+      [ID.pendingRecent]: "Needs fixing",
       [ID.visitor]: "Temporary",
       [ID.broken]: "Needs fixing", // "undefined" should not be in use
       // Not shown: accepted in 2023, rejected over a year ago, resigned,
