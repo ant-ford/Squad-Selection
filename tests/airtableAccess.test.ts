@@ -16,11 +16,11 @@ import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtab
 import { fakeKv } from "./helpers/kv";
 import { getShared, invalidateAll, invalidateShared, rawReadTtl, WEBHOOK_BACKED_TTL_MS } from "../worker/src/cache";
 import { resetMissingFieldCache } from "../worker/src/airtable";
-import { getPlayerByEmail, getReferenceData, getTeamCoachLinks } from "../worker/src/reference";
+import { getOfficerLinks, getPlayerByEmail, getReferenceData, getTeamCoachLinks, OFFICER_LINKS_KEY } from "../worker/src/reference";
 import { getAllMatches, getSeasonContext } from "../worker/src/seasonContext";
 import { getPlayedMatches, getScheduledMatches, SCHEDULED_MATCHES_KEY } from "../worker/src/fixtures";
 import { getRankingEvents, RANKING_EVENTS_FIELDS } from "../worker/src/rankingEvents";
-import { PEOPLE_FIELDS, MATCHCARDS_FIELDS } from "../shared/schema/fieldMaps";
+import { PEOPLE_FIELDS, MATCHCARDS_FIELDS, OFFICER_FIELDS } from "../shared/schema/fieldMaps";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
 import { handleAirtableWebhook, signWebhookBody, webhookConfigured, WEBHOOK_ROUTE } from "../worker/src/airtableWebhook";
 import worker from "../worker/src/index";
@@ -68,6 +68,17 @@ function tables(): FakeTables {
     ],
     "Availability Exceptions": [],
     "Availability Rules": [],
+    "Membership Officers": [
+      { id: "recMO1", fields: { Status: "Active", Designation: "Men's Membership Officer", Member: ["recP1"], "Signature (from Member)": [{ url: "x" }] } },
+      { id: "recMO0", fields: { Status: "Retired", Designation: "Men's Membership Officer", Member: ["recCoach"] } },
+    ],
+    "Section Chairs": [
+      { id: "recSC1", fields: { Status: "Active", Designation: "Chairman", Member: ["recCoach"] } },
+    ],
+    "Section Captains": [
+      { id: "recCP1", fields: { Status: "Active", Designation: "Men's Captain", Member: ["recCoach"] } },
+      { id: "recCP0", fields: { Status: "Retired", Designation: "Men's Captain", Member: ["recP1"] } },
+    ],
     "Ranking Events": [
       { id: "recEv1", fields: { Player: ["recP1"], Kind: "move", "Old Rank": 2, "New Rank": 1, Timestamp: new Date().toISOString() } },
     ],
@@ -114,6 +125,38 @@ describe("field projection", () => {
     const events = callsTo("Ranking Events");
     expect(events.length).toBe(1);
     expect(requestedFields(events[0].url)).toEqual(Object.values(RANKING_EVENTS_FIELDS));
+  });
+});
+
+describe("officer links", () => {
+  it("keeps Active rows only, keyed by the linked People record", async () => {
+    const links = await getOfficerLinks(ENV);
+    expect(links.rolesByPersonId).toEqual({
+      recP1: [{ office: "membershipOfficer", designation: "Men's Membership Officer" }],
+      // The Retired Membership Officer and Section Captain rows grant nothing.
+      recCoach: [
+        { office: "sectionChair", designation: "Chairman" },
+        { office: "sectionCaptain", designation: "Men's Captain" },
+      ],
+    });
+  });
+
+  it("reads only Status, Designation and Member, never the signature lookups", async () => {
+    await getOfficerLinks(ENV);
+    for (const table of ["Membership Officers", "Section Chairs", "Section Captains"]) {
+      const calls = callsTo(table);
+      expect(calls.length).toBe(1);
+      expect(requestedFields(calls[0].url)).toEqual(Object.values(OFFICER_FIELDS));
+    }
+  });
+
+  it("is shared across isolates through KV", async () => {
+    const env = { ...ENV, CACHE: fakeKv() };
+    await getOfficerLinks(env);
+    invalidateAll(); // another isolate, same KV
+    const again = await getOfficerLinks(env);
+    expect(again.rolesByPersonId.recP1).toHaveLength(1);
+    expect(callsTo("Membership Officers").length).toBe(1);
   });
 });
 
@@ -312,6 +355,20 @@ describe("Airtable webhook", () => {
     expect(kv.store.has("club-reference")).toBe(true);
     expect(JSON.parse(kv.store.get("airtable-webhook:cursor")!.value)).toBe(7);
     await vi.waitFor(() => expect(seen.refresh).toBe(1));
+  });
+
+  it("drops the officer links when either officer table changes", async () => {
+    const kv = fakeKv();
+    await kv.put(OFFICER_LINKS_KEY, "{}");
+    await kv.put("club-reference", "{}");
+    stubWebhookApi(["tblfWkNsOIl3hrXAt"]); // Membership Officers
+
+    const body = JSON.stringify({ base: { id: "appTest" }, webhook: { id: "achTest" }, timestamp: "t" });
+    const mac = `hmac-sha256=${await signWebhookBody(secret, body)}`;
+    const res = await handleAirtableWebhook(ping(body, mac), configured(kv));
+    expect(await res.json()).toEqual({ invalidated: ["Membership Officers"] });
+    expect(kv.store.has(OFFICER_LINKS_KEY)).toBe(false);
+    expect(kv.store.has("club-reference")).toBe(true);
   });
 
   it("is routed by the Worker without a session", async () => {

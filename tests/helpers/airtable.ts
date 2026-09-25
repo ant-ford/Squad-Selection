@@ -63,6 +63,16 @@ function evaluateFormula(formula: string, record: FakeRecord): boolean {
     return String(record.fields?.[field] ?? "") === value.replace(/\\"/g, '"');
   }
 
+  const recordId = formula.match(/^RECORD_ID\(\)="([^"]*)"$/);
+  if (recordId) return record.id === recordId[1];
+
+  // `{Field}!="value"` for a non-empty value; the empty case is below.
+  const notEq = formula.match(/^\{([^}]+)\}!="((?:[^"\\]|\\.)+)"$/);
+  if (notEq) {
+    const [, field, value] = notEq;
+    return String(record.fields?.[field] ?? "") !== value.replace(/\\"/g, '"');
+  }
+
   const bool = formula.match(/^\{([^}]+)\}=(TRUE|FALSE)\(\)$/);
   if (bool) {
     const [, field, want] = bool;

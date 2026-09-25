@@ -66,6 +66,7 @@ const captainAuthUser: AuthorizedUser = {
   role: "coach",
   coachTeams: ["HKFC A", "HKFC B"],
   isSectionCaptain: true,
+  officerRoles: [],
 };
 
 beforeEach(() => {

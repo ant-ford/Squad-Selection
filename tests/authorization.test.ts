@@ -4,14 +4,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   getPlayerByEmail: vi.fn(),
   getTeamCoachLinks: vi.fn(),
+  getOfficerLinks: vi.fn(),
 }));
 
 vi.mock("../worker/src/reference", () => ({
   getPlayerByEmail: mocks.getPlayerByEmail,
   getTeamCoachLinks: mocks.getTeamCoachLinks,
+  getOfficerLinks: mocks.getOfficerLinks,
 }));
 
-import { requireAuthorizedUser, requireCoach, normalizeEmail } from "../worker/src/auth";
+import { requireAuthorizedUser, requireCoach, requireSection, sectionsFor, normalizeEmail } from "../worker/src/auth";
 import { HttpError } from "../worker/src/http";
 import { invalidateAll } from "../worker/src/cache";
 
@@ -42,6 +44,16 @@ const teamLinks = {
   allTeamNames: ["Men's 1s", "Men's 2s", "Men's 3s"],
 };
 
+// Active officer rows only - getOfficerLinks drops Retired ones before this.
+const officerLinks = {
+  rolesByPersonId: {
+    recOfficer: [{ office: "membershipOfficer", designation: "Men's Membership Officer" }],
+    recChair: [{ office: "sectionChair", designation: "Chairman" }],
+    recCoach: [{ office: "sectionChair", designation: "Men's Captain" }],
+    recCaptainRow: [{ office: "sectionCaptain", designation: "Men's Vice Captain" }],
+  },
+};
+
 const people = {
   activePlayer: { id: "recP1", email: "player@hkfc.com", active: true, playerCoach: [] },
   inactivePlayer: { id: "recP2", email: "inactive@hkfc.com", active: false, playerCoach: [] },
@@ -52,6 +64,11 @@ const people = {
   // Player/Coach alone is no longer a coach-access fallback: no Teams.Coach
   // or Teams.Section Captain link, but the multi-select still says "Coach".
   playerCoachFlagOnly: { id: "recFallback", email: "fallback@hkfc.com", active: false, playerCoach: ["Player/Coach"] },
+  // Officers who do not play: Active is false on their People record.
+  membershipOfficer: { id: "recOfficer", email: "officer@personal.com", active: false, playerCoach: [] },
+  chairman: { id: "recChair", email: "chair@personal.com", active: false, playerCoach: [] },
+  // A row in the Section Captains TABLE, not a Teams.Section Captain link.
+  sectionCaptainRow: { id: "recCaptainRow", email: "vice@personal.com", active: false, playerCoach: [] },
 };
 
 // ---------------------------------------------------------------------------
@@ -87,6 +104,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("fetch", vi.fn());
   mocks.getTeamCoachLinks.mockResolvedValue({ ...teamLinks, cached: false });
+  mocks.getOfficerLinks.mockResolvedValue(officerLinks);
   // Verified sessions are cached briefly, and every test here signs in with
   // the same bearer token - without this each test would be answered by the
   // previous one's identity.
@@ -124,6 +142,7 @@ describe("requireAuthorizedUser", () => {
       role: "player",
       coachTeams: [],
       isSectionCaptain: false,
+      officerRoles: [],
     });
     expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
   });
@@ -232,6 +251,37 @@ describe("requireAuthorizedUser", () => {
     // No Teams.Coach or Teams.Section Captain link, inactive, and the
     // Player/Coach multi-select says "Coach" - access must still be denied.
     await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
+  });
+
+  it("allows an inactive membership officer, as a player not a coach", async () => {
+    supabaseReturns("officer@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.membershipOfficer);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    // Holding an office is access, not coach access.
+    expect(user).toMatchObject({ personId: "recOfficer", role: "player", coachTeams: [] });
+    expect(user.officerRoles).toEqual([{ office: "membershipOfficer", designation: "Men's Membership Officer" }]);
+    expect(mocks.getOfficerLinks).toHaveBeenCalledWith(ENV);
+  });
+
+  it("allows an inactive section chair", async () => {
+    supabaseReturns("chair@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.chairman);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(user.officerRoles).toEqual([{ office: "sectionChair", designation: "Chairman" }]);
+  });
+
+  it("gives a coach who also holds an office both", async () => {
+    supabaseReturns("coach@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activeCoach);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(user.role).toBe("coach");
+    expect(user.officerRoles).toEqual([{ office: "sectionChair", designation: "Men's Captain" }]);
   });
 
   it("denies an inactive ordinary player with 403 APPLICATION_ACCESS_DENIED", async () => {
@@ -368,5 +418,69 @@ describe("requireCoach", () => {
     mocks.getPlayerByEmail.mockResolvedValue(people.inactivePlayer);
 
     await expectError(requireCoach(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Officers' sections (owner decision 2026-09-25)
+//   membership: Membership Officers + Section Captains table
+//   chairman:   Section Chairs + Section Captains table
+// ---------------------------------------------------------------------------
+
+describe("officers' sections", () => {
+  it.each([
+    ["a membership officer", "membershipOfficer", ["membership"]],
+    ["a section chair", "chairman", ["chairman"]],
+    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman"]],
+    ["an ordinary player", "activePlayer", []],
+    // Teams.Section Captain is coach access; it opens neither section.
+    ["a Teams-linked section captain with no officer row", "sectionCaptain", []],
+  ] as const)("%s sees %j", async (_label, who, expected) => {
+    supabaseReturns(people[who].email);
+    mocks.getPlayerByEmail.mockResolvedValue(people[who]);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(sectionsFor(user)).toEqual(expected);
+  });
+
+  it("ignores Designation: a captain designation in Section Chairs opens only the chairman section", async () => {
+    supabaseReturns("coach@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activeCoach); // Section Chairs row, "Men's Captain"
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(sectionsFor(user)).toEqual(["chairman"]);
+  });
+
+  it("lets a membership officer into the membership section", async () => {
+    supabaseReturns("officer@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.membershipOfficer);
+
+    const user = await requireSection(authedRequest(), ENV, "membership");
+
+    expect(user.personId).toBe("recOfficer");
+  });
+
+  it("keeps a membership officer out of the chairman section with 403 OFFICER_ACCESS_REQUIRED", async () => {
+    supabaseReturns("officer@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.membershipOfficer);
+
+    await expectError(requireSection(authedRequest(), ENV, "chairman"), 403, "OFFICER_ACCESS_REQUIRED");
+  });
+
+  it("keeps a section chair out of the membership section", async () => {
+    supabaseReturns("chair@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.chairman);
+
+    await expectError(requireSection(authedRequest(), ENV, "membership"), 403, "OFFICER_ACCESS_REQUIRED");
+  });
+
+  it("lets a Section Captains row into both", async () => {
+    supabaseReturns("vice@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.sectionCaptainRow);
+
+    await expect(requireSection(authedRequest(), ENV, "membership")).resolves.toMatchObject({ personId: "recCaptainRow" });
+    await expect(requireSection(authedRequest(), ENV, "chairman")).resolves.toMatchObject({ personId: "recCaptainRow" });
   });
 });

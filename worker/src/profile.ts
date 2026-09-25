@@ -1,7 +1,7 @@
 import type { Env } from "./env";
 import { getPlayerByEmail, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { HttpError } from "./http";
-import type { AuthorizedUser } from "./auth";
+import { sectionsFor, type AuthorizedUser } from "./auth";
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
   const user = await getPlayerByEmail(env, authUser.email);
@@ -43,6 +43,12 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     isCoach: authUser.role === "coach",
 
     isSectionCaptain: authUser.isSectionCaptain,
+
+    officerRoles: authUser.officerRoles,
+
+    // Which officers' sections to offer. Derived from the same rule the
+    // Worker enforces, so the app never keeps its own copy of it.
+    sections: sectionsFor(authUser),
 
     captainTeams,
 

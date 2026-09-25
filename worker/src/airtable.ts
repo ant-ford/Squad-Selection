@@ -8,6 +8,7 @@ import {
   AVAILABILITYRULES_FIELDS,
   MATCHCARDS_FIELDS,
   MATCHES_FIELDS,
+  OFFICER_FIELDS,
   PEOPLE_FIELDS,
   TEAMS_FIELDS,
 } from "../../shared/schema/fieldMaps";
@@ -36,6 +37,10 @@ const PROJECTIONS: Record<string, readonly string[]> = {
   [TABLES.availabilityException]: Object.values(AVAILABILITYEXCEPTIONS_FIELDS),
   [TABLES.availabilityRule]: Object.values(AVAILABILITYRULES_FIELDS),
   [TABLES.abilityGroupConfiguration]: Object.values(ABILITYGROUP_CONFIG_FIELDS),
+  // The officer tables carry signature attachments and lookups.
+  [TABLES.membershipOfficer]: Object.values(OFFICER_FIELDS),
+  [TABLES.sectionChair]: Object.values(OFFICER_FIELDS),
+  [TABLES.sectionCaptainOffice]: Object.values(OFFICER_FIELDS),
 };
 
 export function projectionFor(table: string): readonly string[] | undefined {

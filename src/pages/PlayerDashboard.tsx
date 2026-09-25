@@ -7,7 +7,7 @@ import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -18,6 +18,7 @@ import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHead
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
+import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -200,6 +201,12 @@ export default function PlayerDashboard() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader>
+        {data.sections?.includes('membership') && (
+          <button onClick={() => navigate('/membership')} className={headerNavClass()}>
+            <Users className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Membership</span>
+          </button>
+        )}
         {(data.isCoach || data.isSectionCaptain) && (
           <button onClick={() => navigate('/coach')} className={headerNavClass()}>
             <Shield className="h-3.5 w-3.5" />
@@ -270,6 +277,10 @@ export default function PlayerDashboard() {
             </div>
           </div>
         </div>
+        {data.isBirthday && <BirthdayBanner name={data.playerName} />}
+        {!!data.teamBirthdays?.length && (
+          <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
+        )}
       </div>
 
       <div className="container mx-auto px-4 pb-8">

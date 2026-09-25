@@ -11,7 +11,8 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
-import { requireAuthorizedUser, requireCoach } from "./auth";
+import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
+import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getNumberHolders } from "./membership";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
 import {
@@ -530,6 +531,42 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await deactivatePlayer(env, body.playerId, user.email), 200, origin);
     }
+    // ── Membership section (Membership Officers + Section Captains table) ──
+    // The board and the export expose applicants' contact details and notes,
+    // so every route here is gated on the section, not on sign-in alone.
+    if (method === "GET" && pathname === "/api/membership/board") {
+      await requireSection(request, env, "membership");
+      return json(await getMembershipBoard(env), 200, origin);
+    }
+    if (method === "GET" && pathname === "/api/membership/active-members") {
+      const user = await requireSection(request, env, "membership");
+      return json(await getActiveMembersCsv(env, user), 200, origin);
+    }
+    if (method === "GET" && pathname === "/api/membership/number-holders") {
+      await requireSection(request, env, "membership");
+      const holders = await getNumberHolders(
+        env,
+        url.searchParams.get("membershipNo") ?? "",
+        url.searchParams.get("exclude") ?? "",
+      );
+      return json({ holders }, 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/membership/approve") {
+      const user = await requireSection(request, env, "membership");
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(
+        await approveApplicant(env, user, {
+          personId: String(body.personId ?? ""),
+          joinDate: String(body.joinDate ?? ""),
+          commitmentEndDate: String(body.commitmentEndDate ?? ""),
+          membershipNo: String(body.membershipNo ?? ""),
+          sharedNumberAcknowledged: body.sharedNumberAcknowledged === true,
+        }),
+        200,
+        origin,
+      );
+    }
+
     // ── Calendar (Link generation uses email param, Feeds are public signed URLs) ──
     if (method === "GET" && pathname === "/api/calendar/link") {
       const user = await requireAuthorizedUser(request, env);

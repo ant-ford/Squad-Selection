@@ -4,7 +4,7 @@ import type { Env } from "./env";
 import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
 import { inBackground } from "./requestContext";
 import { TABLES } from "../../shared/schema/tableNames";
-import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS } from "../../shared/schema/fieldMaps";
+import { PEOPLE_FIELDS, TEAMS_FIELDS, AVAILABILITYEXCEPTIONS_FIELDS, OFFICER_FIELDS } from "../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../shared/mappers/playerMapper";
 import { mapTeam } from "../../shared/mappers/teamMapper";
 import { mapAvailability } from "../../shared/mappers/availabilityMapper";
@@ -99,6 +99,78 @@ export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
         coachTeamNamesByPersonId,
         allTeamNames,
       };
+    },
+    rawReadTtl(env, REFERENCE_TTL_MS),
+  );
+}
+
+/**
+ * Which officer table a role comes from.
+ *
+ * "sectionCaptain" is a row in the Section Captains TABLE. That is not the
+ * same thing as AuthorizedUser.isSectionCaptain, which comes from the
+ * Teams.Section Captain link and grants coach access to every team. The
+ * officers' sections are gated on the table (owner decision, 2026-09-25).
+ */
+export type Office = "membershipOfficer" | "sectionChair" | "sectionCaptain";
+
+/** One Active office held, e.g. { office: "sectionChair", designation: "Chairman" }. */
+export interface OfficerRole {
+  office: Office;
+  /** The row's Designation. Empty when the row has none. */
+  designation: string;
+}
+
+/**
+ * Offices held, keyed by People record id, from the Membership Officers,
+ * Section Chairs and Section Captains tables. Only Active rows count: a Retired row is history,
+ * not access.
+ *
+ * Officers sign in with their personal email, which is on their People
+ * record, and each officer row links to that record through Member. So this
+ * is matched on the record id, like the Teams coach links, and never on the
+ * officer row's own Email field.
+ */
+export interface OfficerLinks {
+  rolesByPersonId: Record<string, OfficerRole[]>;
+}
+
+export const OFFICER_LINKS_KEY = "officer-links";
+
+/**
+ * The membership board (membership.ts). Declared here rather than there so
+ * airtableWebhook.ts can name it without a circular import.
+ */
+export const MEMBERSHIP_BOARD_KEY = "membership-board";
+
+export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
+  return getShared<OfficerLinks>(
+    env,
+    OFFICER_LINKS_KEY,
+    async () => {
+      const offices: [Office, string][] = [
+        ["membershipOfficer", TABLES.membershipOfficer],
+        ["sectionChair", TABLES.sectionChair],
+        ["sectionCaptain", TABLES.sectionCaptainOffice],
+      ];
+      const tables = await Promise.all(
+        offices.map(([, table]) => airtableFindAll(env, table, `{${OFFICER_FIELDS.status}}="Active"`)),
+      );
+      const rolesByPersonId: Record<string, OfficerRole[]> = {};
+      offices.forEach(([office], i) => {
+        for (const record of tables[i]) {
+          const designation = record.fields?.[OFFICER_FIELDS.designation];
+          const member = record.fields?.[OFFICER_FIELDS.member];
+          for (const id of Array.isArray(member) ? member : []) {
+            if (typeof id !== "string") continue;
+            (rolesByPersonId[id] ??= []).push({
+              office,
+              designation: typeof designation === "string" ? designation : "",
+            });
+          }
+        }
+      });
+      return { rolesByPersonId };
     },
     rawReadTtl(env, REFERENCE_TTL_MS),
   );

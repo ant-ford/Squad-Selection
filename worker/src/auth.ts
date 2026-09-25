@@ -1,7 +1,7 @@
 import { HttpError } from "./http";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getPlayerByEmail, getTeamCoachLinks } from "./reference";
+import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type OfficerRole } from "./reference";
 import { getCached } from "./cache";
 
 // One definition for the whole app, browser included - see the module for
@@ -22,6 +22,13 @@ export interface AuthorizedUser {
    */
   coachTeams: string[];
   isSectionCaptain: boolean;
+  /**
+   * Active Membership Officer, Section Chair and Section Captain rows linked
+   * to this person.
+   * Empty for almost everyone. Holding any office grants application access
+   * on its own, like a coach link: an officer need not be a playing member.
+   */
+  officerRoles: OfficerRole[];
 }
 
 /**
@@ -35,6 +42,9 @@ export interface AuthorizedUser {
  *  - coaches / section captains may be Active = false and are still allowed
  *  - the Teams table linked Coach / Section Captain fields are the ONLY
  *    source of coach access - computed once, here, for the whole request
+ *  - an Active Membership Officer, Section Chair or Section Captain row
+ *    linked to the person also grants access with Active = false, and never
+ *    grants coach access
  */
 export async function requireAuthorizedUser(request: Request, env: Env): Promise<AuthorizedUser> {
   const email = await verifySupabaseSession(request, env);
@@ -48,9 +58,10 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // Cached 60s (getPlayerByEmail's default TTL) - the Supabase token
   // verification above still runs on every request, so a revoked session is
   // rejected immediately; only the People-record lookup behind it is cached.
-  const [player, links] = await Promise.all([
+  const [player, links, officers] = await Promise.all([
     getPlayerByEmail(env, normalizedEmail),
     getTeamCoachLinks(env),
+    getOfficerLinks(env),
   ]);
 
   if (!player) {
@@ -75,14 +86,15 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
     ? links.allTeamNames
     : links.coachTeamNamesByPersonId[player.id] ?? [];
   const isCoach = isTeamCoach || isSectionCaptain;
+  const officerRoles = officers.rolesByPersonId[player.id] ?? [];
 
-  if (!isActive && !isCoach) {
+  if (!isActive && !isCoach && officerRoles.length === 0) {
     // Logged with the matched record id: the commonest cause of a surprise
     // denial is a second People record sharing the email, so the record the
     // administrator is looking at is not the one that was matched.
     console.warn(
       `Access denied - matched People record ${player.id} for ${normalizedEmail} ` +
-        `has Active=${JSON.stringify(player.active)} and no coach link`,
+        `has Active=${JSON.stringify(player.active)}, no coach link and no active office`,
     );
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
@@ -93,6 +105,7 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
     role: isCoach ? "coach" : "player",
     coachTeams,
     isSectionCaptain,
+    officerRoles,
   };
 }
 
@@ -105,6 +118,40 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
   const user = await requireAuthorizedUser(request, env);
   if (user.role !== "coach") {
     throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+  }
+  return user;
+}
+
+/**
+ * The officers' sections of the app and the offices that open each one
+ * (owner decision, 2026-09-25). Designation plays no part: any Active row in
+ * one of the listed tables is enough.
+ *
+ *   membership - the membership board: Membership Officers, Section Captains
+ *   chairman   - the chairman's email lists: Section Chairs, Section Captains
+ */
+export const SECTION_OFFICES = {
+  membership: ["membershipOfficer", "sectionCaptain"],
+  chairman: ["sectionChair", "sectionCaptain"],
+} as const satisfies Record<string, readonly Office[]>;
+
+export type Section = keyof typeof SECTION_OFFICES;
+
+/** The sections this person can open, in a fixed order. */
+export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">): Section[] {
+  return (Object.keys(SECTION_OFFICES) as Section[]).filter((section) =>
+    user.officerRoles.some((r) => (SECTION_OFFICES[section] as readonly Office[]).includes(r.office)),
+  );
+}
+
+/**
+ * Gate for one officers' section. 403 OFFICER_ACCESS_REQUIRED otherwise,
+ * which, like COACH_ACCESS_REQUIRED, keeps them signed in.
+ */
+export async function requireSection(request: Request, env: Env, section: Section): Promise<AuthorizedUser> {
+  const user = await requireAuthorizedUser(request, env);
+  if (!sectionsFor(user).includes(section)) {
+    throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }
   return user;
 }

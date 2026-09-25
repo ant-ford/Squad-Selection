@@ -6,6 +6,13 @@ export interface ProfileData {
   isCoach: boolean;
 
   isSectionCaptain: boolean;
+  /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
+  officerRoles: {
+    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain';
+    designation: string;
+  }[];
+  /** Officers' sections this person may open, decided by the Worker. */
+  sections: ('membership' | 'chairman')[];
   captainTeams: string[];
 
   coachTeams: {

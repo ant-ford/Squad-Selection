@@ -7,6 +7,9 @@ export const TABLES = {
   abilityGroupConfiguration: "Ability Group Configuration",
   selectionEvent: "Selection Events",
   availabilityRule: "Availability Rules",
+  membershipOfficer: "Membership Officers",
+  sectionChair: "Section Chairs",
+  sectionCaptainOffice: "Section Captains",
 } as const;
 
 /**
@@ -23,4 +26,7 @@ export const TABLE_IDS: Record<string, string> = {
   tblAfY7xhjkcKXlGq: TABLES.matchCard,
   tblTc4kNMHmFBZn4Q: TABLES.abilityGroupConfiguration,
   tblJ8GXEOY9YAluW4: "Ranking Events",
+  tblfWkNsOIl3hrXAt: TABLES.membershipOfficer,
+  tblVRHhaM3o25Ld8I: TABLES.sectionChair,
+  tblYhjoksGpD99Xvs: TABLES.sectionCaptainOffice,
 };

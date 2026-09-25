@@ -13,7 +13,7 @@ import { AirtableError } from "../worker/src/airtable";
 import type { AuthorizedUser } from "../worker/src/auth";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
 }
 
 const ENV = {
