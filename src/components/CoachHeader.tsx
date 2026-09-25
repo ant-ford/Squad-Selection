@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { LogOut, User, ListChecks, Home, Users } from 'lucide-react';
+import { LogOut, User, ListChecks, Home, Users, Mail } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
 
@@ -28,6 +28,12 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
         <ListChecks className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Ranking</span>
       </button>
+      {profile.sections?.includes('chairman') && (
+        <button onClick={() => navigate('/chairman')} className={headerNavClass()}>
+          <Mail className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Email lists</span>
+        </button>
+      )}
       {profile.sections?.includes('membership') && (
         <button onClick={() => navigate('/membership')} className={headerNavClass()}>
           <Users className="h-3.5 w-3.5" />

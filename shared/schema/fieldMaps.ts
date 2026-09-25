@@ -154,6 +154,46 @@ export const MEMBERSHIP_FIELDS = {
 } as const;
 
 /**
+ * People fields the chairman's email lists read (worker/src/chairman.ts):
+ * the attributes a list is built from and the addresses it sends to.
+ * Separate from PEOPLE_FIELDS and MEMBERSHIP_FIELDS for the same reason as
+ * those: no read grows for another section's sake. No HKID, bank or
+ * address field belongs here.
+ */
+export const CHAIRMAN_FIELDS = {
+  preferredName: "Preferred Name",
+  givenNames: "Given Name(s)",
+  surname: "Surname",
+  status: "Status",
+  active: "Active",
+  applicantStage: "Applicant Stage",
+  membershipNo: "Membership No.",
+  memberType: "Member Type",
+  categoryType: "Category Type",
+  playerCoach: "Player/Coach",
+  registeredTeam: "Registered Team",
+  selectedTeamSos: "Selected Team SOS",
+  selectedTeamEos: "Selected Team EOS",
+  ageBand: "Age Band",
+  hockeyCommittee: "Hockey Committee Roles",
+  subCommittee: "Men's Sub-Committee",
+  teamRoles: "Team Roles",
+  touringCommittee: "Touring Committee",
+  juniorVolunteers: "Junior Hockey Volunteers",
+  easter5s: "Easter 5s Committee",
+  generalVolunteers: "General Volunteers",
+  tourInterest: "Tour Interest",
+  tournamentInterest: "Tournament Interest",
+  qualifiedUmpire: "Qualified Umpire",
+  qualifiedCoach: "Qualified Coach",
+  captaincyInterest: "Team Captain/Vice-Captain Interest",
+  email: "Email",
+  /** Formula: DATETIME_DIFF(TODAY(), {Date of Birth}, 'years'). Under 18 copies in the guardian. */
+  age: "Age",
+  guardianEmail: "Guardian/Parent Email",
+} as const;
+
+/**
  * Membership Officers, Section Chairs and Section Captains share this shape:
  * one row per office held, linked to the holder's People record. Status is
  * Active or Retired.

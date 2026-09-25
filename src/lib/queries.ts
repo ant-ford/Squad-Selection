@@ -10,6 +10,7 @@ import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailabi
 import { getPlayerStats } from '@/api/getPlayerStats';
 import { getPlayerAttendance } from '@/api/getPlayerAttendance';
 import { approveApplicant, getMembershipBoard, getMembershipInsights, type ApproveInput } from '@/api/membership';
+import { getChairmanDirectory } from '@/api/chairman';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -383,5 +384,17 @@ export function useApproveApplicant() {
       // Status and stage also feed the ranking lists.
       queryClient.invalidateQueries({ queryKey: ['ranking'] });
     },
+  });
+}
+
+// ── Chairman's section ───────────────────────────────────────────────────
+
+export function useChairmanDirectory(enabled = true) {
+  return useQuery({
+    queryKey: ['chairmanDirectory'],
+    queryFn: getChairmanDirectory,
+    enabled,
+    // Cached five minutes on the Worker and dropped on any People edit.
+    staleTime: 60_000,
   });
 }
