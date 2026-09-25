@@ -47,6 +47,8 @@ export interface ApplicantCard {
   applicationForm: { url: string; filename: string }[];
   /** Whoever the application is waiting on, when the record links them. */
   chase?: Chase;
+  /** 28th birthday, on cards that can be approved: Approve's default Commitment End Date. */
+  turns28On?: string;
 }
 
 export interface MembershipBoard {
