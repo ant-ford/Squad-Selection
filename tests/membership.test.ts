@@ -68,7 +68,7 @@ function tables(): FakeTables {
         "Preferred Name": "Sam", Surname: "Sponsorwait", "Given Name(s)": "Samuel",
         "Applicant Stage": "3. Club Application (Signed)", Status: "Applicant",
         "Application Date": "2026-08-26T02:00:00.000Z", "Sponsor Preferred Name": ["Chris"], "Sponsored By Sponsor": ["recSponsorRow0001"],
-        "Mobile No.": "9123 4567", "Tour Interest": ["Bangkok 11s (5-6 Dec 2026)"], "Playing Level": ["Division 2"],
+        "Mobile No.": "9123 4567", "Date of Birth": "2008-01-02", "Tour Interest": ["Bangkok 11s (5-6 Dec 2026)"], "Playing Level": ["Division 2"],
         Photo: [{ url: "https://dl.airtable.com/sam.jpg", filename: "sam.jpg" }],
         "Sports Associate Application Form": [{ url: "https://dl.airtable.com/form.pdf", filename: "form.pdf" }],
         // CRM-only fields the board must never carry.
@@ -77,7 +77,7 @@ function tables(): FakeTables {
       person(ID.atStage6, {
         "Preferred Name": "Una", Surname: "Ready", "Given Name(s)": "Una",
         "Applicant Stage": "6. Membership Officer (Signed)", Status: "Applicant",
-        "Application Date": "2026-06-01T02:00:00.000Z", "Stage Updated At": "2026-09-15T02:00:00.000Z",
+        "Application Date": "2026-06-01T02:00:00.000Z", "Stage Updated At": "2026-09-15T02:00:00.000Z", "Date of Birth": "2003-05-14",
         Commitments: ["recCommitment0001"],
       }),
       person(ID.acceptedRecent, { "Preferred Name": "New", Surname: "Joiner", "Applicant Stage": "Accepted", Status: "Member", "Join Date": "2026-07-01", Active: true, "Membership No.": "2001", "Given Name(s)": "Newton" }),
@@ -198,7 +198,10 @@ describe("the board", () => {
       playingLevel: ["Division 2"],
     });
     const una = cards.find((c: any) => c.id === ID.atStage6);
-    expect(una).toMatchObject({ stageSince: "2026-09-15", days: 10, canApprove: true });
+    expect(una).toMatchObject({ stageSince: "2026-09-15", days: 10, canApprove: true, turns28On: "2031-05-14" });
+    // Only a card that can be approved carries it, and no date of birth leaves the Worker.
+    expect(sam.turns28On).toBeUndefined();
+    expect(JSON.stringify(cards)).not.toMatch(/2003-05-14|2008-01-02/);
   });
 
   it("names whoever each application is waiting on, with their mobile, for WhatsApp", async () => {

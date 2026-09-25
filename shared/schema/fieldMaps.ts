@@ -152,6 +152,11 @@ export const MEMBERSHIP_FIELDS = {
   selectionComments: "Selection Comments/Coach Requests",
   applicationForm: "Sports Associate Application Form",
   /**
+   * Read only to pre-fill Approve's Commitment End Date with the 28th
+   * birthday; the board sends that date, never the date of birth.
+   */
+  dateOfBirth: "Date of Birth",
+  /**
    * Who signs each stage, as links to their office row (Sponsors, Section
    * Chairs, Membership Officers). Read for the board's WhatsApp shortcut
    * to whoever the application is waiting on; never written.

@@ -133,7 +133,11 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
  */
 function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void }) {
   const [joinDate, setJoinDate] = useState(() => hkDateKey(new Date().toISOString()));
-  const [commitmentEndDate, setCommitmentEndDate] = useState(card.commitmentEndDate ?? '');
+  // A date already on the record wins; otherwise anyone under 28 on joining
+  // is offered their 28th birthday (owner request, 2026-09-26).
+  const [commitmentEndDate, setCommitmentEndDate] = useState(
+    () => card.commitmentEndDate ?? (card.turns28On && card.turns28On > joinDate ? card.turns28On : ''),
+  );
   const [membershipNo, setMembershipNo] = useState(card.membershipNo ?? '');
   // Who else has the number, looked up when Approve is pressed. null = not
   // confirming yet; an empty list = the number is not shared.
@@ -141,15 +145,10 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
   const [checking, setChecking] = useState(false);
   const approve = useApproveApplicant();
 
-  const problem = !joinDate
-    ? 'Enter the Join Date.'
-    : !commitmentEndDate
-    ? 'Enter the Commitment End Date.'
-    : commitmentEndDate <= joinDate
-    ? 'Commitment End Date must be after the Join Date.'
-    : !membershipNo.trim()
-    ? 'Enter the Membership No. the club confirmed.'
-    : null;
+  // An empty field simply keeps Approve disabled; only a real mistake is
+  // spelled out.
+  const complete = !!joinDate && !!commitmentEndDate && !!membershipNo.trim();
+  const datesWrong = complete && commitmentEndDate <= joinDate;
 
   // Families share one Membership No., so a shared number is a warning in
   // the confirmation, not a refusal.
@@ -190,10 +189,7 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
 
   return (
     <section className="mt-6 border-t border-border pt-4">
-      <h3 className="font-semibold text-foreground">Approve membership</h3>
-      <p className="text-xs text-muted-foreground mb-3">
-        Once the club has confirmed. Sets Status to Member and the stage to Accepted.
-      </p>
+      <p className="text-xs text-muted-foreground mb-3">Once the club has confirmed:</p>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs text-muted-foreground">
           Join Date
@@ -208,6 +204,9 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
             min={joinDate || undefined}
             onChange={(e) => setCommitmentEndDate(e.target.value)}
           />
+          {commitmentEndDate && commitmentEndDate === card.turns28On && (
+            <span className="block mt-1 text-[11px]">28th birthday</span>
+          )}
         </label>
         <label className="text-xs text-muted-foreground col-span-2">
           Membership No.
@@ -220,13 +219,13 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
           />
         </label>
       </div>
-      {problem && <p className="text-xs text-muted-foreground mt-2">{problem}</p>}
+      {datesWrong && <p className="text-xs text-destructive mt-2">Commitment End Date must be after the Join Date.</p>}
       <Button
         className="mt-3 w-full h-10 bg-primary text-primary-foreground disabled:opacity-50"
-        disabled={problem !== null || approve.isPending || checking}
+        disabled={!complete || datesWrong || approve.isPending || checking}
         onClick={review}
       >
-        {approve.isPending ? 'Approving…' : checking ? 'Checking…' : 'Approve'}
+        {approve.isPending ? 'Approving…' : checking ? 'Checking…' : 'Approve membership'}
       </Button>
       {holders && (
         <ConfirmDialog

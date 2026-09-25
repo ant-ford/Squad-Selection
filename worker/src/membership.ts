@@ -20,6 +20,7 @@ import { TABLES } from "../../shared/schema/tableNames";
 import { MEMBERSHIP_FIELDS as F } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
+import { birthdayAtAge } from "../../shared/birthday";
 import {
   ACCEPTED_STAGE,
   APPROVABLE_STAGE,
@@ -102,6 +103,12 @@ export interface ApplicantCard {
   applicationForm: Attachment[];
   /** Whoever the application is waiting on, when the record links them. */
   chase?: Chase;
+  /**
+   * The applicant's 28th birthday, which Approve offers as the Commitment
+   * End Date for anyone younger. Only on cards that can be approved, so the
+   * board does not spread everyone's age about.
+   */
+  turns28On?: string;
 }
 
 export interface MembershipBoard {
@@ -173,6 +180,7 @@ export function toCard(record: any, today: string): ApplicantCard {
     playingLevel: list(f[F.playingLevel]),
     selectionComments: text(f[F.selectionComments]),
     applicationForm: attachments(f[F.applicationForm]),
+    turns28On: stage === APPROVABLE_STAGE ? birthdayAtAge(text(f[F.dateOfBirth]), 28) : undefined,
   };
 }
 

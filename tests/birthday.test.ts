@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { birthdayKey, isBirthdayOn } from "../shared/birthday";
+import { birthdayAtAge, birthdayKey, isBirthdayOn } from "../shared/birthday";
 import { mapPlayer } from "../shared/mappers/playerMapper";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../worker/src/cache";
@@ -22,6 +22,22 @@ describe("birthdayKey", () => {
     const player = mapPlayer({ id: "recP1", fields: { "Date of Birth": "1990-09-25" } });
     expect(player.birthday).toBe("09-25");
     expect(JSON.stringify(player)).not.toContain("1990");
+  });
+});
+
+describe("birthdayAtAge", () => {
+  it("adds the years to the date of birth", () => {
+    expect(birthdayAtAge("2003-05-14", 28)).toBe("2031-05-14");
+  });
+
+  it("moves 29 February to the 28th in a year without one, and keeps it in a year with one", () => {
+    expect(birthdayAtAge("2000-02-29", 27)).toBe("2027-02-28");
+    expect(birthdayAtAge("2000-02-29", 28)).toBe("2028-02-29");
+  });
+
+  it("gives nothing without a date", () => {
+    expect(birthdayAtAge(undefined, 28)).toBeUndefined();
+    expect(birthdayAtAge("soon", 28)).toBeUndefined();
   });
 });
 
