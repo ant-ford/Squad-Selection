@@ -20,15 +20,33 @@ import {
 } from '@shared/membershipInsights';
 import { ChartCard, DataTable, HBars, MonthColumns, SquadBars, StatTile, monthLabel } from './charts';
 import StatementInsights from './StatementInsights';
+import InsightsGroup from './InsightsGroup';
 
 const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward', 'Flexible/Varies'];
 
 /**
- * The membership Insights tab. "Right now" is the pipeline as it stands and
- * ignores the period; everything below the period picker is scoped to it,
- * so every number under the picker agrees with every other.
+ * The membership Insights tab: two groups under black, collapsible heading
+ * bars. A closed group is not rendered, so its data is not fetched.
  */
 export default function MembershipInsights() {
+  return (
+    <div className="space-y-6">
+      <InsightsGroup id="new-joiners" title="New Joiners">
+        <NewJoinerInsights />
+      </InsightsGroup>
+      <InsightsGroup id="commitment-reviews" title="Commitment reviews">
+        <StatementInsights />
+      </InsightsGroup>
+    </div>
+  );
+}
+
+/**
+ * New Joiners. "Right now" is the pipeline as it stands and ignores the
+ * period; everything below the period picker is scoped to it, so every
+ * number under the picker agrees with every other.
+ */
+function NewJoinerInsights() {
   const { data, isLoading, isError, refetch } = useMembershipInsights();
   const [params, setParams] = useSearchParams();
   const today = hkDateKey(new Date().toISOString());
@@ -277,9 +295,6 @@ export default function MembershipInsights() {
           </ChartCard>
         </div>
       </section>
-
-      {/* ── Commitment reviews: now and this season, not the period ── */}
-      <StatementInsights />
     </div>
   );
 }
