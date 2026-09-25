@@ -207,10 +207,8 @@ describe("what the processes are waiting on someone for", () => {
     ]);
   });
 
-  it("asks the Section Captains to invite a trialist", async () => {
-    expect(await tasksFor("cap@hkfc.com")).toEqual([
-      { id: `invite:${ID.tim}`, key: "invite", subject: "Tim Applicant", role: "Section Captain", url: url("applicant_update", ID.tim) },
-    ]);
+  it("asks nothing of the Section Captains about trialists (owner decision)", async () => {
+    expect(await tasksFor("cap@hkfc.com")).toEqual([]);
   });
 
   it("moves the line on with the application", async () => {

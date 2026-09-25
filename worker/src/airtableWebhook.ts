@@ -117,7 +117,7 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
     keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
   [TABLES.sectionCaptainOffice]: {
-    keys: [OFFICER_LINKS_KEY, WAITING_ON_KEY],
+    keys: [OFFICER_LINKS_KEY],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.

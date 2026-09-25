@@ -14,8 +14,6 @@ export function taskTitle(task: MyTask): string {
       return 'Complete your Player Statement';
     case 'waivers':
       return "Complete this season's Waivers & Declarations";
-    case 'invite':
-      return `Invite ${who} to apply`;
     case 'application':
       return task.role === 'Sponsor'
         ? `Support ${who}'s membership application`

@@ -11,8 +11,8 @@
  *    1 July), so everyone is asked again each July.
  *
  * And anything the New Joiner and Statements processes are waiting on them
- * for, one line per person, each with that person's form:
- *  - invite: stage 1, every Active Section Captains row holder.
+ * for, one line per person, each with that person's form (stage 1 has no
+ * line: the owner removed the Section Captains' invite prompt):
  *  - joiner: stage 2, the applicant's own New Joiner Form (club
  *    application). Seen only if the applicant can sign in to Eddy.
  *  - application: stage 3 the sponsor (support form), stage 4 the chairman
@@ -26,15 +26,15 @@ import type { AuthorizedUser } from "./auth";
 import { airtableFindAll } from "./airtable";
 import { getCached, getShared } from "./cache";
 import { firstLink, getOfficeHolders } from "./contacts";
-import { WAITING_ON_KEY, getOfficerLinks } from "./reference";
+import { WAITING_ON_KEY } from "./reference";
 import { TABLES } from "../../shared/schema/tableNames";
 import { COMMITMENT_FIELDS as CF } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "joiner" | "statement" | "waivers" | "invite" | "application" | "review";
-export type TaskRole = "Section Captain" | "Sponsor" | "Chairman" | "Membership Officer";
+export type MyTaskKey = "joiner" | "statement" | "waivers" | "application" | "review";
+export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
   /** Unique within the list: the key plus the record it is about. */
@@ -54,7 +54,7 @@ export const MY_TASK_FIELDS = {
   waiversFormUrl: "Fillout - Member Waivers & Declarations",
 } as const;
 
-/** Applicants at stages 1-5: who signs, and each signer's form. */
+/** Applicants at stages 2-5: who is next, and their form. */
 const APPLICANT_FIELDS = {
   stage: "Applicant Stage",
   preferredName: "Preferred Name",
@@ -63,7 +63,6 @@ const APPLICANT_FIELDS = {
   sponsoredBySponsor: "Sponsored By Sponsor",
   sponsoredByChair: "Sponsored By Chair",
   sponsoredByOfficer: "Sponsored By Membership Officer",
-  captainFormUrl: "Fillout - Section Captain Dashboard (Update)",
   joinerFormUrl: "Fillout - Applicant (New Joiner Form)",
   sponsorFormUrl: "Fillout - Sponsor (Page 7)",
   chairFormUrl: "Fillout - Chairman (Page 7 Signature)",
@@ -90,7 +89,6 @@ const SIGNERS: Record<string, [TaskRole, string, string]> = {
   "4. Sponsor (Signed)": ["Chairman", APPLICANT_FIELDS.sponsoredByChair, APPLICANT_FIELDS.chairFormUrl],
   "5. Chairman (Signed)": ["Membership Officer", APPLICANT_FIELDS.sponsoredByOfficer, APPLICANT_FIELDS.officerFormUrl],
 };
-const TRIAL_STAGE = "1. Trial Application";
 const INVITED_STAGE = "2. Section Captain Invitation";
 
 /**
@@ -115,9 +113,9 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
     env,
     WAITING_ON_KEY,
     async () => {
-      const stages = [TRIAL_STAGE, INVITED_STAGE, ...Object.keys(SIGNERS)];
+      const stages = [INVITED_STAGE, ...Object.keys(SIGNERS)];
       const reviewStages = [NOTIFIED, MEMBER_SUBMITTED, SPONSOR_SUBMITTED];
-      const [applicants, reviews, holders, officers] = await Promise.all([
+      const [applicants, reviews, holders] = await Promise.all([
         airtableFindAll(
           env,
           TABLES.player,
@@ -133,7 +131,6 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
           Object.values(REVIEW_FIELDS),
         ),
         getOfficeHolders(env),
-        getOfficerLinks(env),
       ]);
 
       const out: WaitingOn = {};
@@ -142,20 +139,12 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         const list = (out[personId] ??= []);
         if (!list.some((t) => t.id === task.id)) list.push(task);
       };
-      const captains = Object.entries(officers.rolesByPersonId)
-        .filter(([, roles]) => roles.some((r) => r.office === "sectionCaptain"))
-        .map(([id]) => id);
 
       for (const r of applicants) {
         const f = r.fields ?? {};
         const stage = text(f[APPLICANT_FIELDS.stage]) ?? "";
         const first = text(f[APPLICANT_FIELDS.preferredName]) ?? text(f[APPLICANT_FIELDS.givenNames]);
         const subject = [first, text(f[APPLICANT_FIELDS.surname])].filter(Boolean).join(" ") || "An applicant";
-        if (stage === TRIAL_STAGE) {
-          const url = text(f[APPLICANT_FIELDS.captainFormUrl]);
-          for (const id of captains) add(id, { id: `invite:${r.id}`, key: "invite", subject, role: "Section Captain", url });
-          continue;
-        }
         if (stage === INVITED_STAGE) {
           add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: text(f[APPLICANT_FIELDS.joinerFormUrl]) });
           continue;
@@ -214,7 +203,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { joiner: 0, statement: 1, waivers: 2, invite: 3, application: 4, review: 5 };
+const ORDER: Record<MyTaskKey, number> = { joiner: 0, statement: 1, waivers: 2, application: 3, review: 4 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
