@@ -11,7 +11,8 @@ const days = (n: number | null) => (n === null ? '–' : `${n}d`);
 const bars = (rows: { label: string; count: number }[]) => rows.map((r) => ({ label: r.label, value: r.count }));
 
 /**
- * Commitment reviews, at the foot of Insights. Counted from the Statements
+ * Commitment reviews, the second group on Insights (its heading bar is
+ * InsightsGroup's). Counted from the Statements
  * board's data (the same cached request as that tab), so the period picker
  * above does not apply: this is now, the months ahead, and this season.
  */
@@ -34,10 +35,7 @@ export default function StatementInsights() {
   }, [data, today]);
 
   return (
-    <section className="space-y-3" aria-labelledby="reviews-heading">
-      <h2 id="reviews-heading" className="text-sm font-semibold text-foreground">
-        Commitment reviews
-      </h2>
+    <div className="space-y-3">
 
       {isLoading ? (
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -141,6 +139,6 @@ export default function StatementInsights() {
           )}
         </>
       )}
-    </section>
+    </div>
   );
 }
