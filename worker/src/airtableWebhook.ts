@@ -27,7 +27,13 @@ import { airtableBaseRequest } from "./airtable";
 import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
 import { SCHEDULED_MATCHES_KEY } from "./fixtures";
-import { CHAIRMAN_DIRECTORY_KEY, MEMBERSHIP_RECORDS_KEY, OFFICER_LINKS_KEY, STATEMENT_RECORDS_KEY } from "./reference";
+import {
+  CHAIRMAN_DIRECTORY_KEY,
+  MEMBERSHIP_RECORDS_KEY,
+  NOTIFIED_REVIEWS_KEY,
+  OFFICER_LINKS_KEY,
+  STATEMENT_RECORDS_KEY,
+} from "./reference";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
 
@@ -64,7 +70,8 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
   [TABLES.player]: {
     keys: ["club-reference", "ranking:active", "ranking:inactive", MEMBERSHIP_RECORDS_KEY, CHAIRMAN_DIRECTORY_KEY, STATEMENT_RECORDS_KEY],
     sharedPrefixes: ["player-by-email:"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:"],
+    // my-tasks: a member's player-page banner, gone once their form is in.
+    localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
   },
   [TABLES.team]: {
     keys: ["club-reference", "team-coach-links"],
@@ -107,7 +114,7 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   [TABLES.commitment]: {
-    keys: [STATEMENT_RECORDS_KEY],
+    keys: [STATEMENT_RECORDS_KEY, NOTIFIED_REVIEWS_KEY],
   },
   [TABLES.sponsor]: {
     keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
