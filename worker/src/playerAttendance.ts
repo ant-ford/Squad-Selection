@@ -34,7 +34,10 @@ export type AttendanceStatus =
   | "elsewhere"
   /** Past: available (or maybe) and not picked. */
   | "not-selected"
-  /** Past: picked, but not on the Match Card and not playing elsewhere. */
+  /**
+   * Past: picked, but not on the Match Card and not playing elsewhere. Only
+   * when the match has cards - an uncarded match counts the pick as played.
+   */
   | "no-show"
   /** Future: available / maybe, not (yet) picked. */
   | "available"
@@ -65,6 +68,8 @@ export interface AttendanceCell {
   goalsAgainst?: number;
   /** The player's goals, when they played. */
   goals?: number;
+  /** Played is assumed: they were picked and the match has no Match Cards. */
+  assumed?: boolean;
 }
 
 export interface PlayerAttendance {
@@ -90,6 +95,8 @@ export interface PlayerAttendanceInput {
   matches: Match[];
   /** This player's Match Cards for the season. */
   cards: MatchCard[];
+  /** Matches with at least one Match Card, for anyone. */
+  cardedMatchIds: Set<string>;
   exceptions: Pick<AvailabilityException, "player" | "match" | "availabilityStatus">[];
   rules?: AvailabilityRule[];
 }
@@ -105,7 +112,7 @@ function cardSide(card: MatchCard, match: Match, isOurs: (t: string) => boolean)
 
 /** Pure grid computation. Everything is passed in so it is testable without Airtable. */
 export function computePlayerAttendance(input: PlayerAttendanceInput): PlayerAttendance {
-  const { player, team, season, today, teamRankMap, matches, cards, exceptions, rules = [] } = input;
+  const { player, team, season, today, teamRankMap, matches, cards, cardedMatchIds, exceptions, rules = [] } = input;
   const isOurs = (t: string) => Boolean(t) && teamRankMap[t] !== undefined;
   const playerRank = teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
 
@@ -143,6 +150,24 @@ export function computePlayerAttendance(input: PlayerAttendanceInput): PlayerAtt
       selectedKeys.add(`${m.id}:${m.awayTeam}`);
       selectedTeamByDate.set(date, m.awayTeam);
     }
+  }
+
+  // A past fixture with no Match Cards at all - typically a friendly entered
+  // by hand, which never gets a card - cannot show who turned up. Being
+  // picked for it is taken as having played, never as a no-show.
+  const assumedKeys = new Set<string>();
+  for (const key of selectedKeys) {
+    const cut = key.indexOf(":");
+    const matchId = key.slice(0, cut);
+    const side = key.slice(cut + 1);
+    const m = matchesById.get(matchId)!;
+    const date = hkDateKey(m.matchDate);
+    const past = m.matchStatus === "Played" || date < today;
+    if (!past || OFF_STATUSES.has(m.matchStatus) || cardedMatchIds.has(matchId)) continue;
+    if (playedTeamByDate.has(date)) continue; // a real card that day says where they were
+    assumedKeys.add(key);
+    playedKeys.add(key);
+    playedTeamByDate.set(date, side);
   }
 
   const answerByMatch = new Map<string, string>();
@@ -234,7 +259,8 @@ export function computePlayerAttendance(input: PlayerAttendanceInput): PlayerAtt
         cell.goalsFor = isHome ? m.homeTeamScore : m.awayTeamScore;
         cell.goalsAgainst = isHome ? m.awayTeamScore : m.homeTeamScore;
       }
-      if (status === "played") cell.goals = goalsByMatch.get(m.id) ?? 0;
+      if (assumedKeys.has(key)) cell.assumed = true;
+      else if (status === "played") cell.goals = goalsByMatch.get(m.id) ?? 0;
       cells.push(cell);
     }
   }
@@ -282,6 +308,7 @@ export async function getPlayerAttendance(
     teamRankMap: ref.teamRankMap,
     matches: ctx.allMatches,
     cards: ctx.matchCardsByPlayer.get(player.id) ?? [],
+    cardedMatchIds: ctx.matchIdsWithCards,
     exceptions: ctx.exceptionsRaw,
     rules,
   });

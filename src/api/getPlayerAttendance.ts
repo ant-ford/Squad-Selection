@@ -29,6 +29,8 @@ export interface AttendanceCell {
   goalsFor?: number;
   goalsAgainst?: number;
   goals?: number;
+  /** Played is assumed: they were picked and the match has no Match Cards. */
+  assumed?: boolean;
 }
 
 export interface PlayerAttendance {

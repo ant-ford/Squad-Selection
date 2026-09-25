@@ -37,6 +37,7 @@ function rule(overrides: Partial<AvailabilityRule>): AvailabilityRule {
   };
 }
 
+/** Unless a test says otherwise, every match has Match Cards (someone's). */
 function run(overrides: Partial<PlayerAttendanceInput>) {
   return computePlayerAttendance({
     player: player(),
@@ -46,6 +47,7 @@ function run(overrides: Partial<PlayerAttendanceInput>) {
     teamRankMap: RANKS,
     matches: [],
     cards: [],
+    cardedMatchIds: new Set((overrides.matches ?? []).map((m) => m.id)),
     exceptions: [],
     ...overrides,
   });
@@ -120,6 +122,23 @@ describe("computePlayerAttendance", () => {
     expect(cellFor(res, "m2")).toMatchObject({ status: "elsewhere", elsewhereTeam: "HKFC A" });
     expect(cellFor(res, "m3", "HKFC A").status).toBe("selected");
     expect(cellFor(res, "m4")).toMatchObject({ status: "elsewhere", elsewhereTeam: "HKFC A" });
+  });
+
+  it("takes a pick for a match with no Match Cards (a hand-entered friendly) as played, never a no-show", () => {
+    const res = run({
+      matches: [
+        match("m1", "2026-09-13", { competitionType: "FRIENDLY", selectedPlayersHome: ["recP1"] }),
+        match("m2", "2026-09-13", { homeTeam: "HKFC A" }),
+        match("m3", "2026-09-20", { competitionType: "FRIENDLY" }),
+        match("m4", "2026-09-27", { matchStatus: "Scheduled", selectedPlayersHome: ["recP1"] }),
+      ],
+      cardedMatchIds: new Set(["m2"]),
+    });
+    expect(cellFor(res, "m1")).toMatchObject({ status: "played", assumed: true, friendly: true });
+    expect(cellFor(res, "m1").goals).toBeUndefined();
+    expect(cellFor(res, "m2", "HKFC A")).toMatchObject({ status: "elsewhere", elsewhereTeam: "HKFC B" });
+    expect(cellFor(res, "m3").status).toBe("not-selected");
+    expect(cellFor(res, "m4")).toMatchObject({ status: "played", assumed: true });
   });
 
   it("does not call a player moved to another side on the day a no-show", () => {
