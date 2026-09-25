@@ -10,7 +10,10 @@ import { useApproveApplicant } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { hkDateKey } from '@shared/hkDateKey';
-import { Avatar, ageLabel, ageTone, applicantWhatsApp } from './ApplicantCard';
+import { Avatar, ageLabel, ageTone, applicantWhatsApp, chaseWhatsApp } from './ApplicantCard';
+
+export const sheetLinkClass =
+  'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full';
 
 const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
 
@@ -40,6 +43,7 @@ export function TextBlock({ label, text }: { label: string; text?: string }) {
 export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard; onClose: () => void }) {
   const wide = useMediaQuery('(min-width: 640px)');
   const whatsApp = applicantWhatsApp(card);
+  const chase = chaseWhatsApp(card);
   const age = ageLabel(card);
 
   return (
@@ -69,6 +73,14 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
               className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground"
             >
               <MessageCircle className="h-3.5 w-3.5" /> WhatsApp {card.mobileNo}
+            </a>
+          )}
+          {chase && card.chase && (
+            <a href={chase} target="_blank" rel="noreferrer" className={sheetLinkClass}>
+              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                WhatsApp {card.chase.name} ({card.chase.role})
+              </span>
             </a>
           )}
           {card.applicationForm.map((f) => (

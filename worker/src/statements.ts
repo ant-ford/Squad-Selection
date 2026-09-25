@@ -4,7 +4,8 @@
  * write it makes, asking for the review email early.
  *
  * Reads pass COMMITMENT_FIELDS explicitly: the AI, combined-context and
- * signature fields on Commitments are never requested.
+ * signature fields on Commitments are never requested. Photos and mobiles
+ * come from the linked People records (contacts.ts), read by id.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -13,7 +14,8 @@ import { getShared } from "./cache";
 import { HttpError } from "./http";
 import { invalidateForTables } from "./airtableWebhook";
 import { STATEMENT_RECORDS_KEY } from "./reference";
-import { MEMBERSHIP_EVENTS_FIELDS as EV, daysBetween, recordMembershipEvent, type Attachment } from "./membership";
+import { MEMBERSHIP_EVENTS_FIELDS as EV, daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
+import { firstLink, getOfficeHolders, getPeopleByIds, type Contact } from "./contacts";
 import { TABLES } from "../../shared/schema/tableNames";
 import { COMMITMENT_FIELDS as F } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -40,6 +42,8 @@ export interface StatementCard {
   id: string;
   personId?: string;
   name: string;
+  photo?: string;
+  mobileNo?: string;
   membershipNo?: string;
   yearNo?: number;
   period?: string;
@@ -89,6 +93,8 @@ export interface StatementCard {
   officerSubmittedOn?: string;
   playerStatement: Attachment[];
   officerFormUrl?: string;
+  /** The sponsor, while the review waits on them (Member Submitted). */
+  chase?: Chase;
 }
 
 export interface StatementBoard {
@@ -213,10 +219,30 @@ export function statementBelongsOnBoard(card: StatementCard, today: string): boo
   return true;
 }
 
+/** The member's photo and mobile, and the sponsor while the review waits on them. */
+function withContacts(
+  card: StatementCard,
+  record: any,
+  people: Record<string, Contact>,
+  sponsorHolders: Record<string, string>,
+): StatementCard {
+  const member = card.personId ? people[card.personId] : undefined;
+  const sponsor =
+    card.stage === MEMBER_SUBMITTED ? people[sponsorHolders[firstLink(record.fields?.[F.sponsorLink]) ?? ""] ?? ""] : undefined;
+  return {
+    ...card,
+    photo: member?.photo,
+    mobileNo: member?.mobile,
+    chase: sponsor ? { role: "Sponsor", name: sponsor.name, firstName: sponsor.firstName, mobile: sponsor.mobile } : undefined,
+  };
+}
+
 interface StatementRecords {
   records: any[];
-  /** People who have resigned; their reviews are not chased. */
-  resignedIds: string[];
+  /** The linked members, and the sponsors of reviews waiting on one. */
+  people: Record<string, Contact>;
+  /** Sponsors row id -> the People record holding it. */
+  sponsorHolders: Record<string, string>;
 }
 
 async function getStatementRecords(env: Env): Promise<StatementRecords> {
@@ -224,8 +250,7 @@ async function getStatementRecords(env: Env): Promise<StatementRecords> {
     env,
     STATEMENT_RECORDS_KEY,
     async () => {
-      const [records, resigned] = await Promise.all([
-        airtableFindAll(
+      const records = await airtableFindAll(
           env,
           TABLES.commitment,
           // Narrows the scan to started periods that end on or after
@@ -234,22 +259,28 @@ async function getStatementRecords(env: Env): Promise<StatementRecords> {
           `AND({${F.periodStart}}!="", IS_BEFORE({${F.periodStart}}, DATEADD(TODAY(), 2, "days")), IS_AFTER({${F.periodEnd}}, DATETIME_PARSE("${addDays(REVIEWS_FROM, -2)}", "YYYY-MM-DD")))`,
           undefined,
           Object.values(F),
-        ),
-        airtableFindAll(env, TABLES.player, `{Status}="Resigned"`, undefined, ["Status"]),
+        );
+      const waitingOnSponsor = records.filter(
+        (r) => text(r.fields?.[F.reviewProgress]) === MEMBER_SUBMITTED && firstLink(r.fields?.[F.sponsorLink]),
+      );
+      const sponsorHolders = waitingOnSponsor.length ? await getOfficeHolders(env) : {};
+      const people = await getPeopleByIds(env, [
+        ...records.map((r) => firstLink(r.fields?.[F.people])).filter((id): id is string => !!id),
+        ...waitingOnSponsor.map((r) => sponsorHolders[firstLink(r.fields?.[F.sponsorLink])!]).filter(Boolean),
       ]);
-      return { records, resignedIds: resigned.map((r) => r.id) };
+      return { records, people, sponsorHolders };
     },
     RECORDS_TTL_MS,
   );
 }
 
 export async function getStatementBoard(env: Env): Promise<StatementBoard> {
-  const { records, resignedIds } = await getStatementRecords(env);
-  const resigned = new Set(resignedIds);
+  const { records, people, sponsorHolders } = await getStatementRecords(env);
   const today = hkDateKey(new Date().toISOString());
   const candidates = records
-    .map((r) => toStatementCard(r, today))
-    .filter((c) => statementBelongsOnBoard(c, today) && !(c.personId && resigned.has(c.personId)));
+    .map((r) => withContacts(toStatementCard(r, today), r, people, sponsorHolders))
+    // A resigned member's review is not chased.
+    .filter((c) => statementBelongsOnBoard(c, today) && !(c.personId && people[c.personId]?.status === "Resigned"));
   const cards = candidates
     .filter((c) => c.personId)
     // Longest in stage first; Not Started (no stage date) by the soonest period end.

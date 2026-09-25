@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, FileText } from 'lucide-react';
+import { ExternalLink, FileText, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,9 @@ import { useRequestReviewEmail } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { AUTO_NOTICE_DAYS, NOT_STARTED, SPONSOR_SUBMITTED } from '@shared/statementStages';
-import { Fact, TextBlock } from './ApplicantSheet';
-import { Initial, periodLabel, statementStatus } from './StatementCard';
+import { Fact, TextBlock, sheetLinkClass as linkClass } from './ApplicantSheet';
+import { Avatar } from './ApplicantCard';
+import { memberWhatsApp, periodLabel, sponsorWhatsApp, statementStatus } from './StatementCard';
 
 const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
 
@@ -19,9 +20,6 @@ const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
 const plain = (s?: string) => s?.replace(/\*\*|__/g, '').replace(/\\([*_#\-.])/g, '$1').trim() || undefined;
 
 const count = (n?: number) => (n === undefined ? undefined : String(n));
-
-const linkClass =
-  'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full';
 
 export default function StatementSheet({
   card,
@@ -34,13 +32,16 @@ export default function StatementSheet({
 }) {
   const wide = useMediaQuery('(min-width: 640px)');
   const status = statementStatus(card, today);
+  const whatsApp = memberWhatsApp(card);
+  const chase = sponsorWhatsApp(card);
+  const officerForm = card.stage === SPONSOR_SUBMITTED ? card.officerFormUrl : undefined;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
       <SheetContent side={wide ? 'right' : 'bottom'} className="p-4 pb-8 overflow-y-auto">
         <SheetHeader onClose={onClose}>
           <div className="flex items-center gap-3 min-w-0">
-            <Initial name={card.name} size="h-12 w-12" />
+            <Avatar card={card} size="h-12 w-12" />
             <div className="min-w-0">
               <SheetTitle>{card.name}</SheetTitle>
               <p className="text-xs text-muted-foreground">{card.stage || 'No Review Progress'}</p>
@@ -55,10 +56,21 @@ export default function StatementSheet({
           )}
         </div>
 
-        {(card.playerStatement.length > 0 || (card.stage === SPONSOR_SUBMITTED && card.officerFormUrl)) && (
+        {(whatsApp || chase || officerForm || card.playerStatement.length > 0) && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {card.stage === SPONSOR_SUBMITTED && card.officerFormUrl && (
-              <a href={card.officerFormUrl} target="_blank" rel="noreferrer" className={linkClass}>
+            {whatsApp && (
+              <a href={whatsApp} target="_blank" rel="noreferrer" className={linkClass}>
+                <MessageCircle className="h-3.5 w-3.5 shrink-0" /> WhatsApp {card.mobileNo}
+              </a>
+            )}
+            {chase && card.chase && (
+              <a href={chase} target="_blank" rel="noreferrer" className={linkClass}>
+                <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">WhatsApp {card.chase.name} (Sponsor)</span>
+              </a>
+            )}
+            {officerForm && (
+              <a href={officerForm} target="_blank" rel="noreferrer" className={linkClass}>
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
               </a>
             )}

@@ -11,6 +11,7 @@ import type { AuthorizedUser } from "./auth";
 import { airtableCreate, airtableFindAll, airtableUpdate, escapeFormulaValue } from "./airtable";
 import { getShared } from "./cache";
 import { MEMBERSHIP_RECORDS_KEY, getReferenceData } from "./reference";
+import { firstLink, getOfficeHolders, getPeopleByIds } from "./contacts";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import type { InsightFact, TeamSquad } from "../../shared/membershipInsights";
 import { HttpError } from "./http";
@@ -45,6 +46,24 @@ export interface Attachment {
   url: string;
   filename: string;
 }
+
+/**
+ * Whoever a card is waiting on, for its WhatsApp shortcut: the applicant's
+ * sponsor, the chairman or the membership officer who signs next.
+ */
+export interface Chase {
+  role: "Sponsor" | "Chairman" | "Membership Officer";
+  name: string;
+  firstName: string;
+  mobile?: string;
+}
+
+/** The stages waiting on a signature, and the People link naming who signs. */
+const CHASE_BY_STAGE: Record<string, [Chase["role"], string]> = {
+  "3. Club Application (Signed)": ["Sponsor", F.sponsoredBySponsor],
+  "4. Sponsor (Signed)": ["Chairman", F.sponsoredByChair],
+  "5. Chairman (Signed)": ["Membership Officer", F.sponsoredByOfficer],
+};
 
 export interface ApplicantCard {
   id: string;
@@ -81,6 +100,8 @@ export interface ApplicantCard {
   playingLevel: string[];
   selectionComments?: string;
   applicationForm: Attachment[];
+  /** Whoever the application is waiting on, when the record links them. */
+  chase?: Chase;
 }
 
 export interface MembershipBoard {
@@ -174,24 +195,59 @@ export function belongsOnBoard(card: ApplicantCard, today: string): boolean {
   return true;
 }
 
+interface MembershipRecords {
+  records: any[];
+  /** Applicant record id -> whoever their application is waiting on. */
+  chase: Record<string, Chase>;
+}
+
 /**
- * Everyone who has ever had an Applicant Stage and has not resigned. One
- * shared read feeds both the board and Insights, so opening Insights costs
- * no Airtable call of its own.
+ * Who each application at a signature stage is waiting on. The applicant
+ * links the office row (a Sponsors, Section Chairs or Membership Officers
+ * row), which links the holder's People record, which has their mobile.
  */
-async function getMembershipRecords(env: Env): Promise<any[]> {
-  return getShared<any[]>(
+async function resolveChases(env: Env, records: any[]): Promise<Record<string, Chase>> {
+  const waiting = records.filter((r) => CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""]);
+  if (waiting.length === 0) return {};
+  const holders = await getOfficeHolders(env);
+  const officeOf = (r: any) => {
+    const [, link] = CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""];
+    return firstLink(r.fields?.[link]);
+  };
+  const people = await getPeopleByIds(
+    env,
+    waiting.map((r) => holders[officeOf(r) ?? ""]).filter((id): id is string => !!id),
+  );
+  const chase: Record<string, Chase> = {};
+  for (const r of waiting) {
+    const [role] = CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""];
+    const person = people[holders[officeOf(r) ?? ""] ?? ""];
+    if (!person) continue;
+    chase[r.id] = { role, name: person.name, firstName: person.firstName, mobile: person.mobile };
+  }
+  return chase;
+}
+
+/**
+ * Everyone who has ever had an Applicant Stage and has not resigned, and
+ * who each application is waiting on. One shared read feeds both the board
+ * and Insights, so opening Insights costs no Airtable call of its own.
+ */
+async function getMembershipRecords(env: Env): Promise<MembershipRecords> {
+  return getShared<MembershipRecords>(
     env,
     MEMBERSHIP_RECORDS_KEY,
-    () =>
-      airtableFindAll(
+    async () => {
+      const records = await airtableFindAll(
         env,
         TABLES.player,
         // Narrows the scan; belongsOnBoard / the insight facts are the rules.
         `AND({${F.applicantStage}}!="", {${F.status}}!="Resigned")`,
         undefined,
         Object.values(F),
-      ),
+      );
+      return { records, chase: await resolveChases(env, records) };
+    },
     RECORDS_TTL_MS,
   );
 }
@@ -199,10 +255,10 @@ async function getMembershipRecords(env: Env): Promise<any[]> {
 const hasStageDates = (records: any[]) => records.some((r) => text(r.fields?.[F.stageUpdatedAt]) !== undefined);
 
 export async function getMembershipBoard(env: Env): Promise<MembershipBoard> {
-  const records = await getMembershipRecords(env);
+  const { records, chase } = await getMembershipRecords(env);
   const today = hkDateKey(new Date().toISOString());
   const cards = records
-    .map((r) => toCard(r, today))
+    .map((r) => ({ ...toCard(r, today), chase: chase[r.id] }))
     .filter((c) => belongsOnBoard(c, today))
     // Longest-waiting first within each column.
     .sort((a, b) => (b.days ?? -1) - (a.days ?? -1) || a.name.localeCompare(b.name));
@@ -231,7 +287,7 @@ export interface MembershipInsights {
 }
 
 export async function getMembershipInsights(env: Env): Promise<MembershipInsights> {
-  const [records, ref] = await Promise.all([getMembershipRecords(env), getReferenceData(env)]);
+  const [{ records }, ref] = await Promise.all([getMembershipRecords(env), getReferenceData(env)]);
   const today = hkDateKey(new Date().toISOString());
   const facts: InsightFact[] = records.map((r) => {
     const c = toCard(r, today);

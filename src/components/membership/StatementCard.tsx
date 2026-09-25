@@ -1,7 +1,7 @@
 import type { StatementCard as Card } from '@/api/membership';
 import { safeFormat } from '@/lib/dateUtils';
-import { NOT_STARTED } from '@shared/statementStages';
-import { ageTone } from './ApplicantCard';
+import { NOT_STARTED, NOTIFIED } from '@shared/statementStages';
+import { Avatar, WhatsAppIcon, ageTone, whatsAppTo } from './ApplicantCard';
 
 const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
 
@@ -28,11 +28,28 @@ export function periodLabel(card: Card): string | undefined {
   return [card.yearNo ? `Year ${card.yearNo}` : undefined, period].filter(Boolean).join(' · ') || undefined;
 }
 
-export function Initial({ name, size = 'h-10 w-10' }: { name: string; size?: string }) {
-  return (
-    <div className={`${size} shrink-0 rounded-full bg-primary/10 flex items-center justify-center`}>
-      <span className="text-sm font-bold text-primary">{(name || '?')[0].toUpperCase()}</span>
-    </div>
+const firstOf = (name: string) => name.split(' ')[0] || name;
+
+/**
+ * WhatsApp to the member. Once they have been emailed, the message is a
+ * reminder to fill in the Commitment Form.
+ */
+export function memberWhatsApp(card: Card): string | null {
+  const first = firstOf(card.name);
+  return whatsAppTo(
+    card.mobileNo,
+    card.stage === NOTIFIED
+      ? `Hi ${first}, a reminder to fill in the Commitment Form from the email about your HKFC commitment review.`
+      : `Hi ${first}, `,
+  );
+}
+
+/** WhatsApp to the sponsor while the review waits on their section. */
+export function sponsorWhatsApp(card: Card): string | null {
+  if (!card.chase) return null;
+  return whatsAppTo(
+    card.chase.mobile,
+    `Hi ${card.chase.firstName || card.chase.name}, ${card.name}'s commitment review is waiting for your sponsor section.`,
   );
 }
 
@@ -40,6 +57,8 @@ export default function StatementCard({ card, today, onOpen }: { card: Card; tod
   const status = statementStatus(card, today);
   const meta = [card.team, card.sponsor ? `Sponsor ${card.sponsor}` : undefined].filter(Boolean).join(' · ');
   const period = periodLabel(card);
+  const whatsApp = memberWhatsApp(card);
+  const chase = sponsorWhatsApp(card);
   return (
     <div
       role="button"
@@ -54,20 +73,22 @@ export default function StatementCard({ card, today, onOpen }: { card: Card; tod
       className="bg-card border border-border rounded-lg p-3 text-left hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
     >
       <div className="flex items-start gap-2.5">
-        <Initial name={card.name} />
+        <Avatar card={card} />
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm text-foreground truncate">{card.name}</p>
           {period && <p className="text-xs text-muted-foreground truncate">{period}</p>}
           {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
           {card.membershipNo && <p className="text-xs text-muted-foreground">No. {card.membershipNo}</p>}
         </div>
+        {whatsApp && <WhatsAppIcon href={whatsApp} label={`WhatsApp ${card.name}`} />}
       </div>
       {(status || (card.waitingOn && card.stage !== NOT_STARTED)) && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {status && <span className={`text-[11px] px-1.5 py-0.5 rounded ${status.tone}`}>{status.label}</span>}
+        <div className="mt-2 flex items-center gap-1.5">
+          {status && <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${status.tone}`}>{status.label}</span>}
           {card.waitingOn && card.stage !== NOT_STARTED && (
-            <span className="text-[11px] text-muted-foreground truncate">Waiting on {card.waitingOn}</span>
+            <span className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
           )}
+          {chase && card.chase && <WhatsAppIcon href={chase} label={`WhatsApp ${card.chase.name} (Sponsor)`} />}
         </div>
       )}
     </div>

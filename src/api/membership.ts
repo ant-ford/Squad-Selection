@@ -3,6 +3,14 @@ import type { BoardColumn } from '@shared/membershipStages';
 import type { ReviewColumn } from '@shared/statementStages';
 import type { InsightFact, TeamSquad } from '@shared/membershipInsights';
 
+/** Whoever a card is waiting on: mirrors worker/src/membership.ts Chase. */
+export interface Chase {
+  role: 'Sponsor' | 'Chairman' | 'Membership Officer';
+  name: string;
+  firstName: string;
+  mobile?: string;
+}
+
 /** Mirrors worker/src/membership.ts ApplicantCard. */
 export interface ApplicantCard {
   id: string;
@@ -37,6 +45,8 @@ export interface ApplicantCard {
   playingLevel: string[];
   selectionComments?: string;
   applicationForm: { url: string; filename: string }[];
+  /** Whoever the application is waiting on, when the record links them. */
+  chase?: Chase;
 }
 
 export interface MembershipBoard {
@@ -95,6 +105,8 @@ export interface StatementCard {
   id: string;
   personId?: string;
   name: string;
+  photo?: string;
+  mobileNo?: string;
   membershipNo?: string;
   yearNo?: number;
   period?: string;
@@ -138,6 +150,8 @@ export interface StatementCard {
   officerSubmittedOn?: string;
   playerStatement: { url: string; filename: string }[];
   officerFormUrl?: string;
+  /** The sponsor, while the review waits on them. */
+  chase?: Chase;
 }
 
 export interface StatementBoard {
