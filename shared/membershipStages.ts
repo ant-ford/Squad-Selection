@@ -24,16 +24,17 @@ export const PIPELINE_STAGES = [
 /**
  * Off the pipeline. Temporary is a player registered with HKFC without the
  * membership process, usually a visiting player here for a few months.
+ * (Pending and On Hold were retired from the base in September 2026.)
  */
-export const PARKED_STAGES = ["Pending", "On Hold", "Rejected", "Temporary"] as const;
+export const PARKED_STAGES = ["Rejected", "Temporary"] as const;
 
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 export type ParkedStage = (typeof PARKED_STAGES)[number];
 
 /**
- * Column for a record whose stage is none of the above. "undefined" is a
- * real option in the base that should not be in use; anything landing here
- * is a data problem for someone to fix in Airtable.
+ * Column for a record whose stage is none of the above: "undefined", which
+ * should not be in use, or a retired stage (Pending, On Hold) still set on
+ * a record. Anything landing here is a data problem to fix in Airtable.
  */
 export const NEEDS_FIXING = "Needs fixing";
 
