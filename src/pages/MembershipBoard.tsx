@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Search, User, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,12 +7,22 @@ import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import ApplicantCard from '@/components/membership/ApplicantCard';
 import ApplicantSheet from '@/components/membership/ApplicantSheet';
+import KanbanColumns, { BoardColumnsSkeleton } from '@/components/membership/KanbanColumns';
 import { downloadActiveMembers, type ApplicantCard as Card } from '@/api/membership';
 import { useMembershipBoard, useMyProfile } from '@/lib/queries';
 import { NEEDS_FIXING } from '@shared/membershipStages';
 
 // Its own chunk: an officer checking the board never downloads the charts.
 const MembershipInsights = lazy(() => import('@/components/membership/MembershipInsights'));
+// Likewise the commitment reviews, fetched only when their tab is opened.
+const StatementsBoard = lazy(() => import('@/components/membership/StatementsBoard'));
+
+const TABS = [
+  { key: 'board', label: 'Process' },
+  { key: 'statements', label: 'Statements' },
+  { key: 'insights', label: 'Insights' },
+] as const;
+type Tab = (typeof TABS)[number]['key'];
 
 /** Filters live in the address, so a view can be bookmarked or shared. */
 const FILTERS = [{ key: 'type', label: 'Applicant type', of: (c: Card) => c.applicantType }] as const;
@@ -22,26 +32,10 @@ export default function MembershipBoard() {
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.sections?.includes('membership') ?? false;
   const [params, setParams] = useSearchParams();
-  const tab = params.get('view') === 'insights' ? 'insights' : 'board';
+  const tab: Tab = TABS.find((t) => t.key !== 'board' && t.key === params.get('view'))?.key ?? 'board';
   const { data: board, isLoading, isError, refetch } = useMembershipBoard(allowed && tab === 'board');
   const [openId, setOpenId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const boardRef = useRef<HTMLDivElement>(null);
-
-  // On a phone only one column is on screen, and the one the officer acts
-  // on (stage 6) is the sixth, so the chips above the board jump to a
-  // column. They scroll the board itself, to the column's left edge less the
-  // gutter: scrollIntoView is unreliable inside a snapping container and can
-  // move the whole page as well.
-  const jumpTo = (column: string) => {
-    const board = boardRef.current;
-    const target = board?.querySelector<HTMLElement>(`[data-column="${CSS.escape(column)}"]`);
-    if (!board || !target) return;
-    const gutter = parseFloat(getComputedStyle(board).paddingLeft) || 0;
-    const left = board.scrollLeft + target.getBoundingClientRect().left - board.getBoundingClientRect().left - gutter;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    board.scrollTo({ left, behavior: reduced ? 'auto' : 'smooth' });
-  };
 
   const query = params.get('q') ?? '';
   const showParked = params.get('parked') === '1';
@@ -126,7 +120,7 @@ export default function MembershipBoard() {
 
       <main className="flex-1 container mx-auto px-4 py-4">
         <div role="tablist" aria-label="Membership views" className="flex gap-1 mb-4 border-b border-border">
-          {(['board', 'insights'] as const).map((t) => (
+          {TABS.map(({ key: t, label }) => (
             <button
               key={t}
               role="tab"
@@ -134,7 +128,7 @@ export default function MembershipBoard() {
               onClick={() => {
                 // Each view keeps only its own settings in the address.
                 const next = new URLSearchParams();
-                if (t === 'insights') next.set('view', 'insights');
+                if (t !== 'board') next.set('view', t);
                 setParams(next, { replace: true });
               }}
               className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${
@@ -143,7 +137,7 @@ export default function MembershipBoard() {
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              {t === 'board' ? 'Process' : 'Insights'}
+              {label}
             </button>
           ))}
         </div>
@@ -151,6 +145,10 @@ export default function MembershipBoard() {
         {tab === 'insights' ? (
           <Suspense fallback={<BoardColumnsSkeleton />}>
             <MembershipInsights />
+          </Suspense>
+        ) : tab === 'statements' ? (
+          <Suspense fallback={<BoardColumnsSkeleton />}>
+            <StatementsBoard />
           </Suspense>
         ) : (
         <>
@@ -225,43 +223,12 @@ export default function MembershipBoard() {
             </p>
           </div>
         ) : (
-          <>
-          <nav className="flex gap-1.5 overflow-x-auto pb-2 mb-1 -mx-4 px-4" aria-label="Jump to stage">
-            {columns.map((column) => (
-              <button
-                key={column}
-                onClick={() => jumpTo(column)}
-                className="shrink-0 text-[11px] px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-              >
-                {column.replace(/ \(Signed\)$/, '')} · {byColumn(column).length}
-              </button>
-            ))}
-          </nav>
-          {/* scroll-px keeps the page gutter when a column snaps into place. */}
-          <div ref={boardRef} className="flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-px-4 pb-3 -mx-4 px-4">
-            {columns.map((column) => {
-              const list = byColumn(column);
-              return (
-                <section
-                  key={column}
-                  data-column={column}
-                  className="snap-start shrink-0 w-[85%] sm:w-72 flex flex-col"
-                  aria-label={column}
-                >
-                  <header className="flex items-center justify-between gap-2 mb-2 px-1">
-                    <h2 className="text-xs font-semibold text-foreground truncate">{column}</h2>
-                    <span className="text-xs text-muted-foreground shrink-0">{list.length}</span>
-                  </header>
-                  <div className="space-y-2 bg-muted/40 rounded-lg p-2">
-                    {list.map((card) => (
-                      <ApplicantCard key={card.id} card={card} onOpen={() => setOpenId(card.id)} />
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-          </>
+          <KanbanColumns
+            columns={columns}
+            itemsFor={byColumn}
+            chipLabel={(column) => column.replace(/ \(Signed\)$/, '')}
+            renderItem={(card) => <ApplicantCard card={card} onOpen={() => setOpenId(card.id)} />}
+          />
         )}
         </>
         )}
@@ -269,20 +236,6 @@ export default function MembershipBoard() {
 
       <AppFooter />
       {open && <ApplicantSheet card={open} onClose={() => setOpenId(null)} />}
-    </div>
-  );
-}
-
-function BoardColumnsSkeleton() {
-  return (
-    <div className="flex gap-3 overflow-hidden">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="shrink-0 w-[85%] sm:w-72 space-y-2">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-        </div>
-      ))}
     </div>
   );
 }

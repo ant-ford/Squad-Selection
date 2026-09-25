@@ -328,7 +328,7 @@ export async function getActiveMembersCsv(
  * Audit table for the section's actions, created in Airtable by the owner:
  *
  *   Id                    autonumber     primary field
- *   Event Type            single select  Approved | Exported
+ *   Event Type            single select  Approved | Exported | Notified
  *   Person                link (People)  the applicant approved (blank for an export)
  *   Actor                 link (People)  the officer who did it
  *   Actor Email           text           verified session email

@@ -9,7 +9,14 @@ import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/g
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { getPlayerStats } from '@/api/getPlayerStats';
 import { getPlayerAttendance } from '@/api/getPlayerAttendance';
-import { approveApplicant, getMembershipBoard, getMembershipInsights, type ApproveInput } from '@/api/membership';
+import {
+  approveApplicant,
+  getMembershipBoard,
+  getMembershipInsights,
+  getStatementBoard,
+  requestReviewEmail,
+  type ApproveInput,
+} from '@/api/membership';
 import { getChairmanDirectory } from '@/api/chairman';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
@@ -384,6 +391,24 @@ export function useApproveApplicant() {
       // Status and stage also feed the ranking lists.
       queryClient.invalidateQueries({ queryKey: ['ranking'] });
     },
+  });
+}
+
+export function useStatementBoard(enabled = true) {
+  return useQuery({
+    queryKey: ['statementBoard'],
+    queryFn: getStatementBoard,
+    enabled,
+    // Cached five minutes on the Worker and dropped on any Commitments edit.
+    staleTime: 60_000,
+  });
+}
+
+export function useRequestReviewEmail() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (commitmentId: string) => requestReviewEmail(commitmentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['statementBoard'] }),
   });
 }
 

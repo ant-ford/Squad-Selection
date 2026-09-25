@@ -13,6 +13,7 @@ import {
 } from "./http";
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
+import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
@@ -570,6 +571,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         200,
         origin,
       );
+    }
+
+    if (method === "GET" && pathname === "/api/membership/statements") {
+      await requireSection(request, env, "membership");
+      return json(await getStatementBoard(env), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/membership/statements/notify") {
+      const user = await requireSection(request, env, "membership");
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(await requestReviewEmail(env, user, String(body.commitmentId ?? "")), 200, origin);
     }
 
     // ── Chairman's section (Section Chairs + Section Captains table) ──────

@@ -17,7 +17,7 @@ const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
 const describeHolders = (holders: NumberHolder[]) =>
   holders.map((h) => (h.status ? `${h.name} (${h.status})` : h.name)).join(', ');
 
-function Fact({ label, value }: { label: string; value?: ReactNode }) {
+export function Fact({ label, value }: { label: string; value?: ReactNode }) {
   if (value === undefined || value === null || value === '') return null;
   return (
     <div>
@@ -27,7 +27,7 @@ function Fact({ label, value }: { label: string; value?: ReactNode }) {
   );
 }
 
-function TextBlock({ label, text }: { label: string; text?: string }) {
+export function TextBlock({ label, text }: { label: string; text?: string }) {
   if (!text) return null;
   return (
     <section>

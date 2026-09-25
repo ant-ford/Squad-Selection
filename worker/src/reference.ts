@@ -147,6 +147,9 @@ export const MEMBERSHIP_RECORDS_KEY = "membership-records";
 /** The chairman's email-list directory (chairman.ts); declared here for the same reason. */
 export const CHAIRMAN_DIRECTORY_KEY = "chairman-directory";
 
+/** The Commitments rows behind the Statements board (statements.ts); declared here for the same reason. */
+export const STATEMENT_RECORDS_KEY = "statement-records";
+
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(
     env,

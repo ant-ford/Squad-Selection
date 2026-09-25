@@ -203,3 +203,60 @@ export const OFFICER_FIELDS = {
   designation: "Designation",
   member: "Member",
 } as const;
+
+/**
+ * Commitments fields the membership section's Statements board reads
+ * (worker/src/statements.ts): one row per member per commitment year, and
+ * its Review Progress. The AI, combined-context and signature fields are
+ * deliberately left out - the officer reads those in their Fillout form.
+ */
+export const COMMITMENT_FIELDS = {
+  reviewProgress: "Review Progress",
+  /**
+   * A Last-modified-time field watching Review Progress only. Optional:
+   * until it exists reads drop it (airtable.ts missingFields) and days in a
+   * stage come from the submission dates where there is one.
+   */
+  reviewUpdatedAt: "Review Progress Updated At",
+  /**
+   * Checkbox the app ticks to ask for the review email early. The Airtable
+   * automation that sends it triggers on "Not Started AND (Period End within
+   * 60 days OR Notify Now)", so the one automation still sends the one email.
+   */
+  notifyNow: "Notify Now",
+  people: "People",
+  fullName: "Full Name",
+  preferredName: "Preferred Name",
+  membershipNo: "Membership No.",
+  joinDate: "Join Date",
+  commitmentEndDate: "Commitment End Date",
+  yearNo: "Year #",
+  period: "Period",
+  periodStart: "Period Start",
+  periodEnd: "Period End",
+  selectedTeamSos: "Selected Team SOS",
+  selectedTeamEos: "Selected Team EOS",
+  sponsorName: "Sponsor Preferred Name",
+  matchesPlayed: "Matches: Played",
+  matchesAvailable: "Matches: Available (Did Not Play)",
+  matchesNotAvailable: "Matches: Not Available",
+  matchesTeamPlayed: "Matches: Team Played",
+  teamsPlayed: "Player: Teams Played",
+  practices: "Practices",
+  socialFunctions: "Social Functions",
+  gamesUmpired: "# Games Umpired",
+  qualifiedUmpire: "Qualified Umpire",
+  otherContributions: "Other Contributions",
+  lowParticipationReason: "Player: Reason for low participation",
+  sectionServiceMember: "Potential for Section service and involvement (Member)",
+  hkfcServiceMember: "Potential for HKFC service and involvement (Member)",
+  sectionServiceSponsor: "Potential for Section service and involvement (Sponsor)",
+  hkfcServiceSponsor: "Potential for HKFC service and involvement (Sponsor)",
+  sponsorRecommendation: "Recommendation (Sponsor)",
+  recommendedReduction: "Recommended Commitment Reduction",
+  memberSubmittedAt: "Member Submission Date",
+  sponsorSubmittedAt: "Sponsor Submission Date",
+  officerSubmittedAt: "Membership Officer Submission Date",
+  playerStatement: "Player Statement",
+  officerFormUrl: "Fillout - Membership Officer (Commitment Review Form)",
+} as const;
