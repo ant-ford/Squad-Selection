@@ -30,9 +30,9 @@ import { SCHEDULED_MATCHES_KEY } from "./fixtures";
 import {
   CHAIRMAN_DIRECTORY_KEY,
   MEMBERSHIP_RECORDS_KEY,
-  NOTIFIED_REVIEWS_KEY,
   OFFICER_LINKS_KEY,
   STATEMENT_RECORDS_KEY,
+  WAITING_ON_KEY,
 } from "./reference";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
@@ -68,7 +68,15 @@ function constantTimeEqual(a: string, b: string): boolean {
  */
 const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPrefix[]; localPrefixes?: string[] }> = {
   [TABLES.player]: {
-    keys: ["club-reference", "ranking:active", "ranking:inactive", MEMBERSHIP_RECORDS_KEY, CHAIRMAN_DIRECTORY_KEY, STATEMENT_RECORDS_KEY],
+    keys: [
+      "club-reference",
+      "ranking:active",
+      "ranking:inactive",
+      MEMBERSHIP_RECORDS_KEY,
+      CHAIRMAN_DIRECTORY_KEY,
+      STATEMENT_RECORDS_KEY,
+      WAITING_ON_KEY,
+    ],
     sharedPrefixes: ["player-by-email:"],
     // my-tasks: a member's player-page banner, gone once their form is in.
     localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
@@ -103,21 +111,21 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
   // The boards carry the signing officer's name and mobile, so an office
   // changing hands drops them too.
   [TABLES.membershipOfficer]: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
+    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
   [TABLES.sectionChair]: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
+    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
   [TABLES.sectionCaptainOffice]: {
-    keys: [OFFICER_LINKS_KEY],
+    keys: [OFFICER_LINKS_KEY, WAITING_ON_KEY],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   [TABLES.commitment]: {
-    keys: [STATEMENT_RECORDS_KEY, NOTIFIED_REVIEWS_KEY],
+    keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
   [TABLES.sponsor]: {
-    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
+    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
 };
 
