@@ -18,6 +18,7 @@ import {
   type ApproveInput,
 } from '@/api/membership';
 import { getChairmanDirectory } from '@/api/chairman';
+import { getMyTasks } from '@/api/getMyTasks';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -45,6 +46,20 @@ export function useMyProfile() {
     queryKey: ['myProfile'],
     queryFn: () => apiGet<ProfileData>('/api/my-profile'),
     staleTime: Infinity,
+  });
+}
+
+/**
+ * Forms the member still owes (the player-page banner). Unlike the rest of
+ * the app this refetches when the tab regains focus: the member has usually
+ * just come back from filling the form in.
+ */
+export function useMyTasks() {
+  return useQuery({
+    queryKey: ['myTasks'],
+    queryFn: getMyTasks,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 

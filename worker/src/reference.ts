@@ -150,6 +150,9 @@ export const CHAIRMAN_DIRECTORY_KEY = "chairman-directory";
 /** The Commitments rows behind the Statements board (statements.ts); declared here for the same reason. */
 export const STATEMENT_RECORDS_KEY = "statement-records";
 
+/** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
+export const WAITING_ON_KEY = "waiting-on";
+
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(
     env,

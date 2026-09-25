@@ -14,6 +14,7 @@ import {
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
+import { getMyTasks } from "./myTasks";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
@@ -375,6 +376,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/my-profile") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getMyProfile(env, user), 200, origin);
+    }
+    if (method === "GET" && pathname === "/api/my-tasks") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getMyTasks(env, user), 200, origin);
     }
     if (method === "GET" && pathname === "/api/my-fixtures") {
       const user = await requireAuthorizedUser(request, env);
