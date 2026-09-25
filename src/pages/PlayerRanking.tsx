@@ -10,14 +10,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserMinus, UserPlus,
-  GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3,
+  GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3, CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import SeasonStatsSheet from '@/components/SeasonStatsSheet';
+import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
 import {
   useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
@@ -124,6 +124,7 @@ export default function PlayerRanking() {
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
+  const [attendancePlayerId, setAttendancePlayerId] = useState<string | null>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const isMobile = useMediaQuery('(max-width: 639px)');
 
@@ -481,6 +482,7 @@ export default function PlayerRanking() {
                         onOpenMoveToRank={handleOpenMoveToRank}
                         onDeactivate={handleDeactivateById}
                         onViewStats={setStatsPlayerId}
+                        onViewAttendance={setAttendancePlayerId}
                         onPhotoClick={setExpandedPhoto}
                       />
                     </div>
@@ -494,7 +496,7 @@ export default function PlayerRanking() {
                   player={activeDragPlayer}
                   isFirst={false} isLast={false} disabled={false} isDragging={false}
                   menuOpen={false} onMenuOpenChange={() => {}}
-                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onDeactivate={() => {}} onViewStats={() => {}} onPhotoClick={() => {}}
+                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onDeactivate={() => {}} onViewStats={() => {}} onViewAttendance={() => {}} onPhotoClick={() => {}}
                   dragHandleProps={{}}
                   style={{ opacity: 0.9, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
                 />
@@ -555,6 +557,15 @@ export default function PlayerRanking() {
           statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? ({} as Player)) : undefined
         }
         onClose={() => setStatsPlayerId(null)}
+      />
+
+      {/* Past attendance and upcoming availability, fixture by fixture. */}
+      <AttendanceSheet
+        playerId={attendancePlayerId}
+        playerName={
+          attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? ({} as Player)) : undefined
+        }
+        onClose={() => setAttendancePlayerId(null)}
       />
 
       {openMenuPlayerId !== null && (
@@ -723,6 +734,7 @@ function SortableRankingRow(props: {
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
   onViewStats: (playerId: string) => void;
+  onViewAttendance: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
   menuOpen: boolean;
   onMenuOpenChange: (v: boolean) => void;
@@ -744,6 +756,7 @@ function SortableRankingRow(props: {
         onOpenMoveToRank={props.onOpenMoveToRank}
         onDeactivate={props.onDeactivate}
         onViewStats={props.onViewStats}
+        onViewAttendance={props.onViewAttendance}
         onPhotoClick={props.onPhotoClick}
         dragHandleProps={listeners ?? {}}
       />
@@ -764,6 +777,7 @@ function RankingRowInner(props: {
   onOpenMoveToRank: (playerId: string) => void;
   onDeactivate: (playerId: string) => void;
   onViewStats: (playerId: string) => void;
+  onViewAttendance: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
   dragHandleProps: Record<string, any>;
   style?: React.CSSProperties;
@@ -874,6 +888,12 @@ function RankingRowInner(props: {
                 className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
               >
                 <BarChart3 className="h-3.5 w-3.5 mr-2" /> Season stats
+              </button>
+              <button
+                onClick={() => { props.onMenuOpenChange(false); props.onViewAttendance(player.id); }}
+                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
+              >
+                <CalendarDays className="h-3.5 w-3.5 mr-2" /> Attendance
               </button>
               <button
                 onClick={() => { if (props.draftPending) return; props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
