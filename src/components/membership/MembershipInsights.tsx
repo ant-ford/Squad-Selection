@@ -19,6 +19,7 @@ import {
   type Period,
 } from '@shared/membershipInsights';
 import { ChartCard, DataTable, HBars, MonthColumns, SquadBars, StatTile, monthLabel } from './charts';
+import StatementInsights from './StatementInsights';
 
 const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward', 'Flexible/Varies'];
 
@@ -276,6 +277,9 @@ export default function MembershipInsights() {
           </ChartCard>
         </div>
       </section>
+
+      {/* ── Commitment reviews: now and this season, not the period ── */}
+      <StatementInsights />
     </div>
   );
 }
