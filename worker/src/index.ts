@@ -13,6 +13,7 @@ import {
 } from "./http";
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
+import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
 import {
@@ -565,6 +566,28 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           commitmentEndDate: String(body.commitmentEndDate ?? ""),
           membershipNo: String(body.membershipNo ?? ""),
           sharedNumberAcknowledged: body.sharedNumberAcknowledged === true,
+        }),
+        200,
+        origin,
+      );
+    }
+
+    // ── Chairman's section (Section Chairs + Section Captains table) ──────
+    // The directory carries every member's email address, so it is gated on
+    // the section like the membership routes.
+    if (method === "GET" && pathname === "/api/chairman/directory") {
+      await requireSection(request, env, "chairman");
+      return json(await getChairmanDirectory(env), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/chairman/export-log") {
+      const user = await requireSection(request, env, "chairman");
+      const body = (await readJsonBody(request)) as Partial<EmailExportInput>;
+      return json(
+        await logEmailExport(env, user, {
+          kind: body.kind as EmailExportInput["kind"],
+          people: Number(body.people),
+          addresses: Number(body.addresses),
+          description: String(body.description ?? ""),
         }),
         200,
         origin,

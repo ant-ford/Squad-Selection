@@ -18,6 +18,7 @@ import { invalidateForTables } from "./airtableWebhook";
 import { TABLES } from "../../shared/schema/tableNames";
 import { MEMBERSHIP_FIELDS as F } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { toCsv } from "../../shared/csv";
 import {
   ACCEPTED_STAGE,
   APPROVABLE_STAGE,
@@ -284,16 +285,8 @@ export async function getMembershipInsights(env: Env): Promise<MembershipInsight
 
 const CSV_HEADER = ["Membership No.", "Surname", "Given Name(s)", "Status"];
 
-/**
- * One CSV cell. Quoted when it has to be, and a leading = + - @ (or tab/CR)
- * is prefixed with an apostrophe so a spreadsheet shows it as text instead
- * of running it as a formula - the file is opened by people outside the
- * section, and a name field is free text.
- */
-export function csvCell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-}
+// Lives in shared/csv.ts now; re-exported for the export's tests.
+export { csvCell } from "../../shared/csv";
 
 /**
  * Every Active person, for the club to confirm membership against. Temporary
@@ -318,7 +311,7 @@ export async function getActiveMembersCsv(
       return [text(f[F.membershipNo]) ?? "", text(f[F.surname]) ?? "", text(f[F.givenNames]) ?? "", text(f[F.status]) ?? ""];
     })
     .sort((a, b) => a[1].localeCompare(b[1]) || a[2].localeCompare(b[2]));
-  const csv = [CSV_HEADER, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+  const csv = toCsv([CSV_HEADER, ...rows]);
   const today = hkDateKey(new Date().toISOString());
   // The file carries every member's name and number and leaves the app, so
   // who took a copy, and when, goes on the record.
@@ -373,7 +366,11 @@ const EV = MEMBERSHIP_EVENTS_FIELDS;
  * every failure - the table not created yet, a field named differently - is
  * logged loudly with the row it would have written, and swallowed.
  */
-async function recordMembershipEvent(env: Env, actor: AuthorizedUser, fields: Record<string, unknown>): Promise<void> {
+export async function recordMembershipEvent(
+  env: Env,
+  actor: AuthorizedUser,
+  fields: Record<string, unknown>,
+): Promise<void> {
   const row: Record<string, unknown> = {
     ...fields,
     [EV.actorEmail]: actor.email,

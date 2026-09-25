@@ -144,6 +144,9 @@ export const OFFICER_LINKS_KEY = "officer-links";
  */
 export const MEMBERSHIP_RECORDS_KEY = "membership-records";
 
+/** The chairman's email-list directory (chairman.ts); declared here for the same reason. */
+export const CHAIRMAN_DIRECTORY_KEY = "chairman-directory";
+
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(
     env,
