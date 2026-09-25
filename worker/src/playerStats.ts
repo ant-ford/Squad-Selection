@@ -80,6 +80,12 @@ export interface PlayerStatsInput {
   rules?: AvailabilityRule[];
   /** How many recent results to return. */
   recentLimit?: number;
+  /**
+   * Matches with at least one Match Card, for anyone. A picked player on a
+   * match outside this set counts as having played. Omitted: every match is
+   * treated as carded.
+   */
+  matchesWithCards?: Set<string>;
 }
 
 const DEFAULT_RECENT_LIMIT = 5;
@@ -112,7 +118,7 @@ function realCards(value: unknown): string[] {
  * whole thing is testable without Airtable.
  */
 export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonStats {
-  const { player, team, season, cards, matchesById, exceptions, rules = [] } = input;
+  const { player, team, season, cards, matchesById, exceptions, rules = [], matchesWithCards } = input;
   const recentLimit = input.recentLimit ?? DEFAULT_RECENT_LIMIT;
 
   // ── Appearances ──────────────────────────────────────────────────────
@@ -188,11 +194,21 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
   let gamesUnavailable = 0;
   let gamesNoShow = 0;
   let gamesAvailableNotSelected = 0;
+  let assumedAppearances = 0;
   for (const matchId of teamGameIds) {
     const m = matchesById.get(matchId)!;
     // 1. On the Match Card: they played, whatever else was recorded.
     if (cardedMatchIds.has(matchId)) {
       gamesPlayedForTeam++;
+      continue;
+    }
+    // 1b. Picked for a match nobody has a Match Card for: nothing says who
+    //     turned up, so the pick is taken as an appearance, never a no-show.
+    const side = m.homeTeam === team ? m.selectedPlayersHome : m.selectedPlayersAway;
+    const picked = (side ?? []).includes(player.id);
+    if (picked && matchesWithCards && !matchesWithCards.has(matchId)) {
+      gamesPlayedForTeam++;
+      assumedAppearances++;
       continue;
     }
     // 2. Unavailable - resolved the same way as for selection, so a standing
@@ -212,8 +228,7 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
     // 3. Available and picked, but not on the Match Card: a no-show. Unless
     //    they turned out for another side that day - then they were moved,
     //    not missing.
-    const side = m.homeTeam === team ? m.selectedPlayersHome : m.selectedPlayersAway;
-    if ((side ?? []).includes(player.id) && !cardedDates.has(date)) {
+    if (picked && !cardedDates.has(date)) {
       gamesNoShow++;
       continue;
     }
@@ -222,7 +237,7 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
   }
 
   const teamGames = teamGameIds.size;
-  const gamesPlayed = seasonCards.length;
+  const gamesPlayed = seasonCards.length + assumedAppearances;
   const pct = (n: number) => (teamGames === 0 ? null : Math.round((n / teamGames) * 100));
 
   results.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -276,6 +291,7 @@ export async function getPlayerSeasonStats(
     matchesById: ctx.matchesById,
     exceptions: ctx.exceptionsRaw,
     rules,
+    matchesWithCards: ctx.matchIdsWithCards,
   });
 
   return {

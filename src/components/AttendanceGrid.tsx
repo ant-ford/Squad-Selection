@@ -139,6 +139,7 @@ function Detail({ date, cells }: { date: string; cells: AttendanceCell[] }) {
               </p>
               <p className="text-muted-foreground">
                 {look.label}
+                {c.assumed && ' (picked - no match cards for this game)'}
                 {c.status === 'played' && c.goals ? ` · ${c.goals} goal${c.goals === 1 ? '' : 's'}` : ''}
                 {c.status !== 'played' && c.status !== 'elsewhere' && c.status !== 'off' && (
                   <> &middot; {c.availability} ({SOURCE_TEXT[c.source].toLowerCase()})</>

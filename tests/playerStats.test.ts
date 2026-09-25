@@ -201,6 +201,25 @@ describe("participation", () => {
     expect(stats.availabilityPct).toBe(50); // (1+1)/4
   });
 
+  it("counts a pick for a match with no Match Cards at all as played, not a no-show", () => {
+    const matchesById = build([
+      match("recM1", { selectedPlayersHome: ["recP1"] }), // has cards, but not theirs
+      match("recM2", { selectedPlayersHome: ["recP1"] }), // nobody has a card
+    ]);
+    const stats = computePlayerSeasonStats({
+      player: player(),
+      team: TEAM,
+      season: SEASON,
+      cards: [],
+      matchesById,
+      exceptions: [],
+      matchesWithCards: new Set(["recM1"]),
+    });
+    expect(stats.gamesNoShow).toBe(1);
+    expect(stats.gamesPlayedForTeam).toBe(1);
+    expect(stats.gamesPlayed).toBe(1);
+  });
+
   it("does not call a selected player a no-show once they said they were unavailable", () => {
     const matchesById = build([match("recM1", { selectedPlayersHome: ["recP1"] })]);
     const stats = computePlayerSeasonStats({

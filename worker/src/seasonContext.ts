@@ -113,6 +113,8 @@ export interface SeasonContext {
   allMatches: Match[];
   matchesById: Map<string, Match>;
   matchCardsByPlayer: Map<string, MatchCard[]>;
+  /** Matches with at least one Match Card. One without (e.g. a hand-entered friendly) records no attendance. */
+  matchIdsWithCards: Set<string>;
   completedLeagueMatchesByTeam: Map<string, number>;
   virtualSelections: VirtualSelection[];
   selectionsByPlayer: Map<string, Set<string>>;
@@ -146,7 +148,10 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
     ]);
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
+    const matchIdsWithCards = new Set<string>();
     for (const card of matchCards) {
+      const cardMatchId = linkId(card.match);
+      if (cardMatchId) matchIdsWithCards.add(cardMatchId);
       const playerId = linkId(card.player);
       if (!playerId) continue;
       const cards = matchCardsByPlayer.get(playerId) || [];
@@ -212,6 +217,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       allMatches,
       matchesById,
       matchCardsByPlayer,
+      matchIdsWithCards,
       completedLeagueMatchesByTeam,
       virtualSelections,
       selectionsByPlayer,
