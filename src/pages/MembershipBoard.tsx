@@ -18,7 +18,7 @@ const MembershipInsights = lazy(() => import('@/components/membership/Membership
 const StatementsBoard = lazy(() => import('@/components/membership/StatementsBoard'));
 
 const TABS = [
-  { key: 'board', label: 'Process' },
+  { key: 'board', label: 'New Joiner' },
   { key: 'statements', label: 'Statements' },
   { key: 'insights', label: 'Insights' },
 ] as const;

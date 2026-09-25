@@ -93,11 +93,13 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
   "Ranking Events": {
     localPrefixes: ["ranking-events:"],
   },
+  // The boards carry the signing officer's name and mobile, so an office
+  // changing hands drops them too.
   [TABLES.membershipOfficer]: {
-    keys: [OFFICER_LINKS_KEY],
+    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
   },
   [TABLES.sectionChair]: {
-    keys: [OFFICER_LINKS_KEY],
+    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
   },
   [TABLES.sectionCaptainOffice]: {
     keys: [OFFICER_LINKS_KEY],
@@ -106,6 +108,9 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
   // resignations reach it through lookups and the resigned-id read.
   [TABLES.commitment]: {
     keys: [STATEMENT_RECORDS_KEY],
+  },
+  [TABLES.sponsor]: {
+    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY],
   },
 };
 

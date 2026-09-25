@@ -11,6 +11,7 @@ export const TABLES = {
   sectionChair: "Section Chairs",
   sectionCaptainOffice: "Section Captains",
   commitment: "Commitments",
+  sponsor: "Sponsors",
 } as const;
 
 /**
@@ -31,4 +32,5 @@ export const TABLE_IDS: Record<string, string> = {
   tblVRHhaM3o25Ld8I: TABLES.sectionChair,
   tblYhjoksGpD99Xvs: TABLES.sectionCaptainOffice,
   tblpZl6OOdArZCV99: TABLES.commitment,
+  tblcleIjg9wR8UBBg: TABLES.sponsor,
 };

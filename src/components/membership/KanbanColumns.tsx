@@ -2,7 +2,7 @@ import { useRef, type ReactNode } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
- * The membership section's board layout, shared by Process and Statements:
+ * The membership section's board layout, shared by New Joiner and Statements:
  * stage chips above swipeable, snapping columns. Callers pass only the
  * columns to show (empty stages are hidden, owner request 2026-09-25).
  */

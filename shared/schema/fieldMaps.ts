@@ -151,6 +151,14 @@ export const MEMBERSHIP_FIELDS = {
   playingLevel: "Playing Level",
   selectionComments: "Selection Comments/Coach Requests",
   applicationForm: "Sports Associate Application Form",
+  /**
+   * Who signs each stage, as links to their office row (Sponsors, Section
+   * Chairs, Membership Officers). Read for the board's WhatsApp shortcut
+   * to whoever the application is waiting on; never written.
+   */
+  sponsoredBySponsor: "Sponsored By Sponsor",
+  sponsoredByChair: "Sponsored By Chair",
+  sponsoredByOfficer: "Sponsored By Membership Officer",
 } as const;
 
 /**
@@ -237,6 +245,8 @@ export const COMMITMENT_FIELDS = {
   selectedTeamSos: "Selected Team SOS",
   selectedTeamEos: "Selected Team EOS",
   sponsorName: "Sponsor Preferred Name",
+  /** Link to the Sponsors row; read for the WhatsApp shortcut, never written. */
+  sponsorLink: "Sponsor",
   matchesPlayed: "Matches: Played",
   matchesAvailable: "Matches: Available (Did Not Play)",
   matchesNotAvailable: "Matches: Not Available",

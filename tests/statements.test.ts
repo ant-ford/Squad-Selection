@@ -59,13 +59,18 @@ function tables(): FakeTables {
       person(ID.officer, { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com" }),
       person(ID.chair, { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com" }),
       person(ID.captain, { "Preferred Name": "Cap", Surname: "Tain", Email: "cap@personal.com" }),
-      person(ID.player, { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member" }),
+      person(ID.player, {
+        "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member",
+        "Mobile No.": "9123 4567", Photo: [{ url: "https://dl.airtable.com/pat.jpg", filename: "pat.jpg" }],
+      }),
+      person("recSponsorChris01", { "Preferred Name": "Chris", Surname: "Coach", "Mobile No.": "9876 5432" }),
       person(ID.resigned, { "Preferred Name": "Ray", Surname: "Resigned", Status: "Resigned" }),
     ],
     Teams: [],
     "Membership Officers": [{ id: "recMO", fields: { Status: "Active", Designation: "Men's Membership Officer", Member: [ID.officer] } }],
     "Section Chairs": [{ id: "recSC", fields: { Status: "Active", Designation: "Chairman", Member: [ID.chair] } }],
     "Section Captains": [{ id: "recCP", fields: { Status: "Active", Designation: "Men's Captain", Member: [ID.captain] } }],
+    Sponsors: [{ id: "recSponsorRow0001", fields: { Status: "Active", Member: ["recSponsorChris01"] } }],
     Commitments: [
       cmt(ID.due, {
         "Review Progress": "Not Started", "Year #": 1, "Period Start": "2025-12-01", "Period End": "2026-11-30",
@@ -80,7 +85,7 @@ function tables(): FakeTables {
       cmt(ID.notified, { "Review Progress": "Notified Member", "Period Start": "2025-10-15", "Period End": "2026-10-14" }),
       cmt(ID.memberIn, {
         "Review Progress": "Member Submitted (with Sponsor)", "Period Start": "2025-10-01", "Period End": "2026-09-30",
-        "Member Submission Date": "2026-09-10T03:00:00.000Z", "Sponsor Preferred Name": ["Chris"],
+        "Member Submission Date": "2026-09-10T03:00:00.000Z", "Sponsor Preferred Name": ["Chris"], Sponsor: ["recSponsorRow0001"],
         "Matches: Played": 14, "Player: Teams Played": ["HKFC C", "HKFC D"], Practices: "Moderate 50-70%",
         "Player Statement": [{ url: "https://dl.airtable.com/statement.pdf", filename: "statement.pdf" }],
       }),
@@ -199,6 +204,19 @@ describe("the board", () => {
     // Past its period: outside the automation's window, so the button is the only way.
     expect(byId(ID.overdue)).toMatchObject({ inAutoWindow: false, canNotify: true });
     expect(byId(ID.notified)).toMatchObject({ canNotify: false, waitingOn: "The member's Commitment Form" });
+  });
+
+  it("carries the member's photo and mobile, and the sponsor while the review waits on them", async () => {
+    const { cards } = await board();
+    const due = cards.find((c: any) => c.id === ID.due);
+    expect(due).toMatchObject({ photo: "https://dl.airtable.com/pat.jpg", mobileNo: "9123 4567" });
+    expect(due.chase).toBeUndefined();
+    expect(cards.find((c: any) => c.id === ID.memberIn).chase).toEqual({
+      role: "Sponsor",
+      name: "Chris Coach",
+      firstName: "Chris",
+      mobile: "9876 5432",
+    });
   });
 
   it("counts days in stage from the submission that moved it there", async () => {

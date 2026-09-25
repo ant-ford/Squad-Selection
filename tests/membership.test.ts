@@ -42,20 +42,32 @@ const ID = {
   longMember: "recLongMember0001",
   broken: "recBrokenStage001",
   visitor: "recVisitor0000001",
+  sponsorPerson: "recSponsorChris01",
+  atChair: "recAtChairman0001",
+  atOfficer: "recAtOfficer00001",
 };
 
 function tables(): FakeTables {
   const person = (id: string, fields: Record<string, unknown>) => ({ id, fields: { Active: false, ...fields } });
   return {
     People: [
-      person(ID.officer, { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com" }),
-      person(ID.chair, { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com" }),
+      person(ID.officer, { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com", "Mobile No.": "6111 2222" }),
+      person(ID.chair, { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com", "Mobile No.": "6333 4444" }),
+      person(ID.sponsorPerson, { "Preferred Name": "Chris", Surname: "Coach", "Mobile No.": "9876 5432", "HKID No.": "B765432(1)" }),
+      person(ID.atChair, {
+        "Preferred Name": "Cara", Surname: "Chairwait", "Applicant Stage": "4. Sponsor (Signed)", Status: "Applicant",
+        "Application Date": "2026-08-01T02:00:00.000Z", "Sponsored By Chair": ["recSC"],
+      }),
+      person(ID.atOfficer, {
+        "Preferred Name": "Otto", Surname: "Officerwait", "Applicant Stage": "5. Chairman (Signed)", Status: "Applicant",
+        "Application Date": "2026-08-01T02:00:00.000Z", "Sponsored By Membership Officer": ["recMO"],
+      }),
       person(ID.captain, { "Preferred Name": "Cap", Surname: "Tain", Email: "cap@personal.com" }),
       person(ID.player, { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member", "Membership No.": "1001", "Given Name(s)": "Patrick" }),
       person(ID.atSponsor, {
         "Preferred Name": "Sam", Surname: "Sponsorwait", "Given Name(s)": "Samuel",
         "Applicant Stage": "3. Club Application (Signed)", Status: "Applicant",
-        "Application Date": "2026-08-26T02:00:00.000Z", "Sponsor Preferred Name": ["Chris"],
+        "Application Date": "2026-08-26T02:00:00.000Z", "Sponsor Preferred Name": ["Chris"], "Sponsored By Sponsor": ["recSponsorRow0001"],
         "Mobile No.": "9123 4567", "Tour Interest": ["Bangkok 11s (5-6 Dec 2026)"], "Playing Level": ["Division 2"],
         Photo: [{ url: "https://dl.airtable.com/sam.jpg", filename: "sam.jpg" }],
         "Sports Associate Application Form": [{ url: "https://dl.airtable.com/form.pdf", filename: "form.pdf" }],
@@ -82,6 +94,7 @@ function tables(): FakeTables {
     "Membership Officers": [{ id: "recMO", fields: { Status: "Active", Designation: "Men's Membership Officer", Member: [ID.officer] } }],
     "Section Chairs": [{ id: "recSC", fields: { Status: "Active", Designation: "Chairman", Member: [ID.chair] } }],
     "Section Captains": [{ id: "recCP", fields: { Status: "Active", Designation: "Men's Captain", Member: [ID.captain] } }],
+    Sponsors: [{ id: "recSponsorRow0001", fields: { Status: "Active", Designation: "Team Captain", Member: [ID.sponsorPerson] } }],
   };
 }
 
@@ -157,6 +170,8 @@ describe("the board", () => {
     const byId = Object.fromEntries(cards.map((c: any) => [c.id, c.column]));
     expect(byId).toEqual({
       [ID.atSponsor]: "3. Club Application (Signed)",
+      [ID.atChair]: "4. Sponsor (Signed)",
+      [ID.atOfficer]: "5. Chairman (Signed)",
       [ID.atStage6]: "6. Membership Officer (Signed)",
       [ID.acceptedRecent]: "Accepted", // joined within 12 months
       // Pending was retired from the base; a record still set to it is flagged.
@@ -184,6 +199,30 @@ describe("the board", () => {
     });
     const una = cards.find((c: any) => c.id === ID.atStage6);
     expect(una).toMatchObject({ stageSince: "2026-09-15", days: 10, canApprove: true });
+  });
+
+  it("names whoever each application is waiting on, with their mobile, for WhatsApp", async () => {
+    const { cards } = await board();
+    const chase = (id: string) => cards.find((c: any) => c.id === id)?.chase;
+    expect(chase(ID.atSponsor)).toEqual({ role: "Sponsor", name: "Chris Coach", firstName: "Chris", mobile: "9876 5432" });
+    expect(chase(ID.atChair)).toEqual({ role: "Chairman", name: "Charles Chair", firstName: "Charles", mobile: "6333 4444" });
+    expect(chase(ID.atOfficer)).toEqual({
+      role: "Membership Officer",
+      name: "Olive Officer",
+      firstName: "Olive",
+      mobile: "6111 2222",
+    });
+    // Stage 6 waits on the club, not a person.
+    expect(chase(ID.atStage6)).toBeUndefined();
+  });
+
+  it("reads the people it contacts by id, for name, mobile and photo only", async () => {
+    const res = await board();
+    const formulaOf = (url: string) => new URLSearchParams(url.split("?")[1] ?? "").get("filterByFormula") ?? "";
+    const reads = handle.calls.filter((c) => c.url.includes("/People?") && formulaOf(c.url).startsWith("OR(RECORD_ID()"));
+    expect(reads).toHaveLength(1);
+    expect(requestedFields(reads[0].url)).toEqual(["Preferred Name", "Given Name(s)", "Surname", "Mobile No.", "Photo", "Status"]);
+    expect(JSON.stringify(res)).not.toMatch(/B765432/);
   });
 
   it("asks People for the membership fields only, never the CRM", async () => {

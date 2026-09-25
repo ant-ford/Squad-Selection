@@ -1,5 +1,5 @@
 import { MessageCircle } from 'lucide-react';
-import type { ApplicantCard as Card } from '@/api/membership';
+import type { ApplicantCard as Card, Chase } from '@/api/membership';
 import { toWhatsAppNumber, whatsAppLink } from '@/lib/whatsapp';
 
 /** Amber from two weeks in one stage, red from a month. */
@@ -15,14 +15,30 @@ export function ageLabel(card: Card): string | null {
   return card.stageSince ? `${card.days}d in stage` : `applied ${card.days}d ago`;
 }
 
-export function applicantWhatsApp(card: Card): string | null {
-  const number = toWhatsAppNumber(card.mobileNo);
-  if (!number) return null;
-  const first = card.name.split(' ')[0] || card.name;
-  return whatsAppLink(number, `Hi ${first}, `);
+/** A wa.me link to `mobile` with `message` typed in, or null when the number is unusable. */
+export function whatsAppTo(mobile: string | undefined, message: string): string | null {
+  const number = toWhatsAppNumber(mobile);
+  return number ? whatsAppLink(number, message) : null;
 }
 
-export function Avatar({ card, size = 'h-10 w-10' }: { card: Card; size?: string }) {
+export function applicantWhatsApp(card: Card): string | null {
+  const first = card.name.split(' ')[0] || card.name;
+  return whatsAppTo(card.mobileNo, `Hi ${first}, `);
+}
+
+/** "sponsor" / "Chairman" / "Membership Officer", as said in a message. */
+const roleInMessage = (role: Chase['role']) => (role === 'Sponsor' ? 'sponsor' : role);
+
+/** WhatsApp to whoever the application is waiting on, with a reminder typed in. */
+export function chaseWhatsApp(card: Card): string | null {
+  if (!card.chase) return null;
+  return whatsAppTo(
+    card.chase.mobile,
+    `Hi ${card.chase.firstName || card.chase.name}, ${card.name}'s membership application is waiting for your signature as ${roleInMessage(card.chase.role)}.`,
+  );
+}
+
+export function Avatar({ card, size = 'h-10 w-10' }: { card: { name: string; photo?: string }; size?: string }) {
   return (
     <div className={`${size} shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center`}>
       {card.photo ? (
@@ -43,8 +59,27 @@ export function Avatar({ card, size = 'h-10 w-10' }: { card: Card; size?: string
   );
 }
 
+/** A small WhatsApp icon link that does not open the card it sits on. */
+export function WhatsAppIcon({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="p-1.5 -m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+      aria-label={label}
+      title={label}
+    >
+      <MessageCircle className="h-4 w-4" />
+    </a>
+  );
+}
+
 export default function ApplicantCard({ card, onOpen }: { card: Card; onOpen: () => void }) {
   const whatsApp = applicantWhatsApp(card);
+  const chase = chaseWhatsApp(card);
   const age = ageLabel(card);
   const meta = [card.team, card.playingPosition].filter(Boolean).join(' · ');
   return (
@@ -67,25 +102,16 @@ export default function ApplicantCard({ card, onOpen }: { card: Card; onOpen: ()
           {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
           {card.membershipNo && <p className="text-xs text-muted-foreground">No. {card.membershipNo}</p>}
         </div>
-        {whatsApp && (
-          <a
-            href={whatsApp}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="p-1.5 -m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            aria-label={`WhatsApp ${card.name}`}
-            title="WhatsApp"
-          >
-            <MessageCircle className="h-4 w-4" />
-          </a>
-        )}
+        {whatsApp && <WhatsAppIcon href={whatsApp} label={`WhatsApp ${card.name}`} />}
       </div>
       {(age || card.waitingOn) && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {age && <span className={`text-[11px] px-1.5 py-0.5 rounded ${ageTone(card.days)}`}>{age}</span>}
+        <div className="mt-2 flex items-center gap-1.5">
+          {age && <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${ageTone(card.days)}`}>{age}</span>}
           {card.waitingOn && (
-            <span className="text-[11px] text-muted-foreground truncate">Waiting on {card.waitingOn}</span>
+            <span className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
+          )}
+          {chase && card.chase && (
+            <WhatsAppIcon href={chase} label={`WhatsApp ${card.chase.name} (${card.chase.role})`} />
           )}
         </div>
       )}
