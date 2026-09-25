@@ -341,7 +341,7 @@ describe("Airtable webhook", () => {
     const kv = fakeKv();
     await kv.put(`match-cards:${THIS_SEASON}`, "[]");
     await kv.put("club-reference", "{}");
-    const seen = stubWebhookApi(["tblAfY7xhjkcKXlGq", "tblpZl6OOdArZCV99"]); // Match Cards + Commitments (CRM, ignored)
+    const seen = stubWebhookApi(["tblAfY7xhjkcKXlGq", "tblcleIjg9wR8UBBg"]); // Match Cards + Sponsors (CRM, ignored)
 
     const body = JSON.stringify({ base: { id: "appTest" }, webhook: { id: "achTest" }, timestamp: "t" });
     const mac = `hmac-sha256=${await signWebhookBody(secret, body)}`;

@@ -1,5 +1,6 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { BoardColumn } from '@shared/membershipStages';
+import type { ReviewColumn } from '@shared/statementStages';
 import type { InsightFact, TeamSquad } from '@shared/membershipInsights';
 
 /** Mirrors worker/src/membership.ts ApplicantCard. */
@@ -87,6 +88,75 @@ export async function getNumberHolders(membershipNo: string, excludeId: string):
 
 export function approveApplicant(input: ApproveInput): Promise<{ success: true }> {
   return apiPost('/api/membership/approve', input);
+}
+
+/** Mirrors worker/src/statements.ts StatementCard: one member's yearly commitment review. */
+export interface StatementCard {
+  id: string;
+  personId?: string;
+  name: string;
+  membershipNo?: string;
+  yearNo?: number;
+  period?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  joinDate?: string;
+  commitmentEndDate?: string;
+  stage: string;
+  column: ReviewColumn;
+  team?: string;
+  sponsor?: string;
+  waitingOn: string | null;
+  stageSince?: string;
+  days: number | null;
+  /** When the automation emails the member: Period End less 60 days. */
+  autoNoticeOn?: string;
+  /** Inside the automation's window: a Not Started row should already have been emailed. */
+  inAutoWindow: boolean;
+  /** Notify Now is ticked; waiting for the automation to send it. */
+  notifyRequested: boolean;
+  canNotify: boolean;
+  matchesPlayed?: number;
+  matchesAvailable?: number;
+  matchesNotAvailable?: number;
+  matchesTeamPlayed?: number;
+  teamsPlayed: string[];
+  practices?: string;
+  socialFunctions: string[];
+  gamesUmpired?: string;
+  qualifiedUmpire?: string;
+  otherContributions?: string;
+  lowParticipationReason?: string;
+  sectionServiceMember?: string;
+  hkfcServiceMember?: string;
+  sectionServiceSponsor?: string;
+  hkfcServiceSponsor?: string;
+  sponsorRecommendation?: string;
+  recommendedReduction?: string;
+  memberSubmittedOn?: string;
+  sponsorSubmittedOn?: string;
+  officerSubmittedOn?: string;
+  playerStatement: { url: string; filename: string }[];
+  officerFormUrl?: string;
+}
+
+export interface StatementBoard {
+  columns: string[];
+  cards: StatementCard[];
+  /** Rows under review with no People link. */
+  unlinked: number;
+  /** False until Commitments has a Review Progress Updated At field. */
+  hasStageDates: boolean;
+  generatedAt: string;
+}
+
+export function getStatementBoard(): Promise<StatementBoard> {
+  return apiGet<StatementBoard>('/api/membership/statements');
+}
+
+/** Ticks Notify Now; the Airtable automation sends the email and moves the row. */
+export function requestReviewEmail(commitmentId: string): Promise<{ success: true }> {
+  return apiPost('/api/membership/statements/notify', { commitmentId });
 }
 
 /**

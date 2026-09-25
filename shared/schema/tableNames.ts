@@ -10,6 +10,7 @@ export const TABLES = {
   membershipOfficer: "Membership Officers",
   sectionChair: "Section Chairs",
   sectionCaptainOffice: "Section Captains",
+  commitment: "Commitments",
 } as const;
 
 /**
@@ -29,4 +30,5 @@ export const TABLE_IDS: Record<string, string> = {
   tblfWkNsOIl3hrXAt: TABLES.membershipOfficer,
   tblVRHhaM3o25Ld8I: TABLES.sectionChair,
   tblYhjoksGpD99Xvs: TABLES.sectionCaptainOffice,
+  tblpZl6OOdArZCV99: TABLES.commitment,
 };
