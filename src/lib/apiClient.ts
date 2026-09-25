@@ -54,7 +54,7 @@ async function parseResponse(response: Response) {
     if (response.status === 403) {
       // 403 APPLICATION_ACCESS_DENIED: authenticated, but not on the list -
       // an unknown email, or a People record that is not Active and carries
-      // no coach link.
+      // no coach link and no Active officer row.
       //
       // Deliberately does NOT sign out. Authentication succeeded; only
       // authorisation failed, and destroying the session over that forced a

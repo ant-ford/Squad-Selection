@@ -27,6 +27,12 @@ export const PEOPLE_FIELDS = {
   selectionComments: "Selection Comments/Coach Requests",
   mobileNo: "Mobile No.",
   optInOnly: "Opt-In Only",
+  /**
+   * Read for the birthday banner only. The mapper keeps the month and day
+   * and drops the year, so no response built from a Player carries a date
+   * of birth.
+   */
+  dateOfBirth: "Date of Birth",
 } as const;
 
 export const TEAMS_FIELDS = {
@@ -102,4 +108,58 @@ export const AVAILABILITYRULES_FIELDS = {
   endDate: "End Date",
   notes: "Notes",
   lastModified: "Last Modified",
+} as const;
+
+/**
+ * People fields the membership board reads. Kept apart from PEOPLE_FIELDS on
+ * purpose: those are fetched on every squad read, and widening them for
+ * membership would slow every squad screen. This list is passed explicitly
+ * by worker/src/membership.ts and nowhere else. No HKID, bank or address
+ * field belongs here.
+ */
+export const MEMBERSHIP_FIELDS = {
+  preferredName: "Preferred Name",
+  givenNames: "Given Name(s)",
+  surname: "Surname",
+  photo: "Photo",
+  status: "Status",
+  applicantStage: "Applicant Stage",
+  /**
+   * A Last-modified-time field watching Applicant Stage only. Not in the
+   * base as of 2026-09-25; until it is added, reads drop it (airtable.ts
+   * missingFields) and the board counts days from the application date.
+   */
+  stageUpdatedAt: "Stage Updated At",
+  applicationDate: "Application Date",
+  membershipNo: "Membership No.",
+  joinDate: "Join Date",
+  commitmentEndDate: "Commitment End Date",
+  mobileNo: "Mobile No.",
+  applicantType: "Applicant Type",
+  categoryType: "Category Type",
+  gender: "Gender",
+  playingPosition: "Playing Position",
+  registeredTeam: "Registered Team",
+  selectedTeamSos: "Selected Team SOS",
+  selectedTeamEos: "Selected Team EOS",
+  sponsorName: "Sponsor Preferred Name",
+  sportsBackground: "Sports Background / Involvement",
+  personalInterest: "Personal / Family Interest",
+  tourInterest: "Tour Interest",
+  qualifiedUmpire: "Qualified Umpire",
+  qualifiedCoach: "Qualified Coach",
+  playingLevel: "Playing Level",
+  selectionComments: "Selection Comments/Coach Requests",
+  applicationForm: "Sports Associate Application Form",
+} as const;
+
+/**
+ * Membership Officers, Section Chairs and Section Captains share this shape:
+ * one row per office held, linked to the holder's People record. Status is
+ * Active or Retired.
+ */
+export const OFFICER_FIELDS = {
+  status: "Status",
+  designation: "Designation",
+  member: "Member",
 } as const;

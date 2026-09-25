@@ -1,5 +1,6 @@
 import { Player } from "../schema/domainTypes";
 import { PEOPLE_FIELDS } from "../schema/fieldMaps";
+import { birthdayKey } from "../birthday";
 
 function toOptionalInt(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
@@ -51,5 +52,6 @@ export function mapPlayer(record: any): Player {
     sportsBackground: f[PEOPLE_FIELDS.sportsBackground] || undefined,
     selectionComments: f[PEOPLE_FIELDS.selectionComments] || undefined,
     optInOnly: f[PEOPLE_FIELDS.optInOnly] === true,
+    birthday: birthdayKey(f[PEOPLE_FIELDS.dateOfBirth]),
   };
 }

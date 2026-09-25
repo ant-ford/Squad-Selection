@@ -43,6 +43,8 @@ export interface Player {
    * player answering a specific fixture overrides it.
    */
   optInOnly?: boolean;
+  /** People."Date of Birth" as "MM-DD". The year is dropped on purpose (shared/birthday.ts). */
+  birthday?: string;
 }
 
 export interface Team {

@@ -20,7 +20,7 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false };
+  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
 }
 
 const ENV = {

@@ -86,6 +86,12 @@ export interface GetMyFixturesOutput {
   coachTeams: string[];
   captainTeams: string[];
   isSectionCaptain: boolean;
+  /** Officers' sections this person may open, decided by the Worker. */
+  sections?: ('membership' | 'chairman')[];
+  /** Today (Hong Kong time) is this player's birthday. */
+  isBirthday?: boolean;
+  /** Teammates (same Selected Team) whose birthday it is today, by name. */
+  teamBirthdays?: string[];
   /**
    * True when this player is a goalkeeper registered to the lowest-ranked
    * active team - they see ALL upcoming HKFC fixtures instead of only their

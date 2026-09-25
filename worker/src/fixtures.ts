@@ -10,10 +10,11 @@ import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/do
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { isBirthdayOn } from "../../shared/birthday";
 import { buildEvaluationContext, getSeasonContext, currentSeason, previousSeason } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
-import type { AuthorizedUser } from "./auth";
+import { sectionsFor, type AuthorizedUser } from "./auth";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
 
@@ -131,6 +132,31 @@ export function isSpecialGoalkeeper(user: Player, ref: ReferenceData): boolean {
   return lowest !== "" && (user.registeredTeam || "") === lowest;
 }
 
+/**
+ * Names of the player's teammates whose birthday it is today, for the
+ * dashboard card. A teammate is anyone Active whose Selected Team (the same
+ * EOS -> SOS -> Registered fallback the dashboard shows) is the player's own.
+ * The player themselves is left out: they get their own banner. Only names
+ * leave the Worker, never a date.
+ */
+export function teamBirthdaysOn(
+  players: Player[],
+  user: Player,
+  displayTeam: string,
+  today: string,
+): string[] {
+  if (!displayTeam) return [];
+  return players
+    .filter(
+      (p) =>
+        p.id !== user.id &&
+        (selectedDisplayTeam(p) || p.registeredTeam || "") === displayTeam &&
+        isBirthdayOn(p.birthday, today),
+    )
+    .map((p) => [p.preferredName || p.givenNames, p.surname].filter(Boolean).join(" ") || "A teammate")
+    .sort((a, b) => a.localeCompare(b));
+}
+
 export async function getMyFixtures(
   env: Env,
   authUser: AuthorizedUser,
@@ -144,6 +170,7 @@ export async function getMyFixtures(
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
   const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
+  const today = hkDateKey(new Date().toISOString());
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
     playerId: user.id,
@@ -157,6 +184,12 @@ export async function getMyFixtures(
     coachTeams: authUser.coachTeams,
     captainTeams,
     isSectionCaptain: authUser.isSectionCaptain,
+    // Officers' sections, for the dashboard's header buttons.
+    sections: sectionsFor(authUser),
+    // Decided here, on the Hong Kong calendar day, so the date of birth
+    // itself never reaches the browser.
+    isBirthday: isBirthdayOn(user.birthday, today),
+    teamBirthdays: teamBirthdaysOn(ref.players, user, displayTeam, today),
   };
   const view = await buildPlayerFixtureView(env, user);
 

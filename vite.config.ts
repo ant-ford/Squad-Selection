@@ -102,6 +102,10 @@ export default defineConfig(({ command }) => ({
          */
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
+          // Imported only on someone's birthday. Left to Rollup it gets its
+          // own lazy chunk (precached in the background like the coach
+          // routes); the catch-all below would put it on the first load.
+          if (id.includes("canvas-confetti")) return;
           if (id.includes("@supabase")) return "vendor-supabase";
           if (id.includes("react-router")) return "vendor-router";
           if (id.includes("@tanstack")) return "vendor-query";

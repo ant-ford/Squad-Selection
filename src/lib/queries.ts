@@ -9,6 +9,7 @@ import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/g
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { getPlayerStats } from '@/api/getPlayerStats';
 import { getPlayerAttendance } from '@/api/getPlayerAttendance';
+import { approveApplicant, getMembershipBoard, getMembershipInsights, type ApproveInput } from '@/api/membership';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -347,5 +348,40 @@ export function useRecentChanges(days = 7) {
     queryKey: ['recentChanges', days],
     queryFn: () => apiGet<{ changes: RankingChange[] }>('/api/recent-changes', { days }),
     staleTime: 60_000,
+  });
+}
+// ── Membership section ───────────────────────────────────────────────────
+
+export function useMembershipBoard(enabled = true) {
+  return useQuery({
+    queryKey: ['membershipBoard'],
+    queryFn: getMembershipBoard,
+    // Off until the profile says this person may see it, so nobody else
+    // sends a request that can only come back 403.
+    enabled,
+    // The Worker caches the board for five minutes and drops it on any
+    // People change, so refetching more often than this buys nothing.
+    staleTime: 60_000,
+  });
+}
+
+export function useMembershipInsights() {
+  return useQuery({
+    queryKey: ['membershipInsights'],
+    queryFn: getMembershipInsights,
+    staleTime: 60_000,
+  });
+}
+
+export function useApproveApplicant() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ApproveInput) => approveApplicant(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['membershipBoard'] });
+      queryClient.invalidateQueries({ queryKey: ['membershipInsights'] });
+      // Status and stage also feed the ranking lists.
+      queryClient.invalidateQueries({ queryKey: ['ranking'] });
+    },
   });
 }
