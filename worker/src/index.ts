@@ -46,6 +46,7 @@ import {
 import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
+import { getPlayerAttendance } from "./playerAttendance";
 import { handleAirtableWebhook, refreshAirtableWebhook, WEBHOOK_ROUTE } from "./airtableWebhook";
 import { newRequestStats, runWithRequestContext, serverTimingHeader } from "./requestContext";
 
@@ -353,6 +354,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
       }
       return json(await getPlayerSeasonStats(env, playerStatsMatch[1]), 200, origin);
+    }
+
+    // ── Player Attendance Grid (Read - Self or Coach) ──────────────────────
+    // Past attendance and future availability per fixture; same gate as stats.
+    const playerAttendanceMatch = pathname.match(/^\/api\/player-attendance\/([^/]+)$/);
+    if (method === "GET" && playerAttendanceMatch) {
+      const user = await requireAuthorizedUser(request, env);
+      if (user.role !== "coach" && user.personId !== playerAttendanceMatch[1]) {
+        throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+      }
+      return json(await getPlayerAttendance(env, playerAttendanceMatch[1]), 200, origin);
     }
 
     // Player-facing routes: identity always comes from the verified Supabase

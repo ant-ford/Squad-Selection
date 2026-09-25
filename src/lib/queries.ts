@@ -8,6 +8,7 @@ import { getRecommendations } from '@/api/getRecommendations';
 import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/getMyFixtures';
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { getPlayerStats } from '@/api/getPlayerStats';
+import { getPlayerAttendance } from '@/api/getPlayerAttendance';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -78,6 +79,15 @@ export function usePlayerStats(playerId: string) {
   return useQuery({
     queryKey: ['playerStats', playerId],
     queryFn: () => getPlayerStats(playerId),
+    enabled: !!playerId,
+    staleTime: 60_000,
+  });
+}
+
+export function usePlayerAttendance(playerId: string) {
+  return useQuery({
+    queryKey: ['playerAttendance', playerId],
+    queryFn: () => getPlayerAttendance(playerId),
     enabled: !!playerId,
     staleTime: 60_000,
   });
