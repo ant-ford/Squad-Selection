@@ -219,9 +219,9 @@ export const COMMITMENT_FIELDS = {
    */
   reviewUpdatedAt: "Review Progress Updated At",
   /**
-   * Checkbox the app ticks to ask for the review email early. The Airtable
-   * automation that sends it triggers on "Not Started AND (Period End within
-   * 60 days OR Notify Now)", so the one automation still sends the one email.
+   * Checkbox the app ticks to ask for the review email early. A copy of the
+   * 60-day automation, triggered on "Review Progress is Not Started and
+   * Notify Now is checked", sends the same email and moves the row on.
    */
   notifyNow: "Notify Now",
   people: "People",

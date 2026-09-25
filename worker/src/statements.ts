@@ -22,6 +22,7 @@ import {
   COMPLETE,
   MEMBER_SUBMITTED,
   NOT_STARTED,
+  REVIEWS_FROM,
   REVIEW_STAGES,
   SPONSOR_SUBMITTED,
   reviewColumnFor,
@@ -58,9 +59,9 @@ export interface StatementCard {
   autoNoticeOn?: string;
   /**
    * Period End is inside the automation's window now, so a Not Started row
-   * should already have been emailed. Ticking Notify Now would not trigger
-   * it again (the row already matches), so the app says to check the
-   * automation instead of offering the button.
+   * should already have been emailed (or is being emailed this minute).
+   * Ticking Notify Now as well could send a second email, so the app says
+   * to check the automation instead of offering the button.
    */
   inAutoWindow: boolean;
   /** Notify Now is ticked and the automation has not moved the row yet. */
@@ -196,13 +197,15 @@ export function toStatementCard(record: any, today: string): StatementCard {
 }
 
 /**
- * Which rows belong on the board (owner decision, 2026-09-25): the period
- * in progress plus any unfinished earlier year, however old, and Complete
- * reviews for a year after their period ends. Future years (every year of a
+ * Which rows belong on the board (owner decisions, 2026-09-25): the period
+ * in progress plus any unfinished earlier year, and Complete reviews for a
+ * year after their period ends - but nothing whose period ended before
+ * REVIEWS_FROM, the pre-process history. Future years (every year of a
  * commitment is created at once) never.
  */
 export function statementBelongsOnBoard(card: StatementCard, today: string): boolean {
   if (!card.periodStart || card.periodStart > today) return false;
+  if (!card.periodEnd || card.periodEnd < REVIEWS_FROM) return false;
   if (card.column === COMPLETE) {
     const ended = card.periodEnd ?? card.officerSubmittedOn;
     return ended !== undefined && daysBetween(ended, today) <= RECENT_DAYS;
@@ -225,9 +228,10 @@ async function getStatementRecords(env: Env): Promise<StatementRecords> {
         airtableFindAll(
           env,
           TABLES.commitment,
-          // Narrows the scan to started periods (a day's slack for Airtable's
-          // UTC TODAY()); statementBelongsOnBoard is the rule.
-          `AND({${F.periodStart}}!="", IS_BEFORE({${F.periodStart}}, DATEADD(TODAY(), 2, "days")))`,
+          // Narrows the scan to started periods that end on or after
+          // REVIEWS_FROM (a day's slack either side for Airtable's UTC dates);
+          // statementBelongsOnBoard is the rule.
+          `AND({${F.periodStart}}!="", IS_BEFORE({${F.periodStart}}, DATEADD(TODAY(), 2, "days")), IS_AFTER({${F.periodEnd}}, DATETIME_PARSE("${addDays(REVIEWS_FROM, -2)}", "YYYY-MM-DD")))`,
           undefined,
           Object.values(F),
         ),
@@ -267,9 +271,9 @@ export async function getStatementBoard(env: Env): Promise<StatementBoard> {
 // ── Notify now ──────────────────────────────────────────────────────────
 
 /**
- * Ticks Notify Now on a Not Started row, which the review automation
- * triggers on alongside its 60-day rule: it sends the same email and moves
- * the row to Notified Member. The app never sets Review Progress itself -
+ * Ticks Notify Now on a Not Started row. A second Airtable automation, a
+ * copy of the 60-day one triggered on "Not Started and Notify Now checked",
+ * sends the same email and moves the row to Notified Member. The app never sets Review Progress itself -
  * that would move the row without the email going out.
  *
  * Writes exactly one field. People is a link: sending it would replace the

@@ -35,11 +35,13 @@ const ID = {
   due: "recCmtDue00000001", // Not Started, period ends after the window
   inWindow: "recCmtWindow00001", // Not Started, period ends inside the window
   requested: "recCmtAsked000001", // Not Started, Notify Now already ticked
-  overdue: "recCmtOverdue0001", // Not Started, period ended in 2023
+  overdue: "recCmtOverdue0001", // Not Started, period ended in August 2026
+  ancient: "recCmtAncient0001", // Not Started, period ended in 2023: before the cut-off
   notified: "recCmtNotified001",
   memberIn: "recCmtMemberIn001",
   completeRecent: "recCmtDoneNew0001",
   completeOld: "recCmtDoneOld0001",
+  completeJune: "recCmtDoneJune001", // ended 30 June 2026, the day before the cut-off
   future: "recCmtFuture00001", // next year's row, created with the rest
   orphan: "recCmtOrphan00001", // People link wiped
   ofResigned: "recCmtResigned001",
@@ -73,7 +75,8 @@ function tables(): FakeTables {
       }),
       cmt(ID.inWindow, { "Review Progress": "Not Started", "Year #": 2, "Period Start": "2025-11-01", "Period End": "2026-10-31" }),
       cmt(ID.requested, { "Review Progress": "Not Started", "Notify Now": true, "Period Start": "2026-01-01", "Period End": "2026-12-31" }),
-      cmt(ID.overdue, { "Review Progress": "Not Started", "Year #": 1, "Period Start": "2022-07-01", "Period End": "2023-06-30" }),
+      cmt(ID.overdue, { "Review Progress": "Not Started", "Year #": 1, "Period Start": "2025-09-01", "Period End": "2026-08-31" }),
+      cmt(ID.ancient, { "Review Progress": "Not Started", "Year #": 1, "Period Start": "2022-07-01", "Period End": "2023-06-30" }),
       cmt(ID.notified, { "Review Progress": "Notified Member", "Period Start": "2025-10-15", "Period End": "2026-10-14" }),
       cmt(ID.memberIn, {
         "Review Progress": "Member Submitted (with Sponsor)", "Period Start": "2025-10-01", "Period End": "2026-09-30",
@@ -82,9 +85,10 @@ function tables(): FakeTables {
         "Player Statement": [{ url: "https://dl.airtable.com/statement.pdf", filename: "statement.pdf" }],
       }),
       cmt(ID.completeRecent, {
-        "Review Progress": "Complete", "Period Start": "2025-04-01", "Period End": "2026-03-31",
-        "Membership Officer Submission Date": "2026-03-20T03:00:00.000Z",
+        "Review Progress": "Complete", "Period Start": "2025-08-01", "Period End": "2026-07-31",
+        "Membership Officer Submission Date": "2026-07-20T03:00:00.000Z",
       }),
+      cmt(ID.completeJune, { "Review Progress": "Complete", "Period Start": "2025-07-01", "Period End": "2026-06-30" }),
       cmt(ID.completeOld, { "Review Progress": "Complete", "Period Start": "2023-04-01", "Period End": "2024-03-31" }),
       cmt(ID.future, { "Review Progress": "Not Started", "Year #": 2, "Period Start": "2026-12-01", "Period End": "2027-11-30" }),
       { id: ID.orphan, fields: { "Review Progress": "Not Started", "Period Start": "2026-01-01", "Period End": "2026-12-31" } },
@@ -163,13 +167,15 @@ describe("the board", () => {
       [ID.due]: "Not Started",
       [ID.inWindow]: "Not Started",
       [ID.requested]: "Not Started",
-      [ID.overdue]: "Not Started", // unfinished, however old
+      [ID.overdue]: "Not Started", // unfinished, from an earlier period
       [ID.notified]: "Notified Member",
       [ID.memberIn]: "Member Submitted (with Sponsor)",
       [ID.completeRecent]: "Complete",
       [ID.blank]: "Needs fixing", // the automation only fires on Not Started
-      // Not shown: completed over a year ago, next year's row, a resigned
-      // member's review, and the row with no member linked (counted instead).
+      // Not shown: anything whose period ended before 1 July 2026 (the 2023
+      // row, and Complete ones from 2024 and June 2026), next year's row, a
+      // resigned member's review, and the row with no member linked (counted
+      // instead).
     });
     expect(unlinked).toBe(1);
   });

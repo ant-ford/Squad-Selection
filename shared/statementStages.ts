@@ -6,7 +6,7 @@
  * when its Period End comes within AUTO_NOTICE_DAYS, emailing the member
  * (copying the Membership Officer) on the way. Fillout submissions move it
  * on from there. The only thing the app does is ask for that email early,
- * by ticking Notify Now, which the same automation also triggers on.
+ * by ticking Notify Now, which a copy of that automation triggers on.
  */
 
 export const NOT_STARTED = "Not Started";
@@ -20,6 +20,14 @@ export const REVIEW_STAGES = [NOT_STARTED, NOTIFIED, MEMBER_SUBMITTED, SPONSOR_S
 
 /** The automation emails the member this many days before Period End. */
 export const AUTO_NOTICE_DAYS = 60;
+
+/**
+ * Reviews whose period ended before this day are not on the board, whatever
+ * their stage (owner decision, 2026-09-25). Commitment rows go back to 2017,
+ * long before the review process began, and about seventy past years were
+ * never reviewed; this is the start of the 2026-27 season.
+ */
+export const REVIEWS_FROM = "2026-07-01";
 
 /**
  * Column for a row whose Review Progress is blank or not one of the above.
