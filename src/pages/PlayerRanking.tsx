@@ -9,17 +9,16 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserMinus, UserPlus,
+  ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserPlus,
   GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3, CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import ConfirmDialog from '@/components/ConfirmDialog';
 import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
 import {
-  useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
+  useActivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
 } from '@/lib/queries';
 import { getReversalAdvisory, formatAge, formatAbsolute } from '@/lib/rankingHistory';
@@ -100,7 +99,6 @@ export default function PlayerRanking() {
   const recentChangesQuery = useRecentChanges(30);
   const reorder = useReorderRanking();
   const activate = useActivatePlayer();
-  const deactivate = useDeactivatePlayer();
   const updateConfig = useUpdateAbilityConfig();
 
   // ── Filter / UI state ─────────
@@ -120,7 +118,6 @@ export default function PlayerRanking() {
   const [moveToRankPlayer, setMoveToRankPlayer] = useState<Player | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
-  const [confirmDeactivate, setConfirmDeactivate] = useState<{ playerId: string; label: string } | null>(null);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
@@ -323,22 +320,6 @@ export default function PlayerRanking() {
     setMoveToRankPlayer(displayPlayersRef.current.find((x) => x.id === playerId) ?? null);
   }, []);
 
-  const handleDeactivateById = useCallback((playerId: string) => {
-    const player = playersById.get(playerId);
-    setConfirmDeactivate({ playerId, label: player ? nameOf(player) : 'this player' });
-  }, [playersById]);
-
-  const executeDeactivate = useCallback(async (playerId: string, label: string) => {
-    setMutatingPlayerId(playerId);
-    try {
-      await deactivate.mutateAsync({ playerId });
-      setDraftIds(null);
-      toast.success(`${label} removed from ranking`);
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to deactivate player');
-    } finally { setMutatingPlayerId(null); }
-  }, [deactivate]);
-
   const handleActivate = useCallback(async (entry: InactiveRankingEntry) => {
     setMutatingPlayerId(entry.id);
     try {
@@ -475,12 +456,10 @@ export default function PlayerRanking() {
                         isFirst={virtualRow.index === 0}
                         isLast={virtualRow.index === filteredPlayers.length - 1}
                         disabled={isSaving || mutatingPlayerId === p.id}
-                        draftPending={draftIds !== null}
                         menuOpen={openMenuPlayerId === p.id}
                         onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
                         onMoveStep={moveStep}
                         onOpenMoveToRank={handleOpenMoveToRank}
-                        onDeactivate={handleDeactivateById}
                         onViewStats={setStatsPlayerId}
                         onViewAttendance={setAttendancePlayerId}
                         onPhotoClick={setExpandedPhoto}
@@ -496,7 +475,7 @@ export default function PlayerRanking() {
                   player={activeDragPlayer}
                   isFirst={false} isLast={false} disabled={false} isDragging={false}
                   menuOpen={false} onMenuOpenChange={() => {}}
-                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onDeactivate={() => {}} onViewStats={() => {}} onViewAttendance={() => {}} onPhotoClick={() => {}}
+                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onViewStats={() => {}} onViewAttendance={() => {}} onPhotoClick={() => {}}
                   dragHandleProps={{}}
                   style={{ opacity: 0.9, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
                 />
@@ -535,17 +514,6 @@ export default function PlayerRanking() {
               toast.error(err?.message ?? 'Failed to update configuration');
             }
           }}
-        />
-      )}
-
-      {confirmDeactivate && (
-        <ConfirmDialog
-          title="Remove from ranking"
-          message={`Remove ${confirmDeactivate.label} from the ranking? They will be marked inactive.`}
-          confirmLabel="Remove"
-          destructive
-          onConfirm={() => executeDeactivate(confirmDeactivate.playerId, confirmDeactivate.label)}
-          onCancel={() => setConfirmDeactivate(null)}
         />
       )}
 
@@ -728,11 +696,8 @@ function SortableRankingRow(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
-  /** An unsaved reorder draft exists - Activate/Deactivate would silently discard it. */
-  draftPending: boolean;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
-  onDeactivate: (playerId: string) => void;
   onViewStats: (playerId: string) => void;
   onViewAttendance: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
@@ -748,13 +713,11 @@ function SortableRankingRow(props: {
         isFirst={props.isFirst}
         isLast={props.isLast}
         disabled={props.disabled}
-        draftPending={props.draftPending}
         isDragging={isDragging}
         menuOpen={props.menuOpen}
         onMenuOpenChange={props.onMenuOpenChange}
         onMoveStep={props.onMoveStep}
         onOpenMoveToRank={props.onOpenMoveToRank}
-        onDeactivate={props.onDeactivate}
         onViewStats={props.onViewStats}
         onViewAttendance={props.onViewAttendance}
         onPhotoClick={props.onPhotoClick}
@@ -769,13 +732,11 @@ function RankingRowInner(props: {
   isFirst: boolean;
   isLast: boolean;
   disabled: boolean;
-  draftPending?: boolean;
   isDragging: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (v: boolean) => void;
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
   onOpenMoveToRank: (playerId: string) => void;
-  onDeactivate: (playerId: string) => void;
   onViewStats: (playerId: string) => void;
   onViewAttendance: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
@@ -894,14 +855,6 @@ function RankingRowInner(props: {
                 className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
               >
                 <CalendarDays className="h-3.5 w-3.5 mr-2" /> Attendance
-              </button>
-              <button
-                onClick={() => { if (props.draftPending) return; props.onMenuOpenChange(false); props.onDeactivate(player.id); }}
-                disabled={props.draftPending}
-                title={props.draftPending ? 'Save or discard your reorder first' : undefined}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted text-destructive disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-              >
-                <UserMinus className="h-3.5 w-3.5 mr-2" /> Deactivate
               </button>
             </div>
           </>

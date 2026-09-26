@@ -364,22 +364,6 @@ export function useActivatePlayer() {
   });
 }
 
-export function useDeactivatePlayer() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (variables: { playerId: string }) =>
-      apiPost<RankingList>('/api/ranking/deactivate', variables),
-    onSuccess: (data) => {
-      if (data?.players) queryClient.setQueryData<RankingList>(['ranking'], data);
-      queryClient.invalidateQueries({ queryKey: ['rankingInactive'] });
-      queryClient.invalidateQueries({ queryKey: ['recentChanges'] });
-    },
-    onError: () => {
-      queryClient.invalidateQueries({ queryKey: ['ranking'] });
-    },
-  });
-}
-
 /**
  * Config save now waits synchronously for the Worker to recompute ability 
  * badges and returns the fully updated RankingList. No polling required!
