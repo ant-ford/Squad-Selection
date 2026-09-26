@@ -4,7 +4,7 @@ import { User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChartCard, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
+import { ChartCard, Columns, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
 import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -194,6 +194,44 @@ function Leaders({
   );
 }
 
+/**
+ * The club's win rate season by season (against other clubs), oldest on the
+ * left, for All time. The table view has every season's full record.
+ */
+function SeasonBySeason({ summaries }: { summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[] }) {
+  const y = seasonStartYear(hkDateKey(new Date().toISOString()));
+  const current = `${y}-${y + 1}`;
+  const rows = [...summaries]
+    .sort((a, b) => a.season.localeCompare(b.season))
+    .map((s) => ({ season: s.season, r: clubRecord({ teams: s.teams, derbies: s.derbies }) }));
+  const table = (
+    <DataTable
+      head={['Season', 'Games', 'W-D-L', 'Win', 'GF', 'GA']}
+      rows={[...rows].reverse().map(({ season, r }) => [shortSeason(season), r.games, wdl(r), pct(r), r.gf, r.ga])}
+    />
+  );
+  return (
+    <ChartCard
+      title="Season by season"
+      caption="Win rate against other clubs each season; the dashed line is 50%. Seasons with few games (the current one, 2015-16) move more."
+      table={table}
+    >
+      <Columns
+        rows={rows.map(({ season, r }) => ({
+          key: season,
+          label: shortSeason(season).slice(2),
+          value: winPct(r) ?? 0,
+          detail: `${wdl(r)} in ${r.games} games${season === current ? ' so far' : ''}`,
+        }))}
+        unit="won"
+        max={100}
+        suffix="%"
+        reference={50}
+      />
+    </ChartCard>
+  );
+}
+
 /** One card of competition groups: the leagues, or the cups. */
 function CompetitionCard({
   title,
@@ -287,6 +325,8 @@ function ClubTab({
         <StatTile label="Clean sheets" value={cleanSheets} hint={`In ${teamGames} team games`} />
       </div>
 
+      {allTime && summaries.length > 1 && <SeasonBySeason summaries={summaries} />}
+
       <LeagueCard stats={stats} />
 
       <PlayerDataNote stats={stats} />
@@ -314,17 +354,6 @@ function ClubTab({
         </ChartCard>
       </div>
 
-      {allTime && summaries.length > 1 && (
-        <ChartCard title="Season by season" caption="Against other clubs; derbies left out.">
-          <DataTable
-            head={['Season', 'Games', 'W-D-L', 'Win', 'GF', 'GA']}
-            rows={summaries.map((s) => {
-              const r = clubRecord({ teams: s.teams, derbies: s.derbies });
-              return [shortSeason(s.season), r.games, wdl(r), pct(r), r.gf, r.ga];
-            })}
-          />
-        </ChartCard>
-      )}
     </div>
   );
 }

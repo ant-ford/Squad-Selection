@@ -447,3 +447,119 @@ export function TeamStackedBars({
     </div>
   );
 }
+
+/**
+ * Columns along a category axis (seasons, say), one series, on a fixed or
+ * nice scale, with an optional dashed reference line (50% for a win rate).
+ * Only the highest and lowest columns carry a written value; hover or focus
+ * any column for its value and detail, and the table twin has them all.
+ */
+export function Columns({
+  rows,
+  unit,
+  max: fixedMax,
+  suffix = '',
+  reference,
+}: {
+  rows: { key: string; label: string; value: number; detail?: string }[];
+  unit: string;
+  max?: number;
+  suffix?: string;
+  /** A dashed line across the plot at this value, e.g. 50 for "won half". */
+  reference?: number;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  if (rows.length === 0) return <Empty />;
+  const top = fixedMax ?? niceMax(Math.max(...rows.map((r) => r.value)));
+  const ticks = [top, top / 2, 0];
+  const values = rows.map((r) => r.value);
+  const hi = values.indexOf(Math.max(...values));
+  const lo = values.indexOf(Math.min(...values));
+  const hovered = active !== null ? rows[active] : null;
+  return (
+    <div style={chartVars}>
+      <div className="relative flex">
+        <div className="flex flex-col justify-between h-40 pr-1.5 text-[10px] text-muted-foreground tabular-nums text-right w-8 shrink-0">
+          {ticks.map((t) => (
+            <span key={t} className="leading-none -translate-y-1/2 first:translate-y-0 last:translate-y-0">
+              {fmt(t)}
+              {suffix}
+            </span>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-0">
+          <div className="absolute inset-0 h-40 flex flex-col justify-between pointer-events-none">
+            {ticks.map((t) => (
+              <div key={t} className="border-t" style={{ borderColor: t === 0 ? 'var(--baseline)' : 'var(--grid)' }} />
+            ))}
+          </div>
+          {reference !== undefined && reference > 0 && reference < top && (
+            <div
+              className="absolute left-0 right-0 border-t border-dashed pointer-events-none"
+              style={{ top: `calc(${(1 - reference / top) * 10}rem)`, borderColor: 'var(--baseline)' }}
+              aria-hidden
+            />
+          )}
+          <div className="relative h-40 flex items-end gap-[2px]" onPointerLeave={() => setActive(null)}>
+            {rows.map((r, i) => (
+              <button
+                key={r.key}
+                type="button"
+                className="relative flex-1 h-full flex items-end justify-center focus:outline-none group"
+                onPointerEnter={() => setActive(i)}
+                onFocus={() => setActive(i)}
+                onBlur={() => setActive(null)}
+                aria-label={`${r.label}: ${fmt(r.value)}${suffix} ${unit}${r.detail ? `, ${r.detail}` : ''}`}
+              >
+                {(i === hi || i === lo) && rows.length > 2 && (
+                  <span
+                    className="absolute text-[10px] text-foreground tabular-nums"
+                    style={{ bottom: `calc(${(Math.min(r.value, top) / top) * 100}% + 2px)` }}
+                    aria-hidden
+                  >
+                    {fmt(r.value)}
+                    {suffix}
+                  </span>
+                )}
+                <span
+                  className="w-full max-w-7 rounded-t transition-opacity group-focus-visible:ring-2 group-focus-visible:ring-primary"
+                  style={{
+                    height: `${(Math.min(r.value, top) / top) * 100}%`,
+                    minHeight: r.value > 0 ? 2 : 0,
+                    background: 'var(--series-1)',
+                    opacity: active === null || active === i ? 1 : 0.45,
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+          {hovered && (
+            <div
+              role="status"
+              className="absolute -top-1 z-10 -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
+              style={{ left: `${((active! + 0.5) / rows.length) * 100}%` }}
+            >
+              <span className="font-semibold text-foreground">
+                {fmt(hovered.value)}
+                {suffix}
+              </span>{' '}
+              <span className="text-muted-foreground">
+                {unit}, {hovered.label}
+                {hovered.detail ? ` · ${hovered.detail}` : ''}
+              </span>
+            </div>
+          )}
+          <div className="flex gap-[2px] mt-1 text-[10px] text-muted-foreground">
+            {rows.map((r, i) => (
+              // Unlabelled neighbours leave room, so a label may spill over its column.
+              <span key={r.key} className="flex-1 min-w-0 text-center whitespace-nowrap overflow-visible flex justify-center">
+                {/* Every other label when crowded, always including the latest. */}
+                {rows.length <= 8 || i % 2 === (rows.length - 1) % 2 ? r.label : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

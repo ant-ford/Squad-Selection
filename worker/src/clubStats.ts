@@ -23,6 +23,9 @@ import { HttpError } from "./http";
 import { getAllMatches, getMatchCardsForSeason, currentSeason } from "./seasonContext";
 import { airtableFindAll } from "./airtable";
 import { TABLES } from "../../shared/schema/tableNames";
+import { MATCHCARDS_FIELDS, MATCHES_FIELDS } from "../../shared/schema/fieldMaps";
+import { mapMatch } from "../../shared/mappers/matchMapper";
+import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
 import { STATS_CURRENT_KEY } from "./reference";
@@ -321,12 +324,29 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
   );
 }
 
-async function buildFor(env: Env, season: string): Promise<StoredSummary> {
-  const [matches, cards, people] = await Promise.all([
-    getAllMatches(env, season),
-    getMatchCardsForSeason(env, season),
-    getPlayerNames(env),
+/**
+ * A past season is read straight from Airtable, not through the squad app's
+ * shared season caches: it is built once a month at most, and caching its
+ * two-thousand Match Cards as well as its summary would spend two more of
+ * the Cloudflare account's 1,000 daily KV writes (shared with production)
+ * on data nobody reads again. The current season does use those caches -
+ * the squad pages have them warm.
+ */
+async function seasonRows(env: Env, season: string): Promise<{ matches: Match[]; cards: MatchCard[] }> {
+  if (season === currentSeason()) {
+    const [matches, cards] = await Promise.all([getAllMatches(env, season), getMatchCardsForSeason(env, season)]);
+    return { matches, cards };
+  }
+  const bySeason = (field: string) => `{${field}}="${season}"`;
+  const [matchRecords, cardRecords] = await Promise.all([
+    airtableFindAll(env, TABLES.match, bySeason(MATCHES_FIELDS.season)),
+    airtableFindAll(env, TABLES.matchCard, bySeason(MATCHCARDS_FIELDS.season)),
   ]);
+  return { matches: matchRecords.map(mapMatch), cards: cardRecords.map(mapMatchCard) };
+}
+
+async function buildFor(env: Env, season: string): Promise<StoredSummary> {
+  const [{ matches, cards }, people] = await Promise.all([seasonRows(env, season), getPlayerNames(env)]);
   const today = hkDateKey(new Date().toISOString());
   return buildSeasonSummary({ season, matches, cards, names: people.names, byFullName: people.byFullName, today });
 }
