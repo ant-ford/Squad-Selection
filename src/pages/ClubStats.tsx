@@ -233,8 +233,8 @@ function SeasonBySeason({
       title="Season by season"
       caption={
         team
-          ? `${team}'s win rate each season it played. Seasons with few games move more.`
-          : 'Win rate against other clubs each season. Seasons with few games (the current one, 2015-16) move more.'
+          ? `${team}'s win rate each season it played.`
+          : 'Win rate against other clubs each season.'
       }
       table={table}
     >
@@ -300,12 +300,8 @@ function LeagueCard({ stats, team }: { stats: PeriodStats; team?: string }) {
   const cups = groups.filter((g) => g.kind === 'cup');
   return (
     <div className="grid gap-3 lg:grid-cols-2">
-      <CompetitionCard
-        title="By league"
-        groups={leagues}
-        caption="Split and play-off stages (1A, 1B, PB…) are counted in their league."
-      />
-      <CompetitionCard title="Cups" groups={cups} caption="All rounds together. HKHA and HockeyHK cups are one competition." />
+      <CompetitionCard title="By league" groups={leagues} />
+      <CompetitionCard title="Cups" groups={cups} />
     </div>
   );
 }
