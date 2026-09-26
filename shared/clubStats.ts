@@ -359,3 +359,75 @@ export const leagueLabel = (division: string) => competitionOf(division).label;
 export function teamOrder(teams: { team: string }[]): string[] {
   return teams.map((t) => t.team).sort((a, b) => a.localeCompare(b));
 }
+
+// ── Players ──────────────────────────────────────────────────────────────
+
+/** A player's figures added across their teams. */
+export function totalLine(teams: Record<string, PlayerTeamLine>): PlayerTeamLine {
+  const out: PlayerTeamLine = { apps: 0, goals: 0, captain: 0, keeper: 0, playUps: 0, ...emptyWDL() };
+  for (const l of Object.values(teams)) {
+    out.apps += l.apps;
+    out.goals += l.goals;
+    out.captain += l.captain;
+    out.keeper += l.keeper;
+    out.playUps += l.playUps;
+    addWDL(out, l);
+  }
+  return out;
+}
+
+export interface PlayerRow extends PlayerTeamLine {
+  key: string;
+  name: string;
+  /** Appearances team by team, largest first. */
+  byTeam: [string, number][];
+}
+
+/** Everyone who played in the period, most appearances first. */
+export function playerRows(players: PlayerSeason[]): PlayerRow[] {
+  return players
+    .map((p) => ({
+      key: p.key,
+      name: p.name,
+      ...totalLine(p.teams),
+      byTeam: Object.entries(p.teams)
+        .map(([t, l]): [string, number] => [t, l.apps])
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    }))
+    .filter((r) => r.apps > 0)
+    .sort((a, b) => b.apps - a.apps || a.name.localeCompare(b.name));
+}
+
+export interface CareerSeason {
+  season: string;
+  teams: Record<string, PlayerTeamLine>;
+  total: PlayerTeamLine;
+}
+
+export interface Career {
+  key: string;
+  name: string;
+  /** Oldest first; only seasons they played in. */
+  seasons: CareerSeason[];
+  /** Every season added up, team by team. */
+  teams: Record<string, PlayerTeamLine>;
+  total: PlayerTeamLine;
+}
+
+/** One player's career across the given seasons, or null if they never played in them. */
+export function careerOf(summaries: SeasonSummary[], key: string): Career | null {
+  const seasons: CareerSeason[] = [];
+  let name = '';
+  for (const s of [...summaries].sort((a, b) => a.season.localeCompare(b.season))) {
+    const p = s.players.find((x) => x.key === key);
+    if (!p) continue;
+    name = p.name;
+    seasons.push({ season: s.season, teams: p.teams, total: totalLine(p.teams) });
+  }
+  if (seasons.length === 0) return null;
+  const teams: Record<string, PlayerTeamLine> = {};
+  for (const s of seasons) {
+    for (const [t, l] of Object.entries(s.teams)) teams[t] = teams[t] ? mergeLine(teams[t], l) : { ...l };
+  }
+  return { key, name, seasons, teams, total: totalLine(teams) };
+}

@@ -366,13 +366,18 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   return getShared<StoredSummary>(env, `stats-summary:v${SUMMARY_VERSION}:${season}`, () => buildFor(env, season), PAST_TTL_MS);
 }
 
-/** The summary for the page: no cards, bar the signed-in player's own. */
+/**
+ * The summary for the page: no cards, bar the signed-in player's own, and
+ * which player row is theirs (their People record id), so their career page
+ * can show those cards to them and nobody else.
+ */
 export async function getSeasonStats(
   env: Env,
   user: AuthorizedUser,
   season: string,
-): Promise<SeasonSummary & { myCards?: CardCount }> {
+): Promise<SeasonSummary & { me?: string; myCards?: CardCount }> {
   const { summary, cardsByPlayer } = await getStoredSummary(env, season);
-  const mine = user.personId ? cardsByPlayer[user.personId] : undefined;
-  return mine ? { ...summary, myCards: mine } : summary;
+  if (!user.personId) return summary;
+  const mine = cardsByPlayer[user.personId];
+  return { ...summary, me: user.personId, ...(mine ? { myCards: mine } : {}) };
 }

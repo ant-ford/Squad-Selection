@@ -304,7 +304,7 @@ describe("the season route", () => {
     const res = await as("pat@hkfc.com", "/api/stats/season?season=2025-2026");
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
-    expect(body).toMatchObject({ season: "2025-2026", matches: 1, myCards: { yellow: 1, red: 0 } });
+    expect(body).toMatchObject({ season: "2025-2026", matches: 1, me: "recPlayerPat00001", myCards: { yellow: 1, red: 0 } });
     expect(body.players.map((p: any) => p.name).sort()).toEqual(["Kim Keeper", "Pat Player"]);
     const text = JSON.stringify(body);
     expect(text).not.toContain("Y1");
@@ -355,5 +355,28 @@ describe("two players who share a name", () => {
       recSon: "Shep Shepherdson (Thomas)",
       recOther: "Pat Player",
     });
+  });
+});
+
+describe("players and careers", () => {
+  it("lists everyone who played, most appearances first, with their split by team", async () => {
+    const { playerRows } = await import("../shared/clubStats");
+    const rows = playerRows(built().summary.players);
+    // Kim and Pat both played twice: the tie goes by name.
+    expect(rows.slice(0, 2).map((r) => r.name)).toEqual(["Kim Keeper", "Pat Player"]);
+    expect(rows.find((r) => r.key === "recP1")).toMatchObject({ name: "Pat Player", apps: 2, goals: 3, w: 2, byTeam: [["HKFC A", 2]] });
+    expect(rows.find((r) => r.key === "recP2")).toMatchObject({ apps: 2, byTeam: [["HKFC A", 1], ["HKFC B", 1]] });
+  });
+
+  it("follows one player across seasons, oldest first, leaving out seasons they missed", async () => {
+    const { careerOf } = await import("../shared/clubStats");
+    const one = built().summary;
+    const earlier: SeasonSummary = { ...structuredClone(one), season: "2023-2024" };
+    const missed: SeasonSummary = { ...structuredClone(one), season: "2024-2025", players: [] };
+    const career = careerOf([one, missed, earlier], "recP1")!;
+    expect(career.seasons.map((s) => s.season)).toEqual(["2023-2024", "2025-2026"]);
+    expect(career.total).toMatchObject({ apps: 4, goals: 6, captain: 2, w: 4 });
+    expect(career.teams["HKFC A"]).toMatchObject({ apps: 4, goals: 6 });
+    expect(careerOf([one], "recNobody0000001")).toBeNull();
   });
 });
