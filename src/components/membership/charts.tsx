@@ -22,6 +22,9 @@ export const chartVars = {
 
 const fmt = (n: number) => n.toLocaleString('en-GB');
 
+/** Share of the row the longest bar takes, leaving room for its value label. */
+const BAR_SPAN = 70;
+
 /** Tick ceiling: the next 1, 2 or 5 x 10^k at or above `n` (minimum 1). */
 export function niceMax(n: number): number {
   if (n <= 1) return 1;
@@ -142,28 +145,49 @@ export function DataTable({ head, rows }: { head: string[]; rows: ReactNode[][] 
 export function HBars({
   rows,
   unit,
+  max: fixedMax,
+  suffix = '',
+  narrowLabels = false,
+  colourOf,
 }: {
   rows: { label: string; value: number; note?: string }[];
   unit: string;
+  /** The scale's end, e.g. 100 for percentages; defaults to the largest value. */
+  max?: number;
+  /** Written after the value, e.g. "%". */
+  suffix?: string;
+  /** Short labels (team names): the label column fits them instead of a player name. */
+  narrowLabels?: boolean;
+  /** Colour each bar by its label (team colours); one series colour otherwise. */
+  colourOf?: (label: string) => string;
 }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
+  const max = fixedMax ?? Math.max(1, ...rows.map((r) => r.value));
   if (rows.length === 0) return <Empty />;
+  const cols = narrowLabels
+    ? 'grid-cols-[max-content_1fr]'
+    : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]';
   return (
     <ul className="space-y-1.5" style={chartVars}>
       {rows.map((r) => (
         <li
           key={r.label}
-          className="grid grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr] items-center gap-2 group"
-          title={`${r.label}: ${fmt(r.value)} ${unit}${r.note ? ` (${r.note})` : ''}`}
+          className={`grid ${cols} items-center gap-2 group`}
+          title={`${r.label}: ${fmt(r.value)}${suffix} ${unit}${r.note ? ` (${r.note})` : ''}`}
         >
           <span className="text-xs text-foreground truncate">{r.label}</span>
           <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
+            {/* shrink-0: a long note must never squeeze the bar - its length is the value. */}
             <span
-              className="h-3 rounded-r transition-opacity group-hover:opacity-80"
-              style={{ width: `${(r.value / max) * 85}%`, minWidth: r.value > 0 ? 2 : 0, background: 'var(--series-1)' }}
+              className="h-3 shrink-0 rounded-r transition-opacity group-hover:opacity-80"
+              style={{
+                width: `${(Math.min(r.value, max) / max) * BAR_SPAN}%`,
+                minWidth: r.value > 0 ? 2 : 0,
+                background: colourOf ? colourOf(r.label) : 'var(--series-1)',
+              }}
             />
-            <span className="text-xs text-foreground tabular-nums whitespace-nowrap">
+            <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
               {fmt(r.value)}
+              {suffix}
               {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
             </span>
           </span>
@@ -327,4 +351,224 @@ export function SquadBars({
 
 function Empty() {
   return <p className="text-xs text-muted-foreground py-4 text-center">Nothing in this period.</p>;
+}
+
+/**
+ * One colour per HKFC team, the reference palette's eight slots in order
+ * (validated on the card surface #f7f8f8: adjacent CVD ΔE ≥ 9.1, normal
+ * vision ≥ 19.6). Keyed by team so a colour always means the same team,
+ * whoever else is on the chart. Aqua, yellow and magenta sit under 3:1 on
+ * the card, so every chart using them also has a table view and a written
+ * total beside each bar.
+ */
+export const TEAM_COLOURS: Record<string, string> = {
+  'HKFC A': '#2a78d6',
+  'HKFC B': '#eb6834',
+  'HKFC C': '#1baf7a',
+  'HKFC D': '#eda100',
+  'HKFC E': '#e87ba4',
+  'HKFC F': '#008300',
+  'HKFC G': '#4a3aa7',
+  'HKFC H': '#e34948',
+};
+const OTHER_TEAM = '#8a8984';
+export const teamColour = (team: string) => TEAM_COLOURS[team] ?? OTHER_TEAM;
+const shortTeam = (team: string) => team.replace(/^HKFC /, '');
+
+/** The key for team-coloured charts: only the teams present, A to H. */
+export function TeamKey({ teams }: { teams: string[] }) {
+  return (
+    <ul className="flex flex-wrap gap-x-3 gap-y-1 mb-2" aria-label="Key">
+      {teams.map((t) => (
+        <li key={t} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: teamColour(t) }} aria-hidden />
+          {shortTeam(t)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Horizontal bars split by team: each segment is one team's share, stacked
+ * in team order (A first) so the same colour sits in the same place on every
+ * row. The whole bar's length is the total; a 2px gap separates segments and
+ * only the end is rounded. Hover a segment for its team and value.
+ */
+export function TeamStackedBars({
+  rows,
+  unit,
+}: {
+  rows: { label: string; total: number; parts: [string, number][]; note?: string }[];
+  unit: string;
+}) {
+  if (rows.length === 0) return <Empty />;
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  // A note after the total ("75 apps") needs more room on a phone.
+  const span = rows.some((r) => r.note) ? BAR_SPAN - 12 : BAR_SPAN;
+  const teams = [...new Set(rows.flatMap((r) => r.parts.map(([t]) => t)))].sort((a, b) => a.localeCompare(b));
+  return (
+    <div style={chartVars}>
+      <TeamKey teams={teams} />
+      <ul className="space-y-1.5">
+        {rows.map((r) => {
+          const parts = [...r.parts].sort((a, b) => a[0].localeCompare(b[0]));
+          const summary = parts.map(([t, n]) => `${shortTeam(t)} ${fmt(n)}`).join(', ');
+          return (
+            <li
+              key={r.label}
+              className="grid grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr] items-center gap-2"
+              aria-label={`${r.label}: ${fmt(r.total)} ${unit} (${summary})`}
+            >
+              <span className="text-xs text-foreground truncate">{r.label}</span>
+              <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
+                <span
+                  className="h-3 shrink-0 flex gap-[2px] overflow-hidden rounded-r"
+                  style={{ width: `${(r.total / max) * span}%`, minWidth: r.total > 0 ? 2 : 0 }}
+                >
+                  {parts.map(([t, n]) => (
+                    <span
+                      key={t}
+                      className="h-full hover:opacity-80"
+                      style={{ flex: `${n} 0 0`, minWidth: 1, background: teamColour(t) }}
+                      title={`${r.label} · ${t}: ${fmt(n)} ${unit}`}
+                    />
+                  ))}
+                </span>
+                <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
+                  {fmt(r.total)}
+                  {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Columns along a category axis (seasons, say), one series, on a fixed or
+ * nice scale, with an optional dashed reference line (50% for a win rate).
+ * Only the highest and lowest columns carry a written value; hover or focus
+ * any column for its value and detail, and the table twin has them all.
+ */
+export function Columns({
+  rows,
+  unit,
+  max: fixedMax,
+  suffix = '',
+  reference,
+  colour = 'var(--series-1)',
+}: {
+  rows: { key: string; label: string; value: number; detail?: string }[];
+  unit: string;
+  max?: number;
+  suffix?: string;
+  /** A dashed line across the plot at this value, e.g. 50 for "won half"; it gets its own tick label. */
+  reference?: number;
+  /** Column colour: one series, or a team's own colour. */
+  colour?: string;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  if (rows.length === 0) return <Empty />;
+  const top = fixedMax ?? niceMax(Math.max(...rows.map((r) => r.value)));
+  const ticks = [...new Set([top, reference ?? top / 2, 0])].sort((x, y) => y - x);
+  const values = rows.map((r) => r.value);
+  const hi = values.indexOf(Math.max(...values));
+  const lo = values.indexOf(Math.min(...values));
+  const hovered = active !== null ? rows[active] : null;
+  return (
+    <div style={chartVars}>
+      <div className="relative flex">
+        {/* Tick labels sit centred on their gridlines, the reference line's included. */}
+        <div className="relative h-40 w-8 shrink-0 mr-1.5 text-[10px] text-muted-foreground tabular-nums text-right" aria-hidden>
+          {ticks.map((t) => (
+            <span key={t} className="absolute right-0 leading-none -translate-y-1/2" style={{ top: `${(1 - t / top) * 100}%` }}>
+              {fmt(t)}
+              {suffix}
+            </span>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-0">
+          <div className="absolute inset-x-0 top-0 h-40 pointer-events-none">
+            {ticks.map((t) =>
+              t === reference ? null : (
+                <div
+                  key={t}
+                  className="absolute inset-x-0 border-t"
+                  style={{ top: `${(1 - t / top) * 100}%`, borderColor: t === 0 ? 'var(--baseline)' : 'var(--grid)' }}
+                />
+              ),
+            )}
+            {reference !== undefined && reference > 0 && reference < top && (
+              <div
+                className="absolute inset-x-0 border-t border-dashed"
+                style={{ top: `${(1 - reference / top) * 100}%`, borderColor: 'var(--baseline)' }}
+              />
+            )}
+          </div>
+          <div className="relative h-40 flex items-end gap-[2px]" onPointerLeave={() => setActive(null)}>
+            {rows.map((r, i) => (
+              <button
+                key={r.key}
+                type="button"
+                className="relative flex-1 h-full flex items-end justify-center focus:outline-none group"
+                onPointerEnter={() => setActive(i)}
+                onFocus={() => setActive(i)}
+                onBlur={() => setActive(null)}
+                aria-label={`${r.label}: ${fmt(r.value)}${suffix} ${unit}${r.detail ? `, ${r.detail}` : ''}`}
+              >
+                {(i === hi || i === lo) && rows.length > 2 && (
+                  <span
+                    className="absolute text-[10px] text-foreground tabular-nums"
+                    style={{ bottom: `calc(${(Math.min(r.value, top) / top) * 100}% + 2px)` }}
+                    aria-hidden
+                  >
+                    {fmt(r.value)}
+                    {suffix}
+                  </span>
+                )}
+                <span
+                  className="w-full max-w-7 rounded-t transition-opacity group-focus-visible:ring-2 group-focus-visible:ring-primary"
+                  style={{
+                    height: `${(Math.min(r.value, top) / top) * 100}%`,
+                    minHeight: r.value > 0 ? 2 : 0,
+                    background: colour,
+                    opacity: active === null || active === i ? 1 : 0.45,
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+          {hovered && (
+            <div
+              role="status"
+              className="absolute -top-1 z-10 -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
+              style={{ left: `${((active! + 0.5) / rows.length) * 100}%` }}
+            >
+              <span className="font-semibold text-foreground">
+                {fmt(hovered.value)}
+                {suffix}
+              </span>{' '}
+              <span className="text-muted-foreground">
+                {unit}, {hovered.label}
+                {hovered.detail ? ` · ${hovered.detail}` : ''}
+              </span>
+            </div>
+          )}
+          <div className="flex gap-[2px] mt-1 text-[10px] text-muted-foreground">
+            {rows.map((r, i) => (
+              // Unlabelled neighbours leave room, so a label may spill over its column.
+              <span key={r.key} className="flex-1 min-w-0 text-center whitespace-nowrap overflow-visible flex justify-center">
+                {/* Every other label when crowded, always including the latest. */}
+                {rows.length <= 8 || i % 2 === (rows.length - 1) % 2 ? r.label : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

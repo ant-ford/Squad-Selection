@@ -67,7 +67,7 @@ export async function getAllMatches(env: Env, season: string): Promise<Match[]> 
  * forward (suspension.ts), and an appearance with no card contributes
  * nothing to that - so last season shrinks from twenty pages to one.
  */
-async function getMatchCardsForSeason(
+export async function getMatchCardsForSeason(
   env: Env,
   season: string,
   opts: { cardedOnly?: boolean } = {},

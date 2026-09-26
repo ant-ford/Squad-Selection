@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
@@ -19,6 +19,7 @@ import {
 } from '@/api/membership';
 import { getChairmanDirectory } from '@/api/chairman';
 import { getMyTasks } from '@/api/getMyTasks';
+import { getSeasonStats } from '@/api/stats';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -47,6 +48,54 @@ export function useMyProfile() {
     queryFn: () => apiGet<ProfileData>('/api/my-profile'),
     staleTime: Infinity,
   });
+}
+
+// ── Stats page ───────────────────────────────────────────────────────────
+
+/** Summaries change only when a result or card does; the Worker keeps past seasons for a month. */
+const STATS_STALE_MS = 5 * 60_000;
+
+export function useSeasonStats(season: string | null) {
+  return useQuery({
+    queryKey: ['seasonStats', season],
+    queryFn: () => getSeasonStats(season!),
+    enabled: !!season,
+    staleTime: STATS_STALE_MS,
+  });
+}
+
+/**
+ * Every season with games, newest first, for "All time". Fetched one season
+ * at a time: the first view of a past season makes the Worker build it from
+ * about thirty Airtable pages, and ten at once would meet Airtable's rate
+ * limit. History is taken to have ended after two empty seasons in a row
+ * (a single empty one can be a gap).
+ */
+export function useAllSeasonStats(seasons: string[], enabled: boolean) {
+  const [reach, setReach] = useState(0);
+  const results = useQueries({
+    queries: seasons.map((season, i) => ({
+      queryKey: ['seasonStats', season],
+      queryFn: () => getSeasonStats(season),
+      enabled: enabled && i <= reach,
+      staleTime: STATS_STALE_MS,
+    })),
+  });
+  const loaded = results.slice(0, reach + 1).map((r) => r.data);
+  const seenData = loaded.some((d) => (d?.matches ?? 0) > 0);
+  const lastTwoEmpty = reach >= 1 && loaded[reach]?.matches === 0 && loaded[reach - 1]?.matches === 0;
+  const ended = (seenData && lastTwoEmpty) || reach >= seasons.length - 1;
+  const current = results[reach];
+  useEffect(() => {
+    if (enabled && current?.data && !ended) setReach((r) => r + 1);
+  }, [enabled, current?.data, ended]);
+  const summaries = loaded.filter((d): d is NonNullable<typeof d> => !!d && d.matches > 0);
+  return {
+    summaries,
+    done: ended && !!current?.data,
+    loadedCount: loaded.filter(Boolean).length,
+    isError: results.slice(0, reach + 1).some((r) => r.isError),
+  };
 }
 
 /**

@@ -23,5 +23,7 @@ export function mapMatch(record: any): Match {
     autoSelectEnabled: f[MATCHES_FIELDS.autoSelectEnabled] === true,
     homeKit: f[MATCHES_FIELDS.homeKit] || '',
     awayKit: f[MATCHES_FIELDS.awayKit] || '',
+    ump1: f[MATCHES_FIELDS.ump1] || '',
+    ump2: f[MATCHES_FIELDS.ump2] || '',
   };
 }

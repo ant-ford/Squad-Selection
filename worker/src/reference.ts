@@ -153,6 +153,9 @@ export const STATEMENT_RECORDS_KEY = "statement-records";
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";
 
+/** The current season's Stats summary (clubStats.ts); past seasons keep their own keys. */
+export const STATS_CURRENT_KEY = "stats-summary:current";
+
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(
     env,

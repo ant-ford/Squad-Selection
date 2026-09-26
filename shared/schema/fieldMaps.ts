@@ -64,6 +64,9 @@ export const MATCHES_FIELDS = {
   autoSelectEnabled: "Auto Select Enabled",
   homeKit: "Home Kit",
   awayKit: "Away Kit",
+  /** Free text from the HKHA match card; parsed by shared/umpires.ts for the Stats page. */
+  ump1: "Ump 1",
+  ump2: "Ump 2",
 } as const;
 
 export const AVAILABILITYEXCEPTIONS_FIELDS = {

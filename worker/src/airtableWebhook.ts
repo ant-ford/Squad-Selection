@@ -32,6 +32,7 @@ import {
   MEMBERSHIP_RECORDS_KEY,
   OFFICER_LINKS_KEY,
   STATEMENT_RECORDS_KEY,
+  STATS_CURRENT_KEY,
   WAITING_ON_KEY,
 } from "./reference";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
@@ -86,11 +87,12 @@ const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPre
     localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
   },
   [TABLES.match]: {
-    keys: [SCHEDULED_MATCHES_KEY],
+    keys: [SCHEDULED_MATCHES_KEY, STATS_CURRENT_KEY],
     sharedPrefixes: ["all-matches:", "played-matches:"],
     localPrefixes: ["match:", "players-for-match:", "season-index:", "calendar:", "availability:"],
   },
   [TABLES.matchCard]: {
+    keys: [STATS_CURRENT_KEY],
     sharedPrefixes: ["match-cards:"],
     localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
   },

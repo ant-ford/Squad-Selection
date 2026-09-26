@@ -15,6 +15,7 @@ import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getMyTasks } from "./myTasks";
+import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
 import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
@@ -376,6 +377,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/my-profile") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getMyProfile(env, user), 200, origin);
+    }
+    // Club, team and player statistics, one season per request (clubStats.ts).
+    if (method === "GET" && pathname === "/api/stats/season") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getSeasonStats(env, user, url.searchParams.get("season") ?? ""), 200, origin);
     }
     if (method === "GET" && pathname === "/api/my-tasks") {
       const user = await requireAuthorizedUser(request, env);
