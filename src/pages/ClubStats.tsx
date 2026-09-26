@@ -4,7 +4,7 @@ import { User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChartCard, DataTable, HBars, StatTile, TeamStackedBars } from '@/components/membership/charts';
+import { ChartCard, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
 import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -242,7 +242,11 @@ function ClubTab({
       >
         <HBars
           rows={stats.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)}${t.division ? ` · ${divisionLabel(t.division)}` : ''}` }))}
-          unit="% won"
+          unit="won"
+          max={100}
+          suffix="%"
+          narrowLabels
+          colourOf={teamColour}
         />
       </ChartCard>
 

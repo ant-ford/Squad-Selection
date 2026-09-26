@@ -145,29 +145,49 @@ export function DataTable({ head, rows }: { head: string[]; rows: ReactNode[][] 
 export function HBars({
   rows,
   unit,
+  max: fixedMax,
+  suffix = '',
+  narrowLabels = false,
+  colourOf,
 }: {
   rows: { label: string; value: number; note?: string }[];
   unit: string;
+  /** The scale's end, e.g. 100 for percentages; defaults to the largest value. */
+  max?: number;
+  /** Written after the value, e.g. "%". */
+  suffix?: string;
+  /** Short labels (team names): the label column fits them instead of a player name. */
+  narrowLabels?: boolean;
+  /** Colour each bar by its label (team colours); one series colour otherwise. */
+  colourOf?: (label: string) => string;
 }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
+  const max = fixedMax ?? Math.max(1, ...rows.map((r) => r.value));
   if (rows.length === 0) return <Empty />;
+  const cols = narrowLabels
+    ? 'grid-cols-[max-content_1fr]'
+    : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]';
   return (
     <ul className="space-y-1.5" style={chartVars}>
       {rows.map((r) => (
         <li
           key={r.label}
-          className="grid grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr] items-center gap-2 group"
-          title={`${r.label}: ${fmt(r.value)} ${unit}${r.note ? ` (${r.note})` : ''}`}
+          className={`grid ${cols} items-center gap-2 group`}
+          title={`${r.label}: ${fmt(r.value)}${suffix} ${unit}${r.note ? ` (${r.note})` : ''}`}
         >
           <span className="text-xs text-foreground truncate">{r.label}</span>
           <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
             {/* shrink-0: a long note must never squeeze the bar - its length is the value. */}
             <span
               className="h-3 shrink-0 rounded-r transition-opacity group-hover:opacity-80"
-              style={{ width: `${(r.value / max) * BAR_SPAN}%`, minWidth: r.value > 0 ? 2 : 0, background: 'var(--series-1)' }}
+              style={{
+                width: `${(Math.min(r.value, max) / max) * BAR_SPAN}%`,
+                minWidth: r.value > 0 ? 2 : 0,
+                background: colourOf ? colourOf(r.label) : 'var(--series-1)',
+              }}
             />
             <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
               {fmt(r.value)}
+              {suffix}
               {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
             </span>
           </span>
