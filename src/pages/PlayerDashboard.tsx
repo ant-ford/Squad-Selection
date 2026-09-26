@@ -7,7 +7,7 @@ import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail, Trophy } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -202,6 +202,10 @@ export default function PlayerDashboard() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader>
+        <button onClick={() => navigate('/stats')} className={headerNavClass()}>
+          <Trophy className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Stats</span>
+        </button>
         {data.sections?.includes('chairman') && (
           <button onClick={() => navigate('/chairman')} className={headerNavClass()}>
             <Mail className="h-3.5 w-3.5" />

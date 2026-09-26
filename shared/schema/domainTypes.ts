@@ -80,6 +80,9 @@ export interface Match {
    *  rather than one so a derby (HKFC B v HKFC C) can differ per side. */
   homeKit?: KitColour;
   awayKit?: KitColour;
+  /** Umpires as the HKHA match card records them (free text; see shared/umpires.ts). */
+  ump1?: string;
+  ump2?: string;
 }
 
 /** Shirt colour options on Matches.Home Kit / Away Kit. "" = not yet set. */

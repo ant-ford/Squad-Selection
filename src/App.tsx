@@ -16,6 +16,7 @@ const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
 // Officers' sections - deferred for the same reason.
 const MembershipBoard = lazy(() => import('./pages/MembershipBoard'));
 const EmailLists = lazy(() => import('./pages/EmailLists'));
+const ClubStats = lazy(() => import('./pages/ClubStats'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -82,6 +83,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <EmailLists />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/stats',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <ClubStats />
           </Suspense>
         ),
       },
