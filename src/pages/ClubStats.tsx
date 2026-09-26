@@ -4,7 +4,7 @@ import { User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChartCard, DataTable, HBars, StatTile } from '@/components/membership/charts';
+import { ChartCard, DataTable, HBars, StatTile, TeamStackedBars } from '@/components/membership/charts';
 import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -153,8 +153,8 @@ export default function ClubStats() {
   );
 }
 
-/** "E 61 · D 21 · F 12": a figure team by team. */
-const teamSplit = (byTeam: [string, number][]) => byTeam.map(([t, n]) => `${t.replace(/^HKFC /, '')} ${n}`).join(' · ');
+/** A figure team by team, for the table view: "E 61, D 21, F 12". */
+const teamSplit = (byTeam: [string, number][]) => byTeam.map(([t, n]) => `${t.replace(/^HKFC /, '')} ${n}`).join(', ');
 
 function Leaders({
   title,
@@ -167,21 +167,27 @@ function Leaders({
   rows: LeaderRow[];
   unit: string;
   caption?: string;
-  /** Show each player's figure team by team (the club-wide lists). */
+  /** Colour each bar by team (the club-wide lists, where players span teams). */
   split?: boolean;
 }) {
-  const note = (r: LeaderRow) => {
-    const apps = unit === 'appearances' ? undefined : `${r.apps} apps`;
-    // Only worth saying when the games were for more than one team.
-    const teams = split && r.byTeam.length > 1 ? teamSplit(r.byTeam) : undefined;
-    return [apps, teams].filter(Boolean).join(' · ') || undefined;
-  };
+  const apps = (r: LeaderRow) => (unit === 'appearances' ? undefined : `${r.apps} apps`);
+  const table = split ? (
+    <DataTable
+      head={['Player', 'Total', 'By team']}
+      rows={rows.map((r) => [r.name, r.value, teamSplit(r.byTeam)])}
+    />
+  ) : undefined;
   return (
-    <ChartCard title={title} caption={caption}>
+    <ChartCard title={title} caption={caption} table={table}>
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground py-4 text-center">None recorded.</p>
+      ) : split ? (
+        <TeamStackedBars
+          rows={rows.map((r) => ({ label: r.name, total: r.value, parts: r.byTeam, note: apps(r) }))}
+          unit={unit}
+        />
       ) : (
-        <HBars rows={rows.map((r) => ({ label: r.name, value: r.value, note: note(r) }))} unit={unit} />
+        <HBars rows={rows.map((r) => ({ label: r.name, value: r.value, note: apps(r) }))} unit={unit} />
       )}
     </ChartCard>
   );

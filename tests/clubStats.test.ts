@@ -282,7 +282,18 @@ describe("the season route", () => {
 });
 
 describe("two players who share a name", () => {
-  it("get their given names in brackets; everyone else is left alone", async () => {
+  it("marks the younger (Jr), judged by date of birth", async () => {
+    const { disambiguate } = await import("../worker/src/clubStats");
+    expect(
+      disambiguate(
+        { recFather: "Shep Shepherdson", recSon: "Shep Shepherdson", recOther: "Pat Player" },
+        { recFather: "John Michael", recSon: "Thomas", recOther: "Patrick" },
+        { recFather: "1965-03-02", recSon: "1996-11-20" },
+      ),
+    ).toEqual({ recFather: "Shep Shepherdson", recSon: "Shep Shepherdson (Jr)", recOther: "Pat Player" });
+  });
+
+  it("falls back to given names in brackets without both birth dates", async () => {
     const { disambiguate } = await import("../worker/src/clubStats");
     expect(
       disambiguate(

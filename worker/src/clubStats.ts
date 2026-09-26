@@ -245,16 +245,27 @@ interface PlayerNames {
 }
 
 /**
- * Two people shown under one name (a father and son, both "Shep
- * Shepherdson") get their given names in brackets, so the leaderboards
- * can tell them apart. Given names that match too are left as they are.
+ * Two people shown under one name - a father and son, both "Shep
+ * Shepherdson" - are told apart (owner request, 2026-09-26): the younger
+ * gets "(Jr)", judged by Date of Birth. Without both birth dates, or with
+ * three or more sharing a name, each gets their given names in brackets
+ * instead. Birth dates are only compared here and never kept or sent.
  */
-export function disambiguate(names: Record<string, string>, givenOf: Record<string, string>): Record<string, string> {
+export function disambiguate(
+  names: Record<string, string>,
+  givenOf: Record<string, string>,
+  bornOn: Record<string, string> = {},
+): Record<string, string> {
   const ids = new Map<string, string[]>();
   for (const [id, name] of Object.entries(names)) ids.set(name, [...(ids.get(name) ?? []), id]);
   const out = { ...names };
   for (const [name, shared] of ids) {
     if (shared.length < 2) continue;
+    const [a, b] = shared;
+    if (shared.length === 2 && bornOn[a] && bornOn[b] && bornOn[a] !== bornOn[b]) {
+      out[bornOn[a] > bornOn[b] ? a : b] = `${name} (Jr)`;
+      continue;
+    }
     for (const id of shared) {
       const given = givenOf[id];
       if (given && !name.toLowerCase().startsWith(`${given.toLowerCase()} `)) out[id] = `${name} (${given})`;
@@ -272,15 +283,18 @@ export function disambiguate(names: Record<string, string>, givenOf: Record<stri
 async function getPlayerNames(env: Env): Promise<PlayerNames> {
   return getShared<PlayerNames>(
     env,
-    "stats-player-names:v3",
+    "stats-player-names:v4",
     async () => {
       const records = await airtableFindAll(env, TABLES.player, undefined, undefined, [
         "Preferred Name",
         "Given Name(s)",
         "Surname",
+        // Only to tell a father from a son who share a name; not stored.
+        "Date of Birth",
       ]);
       const names: Record<string, string> = {};
       const givenOf: Record<string, string> = {};
+      const bornOn: Record<string, string> = {};
       const byFullName: Record<string, string> = {};
       const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
       for (const r of records) {
@@ -289,12 +303,14 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
         const surname = text(f.Surname);
         names[r.id] = [text(f["Preferred Name"]) || given, surname].filter(Boolean).join(" ") || "Unnamed";
         givenOf[r.id] = given;
+        const dob = text(f["Date of Birth"]);
+        if (/^\d{4}-\d{2}-\d{2}/.test(dob)) bornOn[r.id] = dob.slice(0, 10);
         if (!given || !surname) continue;
         const key = canonicalKey(`${given} ${surname}`);
         // Two people with the same full name: match neither.
         byFullName[key] = key in byFullName && byFullName[key] !== r.id ? "" : r.id;
       }
-      return { names: disambiguate(names, givenOf), byFullName };
+      return { names: disambiguate(names, givenOf, bornOn), byFullName };
     },
     24 * 60 * 60 * 1000,
   );

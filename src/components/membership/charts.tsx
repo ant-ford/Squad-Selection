@@ -22,6 +22,9 @@ export const chartVars = {
 
 const fmt = (n: number) => n.toLocaleString('en-GB');
 
+/** Share of the row the longest bar takes, leaving room for its value label. */
+const BAR_SPAN = 70;
+
 /** Tick ceiling: the next 1, 2 or 5 x 10^k at or above `n` (minimum 1). */
 export function niceMax(n: number): number {
   if (n <= 1) return 1;
@@ -158,11 +161,12 @@ export function HBars({
         >
           <span className="text-xs text-foreground truncate">{r.label}</span>
           <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
+            {/* shrink-0: a long note must never squeeze the bar - its length is the value. */}
             <span
-              className="h-3 rounded-r transition-opacity group-hover:opacity-80"
-              style={{ width: `${(r.value / max) * 85}%`, minWidth: r.value > 0 ? 2 : 0, background: 'var(--series-1)' }}
+              className="h-3 shrink-0 rounded-r transition-opacity group-hover:opacity-80"
+              style={{ width: `${(r.value / max) * BAR_SPAN}%`, minWidth: r.value > 0 ? 2 : 0, background: 'var(--series-1)' }}
             />
-            <span className="text-xs text-foreground tabular-nums whitespace-nowrap">
+            <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
               {fmt(r.value)}
               {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
             </span>
@@ -327,4 +331,99 @@ export function SquadBars({
 
 function Empty() {
   return <p className="text-xs text-muted-foreground py-4 text-center">Nothing in this period.</p>;
+}
+
+/**
+ * One colour per HKFC team, the reference palette's eight slots in order
+ * (validated on the card surface #f7f8f8: adjacent CVD ΔE ≥ 9.1, normal
+ * vision ≥ 19.6). Keyed by team so a colour always means the same team,
+ * whoever else is on the chart. Aqua, yellow and magenta sit under 3:1 on
+ * the card, so every chart using them also has a table view and a written
+ * total beside each bar.
+ */
+export const TEAM_COLOURS: Record<string, string> = {
+  'HKFC A': '#2a78d6',
+  'HKFC B': '#eb6834',
+  'HKFC C': '#1baf7a',
+  'HKFC D': '#eda100',
+  'HKFC E': '#e87ba4',
+  'HKFC F': '#008300',
+  'HKFC G': '#4a3aa7',
+  'HKFC H': '#e34948',
+};
+const OTHER_TEAM = '#8a8984';
+export const teamColour = (team: string) => TEAM_COLOURS[team] ?? OTHER_TEAM;
+const shortTeam = (team: string) => team.replace(/^HKFC /, '');
+
+/** The key for team-coloured charts: only the teams present, A to H. */
+export function TeamKey({ teams }: { teams: string[] }) {
+  return (
+    <ul className="flex flex-wrap gap-x-3 gap-y-1 mb-2" aria-label="Key">
+      {teams.map((t) => (
+        <li key={t} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: teamColour(t) }} aria-hidden />
+          {shortTeam(t)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Horizontal bars split by team: each segment is one team's share, stacked
+ * in team order (A first) so the same colour sits in the same place on every
+ * row. The whole bar's length is the total; a 2px gap separates segments and
+ * only the end is rounded. Hover a segment for its team and value.
+ */
+export function TeamStackedBars({
+  rows,
+  unit,
+}: {
+  rows: { label: string; total: number; parts: [string, number][]; note?: string }[];
+  unit: string;
+}) {
+  if (rows.length === 0) return <Empty />;
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  // A note after the total ("75 apps") needs more room on a phone.
+  const span = rows.some((r) => r.note) ? BAR_SPAN - 12 : BAR_SPAN;
+  const teams = [...new Set(rows.flatMap((r) => r.parts.map(([t]) => t)))].sort((a, b) => a.localeCompare(b));
+  return (
+    <div style={chartVars}>
+      <TeamKey teams={teams} />
+      <ul className="space-y-1.5">
+        {rows.map((r) => {
+          const parts = [...r.parts].sort((a, b) => a[0].localeCompare(b[0]));
+          const summary = parts.map(([t, n]) => `${shortTeam(t)} ${fmt(n)}`).join(', ');
+          return (
+            <li
+              key={r.label}
+              className="grid grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr] items-center gap-2"
+              aria-label={`${r.label}: ${fmt(r.total)} ${unit} (${summary})`}
+            >
+              <span className="text-xs text-foreground truncate">{r.label}</span>
+              <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
+                <span
+                  className="h-3 shrink-0 flex gap-[2px] overflow-hidden rounded-r"
+                  style={{ width: `${(r.total / max) * span}%`, minWidth: r.total > 0 ? 2 : 0 }}
+                >
+                  {parts.map(([t, n]) => (
+                    <span
+                      key={t}
+                      className="h-full hover:opacity-80"
+                      style={{ flex: `${n} 0 0`, minWidth: 1, background: teamColour(t) }}
+                      title={`${r.label} · ${t}: ${fmt(n)} ${unit}`}
+                    />
+                  ))}
+                </span>
+                <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
+                  {fmt(r.total)}
+                  {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }

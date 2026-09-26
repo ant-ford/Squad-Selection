@@ -11,7 +11,7 @@
  */
 
 /** Bump when the summary's shape changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 4;
+export const SUMMARY_VERSION = 5;
 
 export interface WDL {
   w: number;
