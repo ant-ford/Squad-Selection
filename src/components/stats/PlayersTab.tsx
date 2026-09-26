@@ -27,33 +27,49 @@ const byTeamText = (teams: Record<string, PlayerTeamLine>) =>
 const LIST_LIMIT = 60;
 
 /**
- * The Players tab: everyone who played in the chosen period, and any one
- * player's career across every season. Cards appear only on the signed-in
+ * The Players tab: everyone who played in the chosen period, and one
+ * player's figures for it - a single season, or their whole career under
+ * All time. Cards appear only on the signed-in
  * player's own career (owner decision, 2026-09-26); the Worker sends no
  * one else's.
  */
 export default function PlayersTab({
   stats,
-  allSeasons,
-  allDone,
+  seasons,
+  done,
+  period,
   me,
   player,
   onPlayer,
   note,
 }: {
   stats: PeriodStats;
-  /** Every season with games, for careers (loaded one by one). */
-  allSeasons: SeasonStats[];
-  allDone: boolean;
+  /** The seasons behind the chosen period (All time: loaded one by one). */
+  seasons: SeasonStats[];
+  done: boolean;
+  /** "all", or the season picked. */
+  period: string;
   /** The signed-in player's own key, when they have played. */
   me?: string;
   player: string | null;
-  onPlayer: (key: string | null) => void;
+  /** Opens a player (null: back to the list); allTime also switches the picker to All time. */
+  onPlayer: (key: string | null, allTime?: boolean) => void;
   /** Said where player figures start (results-only seasons). */
   note?: ReactNode;
 }) {
   if (player) {
-    return <CareerView seasons={allSeasons} done={allDone} player={player} own={player === me} onBack={() => onPlayer(null)} note={note} />;
+    return (
+      <CareerView
+        seasons={seasons}
+        done={done}
+        season={period === 'all' ? null : period}
+        player={player}
+        own={player === me}
+        onBack={() => onPlayer(null)}
+        onAllTime={() => onPlayer(player, true)}
+        note={note}
+      />
+    );
   }
   return <PlayerList stats={stats} me={me} onPlayer={onPlayer} note={note} />;
 }
@@ -66,7 +82,7 @@ function PlayerList({
 }: {
   stats: PeriodStats;
   me?: string;
-  onPlayer: (key: string) => void;
+  onPlayer: (key: string, allTime?: boolean) => void;
   note?: ReactNode;
 }) {
   const [query, setQuery] = useState('');
@@ -91,7 +107,7 @@ function PlayerList({
         </label>
         {me && (
           <button
-            onClick={() => onPlayer(me)}
+            onClick={() => onPlayer(me, true)}
             className="h-9 px-3 rounded-md bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/85"
           >
             My career
@@ -147,16 +163,21 @@ function PlayerList({
 function CareerView({
   seasons,
   done,
+  season,
   player,
   own,
   onBack,
+  onAllTime,
   note,
 }: {
   seasons: SeasonStats[];
   done: boolean;
+  /** One season picked; null for the whole career. */
+  season: string | null;
   player: string;
   own: boolean;
   onBack: () => void;
+  onAllTime: () => void;
   note?: ReactNode;
 }) {
   const career = useMemo(() => careerOf(seasons, player), [seasons, player]);
@@ -178,9 +199,21 @@ function CareerView({
     return (
       <div className="space-y-3">
         {back}
+        {note}
         <p className="text-sm text-muted-foreground">
-          {done ? 'No games recorded for this player.' : 'Adding up their seasons…'}
+          {!done
+            ? season
+              ? 'Loading the season…'
+              : 'Adding up their seasons…'
+            : season
+              ? `No games recorded for them in ${shortSeason(season)}.`
+              : 'No games recorded for this player.'}
         </p>
+        {done && season && (
+          <button onClick={onAllTime} className="text-sm text-primary underline">
+            See their whole career
+          </button>
+        )}
       </div>
     );
   }
@@ -210,8 +243,19 @@ function CareerView({
       <div>
         <h2 className="text-lg font-semibold text-foreground">{career.name}</h2>
         <p className="text-xs text-muted-foreground">
-          Career: {career.seasons.length} {career.seasons.length === 1 ? 'season' : 'seasons'}
-          {!done && ' so far (still adding up seasons)'}
+          {season ? (
+            <>
+              {shortSeason(season)} season ·{' '}
+              <button onClick={onAllTime} className="text-primary underline">
+                whole career
+              </button>
+            </>
+          ) : (
+            <>
+              Career: {career.seasons.length} {career.seasons.length === 1 ? 'season' : 'seasons'}
+              {!done && ' so far (still adding up seasons)'}
+            </>
+          )}
         </p>
       </div>
       {note}
@@ -231,6 +275,7 @@ function CareerView({
         )}
       </div>
 
+      {!season && (
       <ChartCard title="Season by season" caption="Appearances each season, by team." table={seasonsTable}>
         <TeamStackedBars
           rows={career.seasons.map((s) => ({
@@ -243,6 +288,7 @@ function CareerView({
           narrowLabels
         />
       </ChartCard>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {t.goals > 0 && career.seasons.length > 1 && (

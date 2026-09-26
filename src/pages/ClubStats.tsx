@@ -62,7 +62,7 @@ export default function ClubStats() {
 
   const period = params.get('season') === 'all' ? 'all' : seasons.includes(params.get('season') ?? '') ? params.get('season')! : current;
   const tab: Tab = TABS.find((t) => t.key === params.get('tab'))?.key ?? 'club';
-  // A career covers every season, whichever season is picked.
+  // A player's figures follow the season picker: one season, or their whole career under All time.
   const player = tab === 'players' ? params.get('player') : null;
   const set = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -74,7 +74,7 @@ export default function ClubStats() {
   };
 
   const one = useSeasonStats(period === 'all' ? null : period);
-  const all = useAllSeasonStats(seasons, period === 'all' || !!player);
+  const all = useAllSeasonStats(seasons, period === 'all');
   const me = one.data?.me ?? all.summaries.find((s) => s.me)?.me;
 
   const stats: PeriodStats | null = useMemo(() => {
@@ -134,7 +134,7 @@ export default function ClubStats() {
           </select>
         </div>
 
-        {(period === 'all' || player) && !all.done && (
+        {period === 'all' && !all.done && (
           <p className="text-xs text-muted-foreground" role="status">
             Adding up past seasons… {all.loadedCount} loaded. The first look at a season takes a few seconds; after that
             it is instant.
@@ -167,12 +167,13 @@ export default function ClubStats() {
         ) : tab === 'players' ? (
           <PlayersTab
             stats={stats}
-            allSeasons={all.summaries}
-            allDone={all.done}
+            seasons={periodSummaries}
+            done={period === 'all' ? all.done : !!one.data}
+            period={period}
             me={me}
             player={player}
-            onPlayer={(key) => set({ player: key })}
-            note={<PlayerDataNote stats={player ? combineSeasons(all.summaries) : stats} />}
+            onPlayer={(key, allTime) => set({ player: key, ...(allTime ? { season: 'all' } : {}) })}
+            note={<PlayerDataNote stats={stats} />}
           />
         ) : (
           <TeamsTab
