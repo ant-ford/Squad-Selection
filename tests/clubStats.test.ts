@@ -98,6 +98,28 @@ describe("a season's summary", () => {
     expect(players.find((p) => p.key === "raw:old timer")).toMatchObject({ name: "Old  TIMER" });
   });
 
+  it("matches a card with no People link to the player by full name", () => {
+    const { summary } = buildSeasonSummary({
+      season: "2025-2026",
+      matches: MATCHES,
+      cards: [
+        card("x1", "m1", "HKFC A", { player: ["recP1"], goals: 1 }),
+        // HKHA's "SURNAME Given Names" for the same person.
+        card("x2", "m2", "HKFC B", { rawPlayerName: "PLAYER Patrick James", goals: 2 }),
+        // Two people share this name, so neither is matched.
+        card("x3", "m2", "HKFC B", { rawPlayerName: "LEE Sam" }),
+      ],
+      names: NAMES,
+      byFullName: { "james patrick player": "recP1", "lee sam": "" },
+      today: "2026-09-26",
+    });
+    expect(summary.players.find((p) => p.key === "recP1")!.teams).toMatchObject({
+      "HKFC A": { apps: 1, goals: 1 },
+      "HKFC B": { apps: 1, goals: 2 },
+    });
+    expect(summary.players.map((p) => p.key).sort()).toEqual(["raw:lee sam", "recP1"]);
+  });
+
   it("keeps cards out of the summary, aside for each player's own page", () => {
     const { summary, cardsByPlayer } = built();
     expect(JSON.stringify(summary)).not.toMatch(/Y2|R1|"cards"|yellow|red/);
@@ -175,8 +197,8 @@ function tables(): FakeTables {
   const m = (id: string, f: Record<string, unknown>) => ({ id, fields: { Season: "2025-2026", "Match Status": "Played", "Competition Type": "LEAGUE", Venue: "HKFC", Date: "2025-10-05T06:00:00.000Z", ...f } });
   return {
     People: [
-      { id: "recPlayerPat00001", fields: { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member" } },
-      { id: "recPlayerKim00001", fields: { "Preferred Name": "Kim", Surname: "Keeper", Email: "kim@hkfc.com", Active: true, Status: "Member", "HKID No.": "A123456(7)" } },
+      { id: "recPlayerPat00001", fields: { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member", "Match Cards": ["recCard000000001"] } },
+      { id: "recPlayerKim00001", fields: { "Preferred Name": "Kim", Surname: "Keeper", Email: "kim@hkfc.com", Active: true, Status: "Member", "HKID No.": "A123456(7)", "Match Cards": ["recCard000000002"] } },
     ],
     Teams: [],
     Matches: [

@@ -21,7 +21,8 @@ import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 import { getShared } from "./cache";
 import { HttpError } from "./http";
 import { getAllMatches, getMatchCardsForSeason, currentSeason } from "./seasonContext";
-import { getPeopleByIds } from "./contacts";
+import { airtableFindAll } from "./airtable";
+import { TABLES } from "../../shared/schema/tableNames";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
 import { STATS_CURRENT_KEY } from "./reference";
@@ -99,13 +100,19 @@ export interface SummaryInput {
   cards: MatchCard[];
   /** People id -> display name, for linked cards. */
   names: Record<string, string>;
+  /**
+   * canonicalKey(Given Name(s) + Surname) -> People id, for cards with no
+   * People link: HKHA writes "SURNAME Given Names", which is the same words.
+   * A name two people share maps to "" and is left unmatched.
+   */
+  byFullName?: Record<string, string>;
   /** "YYYY-MM-DD", Hong Kong. */
   today: string;
 }
 
 /** Pure: everything in, the stored summary out. */
 export function buildSeasonSummary(input: SummaryInput): StoredSummary {
-  const { season, matches, cards, names, today } = input;
+  const { season, matches, cards, names, byFullName = {}, today } = input;
   const carded = new Set(cards.flatMap((c) => c.match ?? []));
   const counted = matches.filter((m) => counts(m, carded, today));
   const byId = new Map(counted.map((m) => [m.id, m]));
@@ -150,8 +157,10 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
     const team = c.team ?? "";
     const result = matchId ? sideResult.get(`${matchId}|${team}`) : undefined;
     if (!matchId || !byId.has(matchId) || !result) continue;
-    const personId = c.player?.[0];
     const raw = (c.rawPlayerName ?? "").trim();
+    // A card with no People link is matched by full name (owner decision,
+    // 2026-09-26): a sixth of 2021-25's appearances have no link.
+    const personId = c.player?.[0] ?? (raw ? byFullName[canonicalKey(raw)] || undefined : undefined);
     const key = personId ?? (raw ? `raw:${canonicalKey(raw)}` : "");
     if (!key) continue;
     const p = players.get(key) ?? { key, name: (personId && names[personId]) || raw || "Unknown player", teams: {} };
@@ -230,13 +239,53 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
   };
 }
 
+interface PlayerNames {
+  names: Record<string, string>;
+  byFullName: Record<string, string>;
+}
+
+/**
+ * Everyone who has ever had a Match Card, by id and by full name. One
+ * shared read of three name fields, kept a day: it is only used when a
+ * season is built, and a name changed today can wait until tomorrow.
+ */
+async function getPlayerNames(env: Env): Promise<PlayerNames> {
+  return getShared<PlayerNames>(
+    env,
+    "stats-player-names",
+    async () => {
+      const records = await airtableFindAll(env, TABLES.player, `{Match Cards}!=""`, undefined, [
+        "Preferred Name",
+        "Given Name(s)",
+        "Surname",
+      ]);
+      const names: Record<string, string> = {};
+      const byFullName: Record<string, string> = {};
+      const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      for (const r of records) {
+        const f = r.fields ?? {};
+        const given = text(f["Given Name(s)"]);
+        const surname = text(f.Surname);
+        names[r.id] = [text(f["Preferred Name"]) || given, surname].filter(Boolean).join(" ") || "Unnamed";
+        if (!given || !surname) continue;
+        const key = canonicalKey(`${given} ${surname}`);
+        // Two people with the same full name: match neither.
+        byFullName[key] = key in byFullName && byFullName[key] !== r.id ? "" : r.id;
+      }
+      return { names, byFullName };
+    },
+    24 * 60 * 60 * 1000,
+  );
+}
+
 async function buildFor(env: Env, season: string): Promise<StoredSummary> {
-  const [matches, cards] = await Promise.all([getAllMatches(env, season), getMatchCardsForSeason(env, season)]);
-  const ids = new Set(cards.flatMap((c) => c.player ?? []));
-  const people = await getPeopleByIds(env, ids);
-  const names = Object.fromEntries(Object.entries(people).map(([id, p]) => [id, p.name]));
+  const [matches, cards, people] = await Promise.all([
+    getAllMatches(env, season),
+    getMatchCardsForSeason(env, season),
+    getPlayerNames(env),
+  ]);
   const today = hkDateKey(new Date().toISOString());
-  return buildSeasonSummary({ season, matches, cards, names, today });
+  return buildSeasonSummary({ season, matches, cards, names: people.names, byFullName: people.byFullName, today });
 }
 
 /** A season's stored summary, building it when it is not kept yet. */

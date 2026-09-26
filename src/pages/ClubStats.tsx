@@ -37,6 +37,8 @@ const pct = (r: WDL) => {
 };
 const wdl = (r: WDL) => `${r.w}-${r.d}-${r.l}`;
 const perGame = (n: number, g: number) => (g ? (n / g).toFixed(1) : '–');
+/** HKHA divisions arrive as "P", "1", "2"…: "Premier", "Div 1", "Div 2". */
+const divisionLabel = (d?: string) => (!d ? undefined : d === 'P' ? 'Premier' : /^\d+$/.test(d) ? `Div ${d}` : d);
 
 /**
  * Club and team statistics for every signed-in player (owner decision,
@@ -197,7 +199,7 @@ function ClubTab({
         }
       >
         <HBars
-          rows={stats.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)}${t.division ? ` · ${t.division}` : ''}` }))}
+          rows={stats.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)}${t.division ? ` · ${divisionLabel(t.division)}` : ''}` }))}
           unit="% won"
         />
       </ChartCard>
@@ -268,7 +270,7 @@ function TeamsTab({ stats, team, onTeam }: { stats: PeriodStats; team: string | 
       </nav>
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Played" value={t.played} hint={t.division || undefined} />
+        <StatTile label="Played" value={t.played} hint={divisionLabel(t.division)} />
         <StatTile label="Win rate" value={pct(t)} hint={`W-D-L ${wdl(t)}`} />
         <StatTile label="Goals" value={`${t.gf}-${t.ga}`} hint={`${perGame(t.gf, t.played)} per game`} />
         <StatTile label="Clean sheets" value={t.cleanSheets} />
