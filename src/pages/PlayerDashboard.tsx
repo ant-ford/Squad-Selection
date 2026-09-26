@@ -20,6 +20,7 @@ import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
+import HelpLink from '@/components/HelpLink';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -250,6 +251,7 @@ export default function PlayerDashboard() {
         >
           <CalendarDays className="h-4 w-4" />
         </button>
+        <HelpLink guide="player" />
         <button onClick={() => logout()} className={headerIconClass} aria-label="Log out">
           <LogOut className="h-4 w-4" />
         </button>
