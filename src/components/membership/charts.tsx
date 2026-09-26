@@ -460,18 +460,21 @@ export function Columns({
   max: fixedMax,
   suffix = '',
   reference,
+  colour = 'var(--series-1)',
 }: {
   rows: { key: string; label: string; value: number; detail?: string }[];
   unit: string;
   max?: number;
   suffix?: string;
-  /** A dashed line across the plot at this value, e.g. 50 for "won half". */
+  /** A dashed line across the plot at this value, e.g. 50 for "won half"; it gets its own tick label. */
   reference?: number;
+  /** Column colour: one series, or a team's own colour. */
+  colour?: string;
 }) {
   const [active, setActive] = useState<number | null>(null);
   if (rows.length === 0) return <Empty />;
   const top = fixedMax ?? niceMax(Math.max(...rows.map((r) => r.value)));
-  const ticks = [top, top / 2, 0];
+  const ticks = [...new Set([top, reference ?? top / 2, 0])].sort((x, y) => y - x);
   const values = rows.map((r) => r.value);
   const hi = values.indexOf(Math.max(...values));
   const lo = values.indexOf(Math.min(...values));
@@ -479,27 +482,33 @@ export function Columns({
   return (
     <div style={chartVars}>
       <div className="relative flex">
-        <div className="flex flex-col justify-between h-40 pr-1.5 text-[10px] text-muted-foreground tabular-nums text-right w-8 shrink-0">
+        {/* Tick labels sit centred on their gridlines, the reference line's included. */}
+        <div className="relative h-40 w-8 shrink-0 mr-1.5 text-[10px] text-muted-foreground tabular-nums text-right" aria-hidden>
           {ticks.map((t) => (
-            <span key={t} className="leading-none -translate-y-1/2 first:translate-y-0 last:translate-y-0">
+            <span key={t} className="absolute right-0 leading-none -translate-y-1/2" style={{ top: `${(1 - t / top) * 100}%` }}>
               {fmt(t)}
               {suffix}
             </span>
           ))}
         </div>
         <div className="relative flex-1 min-w-0">
-          <div className="absolute inset-0 h-40 flex flex-col justify-between pointer-events-none">
-            {ticks.map((t) => (
-              <div key={t} className="border-t" style={{ borderColor: t === 0 ? 'var(--baseline)' : 'var(--grid)' }} />
-            ))}
+          <div className="absolute inset-x-0 top-0 h-40 pointer-events-none">
+            {ticks.map((t) =>
+              t === reference ? null : (
+                <div
+                  key={t}
+                  className="absolute inset-x-0 border-t"
+                  style={{ top: `${(1 - t / top) * 100}%`, borderColor: t === 0 ? 'var(--baseline)' : 'var(--grid)' }}
+                />
+              ),
+            )}
+            {reference !== undefined && reference > 0 && reference < top && (
+              <div
+                className="absolute inset-x-0 border-t border-dashed"
+                style={{ top: `${(1 - reference / top) * 100}%`, borderColor: 'var(--baseline)' }}
+              />
+            )}
           </div>
-          {reference !== undefined && reference > 0 && reference < top && (
-            <div
-              className="absolute left-0 right-0 border-t border-dashed pointer-events-none"
-              style={{ top: `calc(${(1 - reference / top) * 10}rem)`, borderColor: 'var(--baseline)' }}
-              aria-hidden
-            />
-          )}
           <div className="relative h-40 flex items-end gap-[2px]" onPointerLeave={() => setActive(null)}>
             {rows.map((r, i) => (
               <button
@@ -526,7 +535,7 @@ export function Columns({
                   style={{
                     height: `${(Math.min(r.value, top) / top) * 100}%`,
                     minHeight: r.value > 0 ? 2 : 0,
-                    background: 'var(--series-1)',
+                    background: colour,
                     opacity: active === null || active === i ? 1 : 0.45,
                   }}
                 />

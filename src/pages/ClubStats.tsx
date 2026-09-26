@@ -38,6 +38,7 @@ const pct = (r: WDL) => {
   return p === null ? '–' : `${p}%`;
 };
 const wdl = (r: WDL) => `${r.w}-${r.d}-${r.l}`;
+const gamesText = (n: number) => `${n} game${n === 1 ? '' : 's'}`;
 const perGame = (n: number, g: number) => (g ? (n / g).toFixed(1) : '–');
 const divisionLabel = (d?: string) => (d ? leagueLabel(d) : undefined);
 
@@ -146,7 +147,12 @@ export default function ClubStats() {
         ) : tab === 'club' ? (
           <ClubTab stats={stats} allTime={period === 'all'} summaries={all.summaries} />
         ) : (
-          <TeamsTab stats={stats} team={params.get('team')} onTeam={(t) => set({ team: t })} />
+          <TeamsTab
+            stats={stats}
+            team={params.get('team')}
+            onTeam={(t) => set({ team: t })}
+            summaries={period === 'all' ? all.summaries : []}
+          />
         )}
       </main>
       <AppFooter />
@@ -198,12 +204,24 @@ function Leaders({
  * The club's win rate season by season (against other clubs), oldest on the
  * left, for All time. The table view has every season's full record.
  */
-function SeasonBySeason({ summaries }: { summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[] }) {
+function SeasonBySeason({
+  summaries,
+  team,
+}: {
+  summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[];
+  /** One team's seasons (all its games, derbies included); the club's otherwise. */
+  team?: string;
+}) {
   const y = seasonStartYear(hkDateKey(new Date().toISOString()));
   const current = `${y}-${y + 1}`;
   const rows = [...summaries]
     .sort((a, b) => a.season.localeCompare(b.season))
-    .map((s) => ({ season: s.season, r: clubRecord({ teams: s.teams, derbies: s.derbies }) }));
+    .flatMap((s) => {
+      if (!team) return [{ season: s.season, r: clubRecord({ teams: s.teams, derbies: s.derbies }) }];
+      const t = s.teams.find((x) => x.team === team);
+      return t && t.played ? [{ season: s.season, r: { ...t, games: t.played } }] : [];
+    });
+  if (rows.length < 2) return null;
   const table = (
     <DataTable
       head={['Season', 'Games', 'W-D-L', 'Win', 'GF', 'GA']}
@@ -213,7 +231,11 @@ function SeasonBySeason({ summaries }: { summaries: { season: string; teams: Per
   return (
     <ChartCard
       title="Season by season"
-      caption="Win rate against other clubs each season; the dashed line is 50%. Seasons with few games (the current one, 2015-16) move more."
+      caption={
+        team
+          ? `${team}'s win rate each season it played. Seasons with few games move more.`
+          : 'Win rate against other clubs each season. Seasons with few games (the current one, 2015-16) move more.'
+      }
       table={table}
     >
       <Columns
@@ -221,12 +243,13 @@ function SeasonBySeason({ summaries }: { summaries: { season: string; teams: Per
           key: season,
           label: shortSeason(season).slice(2),
           value: winPct(r) ?? 0,
-          detail: `${wdl(r)} in ${r.games} games${season === current ? ' so far' : ''}`,
+          detail: `${wdl(r)} in ${gamesText(r.games)}${season === current ? ' so far' : ''}`,
         }))}
         unit="won"
         max={100}
         suffix="%"
         reference={50}
+        colour={team ? teamColour(team) : undefined}
       />
     </ChartCard>
   );
@@ -256,7 +279,7 @@ function CompetitionCard({
           <section key={g.key} aria-label={g.label}>
             <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
             <HBars
-              rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${games(t)} games` }))}
+              rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${gamesText(games(t))}` }))}
               unit="won"
               max={100}
               suffix="%"
@@ -358,7 +381,18 @@ function ClubTab({
   );
 }
 
-function TeamsTab({ stats, team, onTeam }: { stats: PeriodStats; team: string | null; onTeam: (t: string) => void }) {
+function TeamsTab({
+  stats,
+  team,
+  onTeam,
+  summaries,
+}: {
+  stats: PeriodStats;
+  team: string | null;
+  onTeam: (t: string) => void;
+  /** All time only: every season, for the team's season-by-season chart. */
+  summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[];
+}) {
   const names = teamOrder(stats.teams);
   const chosen = names.includes(team ?? '') ? team! : names[0];
   const t = stats.teams.find((x) => x.team === chosen);
@@ -385,11 +419,13 @@ function TeamsTab({ stats, team, onTeam }: { stats: PeriodStats; team: string | 
       </nav>
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Played" value={t.played} hint={divisionLabel(t.division)} />
+        <StatTile label="Played" value={t.played} hint={summaries.length ? undefined : divisionLabel(t.division)} />
         <StatTile label="Win rate" value={pct(t)} hint={`W-D-L ${wdl(t)}`} />
         <StatTile label="Goals" value={`${t.gf}-${t.ga}`} hint={`${perGame(t.gf, t.played)} per game`} />
         <StatTile label="Clean sheets" value={t.cleanSheets} />
       </div>
+
+      {summaries.length > 1 && <SeasonBySeason summaries={summaries} team={t.team} />}
 
       <LeagueCard stats={stats} team={t.team} />
 
