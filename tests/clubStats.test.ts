@@ -274,3 +274,19 @@ describe("the season route", () => {
     expect(body).toMatchObject({ matches: 0, teams: [], players: [] });
   });
 });
+
+describe("two players who share a name", () => {
+  it("get their given names in brackets; everyone else is left alone", async () => {
+    const { disambiguate } = await import("../worker/src/clubStats");
+    expect(
+      disambiguate(
+        { recFather: "Shep Shepherdson", recSon: "Shep Shepherdson", recOther: "Pat Player" },
+        { recFather: "John Michael", recSon: "Thomas", recOther: "Patrick" },
+      ),
+    ).toEqual({
+      recFather: "Shep Shepherdson (John Michael)",
+      recSon: "Shep Shepherdson (Thomas)",
+      recOther: "Pat Player",
+    });
+  });
+});

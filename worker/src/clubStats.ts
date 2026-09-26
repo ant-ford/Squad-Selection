@@ -245,21 +245,42 @@ interface PlayerNames {
 }
 
 /**
- * Everyone who has ever had a Match Card, by id and by full name. One
+ * Two people shown under one name (a father and son, both "Shep
+ * Shepherdson") get their given names in brackets, so the leaderboards
+ * can tell them apart. Given names that match too are left as they are.
+ */
+export function disambiguate(names: Record<string, string>, givenOf: Record<string, string>): Record<string, string> {
+  const ids = new Map<string, string[]>();
+  for (const [id, name] of Object.entries(names)) ids.set(name, [...(ids.get(name) ?? []), id]);
+  const out = { ...names };
+  for (const [name, shared] of ids) {
+    if (shared.length < 2) continue;
+    for (const id of shared) {
+      const given = givenOf[id];
+      if (given && !name.toLowerCase().startsWith(`${given.toLowerCase()} `)) out[id] = `${name} (${given})`;
+    }
+  }
+  return out;
+}
+
+/**
+ * Everyone in People, by id and by full name - not only those with a linked
+ * Match Card: a player whose every card is unlinked is who this is for. One
  * shared read of three name fields, kept a day: it is only used when a
  * season is built, and a name changed today can wait until tomorrow.
  */
 async function getPlayerNames(env: Env): Promise<PlayerNames> {
   return getShared<PlayerNames>(
     env,
-    "stats-player-names",
+    "stats-player-names:v3",
     async () => {
-      const records = await airtableFindAll(env, TABLES.player, `{Match Cards}!=""`, undefined, [
+      const records = await airtableFindAll(env, TABLES.player, undefined, undefined, [
         "Preferred Name",
         "Given Name(s)",
         "Surname",
       ]);
       const names: Record<string, string> = {};
+      const givenOf: Record<string, string> = {};
       const byFullName: Record<string, string> = {};
       const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
       for (const r of records) {
@@ -267,12 +288,13 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
         const given = text(f["Given Name(s)"]);
         const surname = text(f.Surname);
         names[r.id] = [text(f["Preferred Name"]) || given, surname].filter(Boolean).join(" ") || "Unnamed";
+        givenOf[r.id] = given;
         if (!given || !surname) continue;
         const key = canonicalKey(`${given} ${surname}`);
         // Two people with the same full name: match neither.
         byFullName[key] = key in byFullName && byFullName[key] !== r.id ? "" : r.id;
       }
-      return { names, byFullName };
+      return { names: disambiguate(names, givenOf), byFullName };
     },
     24 * 60 * 60 * 1000,
   );
