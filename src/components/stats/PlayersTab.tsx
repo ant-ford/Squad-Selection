@@ -220,11 +220,8 @@ function CareerView({
         <StatTile label="Appearances" value={t.apps} hint={t.playUps ? `${t.playUps} played up` : undefined} />
         <StatTile label="Goals" value={t.goals} hint={`${perGame(t.goals, t.apps)} per game`} />
         <StatTile label="Win rate" value={pct(t)} hint={`W-D-L ${wdl(t)}`} />
-        <StatTile
-          label="Captain"
-          value={t.captain}
-          hint={t.keeper ? `${t.keeper} games in goal` : 'games as captain'}
-        />
+        <StatTile label="Captain" value={t.captain} hint={t.captain === 1 ? 'game as captain' : 'games as captain'} />
+        {t.keeper > 0 && <StatTile label="In goal" value={t.keeper} hint={t.keeper === 1 ? 'game' : 'games'} />}
         {cards && (
           <StatTile
             label="My cards"
@@ -243,6 +240,7 @@ function CareerView({
             note: s.total.goals ? `${s.total.goals} ${s.total.goals === 1 ? 'goal' : 'goals'}` : undefined,
           }))}
           unit="appearances"
+          narrowLabels
         />
       </ChartCard>
 

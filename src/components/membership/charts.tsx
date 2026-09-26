@@ -398,9 +398,12 @@ export function TeamKey({ teams }: { teams: string[] }) {
 export function TeamStackedBars({
   rows,
   unit,
+  narrowLabels = false,
 }: {
   rows: { label: string; total: number; parts: [string, number][]; note?: string }[];
   unit: string;
+  /** Short labels (seasons): the label column fits them instead of a player name. */
+  narrowLabels?: boolean;
 }) {
   if (rows.length === 0) return <Empty />;
   const max = Math.max(1, ...rows.map((r) => r.total));
@@ -417,7 +420,7 @@ export function TeamStackedBars({
           return (
             <li
               key={r.label}
-              className="grid grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr] items-center gap-2"
+              className={`grid ${narrowLabels ? 'grid-cols-[max-content_1fr]' : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]'} items-center gap-2`}
               aria-label={`${r.label}: ${fmt(r.total)} ${unit} (${summary})`}
             >
               <span className="text-xs text-foreground truncate">{r.label}</span>
@@ -480,7 +483,8 @@ export function Columns({
   const lo = values.indexOf(Math.min(...values));
   const hovered = active !== null ? rows[active] : null;
   return (
-    <div style={chartVars}>
+    // Room above the tallest column for its written value.
+    <div style={chartVars} className="pt-4">
       <div className="relative flex">
         {/* Tick labels sit centred on their gridlines, the reference line's included. */}
         <div className="relative h-40 w-8 shrink-0 mr-1.5 text-[10px] text-muted-foreground tabular-nums text-right" aria-hidden>
