@@ -3,6 +3,7 @@ import { useAuth } from '@/lib/auth';
 import { LogOut, User, ListChecks, Home, Users, Mail } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
+import HelpLink from '@/components/HelpLink';
 
 export default function CoachHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
@@ -44,6 +45,7 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
         <User className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Player View</span>
       </button>
+      <HelpLink guide="coach" />
       <button onClick={logout} className={headerIconClass} aria-label="Log out">
         <LogOut className="h-4 w-4" />
       </button>
