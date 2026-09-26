@@ -10,7 +10,7 @@ import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
-  byLeague,
+  byCompetition,
   clubRecord,
   leagueLabel,
   combineSeasons,
@@ -194,24 +194,29 @@ function Leaders({
   );
 }
 
-/** Each league the club played in, and every HKFC team's record in it. */
-function LeagueCard({ stats, team }: { stats: PeriodStats; team?: string }) {
-  const groups = byLeague(team ? stats.teams.filter((t) => t.team === team) : stats.teams);
+/** One card of competition groups: the leagues, or the cups. */
+function CompetitionCard({
+  title,
+  groups,
+  caption,
+}: {
+  title: string;
+  groups: ReturnType<typeof byCompetition>;
+  caption?: string;
+}) {
   if (groups.length === 0) return null;
   const table = (
     <DataTable
-      head={['League', 'Team', 'P', 'W', 'D', 'L', 'GF', 'GA', 'Win']}
-      rows={groups.flatMap((g) => g.teams.map((t) => [leagueLabel(g.league), t.team, games(t), t.w, t.d, t.l, t.gf, t.ga, pct(t)]))}
+      head={[title === 'Cups' ? 'Cup' : 'League', 'Team', 'P', 'W', 'D', 'L', 'GF', 'GA', 'Win']}
+      rows={groups.flatMap((g) => g.teams.map((t) => [g.label, t.team, games(t), t.w, t.d, t.l, t.gf, t.ga, pct(t)]))}
     />
   );
   return (
-    <ChartCard title="By league" caption={team ? 'This team in each league it played in.' : undefined} table={table}>
+    <ChartCard title={title} caption={caption} table={table}>
       <div className="space-y-3">
         {groups.map((g) => (
-          <section key={g.league} aria-label={leagueLabel(g.league)}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              {leagueLabel(g.league)}
-            </h4>
+          <section key={g.key} aria-label={g.label}>
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
             <HBars
               rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${games(t)} games` }))}
               unit="won"
@@ -224,6 +229,23 @@ function LeagueCard({ stats, team }: { stats: PeriodStats; team?: string }) {
         ))}
       </div>
     </ChartCard>
+  );
+}
+
+/** The leagues the club (or one team) played in, then the cups, each with every team's record. */
+function LeagueCard({ stats, team }: { stats: PeriodStats; team?: string }) {
+  const groups = byCompetition(team ? stats.teams.filter((t) => t.team === team) : stats.teams);
+  const leagues = groups.filter((g) => g.kind === 'league');
+  const cups = groups.filter((g) => g.kind === 'cup');
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <CompetitionCard
+        title="By league"
+        groups={leagues}
+        caption="Split and play-off stages (1A, 1B, PB…) are counted in their league."
+      />
+      <CompetitionCard title="Cups" groups={cups} caption="All rounds together. HKHA and HockeyHK cups are one competition." />
+    </div>
   );
 }
 

@@ -279,40 +279,81 @@ export function leaders(players: PlayerSeason[], field: LineField, opts: { team?
   return rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)).slice(0, opts.limit ?? 10);
 }
 
-/** HKHA's league codes as people say them: "P" -> "Premier", "1" -> "Div 1". */
-export function leagueLabel(code: string): string {
-  if (code === 'P') return 'Premier';
-  if (/^\d+$/.test(code)) return `Div ${code}`;
-  return code || 'Other';
+/**
+ * What a Matches "Division" value is, as people would group it. HKHA puts
+ * both leagues and cup rounds in that field, in varying spellings:
+ *   leagues   "P", "1".."6", split or play-off variants ("1A", "PB", "5Z",
+ *             "3 PLAYOFF") and "Super League" - folded into their league;
+ *   cups      "HKHA CUP Q-FINAL", "HOCKEYHK PLATE SEMI", "GUV DILLON FINAL" -
+ *             grouped by competition, rounds together. HKHA became HockeyHK,
+ *             so the two names are one competition; "GUV CUP" is the Guv
+ *             Dillon Cup.
+ */
+export interface Competition {
+  kind: 'league' | 'cup';
+  /** Grouping key. */
+  key: string;
+  label: string;
+  /** Sort order within its kind. */
+  rank: number;
 }
 
-/** Top league first: Super League / Premier, then Div 1, 2, ...; anything else after, by name. */
-function leagueRank(code: string): number {
-  if (/super/i.test(code)) return -2;
-  if (code === 'P' || /^prem/i.test(code)) return -1;
-  if (/^\d+$/.test(code)) return Number(code);
-  return 1000;
+const ROUND = /\s+(?:Q-?FINALS?|QF|SEMI-?FINALS?|SEMIS?|FINALS?|PLAY-?OFFS?)$/i;
+
+export function competitionOf(division: string): Competition {
+  const d = (division || '').replace(/\s+/g, ' ').trim();
+  // The builder files a match with no division under "Other".
+  if (!d || /^other$/i.test(d)) return { kind: 'league', key: 'other', label: 'Other', rank: 1000 };
+  if (/^super/i.test(d)) return { kind: 'league', key: 'super', label: 'Super League', rank: -2 };
+  const league = /^(P|PREM(?:IER)?|\d+)\s*(?:[A-Z]|PLAY-?OFFS?)?$/i.exec(d);
+  if (league) {
+    const code = league[1].toUpperCase();
+    if (code.startsWith('P')) return { kind: 'league', key: 'premier', label: 'Premier', rank: -1 };
+    return { kind: 'league', key: `div-${Number(code)}`, label: `Div ${Number(code)}`, rank: Number(code) };
+  }
+  let name = d.replace(ROUND, '').replace(/^(HKHA|HOCKEY ?HK)\b/i, 'HockeyHK').trim();
+  if (/^GUV\b/i.test(name)) name = 'GUV Dillon Cup';
+  // "HOCKEYHK CUP" -> "HockeyHK Cup"; short acronyms stay upper case.
+  const label = name
+    .split(' ')
+    .map((w) => (/^(HockeyHK|GUV)$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+    .join(' ');
+  return { kind: 'cup', key: `cup-${label.toLowerCase()}`, label, rank: 0 };
 }
 
-export interface LeagueGroup {
-  league: string;
+export interface CompetitionGroup {
+  kind: Competition['kind'];
+  key: string;
+  label: string;
   teams: (WDL & { team: string; gf: number; ga: number })[];
 }
 
-/** Each league the club played in, with each HKFC team's record in it. */
-export function byLeague(teams: TeamSeason[]): LeagueGroup[] {
-  const groups = new Map<string, LeagueGroup>();
+/**
+ * Each league the club played in (top first), then each cup (by name),
+ * with every HKFC team's record in it.
+ */
+export function byCompetition(teams: TeamSeason[]): CompetitionGroup[] {
+  const groups = new Map<string, CompetitionGroup & { rank: number }>();
   for (const t of teams) {
-    for (const [league, r] of Object.entries(t.leagues ?? {})) {
-      const g = groups.get(league) ?? { league, teams: [] };
-      g.teams.push({ team: t.team, ...r });
-      groups.set(league, g);
+    for (const [division, r] of Object.entries(t.leagues ?? {})) {
+      const c = competitionOf(division);
+      const g = groups.get(c.key) ?? { kind: c.kind, key: c.key, label: c.label, rank: c.rank, teams: [] };
+      const into = g.teams.find((x) => x.team === t.team);
+      if (into) {
+        addWDL(into, r);
+        into.gf += r.gf;
+        into.ga += r.ga;
+      } else g.teams.push({ team: t.team, ...r });
+      groups.set(c.key, g);
     }
   }
   return [...groups.values()]
-    .map((g) => ({ ...g, teams: g.teams.sort((a, b) => a.team.localeCompare(b.team)) }))
-    .sort((a, b) => leagueRank(a.league) - leagueRank(b.league) || a.league.localeCompare(b.league));
+    .sort((a, b) => (a.kind === b.kind ? a.rank - b.rank || a.label.localeCompare(b.label) : a.kind === 'league' ? -1 : 1))
+    .map(({ rank: _rank, ...g }) => ({ ...g, teams: g.teams.sort((a, b) => a.team.localeCompare(b.team)) }));
 }
+
+/** A league code as people say it: "P" -> "Premier", "1" -> "Div 1", "1B" -> "Div 1". */
+export const leagueLabel = (division: string) => competitionOf(division).label;
 
 /** Team names in HKFC order (A first), for pickers. */
 export function teamOrder(teams: { team: string }[]): string[] {

@@ -186,18 +186,48 @@ describe("adding seasons up", () => {
     expect(leaders(period.players, "apps", { team: "HKFC B" }).map((r) => r.name)).toEqual(["Sam Sub", "Kim Keeper", "Old  TIMER"]);
   });
 
-  it("groups the teams by league, top league first", async () => {
-    const { byLeague } = await import("../shared/clubStats");
+  it.each([
+    ["P", "league", "Premier"],
+    ["PB", "league", "Premier"],
+    ["1", "league", "Div 1"],
+    ["1B", "league", "Div 1"],
+    ["5Z", "league", "Div 5"],
+    ["3 PLAYOFF", "league", "Div 3"],
+    ["Super League", "league", "Super League"],
+    ["HKHA CUP Q-FINAL", "cup", "HockeyHK Cup"],
+    ["HOCKEYHK CUP", "cup", "HockeyHK Cup"],
+    ["HOCKEYHK  BOWL QF", "cup", "HockeyHK Bowl"],
+    ["HKHA PLATE SEMI", "cup", "HockeyHK Plate"],
+    ["GUV CUP", "cup", "GUV Dillon Cup"],
+    ["GUV DILLON FINAL", "cup", "GUV Dillon Cup"],
+    ["HOLLAND SEMI", "cup", "Holland"],
+    ["", "league", "Other"],
+    ["Other", "league", "Other"],
+  ])("reads the division %j as a %s: %s", async (division, kind, label) => {
+    const { competitionOf } = await import("../shared/clubStats");
+    expect(competitionOf(division)).toMatchObject({ kind, label });
+  });
+
+  it("groups the teams by league, top league first, then the cups", async () => {
+    const { byCompetition: byLeague } = await import("../shared/clubStats");
     const teams = [
       { team: "HKFC B", leagues: { "1": { w: 2, d: 0, l: 1, gf: 5, ga: 3 } } },
       { team: "HKFC A", leagues: { P: { w: 3, d: 1, l: 0, gf: 9, ga: 2 }, "1": { w: 1, d: 0, l: 0, gf: 2, ga: 1 } } },
       { team: "HKFC H", leagues: { "5": { w: 0, d: 0, l: 2, gf: 1, ga: 6 } } },
     ] as any;
-    expect(byLeague(teams).map((g) => [g.league, g.teams.map((t) => t.team)])).toEqual([
-      ["P", ["HKFC A"]],
-      ["1", ["HKFC A", "HKFC B"]],
-      ["5", ["HKFC H"]],
+    teams[2].leagues["5A"] = { w: 1, d: 0, l: 0, gf: 2, ga: 0 };
+    teams[0].leagues["HKHA CUP SEMI"] = { w: 1, d: 0, l: 0, gf: 3, ga: 1 };
+    teams[0].leagues["HOCKEYHK CUP"] = { w: 0, d: 0, l: 1, gf: 0, ga: 2 };
+    const groups = byLeague(teams);
+    expect(groups.map((g) => [g.label, g.teams.map((t) => t.team)])).toEqual([
+      ["Premier", ["HKFC A"]],
+      ["Div 1", ["HKFC A", "HKFC B"]],
+      ["Div 5", ["HKFC H"]],
+      ["HockeyHK Cup", ["HKFC B"]],
     ]);
+    // 5 and 5A are one league; the cup's two names and rounds are one cup.
+    expect(groups[2].teams[0]).toMatchObject({ w: 1, l: 2, gf: 3, ga: 6 });
+    expect(groups[3].teams[0]).toMatchObject({ w: 1, l: 1, gf: 3, ga: 3 });
   });
 
   it("adds home, away and venue records across teams", () => {
