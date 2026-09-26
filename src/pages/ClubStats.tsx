@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ChartCard, Columns, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
 import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
+import PlayersTab from '@/components/stats/PlayersTab';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
@@ -30,6 +31,7 @@ const SEASONS_BACK = 15;
 const TABS = [
   { key: 'club', label: 'Club' },
   { key: 'teams', label: 'Teams' },
+  { key: 'players', label: 'Players' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -56,7 +58,9 @@ export default function ClubStats() {
   const seasons = useMemo(() => recentSeasons(current, SEASONS_BACK), [current]);
 
   const period = params.get('season') === 'all' ? 'all' : seasons.includes(params.get('season') ?? '') ? params.get('season')! : current;
-  const tab: Tab = params.get('tab') === 'teams' ? 'teams' : 'club';
+  const tab: Tab = TABS.find((t) => t.key === params.get('tab'))?.key ?? 'club';
+  // A career covers every season, whichever season is picked.
+  const player = tab === 'players' ? params.get('player') : null;
   const set = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(changes)) {
@@ -67,7 +71,8 @@ export default function ClubStats() {
   };
 
   const one = useSeasonStats(period === 'all' ? null : period);
-  const all = useAllSeasonStats(seasons, period === 'all');
+  const all = useAllSeasonStats(seasons, period === 'all' || !!player);
+  const me = one.data?.me ?? all.summaries.find((s) => s.me)?.me;
 
   const stats: PeriodStats | null = useMemo(() => {
     if (period === 'all') return all.summaries.length ? combineSeasons(all.summaries) : null;
@@ -94,7 +99,7 @@ export default function ClubStats() {
                 key={t.key}
                 role="tab"
                 aria-selected={tab === t.key}
-                onClick={() => set({ tab: t.key === 'club' ? null : t.key })}
+                onClick={() => set({ tab: t.key === 'club' ? null : t.key, player: null })}
                 className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${
                   tab === t.key
                     ? 'border-primary text-foreground font-medium'
@@ -120,7 +125,7 @@ export default function ClubStats() {
           </select>
         </div>
 
-        {period === 'all' && !all.done && (
+        {(period === 'all' || player) && !all.done && (
           <p className="text-xs text-muted-foreground" role="status">
             Adding up past seasons… {all.loadedCount} loaded. The first look at a season takes a few seconds; after that
             it is instant.
@@ -146,6 +151,16 @@ export default function ClubStats() {
           </div>
         ) : tab === 'club' ? (
           <ClubTab stats={stats} allTime={period === 'all'} summaries={all.summaries} />
+        ) : tab === 'players' ? (
+          <PlayersTab
+            stats={stats}
+            allSeasons={all.summaries}
+            allDone={all.done}
+            me={me}
+            player={player}
+            onPlayer={(key) => set({ player: key })}
+            note={<PlayerDataNote stats={player ? combineSeasons(all.summaries) : stats} />}
+          />
         ) : (
           <TeamsTab
             stats={stats}

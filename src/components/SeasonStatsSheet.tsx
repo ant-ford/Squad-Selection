@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronRight, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import SeasonStats from '@/components/SeasonStats';
 import AttendanceGrid from '@/components/AttendanceGrid';
@@ -77,7 +78,19 @@ export default function SeasonStatsSheet({
       closeLabel="Close season stats"
       onClose={onClose}
     >
-      {playerId && <SeasonStats playerId={playerId} />}
+      {playerId && (
+        <>
+          <SeasonStats playerId={playerId} />
+          {/* Every season, on the Stats page (cards there only for the player themself). */}
+          <Link
+            to={`/stats?tab=players&season=all&player=${encodeURIComponent(playerId)}`}
+            className="mt-4 flex items-center justify-between rounded-lg border border-border px-3 py-2.5 text-sm text-foreground hover:bg-muted"
+          >
+            Whole career
+            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden />
+          </Link>
+        </>
+      )}
     </PlayerDrillSheet>
   );
 }

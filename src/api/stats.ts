@@ -2,6 +2,8 @@ import { apiGet } from '@/lib/apiClient';
 import type { SeasonSummary } from '@shared/clubStats';
 
 export interface SeasonStats extends SeasonSummary {
+  /** The signed-in player's own key (People record id), when they are one. */
+  me?: string;
   /** The signed-in player's own cards that season; nobody else's are ever sent. */
   myCards?: { yellow: number; red: number };
 }
