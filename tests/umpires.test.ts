@@ -93,6 +93,14 @@ describe("one person however the name is written", () => {
     expect(canonicalKey("Kim Tsang")).not.toBe(canonicalKey("Kim Tsang (Kenny)"));
   });
 
+  it("joins the names the alias list says are one person", () => {
+    // The one real pair in this file: it lives in UMPIRE_ALIASES anyway.
+    const now = parse("144U A - Gurcharan");
+    const old = parse("144U B - Singh, Gurcharan Bir (OLD NAME)");
+    expect(now).toMatchObject({ name: "Gurcharan", key: "gurcharan" });
+    expect(old).toMatchObject({ name: "Gurcharan", key: "gurcharan" });
+  });
+
   it("builds its dictionary from clean values only", () => {
     expect(buildNameDictionary(["Appt - Alex WongRate by Home Team: 4", "Appt - Robin Cheng", "HKFC F"], teams)).toEqual([
       "Robin Cheng",

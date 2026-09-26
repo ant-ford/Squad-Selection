@@ -34,9 +34,15 @@ export interface ParsedUmpire {
 /**
  * Names that are one person but no key rule can tell. Keys on the left are
  * canonicalKey() of the variant; the value is the name to show. Add to this
- * when the Umpires tab shows the same person twice.
+ * when the Umpires tab shows the same person twice, and bump
+ * SUMMARY_VERSION (shared/clubStats.ts) so stored past seasons rebuild.
  */
-export const UMPIRE_ALIASES: Record<string, string> = {};
+export const UMPIRE_ALIASES: Record<string, string> = {
+  // Confirmed one person by the owner, 2026-09-26: the "(OLD NAME)" spelling
+  // is his former name, so he is shown as he is written now.
+  gurcharan: "Gurcharan",
+  "bir gurcharan singh": "Gurcharan",
+};
 
 const APPOINTED = /^(appointed|appt\.?)$/i;
 
