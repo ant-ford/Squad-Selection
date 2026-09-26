@@ -11,7 +11,7 @@
  */
 
 /** Bump when the summary's shape changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 5;
+export const SUMMARY_VERSION = 6;
 
 export interface WDL {
   w: number;
@@ -29,6 +29,8 @@ export interface TeamSeason {
   gf: number;
   ga: number;
   cleanSheets: number;
+  /** The team's games in each league (HKHA "Division"), for grouping by league. */
+  leagues: Record<string, WDL & { gf: number; ga: number }>;
   home: WDL;
   away: WDL;
   venues: Record<string, WDL>;
@@ -99,6 +101,14 @@ export const winPct = (r: WDL): number | null => (games(r) ? Math.round((r.w / g
 function mergeTeam(a: TeamSeason, b: TeamSeason): TeamSeason {
   const venues = { ...structuredClone(a.venues) };
   for (const [v, r] of Object.entries(b.venues)) venues[v] = addWDL(venues[v] ?? emptyWDL(), r);
+  const leagues = { ...structuredClone(a.leagues ?? {}) };
+  for (const [lg, r] of Object.entries(b.leagues ?? {})) {
+    const into = leagues[lg] ?? { ...emptyWDL(), gf: 0, ga: 0 };
+    addWDL(into, r);
+    into.gf += r.gf;
+    into.ga += r.ga;
+    leagues[lg] = into;
+  }
   const opponents = { ...structuredClone(a.opponents) };
   for (const [o, r] of Object.entries(b.opponents)) {
     const into = opponents[o] ?? { ...emptyWDL(), gf: 0, ga: 0 };
@@ -117,6 +127,7 @@ function mergeTeam(a: TeamSeason, b: TeamSeason): TeamSeason {
     gf: a.gf + b.gf,
     ga: a.ga + b.ga,
     cleanSheets: a.cleanSheets + b.cleanSheets,
+    leagues,
     home: addWDL({ ...a.home }, b.home),
     away: addWDL({ ...a.away }, b.away),
     venues,
@@ -266,6 +277,41 @@ export function leaders(players: PlayerSeason[], field: LineField, opts: { team?
     if (value > 0) rows.push({ key: p.key, name: p.name, value, apps, byTeam });
   }
   return rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)).slice(0, opts.limit ?? 10);
+}
+
+/** HKHA's league codes as people say them: "P" -> "Premier", "1" -> "Div 1". */
+export function leagueLabel(code: string): string {
+  if (code === 'P') return 'Premier';
+  if (/^\d+$/.test(code)) return `Div ${code}`;
+  return code || 'Other';
+}
+
+/** Top league first: Super League / Premier, then Div 1, 2, ...; anything else after, by name. */
+function leagueRank(code: string): number {
+  if (/super/i.test(code)) return -2;
+  if (code === 'P' || /^prem/i.test(code)) return -1;
+  if (/^\d+$/.test(code)) return Number(code);
+  return 1000;
+}
+
+export interface LeagueGroup {
+  league: string;
+  teams: (WDL & { team: string; gf: number; ga: number })[];
+}
+
+/** Each league the club played in, with each HKFC team's record in it. */
+export function byLeague(teams: TeamSeason[]): LeagueGroup[] {
+  const groups = new Map<string, LeagueGroup>();
+  for (const t of teams) {
+    for (const [league, r] of Object.entries(t.leagues ?? {})) {
+      const g = groups.get(league) ?? { league, teams: [] };
+      g.teams.push({ team: t.team, ...r });
+      groups.set(league, g);
+    }
+  }
+  return [...groups.values()]
+    .map((g) => ({ ...g, teams: g.teams.sort((a, b) => a.team.localeCompare(b.team)) }))
+    .sort((a, b) => leagueRank(a.league) - leagueRank(b.league) || a.league.localeCompare(b.league));
 }
 
 /** Team names in HKFC order (A first), for pickers. */

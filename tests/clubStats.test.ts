@@ -73,6 +73,10 @@ describe("a season's summary", () => {
       team: "HKFC A",
       division: "Premier",
       played: 2, w: 2, d: 0, l: 0, gf: 4, ga: 1, cleanSheets: 1,
+      leagues: {
+        Premier: { w: 1, d: 0, l: 0, gf: 3, ga: 1 },
+        Other: { w: 1, d: 0, l: 0, gf: 1, ga: 0 },
+      },
       home: { w: 2, d: 0, l: 0 },
       away: { w: 0, d: 0, l: 0 },
       venues: { HKFC: { w: 2, d: 0, l: 0 } },
@@ -153,7 +157,9 @@ describe("adding seasons up", () => {
     const resultsOnly: SeasonSummary = { ...structuredClone(one), season: "2019-2020", players: [] };
     expect(combineSeasons([one, resultsOnly]).seasonsWithoutPlayers).toEqual(["2019-2020"]);
     expect(period.matches).toBe(8);
-    expect(period.teams.find((t) => t.team === "HKFC A")).toMatchObject({ played: 4, w: 4, gf: 8, opponents: { "Valley A": { w: 2, gf: 6 } } });
+    expect(period.teams.find((t) => t.team === "HKFC A")).toMatchObject({
+      played: 4, w: 4, gf: 8, opponents: { "Valley A": { w: 2, gf: 6 } }, leagues: { Premier: { w: 2, gf: 6 } },
+    });
     expect(period.players.find((p) => p.key === "recP1")!.teams["HKFC A"]).toMatchObject({ apps: 4, goals: 6 });
     expect(period.umpires.find((u) => u.key === "alex wong")).toMatchObject({ games: 4, hkfc: { w: 2 } });
   });
@@ -178,6 +184,20 @@ describe("adding seasons up", () => {
     expect(leaders(period.players, "apps").find((r) => r.name === "Kim Keeper")).toMatchObject({ value: 2, byTeam: [["HKFC A", 1], ["HKFC B", 1]] });
     expect(leaders(period.players, "apps", { team: "HKFC B" }).find((r) => r.name === "Kim Keeper")).toMatchObject({ value: 1, byTeam: [["HKFC B", 1]] });
     expect(leaders(period.players, "apps", { team: "HKFC B" }).map((r) => r.name)).toEqual(["Sam Sub", "Kim Keeper", "Old  TIMER"]);
+  });
+
+  it("groups the teams by league, top league first", async () => {
+    const { byLeague } = await import("../shared/clubStats");
+    const teams = [
+      { team: "HKFC B", leagues: { "1": { w: 2, d: 0, l: 1, gf: 5, ga: 3 } } },
+      { team: "HKFC A", leagues: { P: { w: 3, d: 1, l: 0, gf: 9, ga: 2 }, "1": { w: 1, d: 0, l: 0, gf: 2, ga: 1 } } },
+      { team: "HKFC H", leagues: { "5": { w: 0, d: 0, l: 2, gf: 1, ga: 6 } } },
+    ] as any;
+    expect(byLeague(teams).map((g) => [g.league, g.teams.map((t) => t.team)])).toEqual([
+      ["P", ["HKFC A"]],
+      ["1", ["HKFC A", "HKFC B"]],
+      ["5", ["HKFC H"]],
+    ]);
   });
 
   it("adds home, away and venue records across teams", () => {

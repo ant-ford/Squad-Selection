@@ -10,7 +10,9 @@ import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
+  byLeague,
   clubRecord,
+  leagueLabel,
   combineSeasons,
   games,
   leaders,
@@ -37,8 +39,7 @@ const pct = (r: WDL) => {
 };
 const wdl = (r: WDL) => `${r.w}-${r.d}-${r.l}`;
 const perGame = (n: number, g: number) => (g ? (n / g).toFixed(1) : '–');
-/** HKHA divisions arrive as "P", "1", "2"…: "Premier", "Div 1", "Div 2". */
-const divisionLabel = (d?: string) => (!d ? undefined : d === 'P' ? 'Premier' : /^\d+$/.test(d) ? `Div ${d}` : d);
+const divisionLabel = (d?: string) => (d ? leagueLabel(d) : undefined);
 
 /**
  * Club and team statistics for every signed-in player (owner decision,
@@ -193,6 +194,39 @@ function Leaders({
   );
 }
 
+/** Each league the club played in, and every HKFC team's record in it. */
+function LeagueCard({ stats, team }: { stats: PeriodStats; team?: string }) {
+  const groups = byLeague(team ? stats.teams.filter((t) => t.team === team) : stats.teams);
+  if (groups.length === 0) return null;
+  const table = (
+    <DataTable
+      head={['League', 'Team', 'P', 'W', 'D', 'L', 'GF', 'GA', 'Win']}
+      rows={groups.flatMap((g) => g.teams.map((t) => [leagueLabel(g.league), t.team, games(t), t.w, t.d, t.l, t.gf, t.ga, pct(t)]))}
+    />
+  );
+  return (
+    <ChartCard title="By league" caption={team ? 'This team in each league it played in.' : undefined} table={table}>
+      <div className="space-y-3">
+        {groups.map((g) => (
+          <section key={g.league} aria-label={leagueLabel(g.league)}>
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+              {leagueLabel(g.league)}
+            </h4>
+            <HBars
+              rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${games(t)} games` }))}
+              unit="won"
+              max={100}
+              suffix="%"
+              narrowLabels
+              colourOf={teamColour}
+            />
+          </section>
+        ))}
+      </div>
+    </ChartCard>
+  );
+}
+
 /** Said wherever player figures are shown for a period that includes results-only seasons. */
 function PlayerDataNote({ stats }: { stats: PeriodStats }) {
   if (stats.seasonsWithoutPlayers.length === 0) return null;
@@ -231,24 +265,7 @@ function ClubTab({
         <StatTile label="Clean sheets" value={cleanSheets} hint={`In ${teamGames} team games`} />
       </div>
 
-      <ChartCard
-        title="Teams"
-        table={
-          <DataTable
-            head={['Team', 'P', 'W', 'D', 'L', 'GF', 'GA', 'Win']}
-            rows={stats.teams.map((t) => [t.team, t.played, t.w, t.d, t.l, t.gf, t.ga, pct(t)])}
-          />
-        }
-      >
-        <HBars
-          rows={stats.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)}${t.division ? ` · ${divisionLabel(t.division)}` : ''}` }))}
-          unit="won"
-          max={100}
-          suffix="%"
-          narrowLabels
-          colourOf={teamColour}
-        />
-      </ChartCard>
+      <LeagueCard stats={stats} />
 
       <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">
@@ -322,6 +339,8 @@ function TeamsTab({ stats, team, onTeam }: { stats: PeriodStats; team: string | 
         <StatTile label="Goals" value={`${t.gf}-${t.ga}`} hint={`${perGame(t.gf, t.played)} per game`} />
         <StatTile label="Clean sheets" value={t.cleanSheets} />
       </div>
+
+      <LeagueCard stats={stats} team={t.team} />
 
       <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">

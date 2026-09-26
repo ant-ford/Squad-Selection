@@ -86,6 +86,7 @@ const newTeam = (team: string, division?: string): TeamSeason => ({
   gf: 0,
   ga: 0,
   cleanSheets: 0,
+  leagues: {},
   home: emptyWDL(),
   away: emptyWDL(),
   venues: {},
@@ -137,6 +138,10 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
       t.gf += gf;
       t.ga += ga;
       if (ga === 0) t.cleanSheets += 1;
+      const lg = (t.leagues[m.division || "Other"] ??= { ...emptyWDL(), gf: 0, ga: 0 });
+      bump(lg, o);
+      lg.gf += gf;
+      lg.ga += ga;
       bump(t[where], o);
       if (m.venue) bump((t.venues[m.venue] ??= emptyWDL()), o);
       const vs = (t.opponents[opp] ??= { ...emptyWDL(), gf: 0, ga: 0 });
