@@ -22,6 +22,15 @@ export const chartVars = {
 
 const fmt = (n: number) => n.toLocaleString('en-GB');
 
+/**
+ * One label column for every row of a narrow-label chart, as wide as its
+ * longest label: sizing each row by its own label would start the bars at
+ * different points.
+ */
+const narrowColumns = (labels: string[]) => ({
+  gridTemplateColumns: `calc(${Math.max(...labels.map((l) => l.length), 1)}ch + 0.25rem) minmax(0, 1fr)`,
+});
+
 /** Share of the row the longest bar takes, leaving room for its value label. */
 const BAR_SPAN = 70;
 
@@ -163,18 +172,19 @@ export function HBars({
 }) {
   const max = fixedMax ?? Math.max(1, ...rows.map((r) => r.value));
   if (rows.length === 0) return <Empty />;
-  const cols = narrowLabels
-    ? 'grid-cols-[max-content_1fr]'
-    : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]';
+  const cols = narrowLabels ? '' : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]';
+  const colStyle = narrowLabels ? narrowColumns(rows.map((r) => r.label)) : undefined;
   return (
     <ul className="space-y-1.5" style={chartVars}>
       {rows.map((r) => (
         <li
           key={r.label}
           className={`grid ${cols} items-center gap-2 group`}
+          style={colStyle}
           title={`${r.label}: ${fmt(r.value)}${suffix} ${unit}${r.note ? ` (${r.note})` : ''}`}
         >
           <span className="text-xs text-foreground truncate">{r.label}</span>
+          <span className="min-w-0">
           <span className="flex items-center gap-1.5 min-w-0 border-l" style={{ borderColor: 'var(--baseline)' }}>
             {/* shrink-0: a long note must never squeeze the bar - its length is the value. */}
             <span
@@ -188,8 +198,10 @@ export function HBars({
             <span className="text-xs text-foreground tabular-nums whitespace-nowrap truncate min-w-0">
               {fmt(r.value)}
               {suffix}
-              {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
             </span>
+          </span>
+          {/* The note gets its own line, so it is never cut off beside a long bar. */}
+          {r.note && <span className="block text-[11px] text-muted-foreground truncate pl-1.5 leading-tight">{r.note}</span>}
           </span>
         </li>
       ))}
@@ -420,7 +432,8 @@ export function TeamStackedBars({
           return (
             <li
               key={r.label}
-              className={`grid ${narrowLabels ? 'grid-cols-[max-content_1fr]' : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]'} items-center gap-2`}
+              className={`grid ${narrowLabels ? '' : 'grid-cols-[minmax(0,9rem)_1fr] sm:grid-cols-[minmax(0,12rem)_1fr]'} items-center gap-2`}
+              style={narrowLabels ? narrowColumns(rows.map((x) => x.label)) : undefined}
               aria-label={`${r.label}: ${fmt(r.total)} ${unit} (${summary})`}
             >
               <span className="text-xs text-foreground truncate">{r.label}</span>

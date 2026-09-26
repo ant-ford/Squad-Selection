@@ -8,6 +8,7 @@ import { ChartCard, Columns, DataTable, HBars, StatTile, TeamStackedBars, teamCo
 import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import PlayersTab from '@/components/stats/PlayersTab';
+import { CharmsTab, UmpiresTab } from '@/components/stats/LuckTabs';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
@@ -32,6 +33,8 @@ const TABS = [
   { key: 'club', label: 'Club' },
   { key: 'teams', label: 'Teams' },
   { key: 'players', label: 'Players' },
+  { key: 'umpires', label: 'Umpires' },
+  { key: 'charms', label: 'Charms' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
 
@@ -79,6 +82,12 @@ export default function ClubStats() {
     return one.data ? combineSeasons([one.data]) : null;
   }, [period, one.data, all.summaries]);
 
+  // The seasons behind the chosen period, for the tabs that count from summaries.
+  const periodSummaries = useMemo(
+    () => (period === 'all' ? all.summaries : one.data ? [one.data] : []),
+    [period, all.summaries, one.data],
+  );
+
   const loading = period === 'all' ? !all.done && all.summaries.length === 0 : one.isLoading;
   const failed = period === 'all' ? all.isError : one.isError;
 
@@ -93,14 +102,14 @@ export default function ClubStats() {
 
       <main className="flex-1 container mx-auto px-4 py-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <div role="tablist" aria-label="Stats views" className="flex gap-1 border-b border-border flex-1 min-w-[10rem]">
+          <div role="tablist" aria-label="Stats views" className="flex gap-0.5 border-b border-border basis-full sm:basis-auto sm:flex-1">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 role="tab"
                 aria-selected={tab === t.key}
                 onClick={() => set({ tab: t.key === 'club' ? null : t.key, player: null })}
-                className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${
+                className={`px-2 sm:px-3 py-2 text-sm -mb-px border-b-2 transition-colors whitespace-nowrap ${
                   tab === t.key
                     ? 'border-primary text-foreground font-medium'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -151,6 +160,10 @@ export default function ClubStats() {
           </div>
         ) : tab === 'club' ? (
           <ClubTab stats={stats} allTime={period === 'all'} summaries={all.summaries} />
+        ) : tab === 'umpires' ? (
+          <UmpiresTab summaries={periodSummaries} allTime={period === 'all'} />
+        ) : tab === 'charms' ? (
+          <CharmsTab summaries={periodSummaries} />
         ) : tab === 'players' ? (
           <PlayersTab
             stats={stats}
