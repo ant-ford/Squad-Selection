@@ -153,15 +153,52 @@ export default function ClubStats() {
   );
 }
 
-function Leaders({ title, rows, unit, caption }: { title: string; rows: LeaderRow[]; unit: string; caption?: string }) {
+/** "E 61 · D 21 · F 12": a figure team by team. */
+const teamSplit = (byTeam: [string, number][]) => byTeam.map(([t, n]) => `${t.replace(/^HKFC /, '')} ${n}`).join(' · ');
+
+function Leaders({
+  title,
+  rows,
+  unit,
+  caption,
+  split = false,
+}: {
+  title: string;
+  rows: LeaderRow[];
+  unit: string;
+  caption?: string;
+  /** Show each player's figure team by team (the club-wide lists). */
+  split?: boolean;
+}) {
+  const note = (r: LeaderRow) => {
+    const apps = unit === 'appearances' ? undefined : `${r.apps} apps`;
+    // Only worth saying when the games were for more than one team.
+    const teams = split && r.byTeam.length > 1 ? teamSplit(r.byTeam) : undefined;
+    return [apps, teams].filter(Boolean).join(' · ') || undefined;
+  };
   return (
     <ChartCard title={title} caption={caption}>
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground py-4 text-center">None recorded.</p>
       ) : (
-        <HBars rows={rows.map((r) => ({ label: r.name, value: r.value, note: unit === 'appearances' ? undefined : `${r.apps} apps` }))} unit={unit} />
+        <HBars rows={rows.map((r) => ({ label: r.name, value: r.value, note: note(r) }))} unit={unit} />
       )}
     </ChartCard>
+  );
+}
+
+/** Said wherever player figures are shown for a period that includes results-only seasons. */
+function PlayerDataNote({ stats }: { stats: PeriodStats }) {
+  if (stats.seasonsWithoutPlayers.length === 0) return null;
+  const withPlayers = stats.seasons.filter((s) => !stats.seasonsWithoutPlayers.includes(s));
+  if (withPlayers.length === 0) {
+    return <p className="text-xs text-muted-foreground">No Match Cards were recorded this season, so there are results but no player figures.</p>;
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      Appearances and goals are recorded from {shortSeason(withPlayers[0])}, the first season with Match Cards; earlier
+      seasons have results only.
+    </p>
   );
 }
 
@@ -190,7 +227,6 @@ function ClubTab({
 
       <ChartCard
         title="Teams"
-        caption="Each team's record. An HKFC derby counts for both teams."
         table={
           <DataTable
             head={['Team', 'P', 'W', 'D', 'L', 'GF', 'GA', 'Win']}
@@ -204,10 +240,11 @@ function ClubTab({
         />
       </ChartCard>
 
+      <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">
-        <Leaders title="Most appearances" rows={leaders(stats.players, 'apps')} unit="appearances" />
-        <Leaders title="Top scorers" rows={leaders(stats.players, 'goals')} unit="goals" />
-        <Leaders title="Most games as captain" rows={leaders(stats.players, 'captain')} unit="games as captain" />
+        <Leaders title="Most appearances" rows={leaders(stats.players, 'apps')} unit="appearances" split />
+        <Leaders title="Top scorers" rows={leaders(stats.players, 'goals')} unit="goals" split />
+        <Leaders title="Most games as captain" rows={leaders(stats.players, 'captain')} unit="games as captain" split />
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -276,6 +313,7 @@ function TeamsTab({ stats, team, onTeam }: { stats: PeriodStats; team: string | 
         <StatTile label="Clean sheets" value={t.cleanSheets} />
       </div>
 
+      <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">
         <Leaders title="Top scorers" rows={leaders(stats.players, 'goals', { team: t.team })} unit="goals" />
         <Leaders title="Most appearances" rows={leaders(stats.players, 'apps', { team: t.team })} unit="appearances" />

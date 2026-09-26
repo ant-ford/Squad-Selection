@@ -149,6 +149,9 @@ describe("adding seasons up", () => {
   it("merges teams, players and umpires across seasons", () => {
     const period = combineSeasons([one, two]);
     expect(period.seasons).toEqual(["2024-2025", "2025-2026"]);
+    expect(period.seasonsWithoutPlayers).toEqual([]);
+    const resultsOnly: SeasonSummary = { ...structuredClone(one), season: "2019-2020", players: [] };
+    expect(combineSeasons([one, resultsOnly]).seasonsWithoutPlayers).toEqual(["2019-2020"]);
     expect(period.matches).toBe(8);
     expect(period.teams.find((t) => t.team === "HKFC A")).toMatchObject({ played: 4, w: 4, gf: 8, opponents: { "Valley A": { w: 2, gf: 6 } } });
     expect(period.players.find((p) => p.key === "recP1")!.teams["HKFC A"]).toMatchObject({ apps: 4, goals: 6 });
@@ -168,9 +171,12 @@ describe("adding seasons up", () => {
   it("ranks leaders, for the club or one team", () => {
     const period = combineSeasons([one]);
     expect(leaders(period.players, "goals")).toEqual([
-      { key: "recP1", name: "Pat Player", value: 3, apps: 2 },
-      { key: "raw:old timer", name: "Old  TIMER", value: 1, apps: 1 },
+      { key: "recP1", name: "Pat Player", value: 3, apps: 2, byTeam: [["HKFC A", 3]] },
+      { key: "raw:old timer", name: "Old  TIMER", value: 1, apps: 1, byTeam: [["HKFC B", 1]] },
     ]);
+    // Kim played one game each for A and B: the club list splits it, a team list keeps to its team.
+    expect(leaders(period.players, "apps").find((r) => r.name === "Kim Keeper")).toMatchObject({ value: 2, byTeam: [["HKFC A", 1], ["HKFC B", 1]] });
+    expect(leaders(period.players, "apps", { team: "HKFC B" }).find((r) => r.name === "Kim Keeper")).toMatchObject({ value: 1, byTeam: [["HKFC B", 1]] });
     expect(leaders(period.players, "apps", { team: "HKFC B" }).map((r) => r.name)).toEqual(["Sam Sub", "Kim Keeper", "Old  TIMER"]);
   });
 

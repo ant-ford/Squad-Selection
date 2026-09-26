@@ -139,6 +139,11 @@ function mergeLine(a: PlayerTeamLine, b: PlayerTeamLine): PlayerTeamLine {
 
 export interface PeriodStats {
   seasons: string[];
+  /**
+   * Seasons with results but no Match Cards, so no player figures: the base
+   * has appearances only from 2021-22 (checked 2026-09-26).
+   */
+  seasonsWithoutPlayers: string[];
   matches: number;
   derbies: number;
   teams: TeamSeason[];
@@ -189,6 +194,7 @@ export function combineSeasons(summaries: SeasonSummary[]): PeriodStats {
   }
   return {
     seasons: ordered.map((s) => s.season),
+    seasonsWithoutPlayers: ordered.filter((s) => s.matches > 0 && s.players.length === 0).map((s) => s.season),
     matches,
     derbies,
     teams: [...teams.values()].sort((a, b) => a.team.localeCompare(b.team)),
@@ -240,6 +246,8 @@ export interface LeaderRow {
   value: number;
   /** Supporting figure, e.g. appearances next to goals. */
   apps: number;
+  /** The same figure team by team, largest first: a player's games are spread across teams. */
+  byTeam: [string, number][];
 }
 
 type LineField = "apps" | "goals" | "captain" | "keeper" | "playUps";
@@ -251,7 +259,11 @@ export function leaders(players: PlayerSeason[], field: LineField, opts: { team?
     const lines = opts.team ? [p.teams[opts.team]].filter(Boolean) : Object.values(p.teams);
     const value = lines.reduce((n, l) => n + l[field], 0);
     const apps = lines.reduce((n, l) => n + l.apps, 0);
-    if (value > 0) rows.push({ key: p.key, name: p.name, value, apps });
+    const byTeam = Object.entries(opts.team ? { [opts.team]: p.teams[opts.team] } : p.teams)
+      .filter(([, l]) => l && l[field] > 0)
+      .map(([team, l]): [string, number] => [team, l[field]])
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (value > 0) rows.push({ key: p.key, name: p.name, value, apps, byTeam });
   }
   return rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)).slice(0, opts.limit ?? 10);
 }
