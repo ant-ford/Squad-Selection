@@ -42,8 +42,8 @@ AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 # Drop the workers.dev entry once that hostname is retired.
 ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-selections.workers.dev"
 
-SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
+SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 # The Airtable webhook from scripts/register-airtable-webhook.mjs. Its MAC
 # secret is the AIRTABLE_WEBHOOK_SECRET Worker secret (set with
 # `wrangler secret put`, never in this file). See README, "Airtable Webhook".
@@ -90,8 +90,8 @@ id = "00df7f19eb074e5ab538ea2180b91932"
 [env.preview.vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 ALLOWED_ORIGIN = "http://localhost:5173"
-SUPABASE_URL = "https://rttbghxnacfrhjzzjwnh.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_HbNBcTHob3ZmXkYGWd8IlA_K_TI6UMk"
+SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 
 [env.preview.triggers]
 crons = []
