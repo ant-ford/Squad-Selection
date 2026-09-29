@@ -65,4 +65,16 @@ export interface Env {
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
   FILES?: R2Bucket;
+  /** Resend API key, as a Worker secret (src/mailer.ts). */
+  RESEND_API_KEY?: string;
+  /** Sender for Eddy's own email, e.g. "Eddy <notifications@eddy.global>". */
+  MAIL_FROM?: string;
+  /** Preview only: every email goes here instead, subject prefixed [PREVIEW]. */
+  MAIL_REDIRECT_TO?: string;
+  /** Comma-separated copies of the commitment review request (e.g. the membership inbox). */
+  REVIEW_EMAIL_CC?: string;
+  /** Who the review request comes from, e.g. "Anthony Ford <menscaptain@hkfchockey.com>" (blind-copied). */
+  REVIEW_EMAIL_FROM?: string;
+  /** The web app's origin, for links in emails. */
+  APP_ORIGIN?: string;
 }

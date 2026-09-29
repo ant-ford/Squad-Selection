@@ -105,3 +105,22 @@ jobs:
         run: npx wrangler deploy --config worker/wrangler.toml
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Worker secrets kept in the production environment, set on every deploy
+      # so rotating one is only a GitHub change. stdin only: a value never
+      # reaches the command line or this (public) log. A secret not yet in
+      # the environment is skipped, leaving the Worker's current one alone.
+      - name: Set Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DATA_SUPABASE_SECRET_KEY: ${{ secrets.DATA_SUPABASE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_TOKEN }}
+        run: |
+          for name in DATA_SUPABASE_SECRET_KEY RESEND_API_KEY; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "$name is not in the production environment yet; skipped."
+              continue
+            fi
+            printf '%s' "$value" | npx wrangler secret put "$name" --config worker/wrangler.toml
+          done

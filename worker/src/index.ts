@@ -3,6 +3,8 @@ import { getCached } from "./cache";
 import { handleFileRequest } from "./files";
 import { db } from "./data/supabase";
 import { shadowSummary } from "./data/shadow";
+import { backendFor } from "./data/backend";
+import { sendDueReviewEmails } from "./reviewEmails";
 import { TABLES } from "../../shared/schema/tableNames";
 import type { Env } from "./env";
 import {
@@ -124,9 +126,14 @@ export default {
     });
   },
 
-  /** Daily: keep the Airtable webhook from lapsing (airtableWebhook.ts). */
+  /**
+   * Daily: keep the Airtable webhook from lapsing (airtableWebhook.ts), and
+   * on the Supabase backend send the commitment review emails that are due
+   * (reviewEmails.ts) - the job the Airtable 60-day automation did.
+   */
   async scheduled(_event: unknown, env: Env): Promise<void> {
     await refreshAirtableWebhook(env);
+    if (backendFor(env, "commitments") === "supabase") await sendDueReviewEmails(env);
   },
 };
 
