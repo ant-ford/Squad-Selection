@@ -54,6 +54,20 @@ export const eq = (value: string | number | boolean) => `eq.${encodeURIComponent
 export const inList = (values: readonly (string | number)[]) =>
   `in.(${values.map((v) => `"${encodeURIComponent(String(v)).replace(/"/g, "%22")}"`).join(",")})`;
 
+/**
+ * The query with `id` as the last sort key. Pages are separate queries, so
+ * without a total order Postgres may return a row on two pages and skip
+ * another (seen on ranking events, ordered by a timestamp with ties). Every
+ * table and api_* view has a unique `id`.
+ */
+export function withTotalOrder(query: string): string {
+  const order = /(^|&)order=([^&]*)/.exec(query);
+  if (!order) return `${query}&order=id`;
+  const columns = order[2].split(",").map((c) => c.split(".")[0]);
+  if (columns.includes("id")) return query;
+  return query.replace(order[0], `${order[1]}order=${order[2]},id`);
+}
+
 export function db(env: Env): Db {
   const base = env.DATA_SUPABASE_URL;
   const key = env.DATA_SUPABASE_SECRET_KEY;
@@ -100,8 +114,9 @@ export function db(env: Env): Db {
   return {
     async select<T>(table: string, query: string) {
       const out: T[] = [];
+      const ordered = withTotalOrder(query);
       for (let from = 0; ; from += PAGE) {
-        const { body } = await call(`${table}?${query}`, {
+        const { body } = await call(`${table}?${ordered}`, {
           headers: { "Range-Unit": "items", Range: `${from}-${from + PAGE - 1}` },
         });
         const rows = (body ?? []) as T[];

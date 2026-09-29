@@ -28,6 +28,25 @@ describe("shadow comparison", () => {
     expect(JSON.stringify(c)).not.toMatch(/Smith|Smyth|Jones|Brown/);
   });
 
+  it("treats trimmed text and formula errors as the import stores them, but not changed text", () => {
+    const a = { id: "c", playerStatement: undefined, otherContributions: " \n", sportsBackground: "Played at uni\n", age: { specialValue: "NaN" } };
+    expect(compare(a, { id: "c", otherContributions: null, sportsBackground: "Played at uni", age: null }).changed).toBe(0);
+    expect(compare(a, { id: "c", sportsBackground: "Played at school" })).toMatchObject({ changed: 1, fields: ["sportsBackground"] });
+  });
+
+  it("compares files by name and link presence, ignoring Airtable's file metadata", () => {
+    const a = { id: "p", applicationForm: [{ id: "att1", url: "https://airtable/f.pdf", filename: "form.pdf", size: 10, type: "application/pdf", thumbnails: {} }] };
+    expect(compare(a, { id: "p", applicationForm: [{ url: "https://api/files/9?sig=z", filename: "form.pdf" }] }).changed).toBe(0);
+    expect(compare(a, { id: "p", applicationForm: [{ url: "https://api/files/9?sig=z", filename: "other.pdf" }] }).changed).toBe(1);
+    expect(compare(a, { id: "p", applicationForm: [] })).toMatchObject({ changed: 1, fields: ["applicationForm"] });
+  });
+
+  it("ignores the order of rows without ids, and skips Fillout form links", () => {
+    const a = [{ office: "sectionChair", memberIds: ["x"] }, { office: "sectionCaptain", memberIds: ["y"] }];
+    expect(compare(a, [...a].reverse()).changed).toBe(0);
+    expect(compare({ id: "p", waiversFormUrl: "https://forms.fillout.com/t/x" }, { id: "p", waiversFormUrl: "" }).changed).toBe(0);
+  });
+
   it("compares photo links by presence only, and skips the derived ranks", () => {
     const a = { id: "p", photo: "https://airtable/x.jpg", teamRank: 3 };
     expect(compare(a, { id: "p", photo: "https://api/files/1?sig=z" }).changed).toBe(0);

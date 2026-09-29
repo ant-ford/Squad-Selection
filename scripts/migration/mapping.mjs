@@ -259,6 +259,8 @@ export const AVAILABILITY_RULES = {
     end_date: ["End Date", date],
     notes: ["Notes", text],
     created_at: ["Created At", ts],
+    // The app sorts a player's rules by it (worker/src/availabilityRules.ts).
+    updated_at: ["Last Modified", ts],
   },
   links: { person_id: ["Player", "public.people"] },
 };
