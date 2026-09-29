@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { backendFor, pick, DATA_MODULES } from "../worker/src/data/backend";
-import { commitments } from "../worker/src/data/commitments";
 import type { Env } from "../worker/src/env";
 
 const env = (vars: Partial<Env> = {}) => ({ AIRTABLE_TOKEN: "t", AIRTABLE_BASE_ID: "app", ...vars }) as Env;
@@ -47,6 +46,7 @@ describe("pick", () => {
   });
 
   it("refuses, naming the module, when switched to Supabase before it has an implementation", () => {
-    expect(() => commitments(env({ DATA_BACKEND_OVERRIDES: "commitments=supabase" }))).toThrow(/"commitments".*no Supabase implementation/);
+    const airtableOnly = () => pick(env({ DATA_BACKEND_OVERRIDES: "commitments=supabase" }), "commitments", () => ({}));
+    expect(airtableOnly).toThrow(/"commitments".*no Supabase implementation/);
   });
 });

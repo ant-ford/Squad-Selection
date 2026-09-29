@@ -37,7 +37,7 @@ export interface PersonPatch {
 export type MembershipRow = Row<typeof MEMBERSHIP_FIELDS>;
 
 /** The active-members export. */
-const EXPORT_FIELDS = {
+export const EXPORT_FIELDS = {
   membershipNo: MEMBERSHIP_FIELDS.membershipNo,
   surname: MEMBERSHIP_FIELDS.surname,
   givenNames: MEMBERSHIP_FIELDS.givenNames,
@@ -47,7 +47,7 @@ const EXPORT_FIELDS = {
 export type ExportRow = Row<typeof EXPORT_FIELDS>;
 
 /** Who else holds a Membership No. */
-const NUMBER_HOLDER_FIELDS = {
+export const NUMBER_HOLDER_FIELDS = {
   membershipNo: MEMBERSHIP_FIELDS.membershipNo,
   preferredName: MEMBERSHIP_FIELDS.preferredName,
   givenNames: MEMBERSHIP_FIELDS.givenNames,
@@ -56,14 +56,14 @@ const NUMBER_HOLDER_FIELDS = {
 } as const;
 export type NumberHolderRow = Row<typeof NUMBER_HOLDER_FIELDS>;
 
-const APPLICANT_STAGE_FIELDS = { applicantStage: MEMBERSHIP_FIELDS.applicantStage } as const;
+export const APPLICANT_STAGE_FIELDS = { applicantStage: MEMBERSHIP_FIELDS.applicantStage } as const;
 export type ApplicantStageRow = Row<typeof APPLICANT_STAGE_FIELDS>;
 
 /** The chairman's email-list directory (chairman.ts). */
 export type DirectoryRow = Row<typeof CHAIRMAN_FIELDS>;
 
 /** What a WhatsApp shortcut needs (contacts.ts). */
-const CONTACT_FIELDS = {
+export const CONTACT_FIELDS = {
   preferredName: "Preferred Name",
   givenNames: "Given Name(s)",
   surname: "Surname",
@@ -74,7 +74,7 @@ const CONTACT_FIELDS = {
 export type ContactRow = Row<typeof CONTACT_FIELDS>;
 
 /** Everyone's name, for the Stats page (clubStats.ts). */
-const NAME_FIELDS = {
+export const NAME_FIELDS = {
   preferredName: "Preferred Name",
   givenNames: "Given Name(s)",
   surname: "Surname",
@@ -84,14 +84,14 @@ const NAME_FIELDS = {
 export type NameRow = Row<typeof NAME_FIELDS>;
 
 /** The signed-in person's own forms, for My Tasks (myTasks.ts). */
-const MY_TASK_FIELDS = {
+export const MY_TASK_FIELDS = {
   waiversSubmittedAt: "Last Submission: Waivers & Declarations",
   waiversFormUrl: "Fillout - Member Waivers & Declarations",
 } as const;
 export type MyTaskRow = Row<typeof MY_TASK_FIELDS>;
 
 /** Applicants in the New Joiner process: who is next, and their form (myTasks.ts). */
-const APPLICANT_TASK_FIELDS = {
+export const APPLICANT_TASK_FIELDS = {
   stage: "Applicant Stage",
   preferredName: "Preferred Name",
   givenNames: "Given Name(s)",
