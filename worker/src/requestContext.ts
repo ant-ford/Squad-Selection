@@ -20,6 +20,10 @@ export interface RequestStats {
   airtableBytes: number;
   /** 429 responses Airtable sent this request (each cost a sleep + retry). */
   airtableRateLimited: number;
+  /** Supabase (PostgREST) calls, wall time and response bytes, as for Airtable. */
+  dbCalls: number;
+  dbMs: number;
+  dbBytes: number;
   /** In-isolate cache hits. */
   cacheHits: number;
   /** Cache misses that had to run their fetcher. */
@@ -46,6 +50,9 @@ export function newRequestStats(): RequestStats {
     airtableMs: 0,
     airtableBytes: 0,
     airtableRateLimited: 0,
+    dbCalls: 0,
+    dbMs: 0,
+    dbBytes: 0,
     cacheHits: 0,
     cacheMisses: 0,
     kvHits: 0,
@@ -68,6 +75,14 @@ export function recordAirtableCall(ms: number, bytes: number, rateLimitedAttempt
   stats.airtableMs += ms;
   stats.airtableBytes += bytes;
   stats.airtableRateLimited += rateLimitedAttempts;
+}
+
+export function recordDbCall(ms: number, bytes: number): void {
+  const stats = storage.getStore()?.stats;
+  if (!stats) return;
+  stats.dbCalls += 1;
+  stats.dbMs += ms;
+  stats.dbBytes += bytes;
 }
 
 export function recordCacheHit(): void {
@@ -115,5 +130,8 @@ export function serverTimingHeader(stats: RequestStats, totalMs: number): string
   const airtable = `airtable;dur=${Math.round(stats.airtableMs)};desc="calls=${stats.airtableCalls} bytes=${stats.airtableBytes} 429s=${stats.airtableRateLimited}"`;
   const cache = `cache;desc="hits=${stats.cacheHits} misses=${stats.cacheMisses} kv=${stats.kvHits}"`;
   const total = `total;dur=${Math.round(totalMs)}`;
-  return `${airtable}, ${cache}, ${total}`;
+  // Only once Supabase is in use, so requests that never touch it keep
+  // exactly the header they had.
+  const db = stats.dbCalls > 0 ? `db;dur=${Math.round(stats.dbMs)};desc="calls=${stats.dbCalls} bytes=${stats.dbBytes}", ` : "";
+  return `${airtable}, ${db}${cache}, ${total}`;
 }
