@@ -44,3 +44,7 @@ HKFC Squad Selections.jpg
 HKFC Squad Selections.pptx
 .claude/
 eddy-secrets.txt
+
+# Airtable import/parity working files: raw club data, never committed
+.migration-cache/
+scripts/migration/reports/
