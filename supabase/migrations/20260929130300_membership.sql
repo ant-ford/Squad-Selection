@@ -79,7 +79,8 @@ begin
     if new.review_progress_updated_at is null then
       new.review_progress_updated_at := now();
     end if;
-  elsif new.review_progress is distinct from old.review_progress then
+  elsif new.review_progress is distinct from old.review_progress
+        and new.review_progress_updated_at is not distinct from old.review_progress_updated_at then
     new.review_progress_updated_at := now();
   end if;
   return new;

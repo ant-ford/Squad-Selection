@@ -158,7 +158,8 @@ create index people_applicant_stage_idx on public.people (applicant_stage) where
 create index people_membership_no_idx on public.people (membership_no) where membership_no is not null;
 
 -- Stage Updated At, as Airtable's last-modified field did: only when the
--- stage actually changes.
+-- stage actually changes, and not when the writer supplies the time itself
+-- (the Airtable import carries the original over).
 create function public.people_stamp_stage() returns trigger
 language plpgsql
 set search_path = ''
@@ -168,7 +169,8 @@ begin
     if new.applicant_stage is not null and new.stage_updated_at is null then
       new.stage_updated_at := now();
     end if;
-  elsif new.applicant_stage is distinct from old.applicant_stage then
+  elsif new.applicant_stage is distinct from old.applicant_stage
+        and new.stage_updated_at is not distinct from old.stage_updated_at then
     new.stage_updated_at := now();
   end if;
   return new;

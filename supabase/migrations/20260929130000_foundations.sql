@@ -17,13 +17,17 @@ alter default privileges in schema public revoke all on tables from anon, authen
 alter default privileges in schema public revoke all on sequences from anon, authenticated;
 alter default privileges in schema public revoke all on functions from anon, authenticated, public;
 
--- updated_at, maintained by the database rather than by every caller.
+-- updated_at, maintained by the database rather than by every caller. An
+-- update that sets updated_at itself keeps its value: the Airtable import
+-- carries over when a record was last changed there.
 create function public.set_updated_at() returns trigger
 language plpgsql
 set search_path = ''
 as $$
 begin
-  new.updated_at := now();
+  if new.updated_at is not distinct from old.updated_at then
+    new.updated_at := now();
+  end if;
   return new;
 end;
 $$;
