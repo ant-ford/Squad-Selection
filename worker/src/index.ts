@@ -106,6 +106,7 @@ export default {
               airtableMs: Math.round(stats.airtableMs),
               airtableBytes: stats.airtableBytes,
               airtable429s: stats.airtableRateLimited,
+              ...(stats.dbCalls > 0 ? { dbCalls: stats.dbCalls, dbMs: Math.round(stats.dbMs), dbBytes: stats.dbBytes } : {}),
               cacheHits: stats.cacheHits,
               cacheMisses: stats.cacheMisses,
               kvHits: stats.kvHits,

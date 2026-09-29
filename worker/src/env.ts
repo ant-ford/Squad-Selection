@@ -50,4 +50,13 @@ export interface Env {
   DATA_BACKEND?: string;
   /** Per-module exceptions to DATA_BACKEND, e.g. "people=supabase,matches=airtable". */
   DATA_BACKEND_OVERRIDES?: string;
+  /**
+   * The Supabase project holding Eddy's DATA (eddy-production, or
+   * eddy-preview for the preview Worker). Separate from SUPABASE_URL, which
+   * is sign-in: the preview Worker signs people in against eddy-production
+   * but reads test data from eddy-preview.
+   */
+  DATA_SUPABASE_URL?: string;
+  /** That project's secret key (sb_secret_...), as a Worker secret. Sent only in the apikey header. */
+  DATA_SUPABASE_SECRET_KEY?: string;
 }
