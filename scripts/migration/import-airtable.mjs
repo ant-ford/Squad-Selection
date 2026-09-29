@@ -10,14 +10,17 @@
 //   node import-airtable.mjs --rate=3                 Airtable requests per second (max 4, default 2)
 //   node import-airtable.mjs --apply --target=production --i-understand-this-writes-production
 //
-// Reads Airtable with the READ-ONLY token. Never deletes anything. Prints and
-// reports counts, table names, record ids and field names - never values.
+// Reads Airtable with the READ-ONLY token. Deletes nothing except, in the
+// tables it rebuilds from Airtable (match selections, team roles, People's
+// detail rows), the rows Airtable no longer has, so a re-run matches it.
+// Prints and reports counts, table names, record ids and field names - never
+// values. Never run it once Eddy is live: it would overwrite Eddy's data.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  airtableClient, snapshot, connect, upsert, idMap, r2, targetDatabase, parseArgs, writeReport, pool, CACHE_DIR,
+  airtableClient, snapshot, connect, upsert, pruneStale, idMap, r2, targetDatabase, parseArgs, writeReport, pool, CACHE_DIR,
 } from "./lib.mjs";
 import {
   DIRECT, PEOPLE, SHIRT_NUMBERS, TEAMS, MATCHES, OFFICE_SOURCES, ALL_AIRTABLE_TABLES, AVAILABILITY_EXCEPTIONS,
@@ -39,6 +42,8 @@ const report = {
   mode: apply ? "apply" : "dry-run",
   airtableCalls: 0,
   tables: {},
+  /** Rows removed from rebuilt tables because Airtable no longer has them. */
+  pruned: {},
   warnings: [],
   files: { copied: 0, alreadyThere: 0, skipped: {}, failed: [] },
 };
@@ -96,6 +101,19 @@ const count = (table, n) => { report.tables[table] = (report.tables[table] ?? 0)
 async function write(table, rows, conflict) {
   count(table, rows.length);
   if (apply) await upsert(db, table, rows, conflict);
+}
+
+/**
+ * A table rebuilt from Airtable (a link list, People's column groups):
+ * written, then made to match, so a re-run removes a link or detail that
+ * was taken out in Airtable. `conflict` starts with the owner column;
+ * `owners` are the owners in this snapshot, the only rows looked at.
+ */
+async function writeSet(table, rows, conflict, owners) {
+  await write(table, rows, conflict);
+  if (!apply) return;
+  const n = await pruneStale(db, table, conflict, owners, rows);
+  if (n) report.pruned[table] = n;
 }
 
 try {
@@ -171,14 +189,15 @@ try {
     if (plan) children.plans.push({ person_id: pid, ...plan });
     for (const row of courseRows(f)) children.courses.push({ person_id: pid, ...row });
   }
-  await write("public.family_members", children.family, ["person_id", "relation", "ordinal"]);
-  await write("public.relatives", children.relatives, ["person_id", "ordinal"]);
-  await write("public.previous_clubs", children.clubs, ["person_id", "ordinal"]);
-  await write("public.applicant_trials", children.trials, ["person_id", "ordinal"]);
-  await write("public.quiz_scores", children.quiz, ["person_id", "quiz"]);
-  await write("public.kit_sizes", children.kit, ["person_id", "supplier", "item"]);
-  await write("public.season_plans", children.plans, ["person_id", "season"]);
-  await write("public.course_signups", children.courses, ["person_id", "course"]);
+  const people = snap.People.map((r) => personId(r.id));
+  await writeSet("public.family_members", children.family, ["person_id", "relation", "ordinal"], people);
+  await writeSet("public.relatives", children.relatives, ["person_id", "ordinal"], people);
+  await writeSet("public.previous_clubs", children.clubs, ["person_id", "ordinal"], people);
+  await writeSet("public.applicant_trials", children.trials, ["person_id", "ordinal"], people);
+  await writeSet("public.quiz_scores", children.quiz, ["person_id", "quiz"], people);
+  await writeSet("public.kit_sizes", children.kit, ["person_id", "supplier", "item"], people);
+  await writeSet("public.season_plans", children.plans, ["person_id", "season"], people);
+  await writeSet("public.course_signups", children.courses, ["person_id", "course"], people);
 
   // 5. Teams and who coaches / captains them.
   await write("public.teams", snap.Teams.map((r) => directRow(TEAMS, r, resolve)), ["airtable_id"]);
@@ -192,7 +211,8 @@ try {
     if (!person_id) warn("link-to-missing-record", { table: "Teams", record: team, field: role });
     return { team_id: maps["public.teams"].get(team), person_id, role, ordinal };
   }).filter((r) => r.team_id && r.person_id);
-  await write("public.team_people", teamPeople, ["team_id", "role", "person_id"]);
+  await writeSet("public.team_people", teamPeople, ["team_id", "role", "person_id"],
+    snap.Teams.map((r) => maps["public.teams"].get(r.id)));
 
   // 6. Matches and their selections.
   await write("public.matches", snap.Matches.map((r) => directRow(MATCHES, r, resolve)), ["airtable_id"]);
@@ -207,7 +227,8 @@ try {
     if (!s.person_id) warn("link-to-missing-record", { table: "Matches", record: s.rec, field: `Selected Players ${s.side}` });
     return s.match_id && s.person_id;
   }).map(({ rec, ...s }) => s);
-  await write("public.match_selections", selections, ["match_id", "side", "person_id"]);
+  await writeSet("public.match_selections", selections, ["match_id", "side", "person_id"],
+    snap.Matches.map((r) => maps["public.matches"].get(r.id)));
 
   // 7. Everything else that has its own records, in dependency order.
   for (const def of DIRECT.filter((d) => ![SHIRT_NUMBERS, PEOPLE, TEAMS, MATCHES].includes(d))) {
@@ -247,6 +268,7 @@ try {
   if (db) await db.end();
   log("\nRows per table:");
   for (const [t, n] of Object.entries(report.tables)) log(`  ${t.padEnd(34)} ${n}`);
+  log("Removed (no longer in Airtable):", Object.keys(report.pruned).length ? report.pruned : "none");
   const byKind = report.warnings.reduce((m, w) => ({ ...m, [w.kind]: (m[w.kind] ?? 0) + 1 }), {});
   log("Warnings:", Object.keys(byKind).length ? byKind : "none");
   if (withFiles) log("Files:", { ...report.files, failed: report.files.failed.length });

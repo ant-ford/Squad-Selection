@@ -16,7 +16,9 @@ One-off tools for the October 2026 move. Not part of the app build (their own `p
 **Safety**
 - Airtable is read with `AIRTABLE_READONLY_TOKEN` only.
 - Secrets come from `eddy-secrets.txt` (or the environment) and are never printed.
-- The import only upserts: rows on `airtable_id`, files on the attachment id. It deletes nothing, and a re-run picks up where the last one stopped.
+- The import upserts: rows on `airtable_id`, files on the attachment id, and a re-run picks up where the last one stopped.
+- It deletes in one case only. In the tables it rebuilds from Airtable (match selections, team coaches and captains, People's detail rows such as family, kit and courses), it removes the rows Airtable no longer has, for the records in the snapshot. Otherwise a re-import could add a link but never remove one. The report's `pruned` lists the counts. A removed family member's file record goes with it; the stored file stays in R2.
+- Never run it once Eddy is live: it copies Airtable over whatever Eddy holds.
 - Reports (in `reports/`, git-ignored) contain table names, record ids, column names and counts only.
 - The Airtable snapshot in `.migration-cache/` is raw club data. It is git-ignored, and should be deleted once the move is done.
 

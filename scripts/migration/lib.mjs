@@ -4,7 +4,8 @@
 //  - Airtable is only ever READ, with the read-only token.
 //  - Secrets come from eddy-secrets.txt (or the environment) and are never
 //    printed. Reports name tables, record ids and field names, never values.
-//  - Writes are upserts; nothing is deleted.
+//  - Writes are upserts. The only deletes are pruneStale()'s: rows of a
+//    rebuilt table (links, People's column groups) that Airtable no longer has.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -172,6 +173,26 @@ export async function upsert(db, table, rows, conflict, { batch = 200, conflictW
     );
   }
   return rows.length;
+}
+
+/**
+ * For a table the import rebuilds from Airtable (link lists, People's column
+ * groups): deletes the rows of the given owners that are not in `keep`, so a
+ * re-run drops a link or detail Airtable no longer has. Rows of owners not
+ * in the snapshot are never touched. `keys` are the row's unique columns,
+ * owner first. Returns the number of rows deleted.
+ */
+export async function pruneStale(db, table, keys, ownerIds, keep, { countOnly = false } = {}) {
+  const owners = [...new Set(ownerIds.filter(Boolean))];
+  if (owners.length === 0) return 0;
+  // Compared as one text key; concat_ws skips nulls, and so does keyOf.
+  const keyOf = (row) => keys.map((k) => row[k]).filter((v) => v !== null && v !== undefined).map(String).join("\u001f");
+  const where = `where ${ident(keys[0])} = any($1::uuid[])
+       and not (concat_ws(chr(31), ${keys.map((k) => `${ident(k)}::text`).join(", ")}) = any($2::text[]))`;
+  const params = [owners, keep.map(keyOf)];
+  if (countOnly) return Number((await db.query(`select count(*) as n from ${table} ${where}`, params)).rows[0].n);
+  const { rowCount } = await db.query(`delete from ${table} ${where}`, params);
+  return rowCount ?? 0;
 }
 
 /** airtable_id -> uuid for a table. */
