@@ -62,7 +62,9 @@ API_ORIGIN = "https://api.eddy.global"
 # the RESEND_API_KEY secret, installed by the CI deploy.
 MAIL_FROM = "Eddy <notifications@eddy.global>"
 APP_ORIGIN = "https://app.eddy.global"
-REVIEW_EMAIL_CC = ""
+# The review request goes in the captain's name, copied to the membership inbox.
+REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
+REVIEW_EMAIL_CC = "mensmembership@hkfchockey.com"
 
 # Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
 # does not lapse over a quiet fortnight. Harmless when no webhook is set up.
@@ -125,7 +127,8 @@ API_ORIGIN = "https://hkfc-api-preview.ant-ford.workers.dev"
 MAIL_FROM = "Eddy <notifications@eddy.global>"
 MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
 APP_ORIGIN = "http://localhost:5173"
-REVIEW_EMAIL_CC = ""
+REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
+REVIEW_EMAIL_CC = "mensmembership@hkfchockey.com"
 
 [env.preview.triggers]
 crons = []

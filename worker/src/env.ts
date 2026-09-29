@@ -73,6 +73,8 @@ export interface Env {
   MAIL_REDIRECT_TO?: string;
   /** Comma-separated copies of the commitment review request (e.g. the membership inbox). */
   REVIEW_EMAIL_CC?: string;
+  /** Who the review request comes from, e.g. "Anthony Ford <menscaptain@hkfchockey.com>" (blind-copied). */
+  REVIEW_EMAIL_FROM?: string;
   /** The web app's origin, for links in emails. */
   APP_ORIGIN?: string;
 }

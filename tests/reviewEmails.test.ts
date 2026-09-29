@@ -15,14 +15,20 @@ const base = {
 
 type Call = { url: URL; method: string; body: any };
 /** One fake for PostgREST and Resend together. */
-function fakeServices(opts: { sentToday?: number; resend?: "ok" | "fail"; started?: object[]; due?: string[] } = {}) {
+function fakeServices(opts: { sentToday?: number; resend?: "ok" | "fail" | "unverified-domain"; started?: object[]; due?: string[] } = {}) {
+  let resendCalls = 0;
   const calls: Call[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
     const url = new URL(input);
     const c = { url, method: init.method ?? "GET", body: init.body ? JSON.parse(String(init.body)) : undefined };
     calls.push(c);
     const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-    if (url.host === "api.resend.com") return opts.resend === "fail" ? reply({ message: "invalid from" }, 422) : reply({ id: "re_msg_1" });
+    if (url.host === "api.resend.com") {
+      resendCalls++;
+      if (opts.resend === "fail") return reply({ message: "invalid from" }, 422);
+      if (opts.resend === "unverified-domain" && resendCalls === 1) return reply({ message: "The hkfchockey.com domain is not verified." }, 403);
+      return reply({ id: "re_msg_1" });
+    }
     if (url.pathname.endsWith("/rpc/emails_sent_today")) return reply(opts.sentToday ?? 0);
     if (url.pathname.endsWith("/rpc/start_review")) return reply(opts.started ?? []);
     if (url.pathname.endsWith("/rpc/undo_review_start")) return reply(null);
@@ -66,6 +72,23 @@ describe("mailer", () => {
     expect(resendCalls(calls)).toHaveLength(0);
   });
 
+  it("sends in the captain's name with a blind copy to him", async () => {
+    const calls = fakeServices();
+    await sendEmail(base, { toPersonId: "p", to: "member@x.com", subject: "s", text: "t", template: "t", from: "Anthony Ford <menscaptain@hkfchockey.com>" });
+    expect(resendCalls(calls)[0].body).toMatchObject({ from: "Anthony Ford <menscaptain@hkfchockey.com>", bcc: ["menscaptain@hkfchockey.com"] });
+    expect(logRows(calls)[0].sender).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
+  });
+
+  it("falls back to Eddy's address, replies to the captain, while his domain is unverified in Resend", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const calls = fakeServices({ resend: "unverified-domain" });
+    await sendEmail(base, { toPersonId: "p", to: "member@x.com", subject: "s", text: "t", template: "t", from: "Anthony Ford <menscaptain@hkfchockey.com>" });
+    const [first, second] = resendCalls(calls).map((c) => c.body);
+    expect(first.from).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
+    expect(second).toMatchObject({ from: "Eddy <notifications@eddy.global>", reply_to: "menscaptain@hkfchockey.com", bcc: ["menscaptain@hkfchockey.com"] });
+    expect(logRows(calls)[0]).toMatchObject({ status: "sent", sender: "Eddy <notifications@eddy.global>" });
+  });
+
   it("logs a refused email as failed", async () => {
     const calls = fakeServices({ resend: "fail" });
     await expect(sendEmail(base, { toPersonId: "p", to: "a@b.c", subject: "s", text: "t", template: "t" })).rejects.toThrow(/422/);
@@ -74,12 +97,15 @@ describe("mailer", () => {
 });
 
 describe("commitment review emails", () => {
-  it("claims the review, then emails the member with a link to Eddy", async () => {
+  it("claims the review, then emails the member in the captain's name, copying the membership inbox", async () => {
     const calls = fakeServices({ started: [started] });
-    expect(await startReview(base, "recC1")).toBe(true);
+    const env = { ...base, REVIEW_EMAIL_FROM: "Anthony Ford <menscaptain@hkfchockey.com>", REVIEW_EMAIL_CC: "mensmembership@hkfchockey.com" } as Env;
+    expect(await startReview(env, "recC1")).toBe(true);
     expect(calls.find((c) => c.url.pathname.endsWith("/rpc/start_review"))!.body).toEqual({ p_commitment: "recC1" });
     const email = resendCalls(calls)[0].body;
     expect(email.to).toEqual(["member@x.com"]);
+    expect(email.from).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
+    expect(email.cc).toEqual(["mensmembership@hkfchockey.com"]);
     expect(email.subject).toContain("Year 2");
     expect(email.text).toContain("Hi Sam,");
     expect(email.text).toContain("https://app.eddy.global");

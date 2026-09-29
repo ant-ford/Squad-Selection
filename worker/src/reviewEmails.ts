@@ -56,6 +56,8 @@ export async function startReview(env: Env, commitmentId: string): Promise<boole
       template: "commitment-review-request",
       stepId: s.step_id,
       cc: env.REVIEW_EMAIL_CC ? env.REVIEW_EMAIL_CC.split(",").map((x) => x.trim()).filter(Boolean) : undefined,
+      // Sent in the captain's name (owner decision, 2026-09-29).
+      from: env.REVIEW_EMAIL_FROM || undefined,
     });
     return true;
   } catch (err) {

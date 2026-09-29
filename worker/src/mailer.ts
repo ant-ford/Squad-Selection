@@ -8,6 +8,11 @@
  *  - Resend's free plan allows 100 a day; Eddy stops at DAILY_LIMIT so a
  *    burst cannot cost the next day's sign-in codes (they share the account).
  *  - Emails carry links, never documents (no attachments here at all).
+ *  - An email sent in the captain's name (`from`) comes from his address
+ *    with a blind copy to it, so he keeps what went out. Resend sends from
+ *    hkfchockey.com only once that domain is verified there; until then it
+ *    goes from MAIL_FROM with the captain as Reply-To, so replies still
+ *    reach him.
  */
 import type { Env } from "./env";
 import { db } from "./data/supabase";
@@ -25,7 +30,15 @@ export interface Email {
   stepId?: string;
   cc?: string[];
   replyTo?: string;
+  /** Send in someone's name, e.g. "Anthony Ford <menscaptain@hkfchockey.com>"; they get a blind copy. */
+  from?: string;
 }
+
+const addressOf = (from: string) => from.match(/<([^>]+)>/)?.[1] ?? from.trim();
+
+/** Resend's refusal of a sender domain it has not verified. */
+const unverifiedSender = (status: number, message: string) =>
+  (status === 403 || status === 422) && /domain|verif/i.test(message);
 
 export class MailerError extends Error {}
 
@@ -36,24 +49,35 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
   if (sentToday >= DAILY_LIMIT) throw new MailerError(`Daily email limit (${DAILY_LIMIT}) reached; will try again tomorrow`);
 
   const redirect = env.MAIL_REDIRECT_TO;
+  const bcc = email.from ? [addressOf(email.from)] : undefined;
   const message = redirect
     ? {
         to: [redirect],
         subject: `[PREVIEW] ${email.subject}`,
-        text: `Preview: this would have gone to person ${email.toPersonId}${email.cc?.length ? ` (with ${email.cc.length} cc)` : ""}.\n\n${email.text}`,
+        text: `Preview: this would have gone to person ${email.toPersonId}${email.cc?.length ? ` (with ${email.cc.length} cc)` : ""}${bcc ? " (and a blind copy to the sender)" : ""}.\n\n${email.text}`,
       }
-    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, subject: email.subject, text: email.text };
+    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, bcc, subject: email.subject, text: email.text };
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM, reply_to: email.replyTo, ...message }),
-  });
-  const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  const post = (from: string, replyTo?: string) =>
+    fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, reply_to: replyTo, ...message }),
+    });
+  let sender = email.from ?? env.MAIL_FROM;
+  let res = await post(sender, email.replyTo);
+  let body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  if (!res.ok && email.from && unverifiedSender(res.status, String(body.message ?? ""))) {
+    // The captain's domain is not verified in Resend yet: send as Eddy, replies to him.
+    console.warn("Sender domain not verified in Resend; sending from MAIL_FROM with Reply-To");
+    sender = env.MAIL_FROM;
+    res = await post(sender, email.replyTo ?? addressOf(email.from));
+    body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  }
   const ok = res.ok && typeof body.id === "string";
   await d.insert("email_log", [{
     to_person_id: email.toPersonId,
-    sender: env.MAIL_FROM,
+    sender,
     template: email.template,
     step_id: email.stepId ?? null,
     provider_message_id: body.id ?? null,
