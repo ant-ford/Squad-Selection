@@ -2,6 +2,7 @@ import { AirtableError, airtableFindAll, airtableUpdate } from "../airtable";
 import type { Env } from "../env";
 import { HttpError } from "../http";
 import { pick } from "./backend";
+import { supabaseCommitments } from "./supabase/crm";
 import { toRow, type Row } from "./rows";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { COMMITMENT_FIELDS as F } from "../../../shared/schema/fieldMaps";
@@ -14,7 +15,7 @@ import { REVIEWS_FROM } from "../../../shared/statementStages";
 export type StatementRow = Row<typeof F>;
 
 /** What Notify Now checks before ticking the box, read fresh. */
-const NOTIFY_FIELDS = {
+export const NOTIFY_FIELDS = {
   reviewProgress: F.reviewProgress,
   notifyNow: F.notifyNow,
   people: F.people,
@@ -25,7 +26,7 @@ const NOTIFY_FIELDS = {
 export type NotifyRow = Row<typeof NOTIFY_FIELDS>;
 
 /** Reviews in progress for My Tasks: who they wait on, and each one's form. */
-const REVIEW_TASK_FIELDS = {
+export const REVIEW_TASK_FIELDS = {
   reviewProgress: F.reviewProgress,
   people: F.people,
   fullName: F.fullName,
@@ -110,5 +111,5 @@ function airtableCommitments(env: Env): CommitmentsRepo {
 }
 
 export function commitments(env: Env): CommitmentsRepo {
-  return pick(env, "commitments", airtableCommitments);
+  return pick(env, "commitments", airtableCommitments, supabaseCommitments);
 }

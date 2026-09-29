@@ -1,6 +1,7 @@
 import { airtableCreate } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseMembershipEvents } from "./supabase/crm";
 import { MEMBERSHIP_EVENTS_TABLE } from "../../../shared/schema/tableNames";
 import { MEMBERSHIP_EVENTS_FIELDS as EV } from "../../../shared/schema/fieldMaps";
 
@@ -55,5 +56,5 @@ function airtableMembershipEvents(env: Env): MembershipEventsRepo {
 }
 
 export function membershipEvents(env: Env): MembershipEventsRepo {
-  return pick(env, "membershipEvents", airtableMembershipEvents);
+  return pick(env, "membershipEvents", airtableMembershipEvents, supabaseMembershipEvents);
 }

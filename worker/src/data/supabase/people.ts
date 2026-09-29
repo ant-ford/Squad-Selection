@@ -3,6 +3,7 @@ import { normalizeEmail } from "../../../../shared/normalizeEmail";
 import { db, eq } from "../supabase";
 import type { PeopleRepo, PersonPatch } from "../people";
 import { toPlayer, type PlayerRow } from "./mappers";
+import { peopleCrmReads } from "./crm";
 
 /** People columns the Worker writes, by PersonPatch key. */
 const COLUMNS: Record<keyof PersonPatch, string> = {
@@ -26,10 +27,6 @@ function toColumns(patch: PersonPatch): Record<string, unknown> {
 
 /** A PostgREST condition "column <> value", counting a blank as different (Airtable's != does). */
 const notEq = (col: string, value: string) => `or(${col}.is.null,${col}.neq.${encodeURIComponent(value)})`;
-
-const notYet = (method: string) => async (): Promise<never> => {
-  throw new Error(`people.${method} is not on Supabase yet`);
-};
 
 export function supabasePeople(env: Env): PeopleRepo {
   const d = db(env);
@@ -69,15 +66,7 @@ export function supabasePeople(env: Env): PeopleRepo {
       await d.rpc("update_people_ranks", { p: updates.map(({ id, patch }) => ({ id, ...patch })) });
     },
 
-    // The officer sections' reads come with their views in the next step.
-    listMembershipBoard: notYet("listMembershipBoard"),
-    listActiveForExport: notYet("listActiveForExport"),
-    listByMembershipNo: notYet("listByMembershipNo"),
-    getApplicantStage: notYet("getApplicantStage"),
-    listDirectory: notYet("listDirectory"),
-    listContactsByIds: notYet("listContactsByIds"),
-    listNames: notYet("listNames"),
-    getMyTaskFields: notYet("getMyTaskFields"),
-    listApplicantsAtStages: notYet("listApplicantsAtStages"),
+    // The officer sections' reads (api_people_crm).
+    ...peopleCrmReads(env),
   };
 }
