@@ -1,4 +1,4 @@
-import { airtableFindAll, airtableFindById, escapeFormulaValue } from "../airtable";
+import { airtableBatchUpdate, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
 import { normalizeEmail } from "../../../shared/normalizeEmail";
@@ -6,6 +6,18 @@ import { TABLES } from "../../../shared/schema/tableNames";
 import { PEOPLE_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapPlayer } from "../../../shared/mappers/playerMapper";
 import type { Player } from "../../../shared/schema/domainTypes";
+
+/**
+ * The People fields the Worker writes. A key left out is not touched; null
+ * clears the field.
+ */
+export interface PersonPatch {
+  active?: boolean;
+  sectionRank?: number | null;
+  playingAbility?: string | null;
+  rankUpdatedAt?: string;
+  optInOnly?: boolean;
+}
 
 export interface PeopleRepo {
   /** Every person with Active ticked. */
@@ -16,6 +28,32 @@ export interface PeopleRepo {
    */
   findByEmail(email: string): Promise<Player | null>;
   getById(id: string): Promise<Player | null>;
+  /**
+   * Everyone in the Section Ranking: Active players and Applicants, less
+   * anyone Rejected or Resigned. Unsorted.
+   */
+  listRankingPool(): Promise<Player[]>;
+  /** Inactive members who could be brought back into the ranking. Unsorted. */
+  listInactiveRankable(): Promise<Player[]>;
+  update(id: string, patch: PersonPatch): Promise<void>;
+  /** Several people at once, in order. Not atomic on Airtable. */
+  updateMany(updates: { id: string; patch: PersonPatch }[]): Promise<void>;
+}
+
+const PATCH_FIELDS: Record<keyof PersonPatch, string> = {
+  active: PEOPLE_FIELDS.active,
+  sectionRank: PEOPLE_FIELDS.sectionRank,
+  playingAbility: PEOPLE_FIELDS.playingAbility,
+  rankUpdatedAt: PEOPLE_FIELDS.rankUpdatedAt,
+  optInOnly: PEOPLE_FIELDS.optInOnly,
+};
+
+function toFields(patch: PersonPatch): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) fields[PATCH_FIELDS[key as keyof PersonPatch]] = value;
+  }
+  return fields;
 }
 
 function airtablePeople(env: Env): PeopleRepo {
@@ -60,6 +98,37 @@ function airtablePeople(env: Env): PeopleRepo {
     async getById(id) {
       const record = await airtableFindById(env, TABLES.player, id);
       return record ? mapPlayer(record) : null;
+    },
+
+    async listRankingPool() {
+      const records = await airtableFindAll(
+        env,
+        TABLES.player,
+        'AND({Applicant Stage}!="Rejected", {Status}!="Resigned", OR({Active}=TRUE(), {Status}="Applicant"))',
+      );
+      return records.map(mapPlayer);
+    },
+
+    async listInactiveRankable() {
+      const records = await airtableFindAll(
+        env,
+        TABLES.player,
+        'AND({Active}=FALSE(), {Status}!="Applicant", {Status}!="Resigned", {Applicant Stage}!="Rejected")',
+      );
+      return records.map(mapPlayer);
+    },
+
+    async update(id, patch) {
+      await airtableUpdate(env, TABLES.player, id, toFields(patch));
+    },
+
+    async updateMany(updates) {
+      // Ten per request, one request at a time: parallel PATCH streams tripped
+      // Airtable's rate limit (see the 429 retry in airtable.ts).
+      for (let i = 0; i < updates.length; i += 10) {
+        const batch = updates.slice(i, i + 10).map(({ id, patch }) => ({ id, fields: toFields(patch) }));
+        await airtableBatchUpdate(env, TABLES.player, batch);
+      }
     },
   };
 }

@@ -1,22 +1,10 @@
 /**
  * Ranking engine — single source of truth for player ability assessment.
  */
-import {
-  airtableBatchUpdate,
-  airtableBatchCreate,
-  airtableFindAll,
-  airtableFindById,
-  airtableUpdate,
-} from "./airtable";
 import type { Env } from "./env";
 import { HttpError } from "./http";
-import { TABLES } from "../../shared/schema/tableNames";
-import {
-  ABILITYGROUP_CONFIG_FIELDS,
-  PEOPLE_FIELDS,
-} from "../../shared/schema/fieldMaps";
-import { mapPlayer } from "../../shared/mappers/playerMapper";
-import { mapAbilityGroupConfiguration } from "../../shared/mappers/abilityGroupConfigMapper";
+import { people, type PersonPatch } from "./data/people";
+import { abilityGroups } from "./data/abilityGroups";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
@@ -59,9 +47,6 @@ function annotateWithDerivedRanks(players: Player[]): Player[] {
 // ── Caching ──────────────────────────────────────────────────────────────
 const RANKING_CACHE_TTL_MS = 30 * 1000;
 const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
-// Sequential writes: 4 parallel PATCH streams per reorder was tripping
-// Airtable's rate limit (see airtable.ts's 429 retry).
-const AIRTABLE_WRITE_CONCURRENCY = 1;
 
 // ── Internal helpers ─────────────────────────────────────────────────────
 function rankingCacheKey(active: boolean): string {
@@ -81,25 +66,15 @@ async function invalidateRankingCaches(env: Env): Promise<void> {
 }
 
 async function fetchActiveRankingFromAirtable(env: Env): Promise<Player[]> {
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    'AND({Applicant Stage}!="Rejected", {Status}!="Resigned", OR({Active}=TRUE(), {Status}="Applicant"))',
-  );
-  const players = records.map(mapPlayer);
+  const players = await people(env).listRankingPool();
   return players.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
 }
 
 async function fetchInactiveRankingFromAirtable(
   env: Env,
 ): Promise<InactiveRankingEntry[]> {
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    'AND({Active}=FALSE(), {Status}!="Applicant", {Status}!="Resigned", {Applicant Stage}!="Rejected")',
-  );
-  return records.map((r) => {
-    const p = mapPlayer(r);
+  const players = await people(env).listInactiveRankable();
+  return players.map((p) => {
     return {
       id: p.id,
       preferredName: p.preferredName,
@@ -117,25 +92,10 @@ async function fetchInactiveRankingFromAirtable(
 
 async function batchUpdatePlayers(
   env: Env,
-  updates: { id: string; fields: Record<string, unknown> }[],
+  updates: { id: string; patch: PersonPatch }[],
 ): Promise<void> {
   if (updates.length === 0) return;
-  const batches: { id: string; fields: Record<string, unknown> }[][] = [];
-  for (let i = 0; i < updates.length; i += 10) {
-    batches.push(updates.slice(i, i + 10));
-  }
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < batches.length) {
-      const batch = batches[cursor++];
-      await airtableBatchUpdate(env, TABLES.player, batch);
-    }
-  }
-  const workers = Array.from(
-    { length: Math.min(AIRTABLE_WRITE_CONCURRENCY, batches.length) },
-    () => worker(),
-  );
-  await Promise.all(workers);
+  await people(env).updateMany(updates);
 }
 
 // ── Config read/write ────────────────────────────────────────────────────
@@ -146,8 +106,7 @@ export async function getAbilityGroupConfig(
     env,
     RANKING_CONFIG_KEY,
     async () => {
-      const records = await airtableFindAll(env, TABLES.abilityGroupConfiguration);
-      const rows = records.map(mapAbilityGroupConfiguration);
+      const rows = await abilityGroups(env).list();
       const map = emptyConfig();
       for (const row of rows) {
         if (row.group === "H") continue;
@@ -172,31 +131,11 @@ export async function setAbilityGroupConfig(
   const validation = validateConfig(config, ranking.activeCount);
   if (validation) throw new HttpError(validation, 400);
 
-  const records = await airtableFindAll(env, TABLES.abilityGroupConfiguration);
-  const existing = new Map(records.map((r) => [mapAbilityGroupConfiguration(r).group, r]));
-  const updates: { id: string; fields: Record<string, unknown> }[] = [];
-  const creates: Record<string, unknown>[] = [];
-
+  const capacities: Partial<Record<keyof AbilityGroupConfigMap, number>> = {};
   for (const g of ["A", "B", "C", "D", "E", "F", "G"] as const) {
-    const capacity = Math.max(0, Math.floor(config[g] ?? 0));
-    const row = existing.get(g);
-    if (row) {
-      updates.push({ id: row.id, fields: { [ABILITYGROUP_CONFIG_FIELDS.capacity]: capacity } });
-    } else {
-      creates.push({
-        [ABILITYGROUP_CONFIG_FIELDS.group]: g,
-        [ABILITYGROUP_CONFIG_FIELDS.capacity]: capacity,
-        [ABILITYGROUP_CONFIG_FIELDS.isResidual]: false,
-      });
-    }
+    capacities[g] = Math.max(0, Math.floor(config[g] ?? 0));
   }
-
-  for (let i = 0; i < updates.length; i += 10) {
-    await airtableBatchUpdate(env, TABLES.abilityGroupConfiguration, updates.slice(i, i + 10));
-  }
-  for (let i = 0; i < creates.length; i += 10) {
-    await airtableBatchCreate(env, TABLES.abilityGroupConfiguration, creates.slice(i, i + 10));
-  }
+  await abilityGroups(env).saveCapacities(capacities);
 
   await invalidateRankingCaches(env);
   return recomputeDerivedFields(env);
@@ -363,9 +302,8 @@ export async function reorderRanking(
 }
 
 export async function activatePlayer(env: Env, playerId: string, actingEmail?: string): Promise<RankingList> {
-  const record = await airtableFindById(env, TABLES.player, playerId);
-  if (!record) throw new HttpError("Player not found", 404);
-  const player = mapPlayer(record);
+  const player = await people(env).getById(playerId);
+  if (!player) throw new HttpError("Player not found", 404);
 
   if (player.active !== true) {
     const activePlayers = await fetchActiveRankingFromAirtable(env);
@@ -379,12 +317,12 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     const newRank = hasExistingRank ? existing!.sectionRank! : activePlayers.length + 1;
 
     console.log(`[Ranking Audit] ${new Date().toISOString()} | User: ${actingEmail || 'system'} | Player: ${playerId} | Old Rank: N/A | New Rank: ${newRank} (Activated)`);
-    await airtableUpdate(env, TABLES.player, playerId, {
-      [PEOPLE_FIELDS.active]: true,
-      [PEOPLE_FIELDS.sectionRank]: newRank,
-      [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
+    await people(env).update(playerId, {
+      active: true,
+      sectionRank: newRank,
+      rankUpdatedAt: new Date().toISOString(),
     });
-    const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
+    const targetEmail = player.email;
     if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
     invalidateRankingEventsCache();
     await recordRankingEvents(env, [
@@ -413,9 +351,8 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
 }
 
 export async function deactivatePlayer(env: Env, playerId: string, actingEmail?: string): Promise<RankingList> {
-  const record = await airtableFindById(env, TABLES.player, playerId);
-  if (!record) throw new HttpError("Player not found", 404);
-  const player = mapPlayer(record);
+  const player = await people(env).getById(playerId);
+  if (!player) throw new HttpError("Player not found", 404);
   if (player.active === false) return getActiveRanking(env);
 
   await invalidateRankingCaches(env);
@@ -423,7 +360,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   const idx = players.findIndex((p) => p.id === playerId);
   
   if (idx === -1) {
-    await airtableUpdate(env, TABLES.player, playerId, { [PEOPLE_FIELDS.active]: false });
+    await people(env).update(playerId, { active: false });
     return getActiveRanking(env);
   }
 
@@ -438,14 +375,14 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   }
   
   await applySectionRankUpdates(env, sectionRankUpdates, actingEmail, "move", undefined, false);
-  await airtableUpdate(env, TABLES.player, playerId, {
-    [PEOPLE_FIELDS.active]: false,
-    [PEOPLE_FIELDS.sectionRank]: null,
-    [PEOPLE_FIELDS.playingAbility]: null,
-    [PEOPLE_FIELDS.rankUpdatedAt]: new Date().toISOString(),
+  await people(env).update(playerId, {
+    active: false,
+    sectionRank: null,
+    playingAbility: null,
+    rankUpdatedAt: new Date().toISOString(),
   });
 
-  const targetEmail = record.fields?.[PEOPLE_FIELDS.email];
+  const targetEmail = player.email;
   if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
   invalidateRankingEventsCache();
   await recordRankingEvents(env, [
@@ -466,7 +403,7 @@ async function recomputeDerivedFieldsFromList(
   const teamCounters = new Map<string, number>();
   const positionalCounters = new Map<string, number>();
   const now = new Date().toISOString();
-  const fieldUpdates: { id: string; fields: Record<string, unknown> }[] = [];
+  const fieldUpdates: { id: string; patch: PersonPatch }[] = [];
   const updatedPlayers: Player[] = [];
 
   for (const p of players) {
@@ -486,9 +423,9 @@ async function recomputeDerivedFieldsFromList(
     if (needsUpdate) {
       fieldUpdates.push({
         id: p.id,
-        fields: {
-          [PEOPLE_FIELDS.playingAbility]: assignment.abilityDisplay,
-          [PEOPLE_FIELDS.rankUpdatedAt]: now,
+        patch: {
+          playingAbility: assignment.abilityDisplay,
+          rankUpdatedAt: now,
         },
       });
     }
@@ -531,9 +468,9 @@ async function applySectionRankUpdates(
   
   const stamped = updates.map(({ id, rank }) => ({
     id,
-    fields: {
-      [PEOPLE_FIELDS.sectionRank]: rank,
-      [PEOPLE_FIELDS.rankUpdatedAt]: now,
+    patch: {
+      sectionRank: rank,
+      rankUpdatedAt: now,
     },
   }));
   

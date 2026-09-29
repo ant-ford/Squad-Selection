@@ -18,25 +18,17 @@
  * player-in-match selections, not rank changes.
  */
 
-import { AirtableError, airtableFindAll, airtableFindById, airtableBatchCreate } from "./airtable";
+import { AirtableError } from "./airtable";
+import { people } from "./data/people";
+import { rankingEvents } from "./data/rankingEvents";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
-import { TABLES } from "../../shared/schema/tableNames";
 import { getCached, invalidateCachePrefix } from "./cache";
-import { mapPlayer } from "../../shared/mappers/playerMapper";
 
-export const RANKING_EVENTS_TABLE = "Ranking Events";
-export const RANKING_EVENTS_FIELDS = {
-  player: "Player",
-  actor: "Actor",
-  actorEmail: "Actor Email",
-  kind: "Kind",
-  oldRank: "Old Rank",
-  newRank: "New Rank",
-  justification: "Justification",
-  timestamp: "Timestamp",
-} as const;
+// Moved to shared/schema; re-exported for existing importers.
+export { RANKING_EVENTS_TABLE } from "../../shared/schema/tableNames";
+export { RANKING_EVENTS_FIELDS } from "../../shared/schema/fieldMaps";
 
 export type RankingEventKind = "move" | "reorder" | "activate" | "deactivate";
 
@@ -107,25 +99,18 @@ export async function recordRankingEvents(env: Env, events: RankingEventInput[])
     const actor = await getPlayerByEmail(env, email);
     if (actor) idByEmail.set(email, actor.id);
   }
-  const rows = stamped.map(({ event, timestamp }) => {
-    const actorId = event.actorEmail ? idByEmail.get(event.actorEmail) : undefined;
-    return {
-      [RANKING_EVENTS_FIELDS.player]: [event.playerId],
-      [RANKING_EVENTS_FIELDS.actor]: actorId ? [actorId] : [],
-      [RANKING_EVENTS_FIELDS.actorEmail]: event.actorEmail || "",
-      [RANKING_EVENTS_FIELDS.kind]: event.kind,
-      [RANKING_EVENTS_FIELDS.oldRank]: event.oldRank ?? null,
-      [RANKING_EVENTS_FIELDS.newRank]: event.newRank ?? null,
-      [RANKING_EVENTS_FIELDS.justification]: event.justification || "",
-      [RANKING_EVENTS_FIELDS.timestamp]: timestamp,
-    };
-  });
-  // Airtable accepts up to 10 records per create request - chunk so a
-  // full-table reorder (many changed players) is still audited in full.
+  const rows = stamped.map(({ event, timestamp }) => ({
+    playerId: event.playerId,
+    actorId: event.actorEmail ? idByEmail.get(event.actorEmail) : undefined,
+    actorEmail: event.actorEmail || "",
+    kind: event.kind,
+    oldRank: event.oldRank ?? null,
+    newRank: event.newRank ?? null,
+    justification: event.justification || "",
+    timestamp,
+  }));
   try {
-    for (let i = 0; i < rows.length; i += 10) {
-      await airtableBatchCreate(env, RANKING_EVENTS_TABLE, rows.slice(i, i + 10));
-    }
+    await rankingEvents(env).create(rows);
   } catch (err) {
     // Table not created yet: keep the documented graceful degradation, the
     // same 404 carve-out the read path makes. The rank change itself has
@@ -174,22 +159,8 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
     async () => {
       try {
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        // Airtable rejects a single JSON-encoded `sort` parameter with HTTP
-        // 422 - the sort must be passed as bracketed query parameters.
-        const records = await airtableFindAll(
-          env,
-          RANKING_EVENTS_TABLE,
-          undefined,
-          {
-            "sort[0][field]": RANKING_EVENTS_FIELDS.timestamp,
-            "sort[0][direction]": "desc",
-          },
-          Object.values(RANKING_EVENTS_FIELDS),
-        );
-        const fresh = records.filter((r) => {
-          const at = r.fields?.[RANKING_EVENTS_FIELDS.timestamp];
-          return typeof at === "string" && at >= since;
-        });
+        const rows = await rankingEvents(env).listNewestFirst();
+        const fresh = rows.filter((r) => r.timestamp !== "" && r.timestamp >= since);
         const ref = await getReferenceData(env);
         const playerById = new Map(ref.players.map((p) => [p.id, p]));
         const actorIdByEmail = new Map<string, string>();
@@ -198,13 +169,12 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
         }
         const missingIds = new Set<string>();
         for (const r of fresh) {
-          const pid = r.fields?.[RANKING_EVENTS_FIELDS.player]?.[0];
-          if (typeof pid === "string" && !playerById.has(pid)) missingIds.add(pid);
+          if (r.playerId && !playerById.has(r.playerId)) missingIds.add(r.playerId);
         }
         for (const pid of missingIds) {
           try {
-            const rec = await airtableFindById(env, TABLES.player, pid);
-            if (rec) playerById.set(pid, mapPlayer(rec));
+            const found = await people(env).getById(pid);
+            if (found) playerById.set(pid, found);
           } catch {
             /* name resolution is best-effort */
           }
@@ -215,20 +185,18 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
           return p.preferredName || p.givenNames || "Player";
         };
         return fresh.slice(0, 20).map((r) => {
-          const f = r.fields ?? {};
-          const playerId = f[RANKING_EVENTS_FIELDS.player]?.[0] ?? "";
-          const actorEmail = String(f[RANKING_EVENTS_FIELDS.actorEmail] || "").trim().toLowerCase();
-          const actorId = f[RANKING_EVENTS_FIELDS.actor]?.[0] ?? actorIdByEmail.get(actorEmail) ?? "";
+          const actorEmail = r.actorEmail.trim().toLowerCase();
+          const actorId = r.actorId ?? actorIdByEmail.get(actorEmail) ?? "";
           return {
             id: r.id,
-            playerId,
-            kind: String(f[RANKING_EVENTS_FIELDS.kind] || "move"),
-            playerName: nameOf(playerId) || "Player",
+            playerId: r.playerId,
+            kind: r.kind,
+            playerName: nameOf(r.playerId) || "Player",
             actorName: nameOf(actorId) || "Coach",
-            oldRank: typeof f[RANKING_EVENTS_FIELDS.oldRank] === "number" ? f[RANKING_EVENTS_FIELDS.oldRank] : null,
-            newRank: typeof f[RANKING_EVENTS_FIELDS.newRank] === "number" ? f[RANKING_EVENTS_FIELDS.newRank] : null,
-            note: String(f[RANKING_EVENTS_FIELDS.justification] || ""),
-            at: String(f[RANKING_EVENTS_FIELDS.timestamp] || ""),
+            oldRank: r.oldRank,
+            newRank: r.newRank,
+            note: r.justification,
+            at: r.timestamp,
           };
         });
       } catch (err) {

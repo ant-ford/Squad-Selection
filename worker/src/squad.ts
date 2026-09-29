@@ -1,14 +1,12 @@
-import { airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue, linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
+import { matches } from "./data/matches";
+import { teams as teamsRepo } from "./data/teams";
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
 import { getScheduledMatches, SCHEDULED_MATCHES_KEY } from "./fixtures";
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
 import { HttpError } from "./http";
-import { TABLES } from "../../shared/schema/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHCARDS_FIELDS, MATCHES_FIELDS, TEAMS_FIELDS } from "../../shared/schema/fieldMaps";
-import { mapMatch } from "../../shared/mappers/matchMapper";
-import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
 import type { KitColour, Match, Player, MatchCard, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 import { ABILITY_RANK } from "../../shared/abilityRank";
 import { buildEvaluationContext, getSeasonContext } from "./seasonContext";
@@ -29,11 +27,11 @@ type MatchSide = "home" | "away";
 const MATCH_RECORD_TTL_MS = 30 * 1000;
 const PLAYERS_FOR_MATCH_TTL_MS = 60 * 1000;
 
-async function getMatchRecord(env: Env, matchId: string): Promise<any> {
-  const { data } = await getCached<any>(`match:${matchId}`, async () => {
-    const rec = await airtableFindById(env, TABLES.match, matchId);
-    if (!rec) throw new HttpError("Match not found", 404);
-    return rec;
+async function getMatchRecord(env: Env, matchId: string): Promise<Match> {
+  const { data } = await getCached<Match>(`match:${matchId}`, async () => {
+    const match = await matches(env).getById(matchId);
+    if (!match) throw new HttpError("Match not found", 404);
+    return match;
   }, MATCH_RECORD_TTL_MS);
   return data;
 }
@@ -80,8 +78,10 @@ function getSelectedPlayerIds(match: Match, rankMap: Record<string, number>, sid
   return resolveHkfcSide(match, rankMap, side) === "home" ? match.selectedPlayersHome || [] : match.selectedPlayersAway || [];
 }
 
-function getSelectionFieldName(match: Match, rankMap: Record<string, number>, side?: MatchSide): string {
-  return resolveHkfcSide(match, rankMap, side) === "home" ? MATCHES_FIELDS.selectedPlayersHome : MATCHES_FIELDS.selectedPlayersAway;
+type SelectionField = "selectedPlayersHome" | "selectedPlayersAway";
+
+function getSelectionFieldName(match: Match, rankMap: Record<string, number>, side?: MatchSide): SelectionField {
+  return resolveHkfcSide(match, rankMap, side) === "home" ? "selectedPlayersHome" : "selectedPlayersAway";
 }
 
 // ── Public endpoints ────────────────────────────────────────────────────
@@ -89,8 +89,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   const ref = await getReferenceData(env);
   const { teamRankMap, teams } = ref;
   const teamMap = new Map<string, Team>(teams.map((t) => [t.teamName || "", t]));
-  const matchRecord = await getMatchRecord(env, matchId);
-  const match = mapMatch(matchRecord);
+  const match = await getMatchRecord(env, matchId);
   const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
@@ -273,15 +272,14 @@ async function releaseFromLowerSameDaySquads(
 
   const displaced: DisplacedSelection[] = [];
   for (const [lowerMatchId, teams] of byMatch) {
-    const record = await airtableFindById(env, TABLES.match, lowerMatchId);
-    if (!record) continue;
-    const lower = mapMatch(record);
+    const lower = await matches(env).getById(lowerMatchId);
+    if (!lower) continue;
     if (lower.matchStatus === "Played") continue;
-    const updates: Record<string, string[]> = {};
+    const updates: Partial<Record<SelectionField, string[]>> = {};
     for (const { team, playerIds: ids } of teams) {
-      const sides: [string | undefined, string, string[] | undefined][] = [
-        [lower.homeTeam, MATCHES_FIELDS.selectedPlayersHome, lower.selectedPlayersHome],
-        [lower.awayTeam, MATCHES_FIELDS.selectedPlayersAway, lower.selectedPlayersAway],
+      const sides: [string | undefined, SelectionField, string[] | undefined][] = [
+        [lower.homeTeam, "selectedPlayersHome", lower.selectedPlayersHome],
+        [lower.awayTeam, "selectedPlayersAway", lower.selectedPlayersAway],
       ];
       for (const [sideTeam, field, current] of sides) {
         if (sideTeam !== team) continue;
@@ -300,7 +298,7 @@ async function releaseFromLowerSameDaySquads(
       }
     }
     if (Object.keys(updates).length > 0) {
-      await airtableUpdate(env, TABLES.match, lowerMatchId, updates);
+      await matches(env).update(lowerMatchId, updates);
       invalidateCache(`match:${lowerMatchId}`);
     }
   }
@@ -317,9 +315,8 @@ export async function syncSquad(
   if (!Array.isArray(targetPlayerIds)) throw new HttpError("selectedIds must be an array", 400);
   // WRITE PATH: always read the record fresh — never from the 30s cache —
   // so the derby-safety merge below operates on the current opposite side.
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
-  const match = mapMatch(matchRecord);
+  const match = await matches(env).getById(matchId);
+  if (!match) throw new HttpError("Match not found", 404);
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
   const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
@@ -359,13 +356,13 @@ export async function syncSquad(
   }
 
   // Derby safety: ensure a player isn't selected for BOTH sides of the same match
-  const updates: Record<string, string[]> = { [fieldName]: cleanIds };
+  const updates: Partial<Record<SelectionField, string[]>> = { [fieldName]: cleanIds };
   if (side === "home" || side === "away") {
-    const oppositeField = side === "home" ? MATCHES_FIELDS.selectedPlayersAway : MATCHES_FIELDS.selectedPlayersHome;
+    const oppositeField: SelectionField = side === "home" ? "selectedPlayersAway" : "selectedPlayersHome";
     const oppositeCurrent = side === "home" ? match.selectedPlayersAway : match.selectedPlayersHome;
     updates[oppositeField] = (oppositeCurrent || []).filter((id) => !cleanIds.includes(id));
   }
-  await airtableUpdate(env, TABLES.match, matchId, updates);
+  await matches(env).update(matchId, updates);
 
   // Higher team priority (Bye-Law 7.1 / spec §7.3). After the write above,
   // so a failed save never leaves a player removed from both squads.
@@ -387,11 +384,9 @@ export async function syncSquad(
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
-  await airtableUpdate(env, TABLES.match, matchId, {
-    [MATCHES_FIELDS.autoSelectEnabled]: enabled,
-  });
+  const existing = await matches(env).getById(matchId);
+  if (!existing) throw new HttpError("Match not found", 404);
+  await matches(env).update(matchId, { autoSelectEnabled: enabled });
   await invalidateSelectionCaches(env, matchId);
   console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
   return { success: true, autoSelectEnabled: enabled };
@@ -419,11 +414,10 @@ export async function setMatchKit(
   if (!KIT_COLOURS.includes(kit)) {
     throw new HttpError('kit must be "Blue", "White" or empty', 400);
   }
-  const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-  if (!matchRecord) throw new HttpError("Match not found", 404);
+  const existing = await matches(env).getById(matchId);
+  if (!existing) throw new HttpError("Match not found", 404);
 
-  const field = side === "home" ? MATCHES_FIELDS.homeKit : MATCHES_FIELDS.awayKit;
-  await airtableUpdate(env, TABLES.match, matchId, { [field]: kit });
+  await matches(env).update(matchId, side === "home" ? { homeKit: kit as KitColour } : { awayKit: kit as KitColour });
 
   // Same invalidation set as the auto-select toggle: the fixture views and
   // the calendar feeds all read the kit off the cached match records.
@@ -464,9 +458,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   const validIds = playerIds.filter(id => typeof id === "string" && id.startsWith("rec"));
 
   // Use team.id from reference data — avoids a redundant Airtable lookup
-  await airtableUpdate(env, TABLES.team, team.id, {
-    [TEAMS_FIELDS.autoSelectPlayers]: validIds,
-  });
+  await teamsRepo(env).setAutoSelectPlayers(team.id, validIds);
 
   // Invalidate reference data cache so match-info picks up the new list
   await invalidateReferenceData(env);
@@ -491,8 +483,8 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
   const { data } = await getCached<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
     `availability:${matchId}`,
     async () => {
-      const matchRecord = await airtableFindById(env, TABLES.match, matchId);
-      const season = matchRecord?.fields?.[MATCHES_FIELDS.season] || "";
+      const match = await matches(env).getById(matchId);
+      const season = match?.season || "";
       if (!season) return { exceptions: [] };
       const allExceptions = await getExceptionsForSeasons(env, [season]);
       return {
@@ -517,7 +509,7 @@ export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSi
   // reuse that copy to avoid an extra Airtable round-trip for the common
   // case. Non-scheduled matches fall back to the per-match 30s cache.
   const scheduled = (await getScheduledMatches(env)).find((m) => m.id === matchId);
-  const match = scheduled ?? mapMatch(await getMatchRecord(env, matchId));
+  const match = scheduled ?? (await getMatchRecord(env, matchId));
   const ref = await getReferenceData(env);
   const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap, side);
   const players = [] as { id: string; name: string; shirtNo: string; position: string; ability: string }[];

@@ -1,10 +1,7 @@
 import { HttpError } from "./http";
-import { AVAILABILITYRULES_FIELDS } from "../../shared/schema/fieldMaps";
-import { airtableCreate, airtableDelete, airtableFindAll } from "./airtable";
+import { availabilityRules, type NewAvailabilityRule } from "./data/availabilityRules";
 import type { Env } from "./env";
 import { getShared, invalidateShared, rawReadTtl } from "./cache";
-import { TABLES } from "../../shared/schema/tableNames";
-import { mapAvailabilityRule } from "../../shared/mappers/availabilityRuleMapper";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
 
 /**
@@ -182,8 +179,7 @@ const RULES_TTL_MS = 5 * 60 * 1000;
 export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRule[]> {
   try {
     return await getShared<AvailabilityRule[]>(env, RULES_CACHE_KEY, async () => {
-      const records = await airtableFindAll(env, TABLES.availabilityRule);
-      return records.map(mapAvailabilityRule);
+      return availabilityRules(env).listAll();
     }, rawReadTtl(env, RULES_TTL_MS));
   } catch (err) {
     console.error("Availability rules unavailable for this request:", err instanceof Error ? err.message : err);
@@ -250,19 +246,17 @@ export async function createAvailabilityRule(
     throw new HttpError("startDate must not be after endDate", 400);
   }
 
-  const fields: Record<string, unknown> = {
-    [AVAILABILITYRULES_FIELDS.player]: [playerId],
-    [AVAILABILITYRULES_FIELDS.ruleType]: input.ruleType,
-    [AVAILABILITYRULES_FIELDS.availability]: input.availability,
-    [AVAILABILITYRULES_FIELDS.active]: true,
-  };
-  if (input.startDate) fields[AVAILABILITYRULES_FIELDS.startDate] = input.startDate;
-  if (input.endDate) fields[AVAILABILITYRULES_FIELDS.endDate] = input.endDate;
-  if (input.notes) fields[AVAILABILITYRULES_FIELDS.notes] = input.notes;
-
-  const created = await airtableCreate(env, TABLES.availabilityRule, fields);
+  const created = await availabilityRules(env).create({
+    playerId,
+    // Both checked against RULE_TYPES / AVAILABILITY_VALUES above.
+    ruleType: input.ruleType as AvailabilityRuleType,
+    availability: input.availability as NewAvailabilityRule["availability"],
+    startDate: input.startDate,
+    endDate: input.endDate,
+    notes: input.notes,
+  });
   await invalidateAvailabilityRules(env);
-  return mapAvailabilityRule(created);
+  return created;
 }
 
 /** Delete one of the calling player's own rules. */
@@ -274,7 +268,7 @@ export async function deleteAvailabilityRule(env: Env, playerId: string, ruleId:
   if (!rule || !(rule.player ?? []).includes(playerId)) {
     throw new HttpError("Rule not found", 404);
   }
-  await airtableDelete(env, TABLES.availabilityRule, ruleId);
+  await availabilityRules(env).delete(ruleId);
   await invalidateAvailabilityRules(env);
   return { success: true };
 }
