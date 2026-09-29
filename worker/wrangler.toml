@@ -50,6 +50,12 @@ SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 # Both must be present before the webhook does anything: the route stays 404
 # and the cache TTLs stay short until then.
 AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
+# Where the Worker reads and writes club data: "airtable" or "supabase", with
+# per-module exceptions in DATA_BACKEND_OVERRIDES ("people=supabase,...").
+# See worker/src/data/backend.ts. Airtable until the October 2026 switch-over;
+# rolling back is setting this back to "airtable" and deploying.
+DATA_BACKEND = "airtable"
+DATA_BACKEND_OVERRIDES = ""
 
 # Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
 # does not lapse over a quiet fortnight. Harmless when no webhook is set up.
@@ -92,6 +98,8 @@ AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 ALLOWED_ORIGIN = "http://localhost:5173"
 SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
+DATA_BACKEND = "airtable"
+DATA_BACKEND_OVERRIDES = ""
 
 [env.preview.triggers]
 crons = []

@@ -43,4 +43,11 @@ export interface Env {
   AIRTABLE_WEBHOOK_ID?: string;
   /** The webhook's macSecretBase64, as a Worker secret. */
   AIRTABLE_WEBHOOK_SECRET?: string;
+  /**
+   * Which store the data modules use: "airtable" (the default when unset)
+   * or "supabase". See worker/src/data/backend.ts.
+   */
+  DATA_BACKEND?: string;
+  /** Per-module exceptions to DATA_BACKEND, e.g. "people=supabase,matches=airtable". */
+  DATA_BACKEND_OVERRIDES?: string;
 }
