@@ -1,0 +1,46 @@
+name: Restore drill
+
+# Restores an encrypted backup from R2 into eddy-preview and checks every
+# table's row count against the manifest written when the backup was made.
+# Proves the backups can actually be read back; see docs/RESTORE.md.
+#
+# It REPLACES the restored tables in eddy-preview, so it asks you to type a
+# confirmation, and the restore-drill environment (main only, with a
+# required reviewer) holds the age secret key that decrypts backups.
+
+on:
+  workflow_dispatch:
+    inputs:
+      object:
+        description: Backup to restore - a key under eddy-backups, or latest:eddy-preview / latest:eddy-production
+        default: latest:eddy-preview
+      confirm:
+        description: Type "overwrite eddy-preview" to confirm
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    environment: restore-drill
+    concurrency:
+      group: restore-drill
+      cancel-in-progress: false
+    steps:
+      - name: Check confirmation
+        if: inputs.confirm != 'overwrite eddy-preview'
+        run: |
+          echo "::error::Type exactly: overwrite eddy-preview"
+          exit 1
+      - uses: actions/checkout@v4
+      - name: Restore and verify
+        env:
+          PGURL: ${{ secrets.PREVIEW_DB_URL }}
+          OBJECT: ${{ inputs.object }}
+          AGE_IDENTITY: ${{ secrets.BACKUP_AGE_SECRET_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+        run: bash scripts/backup/restore.sh
