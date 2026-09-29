@@ -14,7 +14,9 @@
  * setMyAvailability (exceptions changed), and the Airtable webhook.
  */
 
-import { airtableFindAll, escapeFormulaValue, linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
+import { matches } from "./data/matches";
+import { matchCards } from "./data/matchCards";
 import type { Env } from "./env";
 import { getCached, getShared, rawReadTtl } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -26,14 +28,6 @@ import {
   type EvaluationContext,
   type VirtualSelection,
 } from "./eligibility";
-import { TABLES } from "../../shared/schema/tableNames";
-import {
-  AVAILABILITYEXCEPTIONS_FIELDS,
-  MATCHES_FIELDS,
-  MATCHCARDS_FIELDS,
-} from "../../shared/schema/fieldMaps";
-import { mapMatch } from "../../shared/mappers/matchMapper";
-import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
 import type {
   Match,
   MatchCard,
@@ -50,9 +44,7 @@ const SEASON_READ_TTL_MS = 10 * 60 * 1000;
 // read. See SCHEDULED_MATCHES_TTL_MS in fixtures.ts for why.
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
   return getShared<Match[]>(env, `all-matches:${season}`, async () => {
-    const formula = season ? `{${MATCHES_FIELDS.season}}="${escapeFormulaValue(season)}"` : undefined;
-    const records = await airtableFindAll(env, TABLES.match, formula);
-    return records.map(mapMatch);
+    return matches(env).listForSeason(season);
   }, SEASON_READ_TTL_MS);
 }
 
@@ -74,12 +66,7 @@ export async function getMatchCardsForSeason(
 ): Promise<MatchCard[]> {
   const key = opts.cardedOnly ? `match-cards:${season}:carded` : `match-cards:${season}`;
   return getShared<MatchCard[]>(env, key, async () => {
-    const clauses: string[] = [];
-    if (season) clauses.push(`{${MATCHCARDS_FIELDS.season}}="${escapeFormulaValue(season)}"`);
-    if (opts.cardedOnly) clauses.push(`{${MATCHCARDS_FIELDS.cards}}!=""`);
-    const formula = clauses.length === 0 ? undefined : clauses.length === 1 ? clauses[0] : `AND(${clauses.join(",")})`;
-    const records = await airtableFindAll(env, TABLES.matchCard, formula);
-    return records.map(mapMatchCard);
+    return matchCards(env).listForSeason(season, opts);
   }, rawReadTtl(env, SEASON_READ_TTL_MS));
 }
 

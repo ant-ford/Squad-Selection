@@ -1,11 +1,10 @@
-import { airtableFindAll, airtableFindById, linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
+import { matches } from "./data/matches";
+import { people } from "./data/people";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
 import { getCached, getShared, rawReadTtl } from "./cache";
 import { HttpError } from "./http";
-import { TABLES } from "../../shared/schema/tableNames";
-import { mapMatch } from "../../shared/mappers/matchMapper";
-import { mapPlayer } from "../../shared/mappers/playerMapper";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
@@ -43,8 +42,7 @@ export const SCHEDULED_MATCHES_KEY = "scheduled-matches:v2";
 
 export async function getScheduledMatches(env: Env): Promise<Match[]> {
   return getShared<Match[]>(env, SCHEDULED_MATCHES_KEY, async () => {
-    const records = await airtableFindAll(env, TABLES.match, '{Match Status}="Scheduled"');
-    return records.map(mapMatch);
+    return matches(env).listScheduled();
   }, SCHEDULED_MATCHES_TTL_MS);
 }
 
@@ -85,15 +83,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   if (unique.length === 0) return [];
   const key = `played-matches:${unique.join(",")}`;
   return getShared<Match[]>(env, key, async () => {
-    const seasonClause = unique.length === 1
-      ? `{Season}="${unique[0]}"`
-      : `OR(${unique.map((s) => `{Season}="${s}"`).join(",")})`;
-    const records = await airtableFindAll(
-      env,
-      TABLES.match,
-      `AND({Match Status}="Played",${seasonClause})`,
-    );
-    return records.map(mapMatch);
+    return matches(env).listPlayedForSeasons(unique);
   }, rawReadTtl(env, SCHEDULED_MATCHES_TTL_MS));
 }
 
@@ -474,10 +464,8 @@ export async function buildPlayerFixtureView(
  * Identity comes from the signed calendar token's player id.
  */
 export async function getPlayerFixtures(env: Env, playerId: string) {
-  const record = await airtableFindById(env, TABLES.player, playerId);
-  if (!record) throw new HttpError("Player not found or inactive", 404);
-  const player = mapPlayer(record);
-  if (!player.active) throw new HttpError("Player not found or inactive", 404);
+  const player = await people(env).getById(playerId);
+  if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
   const view = await buildPlayerFixtureView(env, player, { freshAvailability: false });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
