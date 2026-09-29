@@ -144,7 +144,9 @@ const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
 
 /**
  * Upserts rows in batches: INSERT ... ON CONFLICT (conflict) DO UPDATE SET
- * every other column. Returns the number of rows sent.
+ * every other column - but only where something actually differs, so a
+ * re-run leaves unchanged rows untouched (no updated_at trigger firing, no
+ * churn). Returns the number of rows sent.
  */
 export async function upsert(db, table, rows, conflict, { batch = 200, conflictWhere = "" } = {}) {
   if (rows.length === 0) return 0;
@@ -158,10 +160,11 @@ export async function upsert(db, table, rows, conflict, { batch = 200, conflictW
       return `$${values.length}`;
     }).join(",")})`);
     const set = updates.length
-      ? `do update set ${updates.map((c) => `${ident(c)} = excluded.${ident(c)}`).join(", ")}`
+      ? `do update set ${updates.map((c) => `${ident(c)} = excluded.${ident(c)}`).join(", ")}` +
+        ` where (${updates.map((c) => `t.${ident(c)}`).join(", ")}) is distinct from (${updates.map((c) => `excluded.${ident(c)}`).join(", ")})`
       : "do nothing";
     await db.query(
-      `insert into ${table} (${cols.map(ident).join(",")}) values ${tuples.join(",")} on conflict (${conflict.map(ident).join(",")})${conflictWhere ? ` where ${conflictWhere}` : ""} ${set}`,
+      `insert into ${table} as t (${cols.map(ident).join(",")}) values ${tuples.join(",")} on conflict (${conflict.map(ident).join(",")})${conflictWhere ? ` where ${conflictWhere}` : ""} ${set}`,
       values,
     );
   }
