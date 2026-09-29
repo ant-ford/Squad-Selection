@@ -1,0 +1,73 @@
+name: Database backup
+
+# Encrypted pg_dump of the Supabase databases into the private R2 bucket
+# eddy-backups (docs/RESTORE.md says how to get one back).
+#
+#   eddy-production  every night, 03:00 Hong Kong; also kept monthly on the 1st
+#   eddy-preview     every Sunday, 03:30 Hong Kong
+#
+# Supabase's free plan keeps no backups of its own, so these are the only
+# ones. The dump is encrypted with the age public key in the
+# BACKUP_AGE_PUBLIC_KEY repository variable before it leaves the runner;
+# only the secret half (kept off GitHub except in the restore-drill
+# environment) can read it. The repository is public, so the scripts print
+# sizes, checksums and table counts, never data or connection strings.
+
+on:
+  schedule:
+    - cron: "0 19 * * *"   # 03:00 HKT
+    - cron: "30 19 * * 6"  # 03:30 HKT Sunday
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which database to back up now
+        type: choice
+        options: [eddy-preview, eddy-production]
+        default: eddy-preview
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '0 19 * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'eddy-production')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: backup-eddy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dump, encrypt and upload
+        env:
+          PGURL: ${{ secrets.PROD_DB_URL }}
+          LABEL: eddy-production
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_PUBLIC_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+        run: bash scripts/backup/dump.sh
+
+  preview:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '30 19 * * 6') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'eddy-preview')
+    runs-on: ubuntu-latest
+    environment: backup-preview
+    concurrency:
+      group: backup-eddy-preview
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dump, encrypt and upload
+        env:
+          PGURL: ${{ secrets.PREVIEW_DB_URL }}
+          LABEL: eddy-preview
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_PUBLIC_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
+          ALSO_MONTHLY: "no"
+        run: bash scripts/backup/dump.sh
