@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -28,6 +28,7 @@ import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@share
 import type { RankingChange } from '@/lib/queries';
 import { POS_SHORT, initials } from '@/lib/format';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { coachDashboardPath } from '@/lib/scrollMemory';
 
 const ALL_POSITIONS = Object.keys(POS_SHORT);
 const GROUP_COLORS: Record<string, string> = {
@@ -368,7 +369,7 @@ export default function PlayerRanking() {
   return (
     <div className="pb-32">
       <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
-        <button onClick={() => navigate('/coach')} className="flex items-center gap-1 text-sm text-muted-foreground">
+        <button onClick={() => navigate(coachDashboardPath())} className="flex items-center gap-1 text-sm text-muted-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Dashboard
         </button>
         <div className="flex-1" />
@@ -421,7 +422,7 @@ export default function PlayerRanking() {
         </div>
       )}
 
-      <div ref={listRef} onScroll={handleListScroll} className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto">
+      <div ref={listRef} data-rank-list onScroll={handleListScroll} className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto">
         {filteredPlayers.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
             No players match the current filters.
@@ -753,6 +754,24 @@ function RankingRowInner(props: {
   const hasCv = isApplicant && !!player.sportsBackground && player.sportsBackground.trim() !== '';
   const hasComments = !!player.selectionComments && player.selectionComments.trim() !== '';
 
+  // The list scrolls inside its own box, which clips anything hanging out of
+  // it - so for the last rows the menu opens upwards instead.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuUp, setMenuUp] = useState(false);
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!props.menuOpen || !menu) {
+      setMenuUp(false);
+      return;
+    }
+    const box = menu.closest('[data-rank-list]')?.getBoundingClientRect();
+    const bottomLimit = Math.min(window.innerHeight, box?.bottom ?? Infinity);
+    const topLimit = Math.max(0, box?.top ?? 0);
+    const rect = menu.getBoundingClientRect();
+    const trigger = menu.parentElement!.getBoundingClientRect();
+    setMenuUp(rect.bottom > bottomLimit && trigger.top - rect.height - 4 >= topLimit);
+  }, [props.menuOpen]);
+
   return (
     <div
       data-rank={rank}
@@ -836,7 +855,7 @@ function RankingRowInner(props: {
         </button>
         {props.menuOpen && (
           <>
-            <div className="absolute right-0 top-7 z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm">
+            <div ref={menuRef} className={`absolute right-0 ${menuUp ? 'bottom-7' : 'top-7'} z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm`}>
               <button
                 onClick={() => { props.onMenuOpenChange(false); props.onOpenMoveToRank(player.id); }}
                 className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"

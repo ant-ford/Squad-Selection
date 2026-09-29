@@ -4,6 +4,7 @@ import { LogOut, User, ListChecks, Home, Users, Mail } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
 import HelpLink from '@/components/HelpLink';
+import { coachDashboardPath } from '@/lib/scrollMemory';
 
 export default function CoachHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
 
   return (
     <AppHeader subtitle={teamNames ? `Coaching ${teamNames}` : 'No teams assigned'}>
-      <button onClick={() => navigate('/coach')} className={headerNavClass(isDashboard)} aria-label="Dashboard">
+      <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass(isDashboard)} aria-label="Dashboard">
         <span className="hidden sm:inline">Dashboard</span>
         <Home className="h-3.5 w-3.5 sm:hidden" />
       </button>
