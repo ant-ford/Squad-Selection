@@ -1,6 +1,7 @@
 import { airtableBatchCreate, airtableBatchUpdate, airtableFindAll } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseAbilityGroups } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { ABILITYGROUP_CONFIG_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapAbilityGroupConfiguration } from "../../../shared/mappers/abilityGroupConfigMapper";
@@ -52,5 +53,5 @@ function airtableAbilityGroups(env: Env): AbilityGroupsRepo {
 }
 
 export function abilityGroups(env: Env): AbilityGroupsRepo {
-  return pick(env, "abilityGroups", airtableAbilityGroups);
+  return pick(env, "abilityGroups", airtableAbilityGroups, supabaseAbilityGroups);
 }

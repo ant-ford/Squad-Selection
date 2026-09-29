@@ -1,0 +1,185 @@
+import type { Env } from "../../env";
+import { db, eq, inList } from "../supabase";
+import type { TeamsRepo } from "../teams";
+import type { OfficersRepo, Office } from "../officers";
+import type { MatchesRepo, MatchPatch } from "../matches";
+import type { MatchCardsRepo } from "../matchCards";
+import type { AvailabilityExceptionsRepo } from "../availabilityExceptions";
+import type { AvailabilityRulesRepo } from "../availabilityRules";
+import type { AbilityGroupsRepo } from "../abilityGroups";
+import type { RankingEventsRepo, RankingEventRow } from "../rankingEvents";
+import {
+  toAbilityGroup, toException, toMatch, toMatchCard, toRule, toTeam,
+  type AbilityGroupRow, type ExceptionRow, type MatchCardRow, type MatchRow, type RuleRow, type TeamRow,
+} from "./mappers";
+
+export function supabaseTeams(env: Env): TeamsRepo {
+  const d = db(env);
+  return {
+    async listActive() {
+      return (await d.select<TeamRow>("api_teams", "select=*&active=is.true")).map(toTeam);
+    },
+    async listAll() {
+      return (await d.select<TeamRow>("api_teams", "select=*")).map(toTeam);
+    },
+    async setAutoSelectPlayers(teamId, playerIds) {
+      await d.rpc("set_team_people", { p_team: teamId, p_role: "auto_select", p_people: playerIds });
+    },
+  };
+}
+
+interface OfficeViewRow { id: string; office: Office; designation: string | null; status: string; member: string | null }
+
+export function supabaseOfficers(env: Env): OfficersRepo {
+  const d = db(env);
+  const rowsFor = async (offices: readonly Office[], activeOnly: boolean) => {
+    const rows = await d.select<OfficeViewRow>(
+      "api_offices",
+      `select=*&office=${inList(offices)}${activeOnly ? "&status=eq.Active" : ""}&order=id`,
+    );
+    // In the order the offices were asked for, as the Airtable repository returns them.
+    return offices.flatMap((office) => rows.filter((r) => r.office === office));
+  };
+  return {
+    async listActive(offices) {
+      return (await rowsFor(offices, true)).map((r) => ({
+        office: r.office,
+        designation: r.designation ?? "",
+        memberIds: r.member ? [r.member] : [],
+      }));
+    },
+    async listAllMembers(offices) {
+      return (await rowsFor(offices, false)).map((r) => ({ id: r.id, office: r.office, memberIds: r.member ? [r.member] : [] }));
+    },
+  };
+}
+
+/** Matches columns written directly; selections go through set_match_selection. */
+const MATCH_COLUMNS = { autoSelectEnabled: "auto_select_enabled", homeKit: "home_kit", awayKit: "away_kit" } as const;
+
+export function supabaseMatches(env: Env): MatchesRepo {
+  const d = db(env);
+  const list = async (query: string) => (await d.select<MatchRow>("api_matches", `select=*&${query}`)).map(toMatch);
+  return {
+    async getById(id) {
+      const row = await d.one<MatchRow>("api_matches", `select=*&id=${eq(id)}`);
+      return row ? toMatch(row) : null;
+    },
+
+    async update(id, patch: MatchPatch) {
+      const columns: Record<string, unknown> = {};
+      for (const [key, column] of Object.entries(MATCH_COLUMNS)) {
+        const value = patch[key as keyof typeof MATCH_COLUMNS];
+        // A blank kit is "not decided", stored as null (the column allows only Blue or White).
+        if (value !== undefined) columns[column] = value === "" ? null : value;
+      }
+      if (Object.keys(columns).length) {
+        const rows = await d.update("matches", `api_id=${eq(id)}`, columns);
+        if (rows.length === 0) throw new Error(`No match ${id}`);
+      }
+      if (patch.selectedPlayersHome) await d.rpc("set_match_selection", { p_match: id, p_side: "home", p_people: patch.selectedPlayersHome });
+      if (patch.selectedPlayersAway) await d.rpc("set_match_selection", { p_match: id, p_side: "away", p_people: patch.selectedPlayersAway });
+    },
+
+    listForSeason: (season) => list(season ? `season=${eq(season)}` : "order=id"),
+    listScheduled: () => list("match_status=eq.Scheduled"),
+    async listPlayedForSeasons(seasons) {
+      if (seasons.length === 0) return [];
+      return list(`match_status=eq.Played&season=${inList(seasons)}`);
+    },
+  };
+}
+
+export function supabaseMatchCards(env: Env): MatchCardsRepo {
+  const d = db(env);
+  return {
+    async listForSeason(season, opts = {}) {
+      const filters = [season ? `season=${eq(season)}` : "", opts.cardedOnly ? "cards=neq.{}" : ""].filter(Boolean).join("&");
+      return (await d.select<MatchCardRow>("api_match_cards", `select=*${filters ? `&${filters}` : ""}`)).map(toMatchCard);
+    },
+  };
+}
+
+export function supabaseAvailabilityExceptions(env: Env): AvailabilityExceptionsRepo {
+  const d = db(env);
+  return {
+    async listForSeasons(seasons) {
+      if (seasons.length === 0) return [];
+      return (await d.select<ExceptionRow>("api_availability_exceptions", `select=*&season=${inList(seasons)}`)).map(toException);
+    },
+    async apply({ deleteIds, updates, creates }) {
+      const w = (x: { matchId: string; playerId: string; status: string; notes?: string; updatedById: string }) => ({
+        match: x.matchId, player: x.playerId, status: x.status, notes: x.notes ?? "", updatedBy: x.updatedById,
+      });
+      // One transaction: the player's answers never end up half-changed.
+      const createdIds = await d.rpc<string[]>("apply_availability_changes", {
+        p: { delete: deleteIds, update: updates.map(({ id, write }) => ({ id, ...w(write) })), create: creates.map(w) },
+      });
+      return { createdIds: createdIds ?? [] };
+    },
+  };
+}
+
+export function supabaseAvailabilityRules(env: Env): AvailabilityRulesRepo {
+  const d = db(env);
+  return {
+    async listAll() {
+      return (await d.select<RuleRow>("api_availability_rules", "select=*")).map(toRule);
+    },
+    async create(rule) {
+      const id = await d.rpc<string>("create_availability_rule", { p: rule });
+      const row = await d.one<RuleRow>("api_availability_rules", `select=*&id=${eq(id)}`);
+      if (!row) throw new Error("The new rule could not be read back");
+      return toRule(row);
+    },
+    async delete(id) {
+      await d.remove("availability_rules", `api_id=${eq(id)}`);
+    },
+  };
+}
+
+export function supabaseAbilityGroups(env: Env): AbilityGroupsRepo {
+  const d = db(env);
+  return {
+    async list() {
+      return (await d.select<AbilityGroupRow>("ability_group_config", "select=api_id,group_name,capacity,is_residual")).map(toAbilityGroup);
+    },
+    async saveCapacities(capacities) {
+      // A group without a row is created (not residual); an existing row keeps its residual flag.
+      await d.upsert(
+        "ability_group_config",
+        Object.entries(capacities).map(([group_name, capacity]) => ({ group_name, capacity })),
+        "group_name",
+      );
+    },
+  };
+}
+
+interface RankingEventViewRow {
+  id: string; player: string | null; actor: string | null; actor_email: string | null; kind: string;
+  old_rank: number | null; new_rank: number | null; justification: string | null; occurred_at: string | null;
+}
+
+export function supabaseRankingEvents(env: Env): RankingEventsRepo {
+  const d = db(env);
+  return {
+    async create(events) {
+      if (events.length === 0) return;
+      await d.rpc("insert_ranking_events", { p: events });
+    },
+    async listNewestFirst() {
+      const rows = await d.select<RankingEventViewRow>("api_ranking_events", "select=*&order=occurred_at.desc");
+      return rows.map((r): RankingEventRow => ({
+        id: r.id,
+        playerId: r.player ?? "",
+        actorId: r.actor ?? undefined,
+        actorEmail: r.actor_email ?? "",
+        kind: r.kind || "move",
+        oldRank: r.old_rank,
+        newRank: r.new_rank,
+        justification: r.justification ?? "",
+        timestamp: r.occurred_at ?? "",
+      }));
+    },
+  };
+}

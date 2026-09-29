@@ -1,6 +1,7 @@
 import { airtableFindAll, airtableUpdate } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseTeams } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { TEAMS_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapTeam } from "../../../shared/mappers/teamMapper";
@@ -31,5 +32,5 @@ function airtableTeams(env: Env): TeamsRepo {
 }
 
 export function teams(env: Env): TeamsRepo {
-  return pick(env, "teams", airtableTeams);
+  return pick(env, "teams", airtableTeams, supabaseTeams);
 }

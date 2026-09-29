@@ -1,5 +1,8 @@
 import { AirtableError, airtableList } from "./airtable";
 import { getCached } from "./cache";
+import { handleFileRequest } from "./files";
+import { db } from "./data/supabase";
+import { shadowSummary } from "./data/shadow";
 import { TABLES } from "../../shared/schema/tableNames";
 import type { Env } from "./env";
 import {
@@ -167,10 +170,34 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           },
           60 * 1000,
         );
-        return json({ status: "ok", airtable, timestamp: new Date().toISOString() }, 200, origin);
+        // The Supabase data project, once one is configured - same rules: ok or error, nothing more.
+        const supabase = env.DATA_SUPABASE_URL
+          ? (
+              await getCached<"ok" | "error">(
+                "health:supabase",
+                async () => {
+                  try {
+                    await db(env).select("api_teams", "select=id&limit=1");
+                    return "ok";
+                  } catch (err) {
+                    console.error("Health check: Supabase unreachable:", err instanceof Error ? err.message : err);
+                    return "error";
+                  }
+                },
+                60 * 1000,
+              )
+            ).data
+          : undefined;
+        // Preview only: this isolate's shadow-read comparison counts (no values, no ids).
+        const shadow = env.DATA_SHADOW_READ === "on" ? shadowSummary() : undefined;
+        return json({ status: "ok", airtable, ...(supabase ? { supabase } : {}), ...(shadow ? { shadow } : {}), timestamp: new Date().toISOString() }, 200, origin);
       }
       return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
     }
+
+    // ── Stored files (signed link, no session - see files.ts) ─────────────
+    const fileMatch = pathname.match(/^\/api\/files\/([0-9a-f-]{36})$/);
+    if (method === "GET" && fileMatch) return await handleFileRequest(env, fileMatch[1], url);
 
     // ── Match / Squad (Read - Authenticated) ───────────────────────────────
     // The squad list is player-facing: PlayerAvailabilitySheet shows a player

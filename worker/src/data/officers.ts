@@ -1,6 +1,7 @@
 import { airtableFindAll } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseOfficers } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { OFFICER_FIELDS } from "../../../shared/schema/fieldMaps";
 
@@ -82,5 +83,5 @@ function airtableOfficers(env: Env): OfficersRepo {
 }
 
 export function officers(env: Env): OfficersRepo {
-  return pick(env, "officers", airtableOfficers);
+  return pick(env, "officers", airtableOfficers, supabaseOfficers);
 }

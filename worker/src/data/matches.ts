@@ -1,6 +1,7 @@
 import { airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseMatches } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { MATCHES_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapMatch } from "../../../shared/mappers/matchMapper";
@@ -69,5 +70,5 @@ function airtableMatches(env: Env): MatchesRepo {
 }
 
 export function matches(env: Env): MatchesRepo {
-  return pick(env, "matches", airtableMatches);
+  return pick(env, "matches", airtableMatches, supabaseMatches);
 }

@@ -1,6 +1,7 @@
 import { airtableCreate, airtableDelete, airtableFindAll } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseAvailabilityRules } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { AVAILABILITYRULES_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapAvailabilityRule } from "../../../shared/mappers/availabilityRuleMapper";
@@ -50,5 +51,5 @@ function airtableAvailabilityRules(env: Env): AvailabilityRulesRepo {
 }
 
 export function availabilityRules(env: Env): AvailabilityRulesRepo {
-  return pick(env, "availabilityRules", airtableAvailabilityRules);
+  return pick(env, "availabilityRules", airtableAvailabilityRules, supabaseAvailabilityRules);
 }

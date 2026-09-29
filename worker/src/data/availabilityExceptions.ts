@@ -7,6 +7,7 @@ import {
 } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseAvailabilityExceptions } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { AVAILABILITYEXCEPTIONS_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapAvailability } from "../../../shared/mappers/availabilityMapper";
@@ -81,5 +82,5 @@ function airtableAvailabilityExceptions(env: Env): AvailabilityExceptionsRepo {
 }
 
 export function availabilityExceptions(env: Env): AvailabilityExceptionsRepo {
-  return pick(env, "availabilityExceptions", airtableAvailabilityExceptions);
+  return pick(env, "availabilityExceptions", airtableAvailabilityExceptions, supabaseAvailabilityExceptions);
 }
