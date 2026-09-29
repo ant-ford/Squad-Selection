@@ -58,6 +58,11 @@ DATA_BACKEND = "airtable"
 DATA_BACKEND_OVERRIDES = ""
 # This Worker's public origin, for the links it hands out (signed file links).
 API_ORIGIN = "https://api.eddy.global"
+# Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
+# the RESEND_API_KEY secret, installed by the CI deploy.
+MAIL_FROM = "Eddy <notifications@eddy.global>"
+APP_ORIGIN = "https://app.eddy.global"
+REVIEW_EMAIL_CC = ""
 
 # Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
 # does not lapse over a quiet fortnight. Harmless when no webhook is set up.
@@ -116,6 +121,11 @@ DATA_SUPABASE_URL = "https://zlqzpzmqjqnrppmtevbv.supabase.co"
 # (src/data/shadow.ts); counts show on /health?deep=1.
 DATA_SHADOW_READ = "on"
 API_ORIGIN = "https://hkfc-api-preview.ant-ford.workers.dev"
+# Preview never emails anyone real: everything goes to the captain, [PREVIEW].
+MAIL_FROM = "Eddy <notifications@eddy.global>"
+MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
+APP_ORIGIN = "http://localhost:5173"
+REVIEW_EMAIL_CC = ""
 
 [env.preview.triggers]
 crons = []

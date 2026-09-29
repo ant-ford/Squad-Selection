@@ -85,6 +85,18 @@ jobs:
           fi
           printf '%s' "$DATA_SUPABASE_SECRET_KEY" | npx wrangler secret put DATA_SUPABASE_SECRET_KEY --config worker/wrangler.toml --env preview
 
+      # Resend, for email. Preview redirects every message to the captain.
+      - name: Set Resend key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "::warning::RESEND_API_KEY is not in the preview environment; email will not send."
+            exit 0
+          fi
+          printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY --config worker/wrangler.toml --env preview
+
       # A CORS preflight needs no sign-in and proves the two things the
       # local frontend depends on: the Worker answers, and it accepts
       # http://localhost:5173. Retried briefly while the deploy propagates.

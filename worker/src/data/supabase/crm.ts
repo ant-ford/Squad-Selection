@@ -17,6 +17,7 @@ import type { MembershipEventsRepo } from "../membershipEvents";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../../../shared/schema/fieldMaps";
 import { REVIEWS_FROM } from "../../../../shared/statementStages";
 import { fileLink } from "./files";
+import { startReview } from "../../reviewEmails";
 
 /** Attachment columns, turned into signed links on the way out. */
 const ATTACHMENTS = new Set(["photo", "applicationForm", "playerStatement"]);
@@ -100,10 +101,12 @@ export function supabaseCommitments(env: Env): CommitmentsRepo {
       );
     },
     getNotifyState: (id) => selectOne(env, "api_commitments_crm", NOTIFY_FIELDS, id),
-    async setNotifyNow() {
+    async setNotifyNow(id) {
       // On Supabase "Notify Now" is Eddy sending the review email itself - the
-      // job the Airtable automation did - which arrives with the mailer.
-      throw new HttpError("Sending review emails from Eddy is not switched on yet.", 501, "NOT_YET_AVAILABLE");
+      // job the Airtable automation did when the box was ticked.
+      if (!(await startReview(env, id))) {
+        throw new HttpError("This review has already been started.", 409, "ALREADY_STARTED");
+      }
     },
     listReviewsAtStages(stages) {
       if (stages.length === 0) return Promise.resolve([]);

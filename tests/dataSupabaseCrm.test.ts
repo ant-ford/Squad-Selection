@@ -64,11 +64,6 @@ describe("officer-section reads on Supabase", () => {
     expect(calls[0].url.searchParams.get("periodStart")).toMatch(/^lt\.\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("refuses Notify Now until Eddy sends review emails itself", async () => {
-    postgrest(() => []);
-    await expect(commitments(env).setNotifyNow("recC")).rejects.toMatchObject({ status: 501, code: "NOT_YET_AVAILABLE" });
-  });
-
   it("records a membership action in the activity log with field names only", async () => {
     const calls = postgrest(() => null);
     await membershipEvents(env).record({

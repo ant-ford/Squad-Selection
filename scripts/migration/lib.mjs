@@ -137,6 +137,9 @@ export async function snapshot(at, tables, { useCache = false, log = console.log
 export async function connect(url) {
   const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
   await client.connect();
+  // The database automations (status on acceptance, card linking, commitment
+  // periods) stand aside for this session: the import copies Airtable exactly.
+  await client.query("set eddy.importing = 'on'");
   return client;
 }
 
