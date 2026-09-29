@@ -19,6 +19,7 @@ import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
 import { compareSelected, sortSquadList } from '@/lib/squadSort';
 import { POS_SHORT, initials, shortTeam } from '@/lib/format';
+import { coachDashboardPath } from '@/lib/scrollMemory';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
@@ -39,6 +40,10 @@ export default function SquadSelection() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const side = (searchParams.get("side") as "home" | "away") || undefined;
+
+  // Opened from far down the fixture list, the window would otherwise keep
+  // that offset and land mid-squad.
+  useEffect(() => { window.scrollTo(0, 0); }, [matchId]);
 
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
@@ -545,7 +550,7 @@ export default function SquadSelection() {
   return (
     <div className="pb-24">
       <div className="container mx-auto px-4">
-        <button onClick={() => navigate('/coach')} className="flex items-center gap-1 py-3 text-sm text-muted-foreground">
+        <button onClick={() => navigate(coachDashboardPath())} className="flex items-center gap-1 py-3 text-sm text-muted-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to Fixtures
         </button>
       </div>

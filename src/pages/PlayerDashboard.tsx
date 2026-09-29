@@ -21,6 +21,7 @@ import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
 import HelpLink from '@/components/HelpLink';
+import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -184,6 +185,10 @@ export default function PlayerDashboard() {
     return counts;
   }, [data]);
 
+  // Back from a player's full stats (or the coach screens) lands where the
+  // player left off rather than at the top.
+  useScrollMemory('player-dashboard', !loading && !!data);
+
   // AuthGate already guarantees a signed-in user before this route renders.
   if (loading || !data) return <DashboardSkeleton />;
 
@@ -220,7 +225,7 @@ export default function PlayerDashboard() {
           </button>
         )}
         {(data.isCoach || data.isSectionCaptain) && (
-          <button onClick={() => navigate('/coach')} className={headerNavClass()}>
+          <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
             <Shield className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Coach View</span>
           </button>

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { useUpcomingFixtures } from '@/lib/queries';
 import { safeFormat, isPastFixture } from '@/lib/dateUtils';
@@ -9,6 +9,7 @@ import type { ProfileData } from '@/api/getMyProfile';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 import { CoachCalendarExport } from '@/components/CoachCalendarExport';
 import { detectSameDayConflicts, type SameDayConflict } from '@/lib/readiness';
+import { rememberCoachDashboardSearch, useScrollMemory } from '@/lib/scrollMemory';
 
 export default function FixtureList() {
   const { profile } = useOutletContext<{ profile: ProfileData }>();
@@ -41,6 +42,16 @@ export default function FixtureList() {
   // a played match leaves the "Scheduled" status the API otherwise reads, so
   // filtering client-side could never have revealed last weekend's games.
   const { data, isLoading } = useUpcomingFixtures(undefined, showPast);
+
+  // Coming back from a match keeps the tab and the scroll position, so a
+  // coach working down the HKFC B list picks up at the fixture they left.
+  useEffect(() => {
+    const kept = new URLSearchParams();
+    if (activeTab !== 'all') kept.set('team', activeTab);
+    if (showPast) kept.set('past', '1');
+    rememberCoachDashboardSearch(kept.toString());
+  }, [activeTab, showPast]);
+  useScrollMemory(`coach-dashboard:${activeTab}:${showPast ? 'past' : 'upcoming'}`, !isLoading);
   const allFixtures = data?.fixtures || [];
   const sameDayConflicts = useMemo(() => detectSameDayConflicts(allFixtures), [allFixtures]);
   const conflictsByFixture = useMemo(() => {
