@@ -3,21 +3,21 @@
  * commitment review (a Commitments row) by Review Progress, and the one
  * write it makes, asking for the review email early.
  *
- * Reads pass COMMITMENT_FIELDS explicitly: the AI, combined-context and
- * signature fields on Commitments are never requested. Photos and mobiles
+ * Reads go through data/commitments.ts, which passes COMMITMENT_FIELDS
+ * explicitly: the AI, combined-context and signature fields on Commitments
+ * are never requested. Photos and mobiles
  * come from the linked People records (contacts.ts), read by id.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
-import { AirtableError, airtableFindAll, airtableUpdate } from "./airtable";
 import { getShared } from "./cache";
 import { HttpError } from "./http";
 import { invalidateForTables } from "./airtableWebhook";
 import { STATEMENT_RECORDS_KEY } from "./reference";
-import { MEMBERSHIP_EVENTS_FIELDS as EV, daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
+import { daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
 import { firstLink, getOfficeHolders, getPeopleByIds, type Contact } from "./contacts";
+import { commitments, type StatementRow } from "./data/commitments";
 import { TABLES } from "../../shared/schema/tableNames";
-import { COMMITMENT_FIELDS as F } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   AUTO_NOTICE_DAYS,
@@ -138,67 +138,66 @@ export function inAutoWindow(periodEnd: string | undefined, today: string): bool
  * When the row reached its stage: the Review Progress Updated At field if
  * the base has it, otherwise the submission that moved it there.
  */
-function stageSinceOf(f: Record<string, unknown>, stage: string): string | undefined {
-  const stamped = day(f[F.reviewUpdatedAt]);
+function stageSinceOf(row: StatementRow, stage: string): string | undefined {
+  const stamped = day(row.reviewUpdatedAt);
   if (stamped) return stamped;
-  if (stage === MEMBER_SUBMITTED) return day(f[F.memberSubmittedAt]);
-  if (stage === SPONSOR_SUBMITTED) return day(f[F.sponsorSubmittedAt]);
-  if (stage === COMPLETE) return day(f[F.officerSubmittedAt]);
+  if (stage === MEMBER_SUBMITTED) return day(row.memberSubmittedAt);
+  if (stage === SPONSOR_SUBMITTED) return day(row.sponsorSubmittedAt);
+  if (stage === COMPLETE) return day(row.officerSubmittedAt);
   return undefined;
 }
 
-export function toStatementCard(record: any, today: string): StatementCard {
-  const f = record.fields ?? {};
-  const stage = text(f[F.reviewProgress]) ?? "";
-  const personId = list(f[F.people])[0];
-  const periodEnd = dateOnly(f[F.periodEnd]);
-  const stageSince = stageSinceOf(f, stage);
-  const notifyRequested = stage === NOT_STARTED && f[F.notifyNow] === true;
+export function toStatementCard(row: StatementRow, today: string): StatementCard {
+  const stage = text(row.reviewProgress) ?? "";
+  const personId = list(row.people)[0];
+  const periodEnd = dateOnly(row.periodEnd);
+  const stageSince = stageSinceOf(row, stage);
+  const notifyRequested = stage === NOT_STARTED && row.notifyNow === true;
   const windowOpen = stage === NOT_STARTED && inAutoWindow(periodEnd, today);
   return {
-    id: record.id,
+    id: row.id,
     personId,
-    name: firstText(f[F.fullName]) ?? firstText(f[F.preferredName]) ?? "No member linked",
-    membershipNo: firstText(f[F.membershipNo]),
-    yearNo: num(f[F.yearNo]),
-    period: text(f[F.period]),
-    periodStart: dateOnly(f[F.periodStart]),
+    name: firstText(row.fullName) ?? firstText(row.preferredName) ?? "No member linked",
+    membershipNo: firstText(row.membershipNo),
+    yearNo: num(row.yearNo),
+    period: text(row.period),
+    periodStart: dateOnly(row.periodStart),
     periodEnd,
-    joinDate: dateOnly(f[F.joinDate]),
-    commitmentEndDate: dateOnly(f[F.commitmentEndDate]),
+    joinDate: dateOnly(row.joinDate),
+    commitmentEndDate: dateOnly(row.commitmentEndDate),
     stage,
     column: reviewColumnFor(stage),
-    team: firstText(f[F.selectedTeamEos]) ?? firstText(f[F.selectedTeamSos]),
-    sponsor: firstText(f[F.sponsorName]),
-    waitingOn: reviewWaitingOn(stage, firstText(f[F.sponsorName])),
+    team: firstText(row.selectedTeamEos) ?? firstText(row.selectedTeamSos),
+    sponsor: firstText(row.sponsorName),
+    waitingOn: reviewWaitingOn(stage, firstText(row.sponsorName)),
     stageSince,
     days: stageSince ? daysBetween(stageSince, today) : null,
     autoNoticeOn: periodEnd ? addDays(periodEnd, -AUTO_NOTICE_DAYS) : undefined,
     inAutoWindow: windowOpen,
     notifyRequested,
     canNotify: stage === NOT_STARTED && !!personId && !notifyRequested && !windowOpen,
-    matchesPlayed: num(f[F.matchesPlayed]),
-    matchesAvailable: num(f[F.matchesAvailable]),
-    matchesNotAvailable: num(f[F.matchesNotAvailable]),
-    matchesTeamPlayed: num(f[F.matchesTeamPlayed]),
-    teamsPlayed: list(f[F.teamsPlayed]),
-    practices: text(f[F.practices]),
-    socialFunctions: list(f[F.socialFunctions]),
-    gamesUmpired: text(f[F.gamesUmpired]),
-    qualifiedUmpire: firstText(f[F.qualifiedUmpire]),
-    otherContributions: text(f[F.otherContributions]),
-    lowParticipationReason: text(f[F.lowParticipationReason]),
-    sectionServiceMember: text(f[F.sectionServiceMember]),
-    hkfcServiceMember: text(f[F.hkfcServiceMember]),
-    sectionServiceSponsor: text(f[F.sectionServiceSponsor]),
-    hkfcServiceSponsor: text(f[F.hkfcServiceSponsor]),
-    sponsorRecommendation: text(f[F.sponsorRecommendation]),
-    recommendedReduction: text(f[F.recommendedReduction]),
-    memberSubmittedOn: day(f[F.memberSubmittedAt]),
-    sponsorSubmittedOn: day(f[F.sponsorSubmittedAt]),
-    officerSubmittedOn: day(f[F.officerSubmittedAt]),
-    playerStatement: attachments(f[F.playerStatement]),
-    officerFormUrl: text(f[F.officerFormUrl]),
+    matchesPlayed: num(row.matchesPlayed),
+    matchesAvailable: num(row.matchesAvailable),
+    matchesNotAvailable: num(row.matchesNotAvailable),
+    matchesTeamPlayed: num(row.matchesTeamPlayed),
+    teamsPlayed: list(row.teamsPlayed),
+    practices: text(row.practices),
+    socialFunctions: list(row.socialFunctions),
+    gamesUmpired: text(row.gamesUmpired),
+    qualifiedUmpire: firstText(row.qualifiedUmpire),
+    otherContributions: text(row.otherContributions),
+    lowParticipationReason: text(row.lowParticipationReason),
+    sectionServiceMember: text(row.sectionServiceMember),
+    hkfcServiceMember: text(row.hkfcServiceMember),
+    sectionServiceSponsor: text(row.sectionServiceSponsor),
+    hkfcServiceSponsor: text(row.hkfcServiceSponsor),
+    sponsorRecommendation: text(row.sponsorRecommendation),
+    recommendedReduction: text(row.recommendedReduction),
+    memberSubmittedOn: day(row.memberSubmittedAt),
+    sponsorSubmittedOn: day(row.sponsorSubmittedAt),
+    officerSubmittedOn: day(row.officerSubmittedAt),
+    playerStatement: attachments(row.playerStatement),
+    officerFormUrl: text(row.officerFormUrl),
   };
 }
 
@@ -222,13 +221,13 @@ export function statementBelongsOnBoard(card: StatementCard, today: string): boo
 /** The member's photo and mobile, and the sponsor while the review waits on them. */
 function withContacts(
   card: StatementCard,
-  record: any,
+  row: StatementRow,
   people: Record<string, Contact>,
   sponsorHolders: Record<string, string>,
 ): StatementCard {
   const member = card.personId ? people[card.personId] : undefined;
   const sponsor =
-    card.stage === MEMBER_SUBMITTED ? people[sponsorHolders[firstLink(record.fields?.[F.sponsorLink]) ?? ""] ?? ""] : undefined;
+    card.stage === MEMBER_SUBMITTED ? people[sponsorHolders[firstLink(row.sponsorLink) ?? ""] ?? ""] : undefined;
   return {
     ...card,
     photo: member?.photo,
@@ -238,7 +237,7 @@ function withContacts(
 }
 
 interface StatementRecords {
-  records: any[];
+  rows: StatementRow[];
   /** The linked members, and the sponsors of reviews waiting on one. */
   people: Record<string, Contact>;
   /** Sponsors row id -> the People record holding it. */
@@ -250,34 +249,27 @@ async function getStatementRecords(env: Env): Promise<StatementRecords> {
     env,
     STATEMENT_RECORDS_KEY,
     async () => {
-      const records = await airtableFindAll(
-          env,
-          TABLES.commitment,
-          // Narrows the scan to started periods that end on or after
-          // REVIEWS_FROM (a day's slack either side for Airtable's UTC dates);
-          // statementBelongsOnBoard is the rule.
-          `AND({${F.periodStart}}!="", IS_BEFORE({${F.periodStart}}, DATEADD(TODAY(), 2, "days")), IS_AFTER({${F.periodEnd}}, DATETIME_PARSE("${addDays(REVIEWS_FROM, -2)}", "YYYY-MM-DD")))`,
-          undefined,
-          Object.values(F),
-        );
-      const waitingOnSponsor = records.filter(
-        (r) => text(r.fields?.[F.reviewProgress]) === MEMBER_SUBMITTED && firstLink(r.fields?.[F.sponsorLink]),
+      // Started periods ending on or after REVIEWS_FROM, give or take a
+      // day; statementBelongsOnBoard is the rule.
+      const rows = await commitments(env).listReviewBoard();
+      const waitingOnSponsor = rows.filter(
+        (r) => text(r.reviewProgress) === MEMBER_SUBMITTED && firstLink(r.sponsorLink),
       );
       const sponsorHolders = waitingOnSponsor.length ? await getOfficeHolders(env) : {};
       const people = await getPeopleByIds(env, [
-        ...records.map((r) => firstLink(r.fields?.[F.people])).filter((id): id is string => !!id),
-        ...waitingOnSponsor.map((r) => sponsorHolders[firstLink(r.fields?.[F.sponsorLink])!]).filter(Boolean),
+        ...rows.map((r) => firstLink(r.people)).filter((id): id is string => !!id),
+        ...waitingOnSponsor.map((r) => sponsorHolders[firstLink(r.sponsorLink)!]).filter(Boolean),
       ]);
-      return { records, people, sponsorHolders };
+      return { rows, people, sponsorHolders };
     },
     RECORDS_TTL_MS,
   );
 }
 
 export async function getStatementBoard(env: Env): Promise<StatementBoard> {
-  const { records, people, sponsorHolders } = await getStatementRecords(env);
+  const { rows, people, sponsorHolders } = await getStatementRecords(env);
   const today = hkDateKey(new Date().toISOString());
-  const candidates = records
+  const candidates = rows
     .map((r) => withContacts(toStatementCard(r, today), r, people, sponsorHolders))
     // A resigned member's review is not chased.
     .filter((c) => statementBelongsOnBoard(c, today) && !(c.personId && people[c.personId]?.status === "Resigned"));
@@ -294,7 +286,7 @@ export async function getStatementBoard(env: Env): Promise<StatementBoard> {
     columns: REVIEW_STAGES,
     cards,
     unlinked: candidates.length - cards.length,
-    hasStageDates: records.some((r) => text(r.fields?.[F.reviewUpdatedAt]) !== undefined),
+    hasStageDates: rows.some((r) => text(r.reviewUpdatedAt) !== undefined),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -315,19 +307,10 @@ export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commit
   if (!/^rec[A-Za-z0-9]{14}$/.test(id)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
 
   // Fresh, not from the board cache: the automation may have run meanwhile.
-  const found = await airtableFindAll(env, TABLES.commitment, `RECORD_ID()="${id}"`, undefined, [
-    F.reviewProgress,
-    F.notifyNow,
-    F.people,
-    F.periodEnd,
-    F.period,
-    F.yearNo,
-  ]);
-  const record = found.find((r) => r.id === id);
-  if (!record) throw new HttpError("Commitment review not found.", 404, "NOT_FOUND");
-  const f = record.fields ?? {};
-  const stage = text(f[F.reviewProgress]) ?? "";
-  const personId = list(f[F.people])[0];
+  const row = await commitments(env).getNotifyState(id);
+  if (!row) throw new HttpError("Commitment review not found.", 404, "NOT_FOUND");
+  const stage = text(row.reviewProgress) ?? "";
+  const personId = list(row.people)[0];
   const today = hkDateKey(new Date().toISOString());
 
   if (stage !== NOT_STARTED) {
@@ -336,10 +319,10 @@ export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commit
   if (!personId) {
     throw new HttpError("This row has no member linked, so there is no one to email. Fix the People link in Airtable.", 409, "NOT_LINKED");
   }
-  if (f[F.notifyNow] === true) {
+  if (row.notifyNow === true) {
     throw new HttpError("The email has already been requested; Airtable will send it shortly.", 409, "ALREADY_REQUESTED");
   }
-  if (inAutoWindow(dateOnly(f[F.periodEnd]), today)) {
+  if (inAutoWindow(dateOnly(row.periodEnd), today)) {
     throw new HttpError(
       `The period ends within ${AUTO_NOTICE_DAYS} days, so the automation should already have sent this email. Check its run history in Airtable.`,
       409,
@@ -347,25 +330,15 @@ export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commit
     );
   }
 
-  try {
-    await airtableUpdate(env, TABLES.commitment, id, { [F.notifyNow]: true });
-  } catch (err) {
-    if (err instanceof AirtableError && err.message.includes("UNKNOWN_FIELD_NAME")) {
-      throw new HttpError(
-        `Commitments has no "${F.notifyNow}" checkbox yet. Add it in Airtable, then try again.`,
-        409,
-        "SETUP_REQUIRED",
-      );
-    }
-    throw err;
-  }
+  // Refuses with SETUP_REQUIRED while the base has no Notify Now checkbox.
+  await commitments(env).setNotifyNow(id);
 
-  const year = num(f[F.yearNo]);
-  const period = text(f[F.period]);
+  const year = num(row.yearNo);
+  const period = text(row.period);
   await recordMembershipEvent(env, actor, {
-    [EV.eventType]: "Notified",
-    [EV.person]: [personId],
-    [EV.notes]: `Commitment review email requested early${year ? ` for Year ${year}` : ""}${period ? ` (${period})` : ""}.`,
+    eventType: "Notified",
+    personId,
+    notes: `Commitment review email requested early${year ? ` for Year ${year}` : ""}${period ? ` (${period})` : ""}.`,
   });
 
   await invalidateForTables(env, [TABLES.commitment]);

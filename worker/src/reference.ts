@@ -135,15 +135,19 @@ export const OFFICER_LINKS_KEY = "officer-links";
 /**
  * The applicant records behind the membership board and Insights
  * (membership.ts). Declared here rather than there so airtableWebhook.ts can
- * name it without a circular import.
+ * name it without a circular import. v2: holds rows keyed by the field map's
+ * keys (data/rows.ts), not raw Airtable records.
  */
-export const MEMBERSHIP_RECORDS_KEY = "membership-records";
+export const MEMBERSHIP_RECORDS_KEY = "membership-records:v2";
 
 /** The chairman's email-list directory (chairman.ts); declared here for the same reason. */
 export const CHAIRMAN_DIRECTORY_KEY = "chairman-directory";
 
-/** The Commitments rows behind the Statements board (statements.ts); declared here for the same reason. */
-export const STATEMENT_RECORDS_KEY = "statement-records";
+/**
+ * The Commitments rows behind the Statements board (statements.ts); declared
+ * here for the same reason. v2: rows, not raw Airtable records.
+ */
+export const STATEMENT_RECORDS_KEY = "statement-records:v2";
 
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";

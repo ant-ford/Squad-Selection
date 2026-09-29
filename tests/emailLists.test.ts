@@ -112,17 +112,17 @@ describe("which address a person is written to", () => {
   it("uses an adult's own Email and nothing else", () => {
     expect(
       resolveEmails({
-        Age: 34,
-        Email: "me@home.com",
-        "Office Email Address": "me@work.com",
-        "Correspondence Preferred Channel": ["Office Email"],
-        "Guardian/Parent Email": "mum@home.com",
+        age: 34,
+        email: "me@home.com",
+        officeEmail: "me@work.com",
+        preferredChannel: ["Office Email"],
+        guardianEmail: "mum@home.com",
       }),
     ).toEqual({ emails: ["me@home.com"], emailSource: "own", under18: false });
   });
 
   it("copies in the guardian for an under-18", () => {
-    expect(resolveEmails({ Age: 15, Email: "kid@home.com", "Guardian/Parent Email": "mum@home.com" })).toEqual({
+    expect(resolveEmails({ age: 15, email: "kid@home.com", guardianEmail: "mum@home.com" })).toEqual({
       emails: ["kid@home.com", "mum@home.com"],
       emailSource: "own-and-guardian",
       under18: true,
@@ -130,13 +130,13 @@ describe("which address a person is written to", () => {
   });
 
   it("treats 18 as an adult", () => {
-    expect(resolveEmails({ Age: 18, Email: "me@home.com", "Guardian/Parent Email": "mum@home.com" }).emails).toEqual([
+    expect(resolveEmails({ age: 18, email: "me@home.com", guardianEmail: "mum@home.com" }).emails).toEqual([
       "me@home.com",
     ]);
   });
 
   it("writes to the guardian alone when an under-18 has no address of their own", () => {
-    expect(resolveEmails({ Age: 12, "Guardian/Parent Email": "mum@home.com" })).toEqual({
+    expect(resolveEmails({ age: 12, guardianEmail: "mum@home.com" })).toEqual({
       emails: ["mum@home.com"],
       emailSource: "guardian",
       under18: true,
@@ -144,7 +144,7 @@ describe("which address a person is written to", () => {
   });
 
   it("says when an under-18's guardian has no address, so the page can warn", () => {
-    expect(resolveEmails({ Age: 16, Email: "kid@home.com" })).toEqual({
+    expect(resolveEmails({ age: 16, email: "kid@home.com" })).toEqual({
       emails: ["kid@home.com"],
       emailSource: "own",
       under18: true,
@@ -152,13 +152,13 @@ describe("which address a person is written to", () => {
   });
 
   it("counts one address once when the guardian's is the junior's Email too", () => {
-    expect(resolveEmails({ Age: 10, Email: "Family@home.com", "Guardian/Parent Email": "family@home.com" }).emails).toEqual([
+    expect(resolveEmails({ age: 10, email: "Family@home.com", guardianEmail: "family@home.com" }).emails).toEqual([
       "Family@home.com",
     ]);
   });
 
   it("does not treat an unknown age as under 18, and ignores junk", () => {
-    expect(resolveEmails({ Email: "n/a", "Guardian/Parent Email": "mum@home.com" })).toEqual({
+    expect(resolveEmails({ email: "n/a", guardianEmail: "mum@home.com" })).toEqual({
       emails: [],
       emailSource: "none",
       under18: false,

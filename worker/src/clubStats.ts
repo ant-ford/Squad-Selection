@@ -21,11 +21,9 @@ import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 import { getShared } from "./cache";
 import { HttpError } from "./http";
 import { getAllMatches, getMatchCardsForSeason, currentSeason } from "./seasonContext";
-import { airtableFindAll } from "./airtable";
-import { TABLES } from "../../shared/schema/tableNames";
-import { MATCHCARDS_FIELDS, MATCHES_FIELDS } from "../../shared/schema/fieldMaps";
-import { mapMatch } from "../../shared/mappers/matchMapper";
-import { mapMatchCard } from "../../shared/mappers/matchCardMapper";
+import { people } from "./data/people";
+import { matches as matchesRepo } from "./data/matches";
+import { matchCards } from "./data/matchCards";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
 import { STATS_CURRENT_KEY } from "./reference";
@@ -293,25 +291,19 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
     env,
     "stats-player-names:v4",
     async () => {
-      const records = await airtableFindAll(env, TABLES.player, undefined, undefined, [
-        "Preferred Name",
-        "Given Name(s)",
-        "Surname",
-        // Only to tell a father from a son who share a name; not stored.
-        "Date of Birth",
-      ]);
+      // Date of Birth is read only to tell a father from a son who share a name; not stored.
+      const rows = await people(env).listNames();
       const names: Record<string, string> = {};
       const givenOf: Record<string, string> = {};
       const bornOn: Record<string, string> = {};
       const byFullName: Record<string, string> = {};
       const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-      for (const r of records) {
-        const f = r.fields ?? {};
-        const given = text(f["Given Name(s)"]);
-        const surname = text(f.Surname);
-        names[r.id] = [text(f["Preferred Name"]) || given, surname].filter(Boolean).join(" ") || "Unnamed";
+      for (const r of rows) {
+        const given = text(r.givenNames);
+        const surname = text(r.surname);
+        names[r.id] = [text(r.preferredName) || given, surname].filter(Boolean).join(" ") || "Unnamed";
         givenOf[r.id] = given;
-        const dob = text(f["Date of Birth"]);
+        const dob = text(r.dateOfBirth);
         if (/^\d{4}-\d{2}-\d{2}/.test(dob)) bornOn[r.id] = dob.slice(0, 10);
         if (!given || !surname) continue;
         const key = canonicalKey(`${given} ${surname}`);
@@ -337,12 +329,13 @@ async function seasonRows(env: Env, season: string): Promise<{ matches: Match[];
     const [matches, cards] = await Promise.all([getAllMatches(env, season), getMatchCardsForSeason(env, season)]);
     return { matches, cards };
   }
-  const bySeason = (field: string) => `{${field}}="${season}"`;
-  const [matchRecords, cardRecords] = await Promise.all([
-    airtableFindAll(env, TABLES.match, bySeason(MATCHES_FIELDS.season)),
-    airtableFindAll(env, TABLES.matchCard, bySeason(MATCHCARDS_FIELDS.season)),
+  // getStoredSummary has checked the season is "YYYY-YYYY", so it is never
+  // empty (which would mean every season) and has nothing to escape.
+  const [matches, cards] = await Promise.all([
+    matchesRepo(env).listForSeason(season),
+    matchCards(env).listForSeason(season),
   ]);
-  return { matches: matchRecords.map(mapMatch), cards: cardRecords.map(mapMatchCard) };
+  return { matches, cards };
 }
 
 async function buildFor(env: Env, season: string): Promise<StoredSummary> {
