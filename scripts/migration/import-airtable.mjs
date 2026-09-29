@@ -285,29 +285,37 @@ async function copyFiles() {
   if (!apply) return;
 
   const store = r2();
-  const existing = new Set((await db.query("select airtable_attachment_id from public.files where airtable_attachment_id is not null")).rows.map((r) => r.airtable_attachment_id));
+  // A row is one owner's use of an attachment; several rows can share one stored object.
+  const rowKey = (att, kind, p, fam, c) => [att, kind, p ?? "", fam ?? "", c ?? ""].join("|");
+  const stored = (await db.query("select airtable_attachment_id, kind, person_id, family_member_id, commitment_id, sha256, bytes from public.files where airtable_attachment_id is not null")).rows;
+  const existing = new Set(stored.map((r) => rowKey(r.airtable_attachment_id, r.kind, r.person_id, r.family_member_id, r.commitment_id)));
+  const objects = new Map(stored.map((r) => [r.airtable_attachment_id, { sha256: r.sha256, bytes: Number(r.bytes) }]));
   const famIds = new Map((await db.query("select id, person_id, relation, ordinal from public.family_members")).rows.map((r) => [`${r.person_id}|${r.relation}|${r.ordinal}`, r.id]));
 
   await pool(todo, 4, async ({ att, kind, owner }) => {
-    if (existing.has(att.id)) { report.files.alreadyThere++; return; }
+    const personUuid = owner.person ? maps["public.people"].get(owner.person) ?? null : null;
+    const family_member_id = owner.family ? famIds.get(`${personUuid}|${owner.family[0]}|${owner.family[1]}`) ?? null : null;
+    const person_id = family_member_id ? null : personUuid;
+    const commitment_id = owner.commitment ? maps["public.commitments"].get(owner.commitment) ?? null : null;
+    if (existing.has(rowKey(att.id, kind, person_id, family_member_id, commitment_id))) { report.files.alreadyThere++; return; }
     try {
-      const res = await fetch(att.url);
-      if (!res.ok) throw new Error(`download ${res.status}`);
-      const body = Buffer.from(await res.arrayBuffer());
-      if (typeof att.size === "number" && body.length !== att.size) throw new Error("size differs from Airtable's");
-      const sha256 = crypto.createHash("sha256").update(body).digest("hex");
       const key = importedFileKey(att.id);
-      await store.put(target.bucket, key, body, att.type || "application/octet-stream", sha256);
-
-      const person_id = owner.person ? maps["public.people"].get(owner.person) ?? null : null;
-      const family_member_id = owner.family ? famIds.get(`${person_id}|${owner.family[0]}|${owner.family[1]}`) ?? null : null;
-      const commitment_id = owner.commitment ? maps["public.commitments"].get(owner.commitment) ?? null : null;
+      let object = objects.get(att.id);
+      if (!object) {
+        const res = await fetch(att.url);
+        if (!res.ok) throw new Error(`download ${res.status}`);
+        const body = Buffer.from(await res.arrayBuffer());
+        if (typeof att.size === "number" && body.length !== att.size) throw new Error("size differs from Airtable's");
+        const sha256 = crypto.createHash("sha256").update(body).digest("hex");
+        await store.put(target.bucket, key, body, att.type || "application/octet-stream", sha256);
+        object = { sha256, bytes: body.length };
+        objects.set(att.id, object);
+      }
       await upsert(db, "public.files", [{
-        r2_key: key, kind,
-        person_id: family_member_id ? null : person_id, family_member_id, commitment_id,
-        filename: att.filename ?? null, content_type: att.type ?? null, bytes: body.length, sha256,
+        r2_key: key, kind, person_id, family_member_id, commitment_id,
+        filename: att.filename ?? null, content_type: att.type ?? null, bytes: object.bytes, sha256: object.sha256,
         airtable_attachment_id: att.id,
-      }], ["airtable_attachment_id"]);
+      }], ["airtable_attachment_id", "kind", "person_id", "family_member_id", "commitment_id"], { conflictWhere: "airtable_attachment_id is not null" });
       report.files.copied++;
     } catch (e) {
       report.files.failed.push({ attachment: att.id, kind, reason: String(e.message ?? e).slice(0, 120) });

@@ -166,7 +166,18 @@ try {
       const row = got.get(rec.id);
       if (!row) continue;
       for (const [col, field, conv] of checks) {
-        if (!same(row[col], conv(rec.fields?.[field]))) diff("formula", { view, record: rec.id, column: col });
+        const raw = rec.fields?.[field];
+        const want = conv(raw);
+        if (same(row[col], want)) continue;
+        if (raw && typeof raw === "object" && "error" in raw) {
+          // Airtable's own formula failed here (e.g. a 29 February anniversary); Eddy's view gives a value.
+          ok("airtable-formula-error", { view, record: rec.id, column: col });
+        } else if (typeof row[col] === "string" && typeof want === "string" && row[col] === want.replace(/\s+/g, " ")) {
+          // Airtable's formula kept stray spaces from the source text; the import trims them.
+          ok("formula-whitespace-from-source", { view, record: rec.id, column: col });
+        } else {
+          diff("formula", { view, record: rec.id, column: col });
+        }
       }
     }
   };
@@ -186,23 +197,40 @@ try {
   counts["archive.airtable_records"] = { airtable: total, supabase: archived.size };
 
   // ── 8. Files: every attachment carried over (or skipped by rule), same size, intact in R2.
-  const files = new Map((await rows("select * from public.files where airtable_attachment_id is not null")).map((r) => [r.airtable_attachment_id, r]));
-  const expectFile = (att, kind, skip) => {
+  const fileKey = (att, kind, p, fam, c) => [att, kind, p ?? "", fam ?? "", c ?? ""].join("|");
+  const fileRows = await rows("select * from public.files where airtable_attachment_id is not null");
+  const files = new Map(fileRows.map((r) => [fileKey(r.airtable_attachment_id, r.kind, r.person_id, r.family_member_id, r.commitment_id), r]));
+  const famId = new Map((await rows("select id, person_id, relation, ordinal from public.family_members")).map((r) => [`${r.person_id}|${r.relation}|${r.ordinal}`, r.id]));
+  let expectedFiles = 0;
+  const expectFile = (att, kind, skip, owner) => {
     if (skip) { ok("file-skipped-by-rule", { attachment: att.id, reason: skip }); return; }
-    const row = files.get(att.id);
+    expectedFiles++;
+    const row = files.get(fileKey(att.id, kind, owner.person, owner.family, owner.commitment));
     if (!row) diff("file-missing", { attachment: att.id, kind });
-    else if (typeof att.size === "number" && Number(row.bytes) !== att.size) diff("file-size", { attachment: att.id, kind });
+    else {
+      if (typeof att.size === "number" && Number(row.bytes) !== att.size) diff("file-size", { attachment: att.id, kind });
+      files.delete(fileKey(att.id, kind, owner.person, owner.family, owner.commitment));
+    }
   };
   for (const r of snap.People) {
     const f = r.fields ?? {};
-    for (const [field, kind] of Object.entries(PERSON_FILES)) for (const att of f[field] ?? []) expectFile(att, kind, fileSkipReason(kind, f));
-    for (const fam of familyRows(f)) for (const [field, kind] of Object.entries(FAMILY_FILES)) for (const att of f[`${fam.filesPrefix}${field}`] ?? []) expectFile(att, kind, null);
+    const person = uuid["public.people"].get(r.id);
+    for (const [field, kind] of Object.entries(PERSON_FILES)) for (const att of f[field] ?? []) expectFile(att, kind, fileSkipReason(kind, f), { person });
+    for (const fam of familyRows(f)) {
+      const family = famId.get(`${person}|${fam.relation}|${fam.ordinal}`);
+      for (const [field, kind] of Object.entries(FAMILY_FILES)) for (const att of f[`${fam.filesPrefix}${field}`] ?? []) expectFile(att, kind, null, { family });
+    }
   }
-  for (const r of snap.Commitments) for (const [field, kind] of Object.entries(COMMITMENT_FILES)) for (const att of r.fields?.[field] ?? []) expectFile(att, kind, null);
-  counts["public.files"] = { supabase: files.size };
+  for (const r of snap.Commitments) {
+    const commitment = uuid["public.commitments"].get(r.id);
+    for (const [field, kind] of Object.entries(COMMITMENT_FILES)) for (const att of r.fields?.[field] ?? []) expectFile(att, kind, null, { commitment });
+  }
+  for (const row of files.values()) diff("file-row-not-in-airtable", { attachment: row.airtable_attachment_id, kind: row.kind });
+  counts["public.files"] = { airtable: expectedFiles, supabase: fileRows.length };
 
   const store = r2();
-  const all = [...files.values()];
+  // One check per stored object (several rows can share one).
+  const all = [...new Map(fileRows.map((r) => [r.r2_key, r])).values()];
   const sample = args.files === "all" ? all : all.sort(() => Math.random() - 0.5).slice(0, 40);
   for (const row of sample) {
     try {

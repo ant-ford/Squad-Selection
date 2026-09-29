@@ -146,7 +146,7 @@ const ident = (s) => `"${String(s).replace(/"/g, '""')}"`;
  * Upserts rows in batches: INSERT ... ON CONFLICT (conflict) DO UPDATE SET
  * every other column. Returns the number of rows sent.
  */
-export async function upsert(db, table, rows, conflict, { batch = 200 } = {}) {
+export async function upsert(db, table, rows, conflict, { batch = 200, conflictWhere = "" } = {}) {
   if (rows.length === 0) return 0;
   const cols = Object.keys(rows[0]);
   const updates = cols.filter((c) => !conflict.includes(c));
@@ -161,7 +161,7 @@ export async function upsert(db, table, rows, conflict, { batch = 200 } = {}) {
       ? `do update set ${updates.map((c) => `${ident(c)} = excluded.${ident(c)}`).join(", ")}`
       : "do nothing";
     await db.query(
-      `insert into ${table} (${cols.map(ident).join(",")}) values ${tuples.join(",")} on conflict (${conflict.map(ident).join(",")}) ${set}`,
+      `insert into ${table} (${cols.map(ident).join(",")}) values ${tuples.join(",")} on conflict (${conflict.map(ident).join(",")})${conflictWhere ? ` where ${conflictWhere}` : ""} ${set}`,
       values,
     );
   }
