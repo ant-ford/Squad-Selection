@@ -14,6 +14,9 @@ export const TABLES = {
   sponsor: "Sponsors",
 } as const;
 
+/** Ranking history (worker/src/rankingEvents.ts); see README, "Ranking Events table". */
+export const RANKING_EVENTS_TABLE = "Ranking Events";
+
 /**
  * Airtable table ids for the tables the Worker caches, from
  * docs/Airtable Schema.json. Webhook payloads name tables by id, never by

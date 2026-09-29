@@ -97,6 +97,17 @@ export const MATCHCARDS_FIELDS = {
   rawPlayerName: "RawPlayerName",
 } as const;
 
+export const RANKING_EVENTS_FIELDS = {
+  player: "Player",
+  actor: "Actor",
+  actorEmail: "Actor Email",
+  kind: "Kind",
+  oldRank: "Old Rank",
+  newRank: "New Rank",
+  justification: "Justification",
+  timestamp: "Timestamp",
+} as const;
+
 export const ABILITYGROUP_CONFIG_FIELDS = {
   group: "Group",
   capacity: "Capacity",

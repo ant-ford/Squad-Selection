@@ -1,12 +1,8 @@
-import {
-  AirtableError,
-  airtableFindById,
-  airtableUpdate,
-  airtableBatchCreate,
-  airtableBatchUpdate,
-  airtableBatchDelete,
-  linkId,
-} from "./airtable";
+import { AirtableError } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
+import { people } from "./data/people";
+import { matches } from "./data/matches";
+import { availabilityExceptions, type ExceptionWrite } from "./data/availabilityExceptions";
 import type { Env } from "./env";
 import {
   getPlayerByEmail,
@@ -19,9 +15,7 @@ import {
 import { getScheduledMatches } from "./fixtures";
 import { getRulesForPlayer, needsExplicitAvailable } from "./availabilityRules";
 import { HttpError } from "./http";
-import { TABLES } from "../../shared/schema/tableNames";
-import { AVAILABILITYEXCEPTIONS_FIELDS, MATCHES_FIELDS, PEOPLE_FIELDS } from "../../shared/schema/fieldMaps";
-import { mapPlayer } from "../../shared/mappers/playerMapper";
+import { PEOPLE_FIELDS } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import type { AvailabilityException, Player } from "../../shared/schema/domainTypes";
@@ -36,28 +30,6 @@ function validateStatus(status: AvailabilityStatus): void {
   if (!VALID_STATUSES.includes(status)) {
     throw new HttpError("status must be Available, Maybe or Unavailable", 400);
   }
-}
-
-function buildExceptionFields(opts: {
-  matchId: string;
-  playerId: string;
-  status: ExceptionStatus;
-  notes?: string;
-  updatedById: string;
-}): Record<string, unknown> {
-  return {
-    [AVAILABILITYEXCEPTIONS_FIELDS.match]: [opts.matchId],
-    [AVAILABILITYEXCEPTIONS_FIELDS.player]: [opts.playerId],
-    [AVAILABILITYEXCEPTIONS_FIELDS.availabilityStatus]: opts.status,
-    [AVAILABILITYEXCEPTIONS_FIELDS.note]: opts.notes || "",
-    [AVAILABILITYEXCEPTIONS_FIELDS.updatedBy]: [opts.updatedById],
-  };
-}
-
-function chunk<T>(items: T[], size = 10): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
 }
 
 /**
@@ -86,8 +58,8 @@ async function findPlayerExceptions(
   // A match not in the Scheduled cache (e.g. its status just changed) still
   // needs its season resolved fresh, so its exceptions are never silently skipped.
   for (const matchId of unresolvedIds) {
-    const record = await airtableFindById(env, TABLES.match, matchId);
-    const season = record?.fields?.[MATCHES_FIELDS.season] || "";
+    const match = await matches(env).getById(matchId);
+    const season = match?.season || "";
     if (season) matchSeasons.add(season);
   }
 
@@ -212,10 +184,8 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     throw new HttpError("matchIds[] must be record ids", 400);
   }
   validateStatus(input.status);
-  const playerRecord = await airtableFindById(env, TABLES.player, input.playerId);
-  if (!playerRecord) throw new HttpError("Player not found or inactive", 404);
-  const player = mapPlayer(playerRecord);
-  if (!player.active) throw new HttpError("Player not found or inactive", 404);
+  const player = await people(env).getById(input.playerId);
+  if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
 
   const { exceptions: exceptionByMatch, seasons } = await findPlayerExceptions(env, input.playerId, input.matchIds);
 
@@ -240,8 +210,8 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   );
 
   const toDelete: string[] = [];
-  const toUpdate: { id: string; fields: Record<string, unknown> }[] = [];
-  const toCreate: { matchId: string; fields: Record<string, unknown> }[] = [];
+  const toUpdate: { id: string; write: ExceptionWrite }[] = [];
+  const toCreate: ExceptionWrite[] = [];
   const results: { matchId: string; exceptionId: string | null }[] = [];
 
   // Which of these fixtures would NOT be Available if this player said
@@ -262,18 +232,18 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       results.push({ matchId, exceptionId: null });
       continue;
     }
-    const fields = buildExceptionFields({
+    const write: ExceptionWrite = {
       matchId,
       playerId: input.playerId,
       status: input.status,
       notes: input.notes,
       updatedById: input.updatedById || input.playerId,
-    });
+    };
     if (existing) {
-      toUpdate.push({ id: existing.id, fields });
+      toUpdate.push({ id: existing.id, write });
       results.push({ matchId, exceptionId: existing.id });
     } else {
-      toCreate.push({ matchId, fields });
+      toCreate.push(write);
     }
   }
 
@@ -282,14 +252,12 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
       JSON.stringify({ deleting: toDelete, updating: toUpdate.map((u) => u.id), creating: toCreate.length }),
   );
 
-  for (const batch of chunk(toDelete)) await airtableBatchDelete(env, TABLES.availabilityException, batch);
-  for (const batch of chunk(toUpdate)) await airtableBatchUpdate(env, TABLES.availabilityException, batch);
-  const createdBatches: { matchId: string; id: string }[] = [];
-  for (const batch of chunk(toCreate)) {
-    const created = await airtableBatchCreate(env, TABLES.availabilityException, batch.map((x) => x.fields));
-    (created?.records ?? []).forEach((rec: any, idx: number) => createdBatches.push({ matchId: batch[idx]?.matchId, id: rec.id }));
-  }
-  for (const c of createdBatches) results.push({ matchId: c.matchId, exceptionId: c.id });
+  const { createdIds } = await availabilityExceptions(env).apply({
+    deleteIds: toDelete,
+    updates: toUpdate,
+    creates: toCreate,
+  });
+  createdIds.forEach((id, idx) => results.push({ matchId: toCreate[idx]?.matchId, exceptionId: id }));
 
   await invalidateAvailabilityCaches(env, input.matchIds, seasons);
   return { success: true, updated: results.length, results };
@@ -437,13 +405,11 @@ export async function setPlayerOptInOnly(
   if (typeof input.optInOnly !== "boolean") {
     throw new HttpError("optInOnly must be a boolean", 400);
   }
-  const record = await airtableFindById(env, TABLES.player, input.playerId);
-  if (!record) throw new HttpError("Player not found", 404);
+  const player = await people(env).getById(input.playerId);
+  if (!player) throw new HttpError("Player not found", 404);
 
   try {
-    await airtableUpdate(env, TABLES.player, input.playerId, {
-      [PEOPLE_FIELDS.optInOnly]: input.optInOnly,
-    });
+    await people(env).update(input.playerId, { optInOnly: input.optInOnly });
   } catch (err) {
     // The field is added by hand in Airtable (see README). Until it exists
     // every write here fails, and "422" tells a coach nothing - so say what
@@ -466,8 +432,7 @@ export async function setPlayerOptInOnly(
   // The flag changes the default answer on every unanswered fixture, so
   // every derived view of this player has to be rebuilt: the roster it is
   // read from, the coach sheets, the season index and the calendar feeds.
-  const email = record.fields?.[PEOPLE_FIELDS.email];
-  if (typeof email === "string") invalidatePlayerByEmail(email, env);
+  if (typeof player.email === "string") invalidatePlayerByEmail(player.email, env);
   invalidateCachePrefix("players-for-match:");
   invalidateCachePrefix("season-index:");
   invalidateCachePrefix("calendar:");
