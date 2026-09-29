@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { backendFor, pick, DATA_MODULES } from "../worker/src/data/backend";
-import { people } from "../worker/src/data/people";
+import { commitments } from "../worker/src/data/commitments";
 import type { Env } from "../worker/src/env";
 
 const env = (vars: Partial<Env> = {}) => ({ AIRTABLE_TOKEN: "t", AIRTABLE_BASE_ID: "app", ...vars }) as Env;
@@ -40,13 +40,13 @@ describe("backendFor", () => {
 
 describe("pick", () => {
   it("builds the Airtable repository by default and the Supabase one when switched", () => {
-    const airtable = () => "airtable";
-    const supabase = () => "supabase";
-    expect(pick(env(), "people", airtable, supabase)).toBe("airtable");
-    expect(pick(env({ DATA_BACKEND: "supabase" }), "people", airtable, supabase)).toBe("supabase");
+    const airtable = () => ({ backend: "airtable" });
+    const supabase = () => ({ backend: "supabase" });
+    expect(pick(env(), "people", airtable, supabase)).toEqual({ backend: "airtable" });
+    expect(pick(env({ DATA_BACKEND: "supabase" }), "people", airtable, supabase)).toEqual({ backend: "supabase" });
   });
 
   it("refuses, naming the module, when switched to Supabase before it has an implementation", () => {
-    expect(() => people(env({ DATA_BACKEND_OVERRIDES: "people=supabase" }))).toThrow(/"people".*no Supabase implementation/);
+    expect(() => commitments(env({ DATA_BACKEND_OVERRIDES: "commitments=supabase" }))).toThrow(/"commitments".*no Supabase implementation/);
   });
 });

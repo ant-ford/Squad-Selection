@@ -1,6 +1,7 @@
 import { airtableBatchUpdate, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabasePeople } from "./supabase/people";
 import { toRow, type Row } from "./rows";
 import { normalizeEmail } from "../../../shared/normalizeEmail";
 import { TABLES } from "../../../shared/schema/tableNames";
@@ -348,5 +349,5 @@ function airtablePeople(env: Env): PeopleRepo {
 }
 
 export function people(env: Env): PeopleRepo {
-  return pick(env, "people", airtablePeople);
+  return pick(env, "people", airtablePeople, supabasePeople);
 }

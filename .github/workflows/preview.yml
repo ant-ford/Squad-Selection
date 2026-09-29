@@ -72,6 +72,19 @@ jobs:
           AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
         run: printf '%s' "$AIRTABLE_TOKEN" | npx wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml --env preview
 
+      # eddy-preview's secret key, for the Supabase data backend and its shadow
+      # reads. Same pattern: stdin only, set on every run.
+      - name: Set Supabase data key (eddy-preview)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DATA_SUPABASE_SECRET_KEY: ${{ secrets.DATA_SUPABASE_SECRET_KEY }}
+        run: |
+          if [ -z "$DATA_SUPABASE_SECRET_KEY" ]; then
+            echo "::warning::DATA_SUPABASE_SECRET_KEY is not in the preview environment; Supabase reads will fail."
+            exit 0
+          fi
+          printf '%s' "$DATA_SUPABASE_SECRET_KEY" | npx wrangler secret put DATA_SUPABASE_SECRET_KEY --config worker/wrangler.toml --env preview
+
       # A CORS preflight needs no sign-in and proves the two things the
       # local frontend depends on: the Worker answers, and it accepts
       # http://localhost:5173. Retried briefly while the deploy propagates.
@@ -101,5 +114,6 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
             echo "- URL: $URL"
             echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173"
-            echo "- Airtable access is read-only: saves will fail."
+            echo "- Airtable access is read-only: saves fail while DATA_BACKEND is airtable."
+            echo "- Shadow reads compare with eddy-preview: counts at \`$URL/health?deep=1\`."
           } >> "$GITHUB_STEP_SUMMARY"

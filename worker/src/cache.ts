@@ -271,12 +271,26 @@ function newGeneration(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/**
+ * On the Supabase backend a read is a few tens of milliseconds, so shared
+ * copies of data are no longer worth their staleness (hkha-sync and other
+ * writers do not announce their changes) or the free plan's 1,000 KV writes
+ * a day: reads are held briefly in the isolate only. The Stats summaries are
+ * the exception - they are expensive to build and must never be rebuilt on
+ * the request path, so they stay in KV whatever the backend.
+ */
+const SUPABASE_LOCAL_TTL_MS = 30 * 1000;
+const ALWAYS_SHARED_PREFIXES = ["stats-summary:"];
+
 export async function getShared<T>(
-  env: { CACHE?: CacheKv },
+  env: { CACHE?: CacheKv; DATA_BACKEND?: string },
   key: string,
   fetcher: () => Promise<T>,
   ttlMs: number = DEFAULT_TTL_MS,
 ): Promise<T> {
+  if (env.DATA_BACKEND === "supabase" && !ALWAYS_SHARED_PREFIXES.some((p) => key.startsWith(p))) {
+    return (await getCached(key, fetcher, Math.min(ttlMs, SUPABASE_LOCAL_TTL_MS))).data;
+  }
   const kv = env.CACHE;
   if (!kv) return (await getCached(key, fetcher, ttlMs)).data;
 

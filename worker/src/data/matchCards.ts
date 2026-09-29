@@ -1,6 +1,7 @@
 import { airtableFindAll, escapeFormulaValue } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseMatchCards } from "./supabase/squad";
 import { TABLES } from "../../../shared/schema/tableNames";
 import { MATCHCARDS_FIELDS } from "../../../shared/schema/fieldMaps";
 import { mapMatchCard } from "../../../shared/mappers/matchCardMapper";
@@ -28,5 +29,5 @@ function airtableMatchCards(env: Env): MatchCardsRepo {
 }
 
 export function matchCards(env: Env): MatchCardsRepo {
-  return pick(env, "matchCards", airtableMatchCards);
+  return pick(env, "matchCards", airtableMatchCards, supabaseMatchCards);
 }

@@ -1,6 +1,7 @@
 import { airtableBatchCreate, airtableFindAll } from "../airtable";
 import type { Env } from "../env";
 import { pick } from "./backend";
+import { supabaseRankingEvents } from "./supabase/squad";
 import { RANKING_EVENTS_TABLE } from "../../../shared/schema/tableNames";
 import { RANKING_EVENTS_FIELDS } from "../../../shared/schema/fieldMaps";
 
@@ -82,5 +83,5 @@ function airtableRankingEvents(env: Env): RankingEventsRepo {
 }
 
 export function rankingEvents(env: Env): RankingEventsRepo {
-  return pick(env, "rankingEvents", airtableRankingEvents);
+  return pick(env, "rankingEvents", airtableRankingEvents, supabaseRankingEvents);
 }
