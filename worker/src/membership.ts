@@ -2,22 +2,23 @@
  * The membership section: the applicant board, the active-members export and
  * the one write the section makes, approving an applicant.
  *
- * Every read here passes MEMBERSHIP_FIELDS explicitly, so the squad app's
- * People projection (PEOPLE_FIELDS) never grows for membership's sake, and
- * no HKID, bank or address field is ever requested.
+ * Every read here goes through the People repository's membership views
+ * (data/people.ts), which request MEMBERSHIP_FIELDS or a subset explicitly,
+ * so the squad app's People projection (PEOPLE_FIELDS) never grows for
+ * membership's sake, and no HKID, bank or address field is ever requested.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
-import { airtableCreate, airtableFindAll, airtableUpdate, escapeFormulaValue } from "./airtable";
 import { getShared } from "./cache";
 import { MEMBERSHIP_RECORDS_KEY, getReferenceData } from "./reference";
 import { firstLink, getOfficeHolders, getPeopleByIds } from "./contacts";
+import { people, type MembershipRow } from "./data/people";
+import { membershipEvents, type NewMembershipEvent } from "./data/membershipEvents";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import type { InsightFact, TeamSquad } from "../../shared/membershipInsights";
 import { HttpError } from "./http";
 import { invalidateForTables } from "./airtableWebhook";
 import { TABLES } from "../../shared/schema/tableNames";
-import { MEMBERSHIP_FIELDS as F } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
 import { birthdayAtAge } from "../../shared/birthday";
@@ -60,10 +61,10 @@ export interface Chase {
 }
 
 /** The stages waiting on a signature, and the People link naming who signs. */
-const CHASE_BY_STAGE: Record<string, [Chase["role"], string]> = {
-  "3. Club Application (Signed)": ["Sponsor", F.sponsoredBySponsor],
-  "4. Sponsor (Signed)": ["Chairman", F.sponsoredByChair],
-  "5. Chairman (Signed)": ["Membership Officer", F.sponsoredByOfficer],
+const CHASE_BY_STAGE: Record<string, [Chase["role"], keyof MembershipRow]> = {
+  "3. Club Application (Signed)": ["Sponsor", "sponsoredBySponsor"],
+  "4. Sponsor (Signed)": ["Chairman", "sponsoredByChair"],
+  "5. Chairman (Signed)": ["Membership Officer", "sponsoredByOfficer"],
 };
 
 export interface ApplicantCard {
@@ -136,51 +137,52 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
-export function toCard(record: any, today: string): ApplicantCard {
-  const f = record.fields ?? {};
-  const stage = text(f[F.applicantStage]) ?? "";
+export function toCard(row: MembershipRow, today: string): ApplicantCard {
+  const stage = text(row.applicantStage) ?? "";
   const column = columnFor(stage);
-  const sponsor = firstText(f[F.sponsorName]);
-  const appliedOn = text(f[F.applicationDate]) ? hkDateKey(f[F.applicationDate]) : undefined;
-  const stageSince = text(f[F.stageUpdatedAt]) ? hkDateKey(f[F.stageUpdatedAt]) : undefined;
+  const sponsor = firstText(row.sponsorName);
+  const applicationDate = text(row.applicationDate);
+  const stageUpdatedAt = text(row.stageUpdatedAt);
+  const appliedOn = applicationDate ? hkDateKey(row.applicationDate as string) : undefined;
+  const stageSince = stageUpdatedAt ? hkDateKey(row.stageUpdatedAt as string) : undefined;
   const since = stageSince ?? appliedOn;
-  const givenNames = text(f[F.givenNames]) ?? "";
-  const surname = text(f[F.surname]) ?? "";
-  const first = text(f[F.preferredName]) ?? givenNames;
-  const photo = attachments(f[F.photo])[0]?.url;
+  const givenNames = text(row.givenNames) ?? "";
+  const surname = text(row.surname) ?? "";
+  const first = text(row.preferredName) ?? givenNames;
+  const photo = attachments(row.photo)[0]?.url;
   return {
-    id: record.id,
+    id: row.id,
     name: [first, surname].filter(Boolean).join(" ") || "Unnamed",
     surname,
     givenNames,
     photo,
     stage,
     column,
-    status: text(f[F.status]) ?? "",
-    membershipNo: text(f[F.membershipNo]),
-    joinDate: text(f[F.joinDate]),
-    commitmentEndDate: text(f[F.commitmentEndDate]),
+    status: text(row.status) ?? "",
+    membershipNo: text(row.membershipNo),
+    joinDate: text(row.joinDate),
+    commitmentEndDate: text(row.commitmentEndDate),
     appliedOn,
     stageSince,
     days: since ? daysBetween(since, today) : null,
     waitingOn: waitingOn(stage, sponsor),
     canApprove: stage === APPROVABLE_STAGE,
-    mobileNo: text(f[F.mobileNo]),
-    applicantType: text(f[F.applicantType]),
-    categoryType: text(f[F.categoryType]),
-    gender: text(f[F.gender]),
-    playingPosition: text(f[F.playingPosition]),
-    team: text(f[F.selectedTeamEos]) ?? text(f[F.selectedTeamSos]) ?? text(f[F.registeredTeam]),
+    mobileNo: text(row.mobileNo),
+    applicantType: text(row.applicantType),
+    categoryType: text(row.categoryType),
+    gender: text(row.gender),
+    playingPosition: text(row.playingPosition),
+    team: text(row.selectedTeamEos) ?? text(row.selectedTeamSos) ?? text(row.registeredTeam),
     sponsor,
-    sportsBackground: text(f[F.sportsBackground]),
-    personalInterest: text(f[F.personalInterest]),
-    tourInterest: list(f[F.tourInterest]),
-    qualifiedUmpire: text(f[F.qualifiedUmpire]),
-    qualifiedCoach: text(f[F.qualifiedCoach]),
-    playingLevel: list(f[F.playingLevel]),
-    selectionComments: text(f[F.selectionComments]),
-    applicationForm: attachments(f[F.applicationForm]),
-    turns28On: stage === APPROVABLE_STAGE ? birthdayAtAge(text(f[F.dateOfBirth]), 28) : undefined,
+    sportsBackground: text(row.sportsBackground),
+    personalInterest: text(row.personalInterest),
+    tourInterest: list(row.tourInterest),
+    qualifiedUmpire: text(row.qualifiedUmpire),
+    qualifiedCoach: text(row.qualifiedCoach),
+    playingLevel: list(row.playingLevel),
+    selectionComments: text(row.selectionComments),
+    applicationForm: attachments(row.applicationForm),
+    turns28On: stage === APPROVABLE_STAGE ? birthdayAtAge(text(row.dateOfBirth), 28) : undefined,
   };
 }
 
@@ -204,7 +206,7 @@ export function belongsOnBoard(card: ApplicantCard, today: string): boolean {
 }
 
 interface MembershipRecords {
-  records: any[];
+  rows: MembershipRow[];
   /** Applicant record id -> whoever their application is waiting on. */
   chase: Record<string, Chase>;
 }
@@ -214,22 +216,22 @@ interface MembershipRecords {
  * links the office row (a Sponsors, Section Chairs or Membership Officers
  * row), which links the holder's People record, which has their mobile.
  */
-async function resolveChases(env: Env, records: any[]): Promise<Record<string, Chase>> {
-  const waiting = records.filter((r) => CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""]);
+async function resolveChases(env: Env, rows: MembershipRow[]): Promise<Record<string, Chase>> {
+  const waiting = rows.filter((r) => CHASE_BY_STAGE[text(r.applicantStage) ?? ""]);
   if (waiting.length === 0) return {};
   const holders = await getOfficeHolders(env);
-  const officeOf = (r: any) => {
-    const [, link] = CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""];
-    return firstLink(r.fields?.[link]);
+  const officeOf = (r: MembershipRow) => {
+    const [, link] = CHASE_BY_STAGE[text(r.applicantStage) ?? ""];
+    return firstLink(r[link]);
   };
-  const people = await getPeopleByIds(
+  const contacts = await getPeopleByIds(
     env,
     waiting.map((r) => holders[officeOf(r) ?? ""]).filter((id): id is string => !!id),
   );
   const chase: Record<string, Chase> = {};
   for (const r of waiting) {
-    const [role] = CHASE_BY_STAGE[text(r.fields?.[F.applicantStage]) ?? ""];
-    const person = people[holders[officeOf(r) ?? ""] ?? ""];
+    const [role] = CHASE_BY_STAGE[text(r.applicantStage) ?? ""];
+    const person = contacts[holders[officeOf(r) ?? ""] ?? ""];
     if (!person) continue;
     chase[r.id] = { role, name: person.name, firstName: person.firstName, mobile: person.mobile };
   }
@@ -246,26 +248,20 @@ async function getMembershipRecords(env: Env): Promise<MembershipRecords> {
     env,
     MEMBERSHIP_RECORDS_KEY,
     async () => {
-      const records = await airtableFindAll(
-        env,
-        TABLES.player,
-        // Narrows the scan; belongsOnBoard / the insight facts are the rules.
-        `AND({${F.applicantStage}}!="", {${F.status}}!="Resigned")`,
-        undefined,
-        Object.values(F),
-      );
-      return { records, chase: await resolveChases(env, records) };
+      // Narrows the scan; belongsOnBoard / the insight facts are the rules.
+      const rows = await people(env).listMembershipBoard();
+      return { rows, chase: await resolveChases(env, rows) };
     },
     RECORDS_TTL_MS,
   );
 }
 
-const hasStageDates = (records: any[]) => records.some((r) => text(r.fields?.[F.stageUpdatedAt]) !== undefined);
+const hasStageDates = (rows: MembershipRow[]) => rows.some((r) => text(r.stageUpdatedAt) !== undefined);
 
 export async function getMembershipBoard(env: Env): Promise<MembershipBoard> {
-  const { records, chase } = await getMembershipRecords(env);
+  const { rows, chase } = await getMembershipRecords(env);
   const today = hkDateKey(new Date().toISOString());
-  const cards = records
+  const cards = rows
     .map((r) => ({ ...toCard(r, today), chase: chase[r.id] }))
     .filter((c) => belongsOnBoard(c, today))
     // Longest-waiting first within each column.
@@ -273,7 +269,7 @@ export async function getMembershipBoard(env: Env): Promise<MembershipBoard> {
   return {
     columns: { pipeline: PIPELINE_STAGES, parked: PARKED_STAGES },
     cards,
-    hasStageDates: hasStageDates(records),
+    hasStageDates: hasStageDates(rows),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -295,9 +291,9 @@ export interface MembershipInsights {
 }
 
 export async function getMembershipInsights(env: Env): Promise<MembershipInsights> {
-  const [{ records }, ref] = await Promise.all([getMembershipRecords(env), getReferenceData(env)]);
+  const [{ rows }, ref] = await Promise.all([getMembershipRecords(env), getReferenceData(env)]);
   const today = hkDateKey(new Date().toISOString());
-  const facts: InsightFact[] = records.map((r) => {
+  const facts: InsightFact[] = rows.map((r) => {
     const c = toCard(r, today);
     return {
       name: c.name,
@@ -340,7 +336,7 @@ export async function getMembershipInsights(env: Env): Promise<MembershipInsight
   return {
     facts,
     teams: [...byTeam.values()].sort((a, b) => a.teamRank - b.teamRank),
-    hasStageDates: hasStageDates(records),
+    hasStageDates: hasStageDates(rows),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -361,27 +357,18 @@ export async function getActiveMembersCsv(
   env: Env,
   actor: AuthorizedUser,
 ): Promise<{ filename: string; csv: string; count: number }> {
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    `AND({Active}=TRUE(), {${F.applicantStage}}!="Temporary")`,
-    undefined,
-    [F.membershipNo, F.surname, F.givenNames, F.status, F.applicantStage],
-  );
-  const rows = records
-    .filter((r) => text(r.fields?.[F.applicantStage]) !== "Temporary")
-    .map((r) => {
-      const f = r.fields ?? {};
-      return [text(f[F.membershipNo]) ?? "", text(f[F.surname]) ?? "", text(f[F.givenNames]) ?? "", text(f[F.status]) ?? ""];
-    })
+  const members = await people(env).listActiveForExport();
+  const rows = members
+    .filter((r) => text(r.applicantStage) !== "Temporary")
+    .map((r) => [text(r.membershipNo) ?? "", text(r.surname) ?? "", text(r.givenNames) ?? "", text(r.status) ?? ""])
     .sort((a, b) => a[1].localeCompare(b[1]) || a[2].localeCompare(b[2]));
   const csv = toCsv([CSV_HEADER, ...rows]);
   const today = hkDateKey(new Date().toISOString());
   // The file carries every member's name and number and leaves the app, so
   // who took a copy, and when, goes on the record.
   await recordMembershipEvent(env, actor, {
-    [EV.eventType]: "Exported",
-    [EV.notes]: `Active members CSV, ${rows.length} rows`,
+    eventType: "Exported",
+    notes: `Active members CSV, ${rows.length} rows`,
   });
   return { filename: `hkfc-hockey-active-members-${today}.csv`, csv, count: rows.length };
 }
@@ -404,23 +391,15 @@ export async function getActiveMembersCsv(
  *   Shared Membership No. checkbox       approved with a number someone else has
  *   Notes                 long text
  *   Timestamp             date and time  stamped by the Worker
+ *
+ * The names live in shared/schema now; re-exported here for anything that
+ * imported them from this module. data/membershipEvents.ts writes the rows.
  */
-export const MEMBERSHIP_EVENTS_TABLE = "Membership Events";
-export const MEMBERSHIP_EVENTS_FIELDS = {
-  eventType: "Event Type",
-  person: "Person",
-  actor: "Actor",
-  actorEmail: "Actor Email",
-  previousStage: "Previous Stage",
-  newStage: "New Stage",
-  membershipNo: "Membership No.",
-  joinDate: "Join Date",
-  commitmentEndDate: "Commitment End Date",
-  sharedMembershipNo: "Shared Membership No.",
-  notes: "Notes",
-  timestamp: "Timestamp",
-} as const;
-const EV = MEMBERSHIP_EVENTS_FIELDS;
+export { MEMBERSHIP_EVENTS_TABLE } from "../../shared/schema/tableNames";
+export { MEMBERSHIP_EVENTS_FIELDS } from "../../shared/schema/fieldMaps";
+
+/** What a caller says about the action; who did it and when are added here. */
+export type MembershipEventInput = Omit<NewMembershipEvent, "actorId" | "actorEmail" | "timestamp">;
 
 /**
  * Writes one audit row, and never fails the action it records. By the time
@@ -433,22 +412,20 @@ const EV = MEMBERSHIP_EVENTS_FIELDS;
 export async function recordMembershipEvent(
   env: Env,
   actor: AuthorizedUser,
-  fields: Record<string, unknown>,
+  input: MembershipEventInput,
 ): Promise<void> {
-  const row: Record<string, unknown> = {
-    ...fields,
-    [EV.actorEmail]: actor.email,
-    [EV.timestamp]: new Date().toISOString(),
+  const event: NewMembershipEvent = {
+    ...input,
+    actorEmail: actor.email,
+    timestamp: new Date().toISOString(),
+    actorId: actor.personId || undefined,
   };
-  if (actor.personId) row[EV.actor] = [actor.personId];
-  // Airtable rejects an explicit undefined less politely than a missing key.
-  for (const key of Object.keys(row)) if (row[key] === undefined) delete row[key];
   try {
-    await airtableCreate(env, MEMBERSHIP_EVENTS_TABLE, row);
+    await membershipEvents(env).record(event);
   } catch (err) {
     console.error(
       `[MembershipEvents] audit row not written (${err instanceof Error ? err.message : err}); the action itself succeeded:`,
-      JSON.stringify(row),
+      JSON.stringify(event),
     );
   }
 }
@@ -478,22 +455,15 @@ export interface NumberHolder {
 export async function getNumberHolders(env: Env, membershipNo: string, excludeId = ""): Promise<NumberHolder[]> {
   const wanted = membershipNo.trim();
   if (!wanted) return [];
-  const records = await airtableFindAll(
-    env,
-    TABLES.player,
-    `{${F.membershipNo}}="${escapeFormulaValue(wanted)}"`,
-    undefined,
-    [F.membershipNo, F.preferredName, F.givenNames, F.surname, F.status],
-  );
-  return records
-    .filter((r) => r.id !== excludeId && text(r.fields?.[F.membershipNo]) === wanted)
+  const rows = await people(env).listByMembershipNo(wanted);
+  return rows
+    .filter((r) => r.id !== excludeId && text(r.membershipNo) === wanted)
     .map((r) => {
-      const f = r.fields ?? {};
-      const first = text(f[F.preferredName]) ?? text(f[F.givenNames]);
+      const first = text(r.preferredName) ?? text(r.givenNames);
       return {
         id: r.id,
-        name: [first, text(f[F.surname])].filter(Boolean).join(" ") || "Unnamed",
-        status: text(f[F.status]) ?? "",
+        name: [first, text(r.surname)].filter(Boolean).join(" ") || "Unnamed",
+        status: text(r.status) ?? "",
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -531,12 +501,9 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
   }
 
   // Read fresh, not from the board cache: the stage may have moved since.
-  // A filtered list rather than a record GET, which cannot be projected and
-  // would bring back the whole CRM record.
-  const found = await airtableFindAll(env, TABLES.player, `RECORD_ID()="${personId}"`, undefined, [F.applicantStage]);
-  const record = found.find((r) => r.id === personId);
-  if (!record) throw new HttpError("Applicant not found.", 404, "NOT_FOUND");
-  const stage = text(record.fields?.[F.applicantStage]) ?? "";
+  const current = await people(env).getApplicantStage(personId);
+  if (!current) throw new HttpError("Applicant not found.", 404, "NOT_FOUND");
+  const stage = text(current.applicantStage) ?? "";
   if (stage !== APPROVABLE_STAGE) {
     throw new HttpError(
       `Only applicants at "${APPROVABLE_STAGE}" can be approved; this one is at "${stage || "no stage"}".`,
@@ -557,25 +524,25 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
     );
   }
 
-  const fields = {
-    [F.status]: "Member",
-    [F.applicantStage]: ACCEPTED_STAGE,
-    [F.joinDate]: input.joinDate,
-    [F.commitmentEndDate]: input.commitmentEndDate,
-    [F.membershipNo]: membershipNo,
-  };
-  await airtableUpdate(env, TABLES.player, personId, fields);
+  // Exactly these five, in this order; none of them is a link.
+  await people(env).update(personId, {
+    status: "Member",
+    applicantStage: ACCEPTED_STAGE,
+    joinDate: input.joinDate,
+    commitmentEndDate: input.commitmentEndDate,
+    membershipNo,
+  });
 
   await recordMembershipEvent(env, actor, {
-    [EV.eventType]: "Approved",
-    [EV.person]: [personId],
-    [EV.previousStage]: stage,
-    [EV.newStage]: ACCEPTED_STAGE,
-    [EV.membershipNo]: membershipNo,
-    [EV.joinDate]: input.joinDate,
-    [EV.commitmentEndDate]: input.commitmentEndDate,
-    [EV.sharedMembershipNo]: holders.length > 0,
-    [EV.notes]: holders.length > 0 ? `Shares Membership No. with ${describeHolders(holders)}` : undefined,
+    eventType: "Approved",
+    personId,
+    previousStage: stage,
+    newStage: ACCEPTED_STAGE,
+    membershipNo,
+    joinDate: input.joinDate,
+    commitmentEndDate: input.commitmentEndDate,
+    sharedMembershipNo: holders.length > 0,
+    notes: holders.length > 0 ? `Shares Membership No. with ${describeHolders(holders)}` : undefined,
   });
 
   // Status and stage feed the ranking lists and the roster too, so drop
@@ -583,5 +550,15 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
   // than waiting for the webhook.
   await invalidateForTables(env, [TABLES.player]);
 
-  return { success: true, personId, ...fields };
+  // The response has always echoed what was written under the People field
+  // names; kept as it was for the app.
+  return {
+    success: true,
+    personId,
+    Status: "Member",
+    "Applicant Stage": ACCEPTED_STAGE,
+    "Join Date": input.joinDate,
+    "Commitment End Date": input.commitmentEndDate,
+    "Membership No.": membershipNo,
+  };
 }

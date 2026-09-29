@@ -108,6 +108,22 @@ export const RANKING_EVENTS_FIELDS = {
   timestamp: "Timestamp",
 } as const;
 
+/** Membership Events (worker/src/membership.ts): one audit row per Approved, Exported or Notified. */
+export const MEMBERSHIP_EVENTS_FIELDS = {
+  eventType: "Event Type",
+  person: "Person",
+  actor: "Actor",
+  actorEmail: "Actor Email",
+  previousStage: "Previous Stage",
+  newStage: "New Stage",
+  membershipNo: "Membership No.",
+  joinDate: "Join Date",
+  commitmentEndDate: "Commitment End Date",
+  sharedMembershipNo: "Shared Membership No.",
+  notes: "Notes",
+  timestamp: "Timestamp",
+} as const;
+
 export const ABILITYGROUP_CONFIG_FIELDS = {
   group: "Group",
   capacity: "Capacity",

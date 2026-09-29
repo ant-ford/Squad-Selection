@@ -23,12 +23,11 @@
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
-import { airtableFindAll } from "./airtable";
 import { getCached, getShared } from "./cache";
 import { firstLink, getOfficeHolders } from "./contacts";
 import { WAITING_ON_KEY } from "./reference";
-import { TABLES } from "../../shared/schema/tableNames";
-import { COMMITMENT_FIELDS as CF } from "../../shared/schema/fieldMaps";
+import { people, type ApplicantTaskRow, type MyTaskRow } from "./data/people";
+import { commitments } from "./data/commitments";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
@@ -48,46 +47,18 @@ export interface MyTask {
   url?: string;
 }
 
-/** People fields read for the signed-in person only, by record id. */
-export const MY_TASK_FIELDS = {
-  waiversSubmittedAt: "Last Submission: Waivers & Declarations",
-  waiversFormUrl: "Fillout - Member Waivers & Declarations",
-} as const;
-
-/** Applicants at stages 2-5: who is next, and their form. */
-const APPLICANT_FIELDS = {
-  stage: "Applicant Stage",
-  preferredName: "Preferred Name",
-  givenNames: "Given Name(s)",
-  surname: "Surname",
-  sponsoredBySponsor: "Sponsored By Sponsor",
-  sponsoredByChair: "Sponsored By Chair",
-  sponsoredByOfficer: "Sponsored By Membership Officer",
-  joinerFormUrl: "Fillout - Applicant (New Joiner Form)",
-  sponsorFormUrl: "Fillout - Sponsor (Page 7)",
-  chairFormUrl: "Fillout - Chairman (Page 7 Signature)",
-  officerFormUrl: "Fillout - Membership Officer (Page 7 Signature)",
-} as const;
-
-/** Reviews in progress: who they wait on, and each one's form. */
-const REVIEW_FIELDS = {
-  reviewProgress: CF.reviewProgress,
-  people: CF.people,
-  fullName: CF.fullName,
-  periodEnd: CF.periodEnd,
-  sponsorLink: CF.sponsorLink,
-  officerLink: "Membership Officers",
-  /** A lookup of the member's own People formula. */
-  memberFormUrl: "Fillout - Member (Commitment Record Picker)",
-  sponsorFormUrl: "Fillout - Sponsor (Commitment Review Form)",
-  officerFormUrl: CF.officerFormUrl,
-} as const;
+/*
+ * The fields read live with the repositories: the signed-in person's own
+ * forms and the applicants at stages 2-5 in data/people.ts (MyTaskRow,
+ * ApplicantTaskRow), the reviews in progress in data/commitments.ts
+ * (ReviewTaskRow).
+ */
 
 /** Stage -> who signs it: [role, the applicant's link naming them, their form]. */
-const SIGNERS: Record<string, [TaskRole, string, string]> = {
-  "3. Club Application (Signed)": ["Sponsor", APPLICANT_FIELDS.sponsoredBySponsor, APPLICANT_FIELDS.sponsorFormUrl],
-  "4. Sponsor (Signed)": ["Chairman", APPLICANT_FIELDS.sponsoredByChair, APPLICANT_FIELDS.chairFormUrl],
-  "5. Chairman (Signed)": ["Membership Officer", APPLICANT_FIELDS.sponsoredByOfficer, APPLICANT_FIELDS.officerFormUrl],
+const SIGNERS: Record<string, [TaskRole, keyof ApplicantTaskRow, keyof ApplicantTaskRow]> = {
+  "3. Club Application (Signed)": ["Sponsor", "sponsoredBySponsor", "sponsorFormUrl"],
+  "4. Sponsor (Signed)": ["Chairman", "sponsoredByChair", "chairFormUrl"],
+  "5. Chairman (Signed)": ["Membership Officer", "sponsoredByOfficer", "officerFormUrl"],
 };
 const INVITED_STAGE = "2. Section Captain Invitation";
 
@@ -116,20 +87,8 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
       const stages = [INVITED_STAGE, ...Object.keys(SIGNERS)];
       const reviewStages = [NOTIFIED, MEMBER_SUBMITTED, SPONSOR_SUBMITTED];
       const [applicants, reviews, holders] = await Promise.all([
-        airtableFindAll(
-          env,
-          TABLES.player,
-          `OR(${stages.map((s) => `{${APPLICANT_FIELDS.stage}}="${s}"`).join(",")})`,
-          undefined,
-          Object.values(APPLICANT_FIELDS),
-        ),
-        airtableFindAll(
-          env,
-          TABLES.commitment,
-          `OR(${reviewStages.map((s) => `{${REVIEW_FIELDS.reviewProgress}}="${s}"`).join(",")})`,
-          undefined,
-          Object.values(REVIEW_FIELDS),
-        ),
+        people(env).listApplicantsAtStages(stages),
+        commitments(env).listReviewsAtStages(reviewStages),
         getOfficeHolders(env),
       ]);
 
@@ -141,51 +100,49 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
       };
 
       for (const r of applicants) {
-        const f = r.fields ?? {};
-        const stage = text(f[APPLICANT_FIELDS.stage]) ?? "";
-        const first = text(f[APPLICANT_FIELDS.preferredName]) ?? text(f[APPLICANT_FIELDS.givenNames]);
-        const subject = [first, text(f[APPLICANT_FIELDS.surname])].filter(Boolean).join(" ") || "An applicant";
+        const stage = text(r.stage) ?? "";
+        const first = text(r.preferredName) ?? text(r.givenNames);
+        const subject = [first, text(r.surname)].filter(Boolean).join(" ") || "An applicant";
         if (stage === INVITED_STAGE) {
-          add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: text(f[APPLICANT_FIELDS.joinerFormUrl]) });
+          add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: text(r.joinerFormUrl) });
           continue;
         }
         const signer = SIGNERS[stage];
         if (!signer) continue;
         const [role, link, form] = signer;
-        add(holders[firstLink(f[link]) ?? ""], {
+        add(holders[firstLink(r[link]) ?? ""], {
           id: `application:${r.id}`,
           key: "application",
           subject,
           role,
-          url: text(f[form]),
+          url: text(r[form]),
         });
       }
 
       for (const r of reviews) {
-        const f = r.fields ?? {};
         // The same cut-off as the Statements board: older periods are history.
-        const periodEnd = firstText(f[REVIEW_FIELDS.periodEnd])?.slice(0, 10);
+        const periodEnd = firstText(r.periodEnd)?.slice(0, 10);
         if (!periodEnd || periodEnd < REVIEWS_FROM) continue;
-        const stage = text(f[REVIEW_FIELDS.reviewProgress]);
-        const member = firstLink(f[REVIEW_FIELDS.people]);
-        const subject = firstText(f[REVIEW_FIELDS.fullName]) ?? "A member";
+        const stage = text(r.reviewProgress);
+        const member = firstLink(r.people);
+        const subject = firstText(r.fullName) ?? "A member";
         if (stage === NOTIFIED) {
-          add(member, { id: `statement:${r.id}`, key: "statement", url: firstText(f[REVIEW_FIELDS.memberFormUrl]) });
+          add(member, { id: `statement:${r.id}`, key: "statement", url: firstText(r.memberFormUrl) });
         } else if (stage === MEMBER_SUBMITTED) {
-          add(holders[firstLink(f[REVIEW_FIELDS.sponsorLink]) ?? ""], {
+          add(holders[firstLink(r.sponsorLink) ?? ""], {
             id: `review:${r.id}`,
             key: "review",
             subject,
             role: "Sponsor",
-            url: text(f[REVIEW_FIELDS.sponsorFormUrl]),
+            url: text(r.sponsorFormUrl),
           });
         } else if (stage === SPONSOR_SUBMITTED) {
-          add(holders[firstLink(f[REVIEW_FIELDS.officerLink]) ?? ""], {
+          add(holders[firstLink(r.officerLink) ?? ""], {
             id: `review:${r.id}`,
             key: "review",
             subject,
             role: "Membership Officer",
-            url: text(f[REVIEW_FIELDS.officerFormUrl]),
+            url: text(r.officerFormUrl),
           });
         }
       }
@@ -209,28 +166,19 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   const personId = user.personId;
   if (!personId || !/^rec[A-Za-z0-9]{14}$/.test(personId)) return { tasks: [] };
 
-  const [record, waitingOn] = await Promise.all([
+  const [mine, waitingOn] = await Promise.all([
     getCached(
       `my-tasks:${personId}`,
-      async () => {
-        const found = await airtableFindAll(
-          env,
-          TABLES.player,
-          `RECORD_ID()="${personId}"`,
-          undefined,
-          Object.values(MY_TASK_FIELDS),
-        );
-        return found.find((r) => r.id === personId)?.fields ?? {};
-      },
+      async (): Promise<Partial<MyTaskRow>> => (await people(env).getMyTaskFields(personId)) ?? {},
       MY_RECORD_TTL_MS,
-    ).then((hit) => hit.data as Record<string, unknown>),
+    ).then((hit) => hit.data),
     getWaitingOn(env),
   ]);
 
   const today = hkDateKey(new Date().toISOString());
   const tasks: MyTask[] = [...(waitingOn[personId] ?? [])];
-  if (!waiversDoneThisSeason(record[MY_TASK_FIELDS.waiversSubmittedAt], today)) {
-    tasks.push({ id: "waivers", key: "waivers", url: text(record[MY_TASK_FIELDS.waiversFormUrl]) });
+  if (!waiversDoneThisSeason(mine.waiversSubmittedAt, today)) {
+    tasks.push({ id: "waivers", key: "waivers", url: text(mine.waiversFormUrl) });
   }
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
   return { tasks };
