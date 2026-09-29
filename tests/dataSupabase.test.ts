@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { db, eq, inList, SupabaseError } from "../worker/src/data/supabase";
+import { db, eq, inList, SupabaseError, withTotalOrder } from "../worker/src/data/supabase";
 import { newRequestStats, runWithRequestContext, serverTimingHeader } from "../worker/src/requestContext";
 import type { Env } from "../worker/src/env";
 
@@ -27,7 +27,7 @@ describe("Supabase data client", () => {
     const calls = stubFetch(() => ({ body: [{ id: "a" }] }));
     await db(env).select("people", "select=id");
     const headers = calls[0].init.headers as Record<string, string>;
-    expect(calls[0].url).toBe("https://proj.supabase.co/rest/v1/people?select=id");
+    expect(calls[0].url).toBe("https://proj.supabase.co/rest/v1/people?select=id&order=id");
     expect(headers.apikey).toBe("sb_secret_test");
     expect(headers.Authorization).toBeUndefined();
   });
@@ -38,6 +38,14 @@ describe("Supabase data client", () => {
     const rows = await db(env).select("match_cards", "select=*");
     expect(rows).toHaveLength(1001);
     expect((calls[1].init.headers as Record<string, string>).Range).toBe("1000-1999");
+  });
+
+  it("pages in a total order, ending on id", () => {
+    expect(withTotalOrder("select=*")).toBe("select=*&order=id");
+    expect(withTotalOrder("select=*&order=occurred_at.desc")).toBe("select=*&order=occurred_at.desc,id");
+    expect(withTotalOrder("select=*&order=occurred_at.desc&kind=eq.move")).toBe("select=*&order=occurred_at.desc,id&kind=eq.move");
+    expect(withTotalOrder("select=*&order=id")).toBe("select=*&order=id");
+    expect(withTotalOrder("select=*&order=season,id.desc")).toBe("select=*&order=season,id.desc");
   });
 
   it("upserts on the named conflict columns and returns the rows", async () => {

@@ -12,6 +12,12 @@ import { inBackground } from "../requestContext";
 /** Fields that legitimately differ between backends and are compared loosely or not at all. */
 const IGNORED = new Set(["teamRank", "positionalRank"]); // derived, never stored (invariant 4)
 const PRESENCE_ONLY = new Set(["photo", "url"]); // signed links differ by design; present vs absent must not
+/**
+ * File fields. Airtable sends id, size, type and thumbnails with each file,
+ * none of which the app reads; Supabase sends only the (signed) link and
+ * the name, so only those are compared.
+ */
+const ATTACHMENTS = new Set(["photo", "applicationForm", "playerStatement"]);
 
 export interface ShadowSummary {
   calls: number;
@@ -31,22 +37,45 @@ export function resetShadowSummary(): void {
   summary.clear();
 }
 
-/** Empty in Airtable's sense: absent, null, false, "", [] all mean "nothing". */
+/**
+ * Empty in Airtable's sense: absent, null, false, "", [] all mean "nothing".
+ * So do whitespace-only text (the import trims text) and a formula's error
+ * value ({ specialValue } or { error }), which Supabase stores as null.
+ */
 function isEmpty(v: unknown): boolean {
-  return v === undefined || v === null || v === false || v === "" || (Array.isArray(v) && v.length === 0);
+  if (v === undefined || v === null || v === false) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") {
+    const keys = Object.keys(v as object);
+    return keys.length === 1 && (keys[0] === "specialValue" || keys[0] === "error");
+  }
+  return false;
 }
 
 function canonical(v: unknown, key = ""): unknown {
-  if (PRESENCE_ONLY.has(key)) return isEmpty(v) ? null : "present";
+  if (ATTACHMENTS.has(key) && Array.isArray(v)) {
+    v = v.map((f) => (f && typeof f === "object" ? { filename: (f as { filename?: unknown }).filename, url: (f as { url?: unknown }).url } : f));
+  } else if (PRESENCE_ONLY.has(key)) {
+    return isEmpty(v) ? null : "present";
+  }
   if (isEmpty(v)) return null;
+  // The import trims text; surrounding whitespace is not a difference.
+  if (typeof v === "string") return v.trim();
   if (Array.isArray(v)) {
     const items = v.map((x) => canonical(x));
-    return items.every((x) => typeof x === "string") ? [...(items as string[])].sort() : items;
+    // Order within a list is not compared: link lists and one-per-office
+    // rows come back in store order, which differs between backends.
+    return items.every((x) => typeof x === "string")
+      ? [...(items as string[])].sort()
+      : [...items].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   }
   if (typeof v === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, x] of Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))) {
-      if (IGNORED.has(k)) continue;
+      // Fillout form links (joinerFormUrl, waiversFormUrl, ...) exist only in
+      // Airtable; Fillout goes with it, and Supabase never has them.
+      if (IGNORED.has(k) || k.endsWith("FormUrl")) continue;
       const c = canonical(x, k);
       if (c !== null) out[k] = c;
     }
