@@ -122,18 +122,21 @@ bucket_name = "eddy-files-preview"
 
 [env.preview.vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
-ALLOWED_ORIGIN = "http://localhost:5173"
+# Local frontends only: the usual Vite port, and 5174 for a second one
+# running at the same time (`vite --mode preview-api --port 5174`).
+ALLOWED_ORIGIN = "http://localhost:5173,http://localhost:5174"
 SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
-DATA_BACKEND = "airtable"
+# Preview reads and writes eddy-preview, as production will after the
+# switch-over. eddy-preview holds an imported copy of the club's data, so
+# preview saves change that copy, never Airtable. Setting this back to
+# "airtable" (with DATA_SHADOW_READ = "on") returns to shadow reads.
+DATA_BACKEND = "supabase"
 DATA_BACKEND_OVERRIDES = ""
 # Sign-in stays on eddy-production (SUPABASE_URL above); the data comes from
-# eddy-preview, which holds an imported copy of the club's data. Its secret
-# key is DATA_SUPABASE_SECRET_KEY, installed by .github/workflows/preview.yml.
+# eddy-preview. Its secret key is DATA_SUPABASE_SECRET_KEY, installed by
+# .github/workflows/preview.yml.
 DATA_SUPABASE_URL = "https://zlqzpzmqjqnrppmtevbv.supabase.co"
-# Serve Airtable and compare every read with Supabase in the background
-# (src/data/shadow.ts); counts show on /health?deep=1.
-DATA_SHADOW_READ = "on"
 API_ORIGIN = "https://hkfc-api-preview.ant-ford.workers.dev"
 # Preview never emails anyone real: everything goes to the captain, [PREVIEW].
 MAIL_FROM = "Eddy <notifications@eddy.global>"
