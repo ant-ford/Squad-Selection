@@ -159,8 +159,16 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
     },
     rawReadTtl(env, RANKING_CACHE_TTL_MS),
   );
-  // Display substitution at the response boundary: the cache keeps the true
-  // Registered Team for business rules; clients see the Selected Team.
+  return forClients(data);
+}
+
+/**
+ * Display substitution at the response boundary: the cache keeps the true
+ * Registered Team for business rules; clients see the Selected Team. Every
+ * ranking response goes through here, reads and writes alike, or the screen
+ * would switch a player's team after a save.
+ */
+function forClients(data: RankingList): RankingList {
   return { ...data, players: data.players.map((p) => ({ ...p, registeredTeam: selectedDisplayTeam(p) })) };
 }
 
@@ -443,7 +451,7 @@ async function recomputeDerivedFieldsFromList(
   await invalidateRankingCaches(env);
   await invalidateReferenceData(env);
 
-  return { players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() };
+  return forClients({ players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() });
 }
 
 export async function recomputeDerivedFields(env: Env): Promise<RankingList> {
