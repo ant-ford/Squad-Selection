@@ -5,6 +5,7 @@ import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
 import { officers, type Office } from "./data/officers";
+import { backendFor } from "./data/backend";
 import { availabilityExceptions } from "./data/availabilityExceptions";
 import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
@@ -160,7 +161,10 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
     env,
     OFFICER_LINKS_KEY,
     async () => {
-      const rows = await officers(env).listActive(["membershipOfficer", "sectionChair", "sectionCaptain"]);
+      // The Kit Convenor opens the kit screens, which exist only on Supabase.
+      const offices: Office[] = ["membershipOfficer", "sectionChair", "sectionCaptain"];
+      if (backendFor(env, "officers") === "supabase") offices.push("kitConvenor");
+      const rows = await officers(env).listActive(offices);
       const rolesByPersonId: Record<string, OfficerRole[]> = {};
       for (const { office, designation, memberIds } of rows) {
         for (const id of memberIds) (rolesByPersonId[id] ??= []).push({ office, designation });

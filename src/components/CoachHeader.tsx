@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { LogOut, User, ListChecks, Home, Users, Mail } from 'lucide-react';
+import { LogOut, User, ListChecks, Home, Users, Mail, Shirt } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
 import HelpLink from '@/components/HelpLink';
@@ -40,6 +40,12 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
         <button onClick={() => navigate('/membership')} className={headerNavClass()}>
           <Users className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Membership</span>
+        </button>
+      )}
+      {profile.sections?.includes('kit') && (
+        <button onClick={() => navigate('/kit')} className={headerNavClass()}>
+          <Shirt className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Kit</span>
         </button>
       )}
       <button onClick={() => navigate('/')} className={headerNavClass()}>

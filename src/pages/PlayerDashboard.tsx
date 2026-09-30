@@ -7,7 +7,7 @@ import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail, Trophy } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail, Trophy, Shirt } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -20,6 +20,7 @@ import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
+import MyKitCard from '@/components/MyKitCard';
 import HelpLink from '@/components/HelpLink';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 
@@ -224,6 +225,12 @@ export default function PlayerDashboard() {
             <span className="hidden sm:inline">Membership</span>
           </button>
         )}
+        {data.sections?.includes('kit') && (
+          <button onClick={() => navigate('/kit')} className={headerNavClass()}>
+            <Shirt className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Kit</span>
+          </button>
+        )}
         {(data.isCoach || data.isSectionCaptain) && (
           <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
             <Shield className="h-3.5 w-3.5" />
@@ -265,6 +272,7 @@ export default function PlayerDashboard() {
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
         <MyTasksBanner />
+        <MyKitCard />
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center">
