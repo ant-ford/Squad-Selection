@@ -29,7 +29,7 @@ const PLACE_TONE: Record<KitPlace, string> = {
   with_owner: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
 };
 
-export function PlaceBadge({ set }: { set: Pick<KitSet, 'place' | 'holder'> }) {
+export function PlaceBadge({ set }: { set: Pick<KitSet, 'place' | 'holder'> & { pendingTo?: KitSet['pendingTo'] } }) {
   return (
     <span className={`shrink-0 max-w-[9rem] truncate text-[11px] font-medium px-2 py-0.5 rounded-full ${PLACE_TONE[set.place]}`}>
       {describePlace(set)}

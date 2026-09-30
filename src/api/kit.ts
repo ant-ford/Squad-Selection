@@ -19,6 +19,11 @@ export function moveKit(body: { setIds: string[]; to: string | null; expected?: 
   return apiPost('/api/kit/move', body);
 }
 
+/** The receiver of an offered set: accept (they've got it) or not yet. */
+export function confirmKit(setId: string, accept: boolean): Promise<{ ok: true }> {
+  return apiPost('/api/kit/confirm', { setId, accept });
+}
+
 export function allocateSpare(setId: string, personId: string): Promise<{ ok: true }> {
   return apiPost('/api/kit/allocate', { setId, personId });
 }
