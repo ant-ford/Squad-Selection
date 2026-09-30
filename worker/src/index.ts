@@ -21,6 +21,7 @@ import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershi
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
 import { getMyDeclarations, submitDeclarations } from "./declarations";
+import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import {
   allocateSpare,
   editSizes,
@@ -653,6 +654,22 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireAuthorizedUser(request, env);
       const body = (await readJsonBody(request)) as Record<string, unknown>;
       return json(await submitDeclarations(env, user, body ?? {}), 200, origin);
+    }
+
+    // ── Season plan (Supabase backend; src/seasonPlan.ts) ─────────────────
+    // The player's own plan; the board decides per person which teams they see.
+    if (method === "GET" && pathname === "/api/season-plan/me") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getMySeasonPlan(env, user), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/season-plan") {
+      const user = await requireAuthorizedUser(request, env);
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(await submitSeasonPlan(env, user, body ?? {}), 200, origin);
+    }
+    if (method === "GET" && pathname === "/api/season-plan/board") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getSeasonPlanBoard(env, user), 200, origin);
     }
 
     // ── Kit (Supabase backend; src/kit.ts) ────────────────────────────────

@@ -23,6 +23,8 @@ const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
 const Waivers = lazy(() => import('./pages/Waivers'));
 // Kit: orders, handing out and spares (Kit Convenor, Section Captains).
 const Kit = lazy(() => import('./pages/Kit'));
+// Season plans by team (Section Captains; coaches for their own teams).
+const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -105,6 +107,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/season-plans',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <SeasonPlans />
           </Suspense>
         ),
       },

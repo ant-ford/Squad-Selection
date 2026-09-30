@@ -2,6 +2,8 @@ import type { Env } from "./env";
 import { getPlayerByEmail, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { HttpError } from "./http";
 import { sectionsFor, type AuthorizedUser } from "./auth";
+import { planTeamsFor } from "./seasonPlan";
+import { backendFor } from "./data/backend";
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
   const user = await getPlayerByEmail(env, authUser.email);
@@ -49,6 +51,15 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Which officers' sections to offer. Derived from the same rule the
     // Worker enforces, so the app never keeps its own copy of it.
     sections: sectionsFor(authUser, env),
+
+    // Whether the Season plans screen has anything for them: Section
+    // Captains every team, coaches their own. Supabase backend only.
+    seasonPlans:
+      backendFor(env, "people") === "supabase" &&
+      (() => {
+        const teams = planTeamsFor(env, authUser);
+        return teams === "all" || teams.length > 0;
+      })(),
 
     captainTeams,
 
