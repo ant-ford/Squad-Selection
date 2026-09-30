@@ -113,8 +113,10 @@ function MembershipStep({ details, ...nav }: StepProps) {
 
 function SectionStep({ section, details, ...nav }: StepProps & { section: SectionSpec }) {
   const queryClient = useQueryClient();
-  const fields = fieldsFor(section, details.applicant);
-  const [values, setValues] = useState<ProfileValues>(() => Object.fromEntries(fields.map((f) => [f.key, details.values[f.key] ?? null])));
+  const allFields = fieldsFor(section, details.applicant);
+  const [values, setValues] = useState<ProfileValues>(() => Object.fromEntries(allFields.map((f) => [f.key, details.values[f.key] ?? null])));
+  // Not playing this season: the rest of the hockey questions don't apply.
+  const fields = section.key === 'hockey' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
   const [problem, setProblem] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState(details.photoUrl);
   const [hkid, setHkid] = useState(details.hasHkidCopy);
@@ -266,12 +268,20 @@ export default function MyDetailsPage() {
   const steps = useMemo<{ key: StepKey; title: string }[]>(() => {
     const d = details.data;
     if (!d) return [];
+    const section = (key: SectionSpec['key'], short: string) => ({ key, title: short });
+    const playing = d.applicant || d.values.active !== false;
     return [
       ...(d.applicant ? [] : [{ key: 'membership' as const, title: 'Membership' }]),
-      ...PROFILE_SECTIONS.filter((s) => !s.underEighteenOnly || d.underEighteen).map((s) => ({ key: s.key, title: s.title })),
-      ...(d.kit ? [{ key: 'kit' as const, title: 'Kit sizes' }] : []),
-      ...(askPlan ? [{ key: 'plan' as const, title: 'Season plan' }] : []),
+      section('personal', 'Personal'),
+      section('emergency', 'Emergency contact'),
+      section('contact', 'Contact'),
+      section('work', 'Work'),
+      ...(d.underEighteen ? [section('guardian', 'Parent or guardian')] : []),
+      section('hockey', 'Hockey'),
+      ...(askPlan && playing ? [{ key: 'plan' as const, title: 'Season plan' }] : []),
+      ...(d.kit && playing ? [{ key: 'kit' as const, title: 'Kit sizes' }] : []),
       { key: 'volunteering' as const, title: 'Volunteering' },
+      section('billing', 'Bank and billing'),
       { key: 'done' as const, title: 'Confirm' },
     ];
   }, [details.data, askPlan]);

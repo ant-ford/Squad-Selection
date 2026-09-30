@@ -17,7 +17,7 @@
 import { hkDateKey } from "./hkDateKey";
 import { seasonStartYear } from "./membershipInsights";
 
-export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea";
+export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno";
 
 export interface FieldSpec {
   key: string;
@@ -30,9 +30,11 @@ export interface FieldSpec {
   hint?: string;
   /** Asked of applicants only (the club application needs it). */
   applicantOnly?: boolean;
+  /** Asked of members only. */
+  memberOnly?: boolean;
 }
 
-export type SectionKey = "personal" | "emergency" | "contact" | "work" | "guardian";
+export type SectionKey = "personal" | "emergency" | "contact" | "work" | "guardian" | "hockey" | "billing";
 
 export interface SectionSpec {
   key: SectionKey;
@@ -58,6 +60,20 @@ export const HK_DISTRICTS = [
 ] as const;
 
 export const REGIONS = ["Hong Kong", "Kowloon", "New Territories"] as const;
+
+/** Hong Kong banks and their bank codes (the Airtable form's list). */
+export const BANKS: Record<string, string> = {
+  "Airstar Bank": "395", "Ant Bank (Hong Kong)": "393", "Bank of China (Hong Kong)": "012", "Bank of Communications (Hong Kong)": "382",
+  "China CITIC Bank International": "018", "China Construction Bank (Asia)": "009", "Chiyu Banking Corporation": "039", "Chong Hing Bank": "041",
+  "Citibank (Hong Kong)": "250", "Citibank, N.A.": "006", "CMB Wing Lung Bank": "020", "Credit Agricole Corporate and Investment Bank": "005",
+  "Dah Sing Bank": "040", "DBS Bank (Hong Kong)": "016", "Fubon Bank (Hong Kong)": "128", "Fusion Bank": "391", "Hang Seng Bank": "024",
+  HSBC: "004", "Industrial and Commercial Bank of China (Asia)": "072", "JPMorgan Chase Bank, N.A.": "007", "Livi Bank": "388", "Mox Bank": "389",
+  "Nanyang Commercial Bank": "043", "OCBC Wing Hang Bank": "035", "Ping An OneConnect Bank (PAO Bank)": "392", "Public Bank (Hong Kong)": "028",
+  "Shanghai Commercial Bank": "025", "Standard Chartered Bank (Hong Kong) Limited": "003", "Tai Yau Bank": "038", "The Bank of East Asia": "015",
+  "WeLab Bank": "390", "ZA Bank": "387",
+};
+
+const CHANNELS = ["Personal Email", "Office Email", "Spouse Personal Email", "Spouse Office Email"] as const;
 
 const address = (prefix: "home" | "business", label: string, flatTypes: readonly string[]): FieldSpec[] => [
   { key: `${prefix}FlatType`, column: `${prefix}_flat_type`, label: `${label}: flat, room, apartment…`, type: "select", options: flatTypes },
@@ -138,6 +154,40 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
     ],
   },
   {
+    key: "hockey",
+    title: "Your hockey this season",
+    fields: [
+      { key: "active", column: "active", label: "Will you be an active member this season?", type: "yesno", required: true, memberOnly: true },
+      { key: "playingPosition", column: "playing_position", label: "Playing position", type: "select", options: ["Goalkeeper", "Defender", "Midfielder", "Forward", "Flexible/Varies"], required: true },
+      {
+        key: "playingLevel",
+        column: "playing_level",
+        label: "Levels you've played at",
+        type: "multi",
+        options: ["Premier League", "Division 1", "Division 2", "Division 3", "Division 4", "Division 5", "Division 6"],
+      },
+      { key: "selectionComments", column: "selection_comments", label: "Selection comments and coach/S&C requests", type: "textarea", memberOnly: true },
+      { key: "improvementIdeas", column: "improvement_ideas", label: "Feedback and ideas", type: "textarea", memberOnly: true },
+    ],
+  },
+  {
+    key: "billing",
+    title: "Bank and billing",
+    intro: "For the club's direct debit of your monthly account. Leave it if the club already has these.",
+    fields: [
+      { key: "billPayer", column: "bill_payer", label: "Who pays the club account?", type: "select", options: ["Applicant", "Spouse / Partner", "Guardian / Parent"] },
+      { key: "bankName", column: "bank_name", label: "Bank", type: "select", options: Object.keys(BANKS) },
+      { key: "bankBranchNo", column: "bank_branch_no", label: "Branch no.", type: "text" },
+      { key: "bankAccountNo", column: "bank_account_no", label: "Account no.", type: "text" },
+      { key: "bankContactNo", column: "bank_contact_no", label: "Contact no. for the bank", type: "phone" },
+      { key: "bankPaymentLimit", column: "bank_payment_limit", label: "Payment limit", type: "select", options: ["Unlimited", "Each Payment", "Each Month"] },
+      { key: "bankPaymentLimitAmount", column: "bank_payment_limit_amount", label: "Limit amount (HK$)", type: "number", hint: "Unless the limit is Unlimited." },
+      { key: "guardianBankAccountName", column: "guardian_bank_account_name", label: "Parent or guardian's name on the account", type: "text", hint: "If a parent or guardian pays." },
+      { key: "billingChannels", column: "billing_channels", label: "Send bills to", type: "multi", options: CHANNELS },
+      { key: "correspondenceChannels", column: "correspondence_channels", label: "Send club letters to", type: "multi", options: CHANNELS },
+    ],
+  },
+  {
     key: "guardian",
     title: "Parent or guardian",
     intro: "You're under 18, so we need a parent or guardian's contact details.",
@@ -151,12 +201,12 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
   },
 ];
 
-/** The fields a person answers in a section: applicant-only ones for applicants alone. */
+/** The fields a person answers in a section: applicant-only ones for applicants, member-only ones for members. */
 export function fieldsFor(section: SectionSpec, applicant: boolean): FieldSpec[] {
-  return section.fields.filter((f) => applicant || !f.applicantOnly);
+  return section.fields.filter((f) => (applicant ? !f.memberOnly : !f.applicantOnly));
 }
 
-export type ProfileValues = Record<string, string | string[] | null>;
+export type ProfileValues = Record<string, string | string[] | boolean | null>;
 
 /** The officers' membership fields, shown read-only to members. */
 export interface MembershipFacts {
@@ -196,6 +246,15 @@ export interface MyDetails {
 
 /** Loose checks, the same in the browser and the Worker. */
 export function checkValue(f: FieldSpec, v: unknown): string | null {
+  if (f.type === "yesno") {
+    if (v === true || v === false) return null;
+    return f.required ? `${f.label} Choose yes or no.` : null;
+  }
+  if (f.type === "number") {
+    if (v === null || v === undefined || v === "") return f.required ? `${f.label} is needed.` : null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) && n >= 0 && n < 1e10 ? null : `${f.label}: that isn't a number.`;
+  }
   if (f.type === "multi") {
     if (v !== undefined && v !== null && !Array.isArray(v)) return `${f.label}: choose from the list.`;
     const list = (v ?? []) as unknown[];

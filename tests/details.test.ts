@@ -34,6 +34,25 @@ describe("my details", () => {
     expect(() => parseSection("nope", { values: {} }, false)).toThrow(/Unknown section/);
   });
 
+  it("saves only 'not active' when a member won't play this season, and the hockey answers when they will", () => {
+    expect(parseSection("hockey", { values: { active: false, playingPosition: "" } }, false)).toEqual({ active: false });
+    expect(parseSection("hockey", { values: { active: true, playingPosition: "Goalkeeper", playingLevel: ["Division 2"] } }, false)).toMatchObject({
+      active: true, playing_position: "Goalkeeper", playing_level: ["Division 2"], selection_comments: null,
+    });
+    expect(() => parseSection("hockey", { values: { playingPosition: "Goalkeeper" } }, false)).toThrow(/active member/);
+    // Applicants aren't asked whether they'll be active, or for selection comments.
+    expect(parseSection("hockey", { values: { playingPosition: "Forward" } }, true)).toEqual({ playing_position: "Forward", playing_level: [] });
+  });
+
+  it("keeps bank details optional and checks the limit amount is a number", () => {
+    expect(parseSection("billing", { values: {} }, false)).toMatchObject({ bank_name: null, bank_payment_limit_amount: null, billing_channels: [] });
+    expect(parseSection("billing", { values: { bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, false)).toMatchObject({
+      bank_name: "HSBC", bank_payment_limit: "Each Month", bank_payment_limit_amount: 5000,
+    });
+    expect(() => parseSection("billing", { values: { bankPaymentLimitAmount: "lots" } }, false)).toThrow(/number/);
+    expect(() => parseSection("billing", { values: { bankName: "Bank of Nowhere" } }, false)).toThrow(/list/);
+  });
+
   it("takes any nationality or district, but checks emails, phones and dates", () => {
     const f = (key: string) => PROFILE_SECTIONS.flatMap((s) => s.fields).find((x) => x.key === key)!;
     expect(checkValue(f("nationality"), "Belgium ")).toBeNull();

@@ -103,7 +103,10 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
   const values: ProfileValues = {};
   for (const f of ALL_FIELDS) {
     const v = p[f.column];
-    values[f.key] = f.type === "multi" ? (Array.isArray(v) ? (v as string[]) : []) : typeof v === "string" ? v : v == null ? null : String(v);
+    values[f.key] =
+      f.type === "multi" ? (Array.isArray(v) ? (v as string[]) : [])
+      : f.type === "yesno" ? (typeof v === "boolean" ? v : null)
+      : typeof v === "string" ? v : v == null ? null : String(v);
   }
   const photo = files.find((f) => f.kind === "photo");
   return {
@@ -128,16 +131,22 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
 }
 
 /** Checks one section's answers; returns the People columns to write. */
-export function parseSection(key: string, body: Record<string, unknown>, applicant: boolean): Record<string, string | string[] | null> {
+export function parseSection(key: string, body: Record<string, unknown>, applicant: boolean): Record<string, string | string[] | number | boolean | null> {
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
   if (!section) throw new HttpError("Unknown section.", 404, "NOT_FOUND");
   const values = (body.values ?? {}) as Record<string, unknown>;
-  const patch: Record<string, string | string[] | null> = {};
+  // Not playing this season: only that answer is saved (the Fillout form hid the rest).
+  if (key === "hockey" && !applicant && values.active === false) return { active: false };
+  const patch: Record<string, string | string[] | number | boolean | null> = {};
   for (const f of fieldsFor(section, applicant)) {
     const problem = checkValue(f, values[f.key]);
     if (problem) throw new HttpError(problem, 400, "INVALID_INPUT");
     const v = values[f.key];
-    patch[f.column] = f.type === "multi" ? ((v ?? []) as string[]) : typeof v === "string" && v.trim() ? v.trim() : null;
+    patch[f.column] =
+      f.type === "multi" ? ((v ?? []) as string[])
+      : f.type === "yesno" ? (v as boolean)
+      : f.type === "number" ? (v === null || v === undefined || v === "" ? null : Number(v))
+      : typeof v === "string" && v.trim() ? v.trim() : null;
   }
   return patch;
 }

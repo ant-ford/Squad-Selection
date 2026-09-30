@@ -3,7 +3,9 @@ import type { FieldSpec, ProfileValues } from '@shared/profile';
 export const fieldInput =
   'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
 
-function Field({ f, value, onChange }: { f: FieldSpec; value: string | string[] | null; onChange: (v: string | string[] | null) => void }) {
+type Value = string | string[] | boolean | null;
+
+function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (v: Value) => void }) {
   const id = `f-${f.key}`;
   const label = (
     <label htmlFor={id} className="text-xs font-medium text-foreground">
@@ -14,6 +16,31 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: string | string[] 
   const hint = f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>;
   const str = typeof value === 'string' ? value : '';
 
+  if (f.type === 'yesno') {
+    return (
+      <fieldset className="space-y-1 sm:col-span-2">
+        <legend className="text-xs font-medium text-foreground">
+          {f.label}
+          {f.required && <span className="text-destructive"> *</span>}
+        </legend>
+        <div className="flex gap-2" role="radiogroup">
+          {[true, false].map((b) => (
+            <button
+              key={String(b)}
+              type="button"
+              role="radio"
+              aria-checked={value === b}
+              onClick={() => onChange(b)}
+              className={`text-sm px-4 py-1.5 rounded-md border ${value === b ? 'border-primary bg-primary/10 font-medium' : 'border-border bg-background hover:bg-muted'}`}
+            >
+              {b ? 'Yes' : 'No'}
+            </button>
+          ))}
+        </div>
+        {hint}
+      </fieldset>
+    );
+  }
   if (f.type === 'multi') {
     const list = Array.isArray(value) ? value : [];
     return (
@@ -62,14 +89,14 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: string | string[] 
       </div>
     );
   }
-  const type = f.type === 'phone' ? 'tel' : f.type === 'suggest' ? 'text' : f.type;
+  const type = f.type === 'phone' ? 'tel' : f.type === 'suggest' ? 'text' : f.type === 'number' ? 'number' : f.type;
   return (
     <div className="space-y-1">
       {label}
       <input
         id={id}
         type={type}
-        inputMode={f.type === 'phone' ? 'tel' : undefined}
+        inputMode={f.type === 'phone' ? 'tel' : f.type === 'number' ? 'decimal' : undefined}
         list={f.type === 'suggest' ? `${id}-list` : undefined}
         className={fieldInput}
         value={str}
