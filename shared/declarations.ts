@@ -1,49 +1,63 @@
 /**
  * Waivers & declarations: the HKFC Hockey Code of Conduct & Disclaimers
  * everyone agrees to each season, and the Parent or Guardian's Consent for
- * under-18s. The wording is the Fillout form's (form 10, as it stood on
- * 2026-09-30). The HockeyHK league declaration and HKHA's waiver clauses are
+ * under-18s. The Code of Conduct is the owner's approved rewrite of the
+ * Fillout form's (2026-09-30): the same points, grouped and reworded. The
+ * two confirmations and the four disclaimers are the Fillout form's words,
+ * unchanged. The HockeyHK league declaration and HKHA's waiver clauses are
  * not asked this season (owner, 2026-09-30).
  *
  * Changing any wording means a new DECLARATIONS_VERSION: each signing records
  * the version it agreed to.
  */
 
-export const DECLARATIONS_VERSION = "2026-09-30";
+export const DECLARATIONS_VERSION = "2026-09-30-v2";
 
 export const CODE_OF_CONDUCT = {
   title: "HKFC Hockey Code of Conduct & Disclaimers",
   intro: [
-    "HKFC Hockey prides itself on fostering an open, welcoming community for individuals from all backgrounds — ensuring that everyone who wants to experience hockey can be involved, feel valued, and be safe.",
-    "HKFC is dedicated to promoting and protecting the welfare of all participants, and urges everyone to uphold the values and integrity of our sport at all times.",
-    "This Code of Conduct ensures that everyone — players, coaches, umpires, officials, and spectators — contributes to an environment that is safe, respectful, and enjoyable for all. By adhering to this code, we demonstrate the behaviours expected of participants: treating each other with respect, acting with integrity, involving others, and seeing hockey as a force for good.",
+    "HKFC Hockey is an open, welcoming community where everyone who wants to play hockey can take part, feel valued and be safe. Players, coaches, umpires, officials and spectators all share responsibility for keeping it that way: treating each other with respect, acting with integrity, including others, and making hockey a force for good.",
   ],
-  examplesIntro: "Examples of inappropriate behaviour include, but are not limited to:",
+  examplesIntro: "Behaviour we don't accept (including, but not limited to):",
   examples: [
-    "Using inappropriate, insulting, foul, or discriminatory language or gestures during any hockey-related activity",
-    "Abusing, ridiculing, or shouting at players, coaches, umpires, or officials",
-    "Smoking while engaged in any hockey match or training session",
-    "Consuming illegal substances during hockey-related events or on HKFC premises",
-    "Endorsing or displaying behaviour that contradicts HKFC Hockey values and policies",
-    "Making insulting or inappropriate statements about HKFC Hockey, its members, or any person or organisation covered by this Code",
-    "Using involvement in hockey to promote beliefs or behaviours that conflict with those of HKFC Hockey",
-    "Engaging in criminal or illegal activities",
-    "Misrepresenting qualifications, exerting undue influence, or operating outside agreed parameters",
-    "Engaging in any form of sexually inappropriate or unwanted behaviour — including innuendo, flirting, or gestures — whether in person or electronically",
-    "Providing alcohol, cigarettes, or drugs to young participants",
-    "Condoning rule violations, rough play, or the use of prohibited substances",
-    "Using social or electronic media to publicly criticise players, parents, officials, or anyone involved in hockey",
-    "Publicly questioning the decisions or integrity of umpires, coaches, or officials during games or training",
-    "Taking any action that threatens the health and safety of anyone involved in hockey activities",
-    "Entering the playing area without permission",
-    "Urinating in public",
-    "Failing to be impartial in decision-making",
+    {
+      heading: "Respect",
+      items: [
+        "Insulting, abusive, foul or discriminatory language or gestures",
+        "Abusing, ridiculing or shouting at players, coaches, umpires, officials or spectators",
+        "Publicly questioning the decisions or integrity of umpires, coaches or officials",
+        "Criticising players, parents, officials or anyone involved in hockey on social or other media",
+      ],
+    },
+    {
+      heading: "Safety and wellbeing",
+      items: [
+        "Any action that puts the health or safety of others at risk",
+        "Sexually inappropriate or unwanted behaviour of any kind, in person or online",
+        "Providing alcohol, tobacco or drugs to young participants",
+        "Smoking or vaping during matches or training, or using illegal substances at hockey events or on HKFC premises",
+      ],
+    },
+    {
+      heading: "Fair play and integrity",
+      items: [
+        "Condoning rule-breaking, rough play or the use of prohibited substances",
+        "Misrepresenting qualifications, exerting undue influence or acting outside agreed roles",
+        "Failing to be impartial when making decisions",
+        "Entering the playing area without permission",
+      ],
+    },
+    {
+      heading: "Reputation",
+      items: [
+        "Conduct, on or off the pitch, that brings HKFC Hockey or the Club into disrepute, including unlawful behaviour",
+        "Using hockey to promote beliefs or behaviour that conflict with HKFC Hockey's values",
+      ],
+    },
   ],
-  codeTitle: "Code of Conduct",
+  codeTitle: "Our commitment",
   code: [
-    "Club members will not bring the section or the Club into disrepute, nor engage in behaviour unbecoming of a Club member — whether on the pitch during matches, as a spectator, or elsewhere.",
-    "By representing HKFC Hockey, members are required to set the highest standards of conduct on the pitch, regardless of the standards set by others.",
-    "Members are subject to the section's bye-laws on discipline (Section 11). Any breach of conduct reported to the committee may lead to removal from the section and other sanctions as described therein.",
+    "Members must not bring the Section or the Club into disrepute, whether playing, spectating or elsewhere. When representing HKFC Hockey, members set the highest standards of conduct, whatever the standards of others. Members are subject to the Section's bye-laws on discipline (Section 11); a reported breach may lead to removal from the Section and other sanctions set out there.",
   ],
   disclaimersTitle: "Disclaimers",
 } as const;

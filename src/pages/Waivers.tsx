@@ -66,12 +66,17 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
     <>
       <Section title={CODE_OF_CONDUCT.title}>
         {CODE_OF_CONDUCT.intro.map((p) => <p key={p} className="text-sm text-muted-foreground">{p}</p>)}
-        <p className="text-sm text-muted-foreground">{CODE_OF_CONDUCT.examplesIntro}</p>
-        <ul className="list-disc pl-5 space-y-0.5">
-          {CODE_OF_CONDUCT.examples.map((e) => <li key={e} className="text-sm text-muted-foreground">{e}</li>)}
-        </ul>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground pt-2">{CODE_OF_CONDUCT.codeTitle}</h3>
-        {CODE_OF_CONDUCT.code.map((p) => <p key={p} className="text-sm text-muted-foreground italic">{p}</p>)}
+        <p className="text-sm font-medium text-foreground pt-1">{CODE_OF_CONDUCT.examplesIntro}</p>
+        {CODE_OF_CONDUCT.examples.map((group) => (
+          <div key={group.heading}>
+            <p className="text-xs font-semibold text-foreground mt-2">{group.heading}</p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {group.items.map((e) => <li key={e} className="text-sm text-muted-foreground">{e}</li>)}
+            </ul>
+          </div>
+        ))}
+        <h3 className="text-sm font-medium text-foreground pt-3">{CODE_OF_CONDUCT.codeTitle}</h3>
+        {CODE_OF_CONDUCT.code.map((p) => <p key={p} className="text-sm text-muted-foreground">{p}</p>)}
         <div className="divide-y divide-border">
           {DECLARATION_ITEMS.filter((i) => i.section === 'code').map((i) => (
             <Tick key={i.key} checked={!!ticked[i.key]} onChange={tick(i.key)}>{i.text}</Tick>
