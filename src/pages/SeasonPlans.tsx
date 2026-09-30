@@ -68,7 +68,7 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
         {level ? (
           <span className={`${badge} ${LEVEL_TONE[level.key]}`}>{level.short}</span>
         ) : (
-          <span className={`${badge} bg-muted text-muted-foreground`}>Not answered</span>
+          <span className={`${badge} bg-muted text-muted-foreground`}>{plan ? 'How much not given' : 'Not answered'}</span>
         )}
         {half && <span className={`${badge} bg-violet-500/15 text-violet-700 dark:text-violet-300`}>{half.short} only</span>}
         {pref === 'Next team down' && <span className={`${badge} bg-muted text-foreground`}>Next team down</span>}
