@@ -156,6 +156,9 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
+  if (section?.applicantOnly && !isApplicant(p)) {
+    throw new HttpError("Bank and billing details are asked of new joiners only.", 400, "INVALID_INPUT");
+  }
   if (section?.underEighteenOnly && !isUnderEighteen(p.date_of_birth, today())) {
     throw new HttpError("Only under-18s give a parent or guardian's details.", 400, "INVALID_INPUT");
   }

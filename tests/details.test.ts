@@ -44,13 +44,15 @@ describe("my details", () => {
     expect(parseSection("hockey", { values: { playingPosition: "Forward" } }, true)).toEqual({ playing_position: "Forward", playing_level: [] });
   });
 
-  it("keeps bank details optional and checks the limit amount is a number", () => {
-    expect(parseSection("billing", { values: {} }, false)).toMatchObject({ bank_name: null, bank_payment_limit_amount: null, billing_channels: [] });
-    expect(parseSection("billing", { values: { bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, false)).toMatchObject({
+  it("asks bank details of new joiners only, and checks the limit amount is a number", async () => {
+    fake({ people: [{ id: "u1", api_id: "recME", status: "Member" }] });
+    await expect(saveSection(env, user, "billing", { values: { bankName: "HSBC" } })).rejects.toThrow(/new joiners only/);
+    expect(parseSection("billing", { values: {} }, true)).toMatchObject({ bank_name: null, bank_payment_limit_amount: null, billing_channels: [] });
+    expect(parseSection("billing", { values: { bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, true)).toMatchObject({
       bank_name: "HSBC", bank_payment_limit: "Each Month", bank_payment_limit_amount: 5000,
     });
-    expect(() => parseSection("billing", { values: { bankPaymentLimitAmount: "lots" } }, false)).toThrow(/number/);
-    expect(() => parseSection("billing", { values: { bankName: "Bank of Nowhere" } }, false)).toThrow(/list/);
+    expect(() => parseSection("billing", { values: { bankPaymentLimitAmount: "lots" } }, true)).toThrow(/number/);
+    expect(() => parseSection("billing", { values: { bankName: "Bank of Nowhere" } }, true)).toThrow(/list/);
   });
 
   it("takes any nationality or district, but checks emails, phones and dates", () => {

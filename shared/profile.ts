@@ -6,6 +6,7 @@
  *
  * Owner decisions, 2026-10-01: one set of sections for both forms;
  * members check them one section per screen at the start of each season;
+ * bank and billing details are asked of new joiners only;
  * membership fields (type, category, number, dates) are officers' and shown
  * read-only; the sign-in email isn't changed here.
  *
@@ -43,6 +44,8 @@ export interface SectionSpec {
   fields: FieldSpec[];
   /** Shown only to under-18s. */
   underEighteenOnly?: boolean;
+  /** Asked of new joiners (applicants) only. */
+  applicantOnly?: boolean;
 }
 
 export const NATIONALITIES = [
@@ -173,7 +176,9 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
   {
     key: "billing",
     title: "Bank and billing",
-    intro: "For the club's direct debit of your monthly account. Leave it if the club already has these.",
+    intro: "For the club's direct debit of your monthly account, on your Sports Associate membership forms.",
+    // New joiners only (owner, 2026-10-01): used once, for their associate membership forms.
+    applicantOnly: true,
     fields: [
       { key: "billPayer", column: "bill_payer", label: "Who pays the club account?", type: "select", options: ["Applicant", "Spouse / Partner", "Guardian / Parent"] },
       { key: "bankName", column: "bank_name", label: "Bank", type: "select", options: Object.keys(BANKS) },

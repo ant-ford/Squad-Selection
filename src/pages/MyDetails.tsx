@@ -281,7 +281,7 @@ export default function MyDetailsPage() {
       ...(askPlan && playing ? [{ key: 'plan' as const, title: 'Season plan' }] : []),
       ...(d.kit && playing ? [{ key: 'kit' as const, title: 'Kit sizes' }] : []),
       { key: 'volunteering' as const, title: 'Volunteering' },
-      section('billing', 'Bank and billing'),
+      ...(d.applicant ? [section('billing', 'Bank and billing')] : []),
       { key: 'done' as const, title: 'Confirm' },
     ];
   }, [details.data, askPlan]);
