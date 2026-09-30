@@ -170,6 +170,15 @@ describe("reorderRanking", () => {
     ]);
   });
 
+  it("answers with each player's Selected Team, as the ranking read does", async () => {
+    state.people[1].fields = { ...state.people[1].fields, "Registered Team": "HKFC C", "Selected Team EOS": "HKFC B" };
+    state.people[2].fields = { ...state.people[2].fields, "Registered Team": "HKFC A" };
+    const list = await reorderRanking(ENV, ["recA3", "recA1", "recA2"], "coach@hkfc.com");
+    const teamOf = (id: string) => list.players.find((p) => p.id === id)?.registeredTeam;
+    expect(teamOf("recA2")).toBe("HKFC B");
+    expect(teamOf("recA3")).toBe("HKFC A");
+  });
+
   it("rejects a stale playerIds list (wrong count) with 409", async () => {
     await expect(
       reorderRanking(ENV, ["recA1", "recA2"], "coach@hkfc.com"),

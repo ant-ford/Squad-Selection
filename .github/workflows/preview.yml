@@ -11,8 +11,9 @@ name: Preview API
 #
 # What keeps the preview away from production is in worker/wrangler.toml
 # under [env.preview]: its own Worker name, no custom domain, no cron, no
-# shared KV cache, and CORS only for http://localhost:5173. Its Airtable
-# token is a separate, read-only one, so it cannot change club data.
+# shared KV cache, and CORS only for http://localhost:5173 and :5174. Its
+# Airtable token is a separate, read-only one, so it cannot change club
+# data; with DATA_BACKEND = "supabase" it reads and writes eddy-preview.
 
 on:
   workflow_dispatch:
@@ -85,6 +86,19 @@ jobs:
           fi
           printf '%s' "$DATA_SUPABASE_SECRET_KEY" | npx wrangler secret put DATA_SUPABASE_SECRET_KEY --config worker/wrangler.toml --env preview
 
+      # Signs calendar feed links. Preview's own secret, never production's,
+      # so a preview can never hand out a link that works on production.
+      - name: Set calendar secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CALENDAR_SECRET: ${{ secrets.CALENDAR_SECRET }}
+        run: |
+          if [ -z "$CALENDAR_SECRET" ]; then
+            echo "::warning::CALENDAR_SECRET is not in the preview environment; calendar links will fail."
+            exit 0
+          fi
+          printf '%s' "$CALENDAR_SECRET" | npx wrangler secret put CALENDAR_SECRET --config worker/wrangler.toml --env preview
+
       # Resend, for email. Preview redirects every message to the captain.
       - name: Set Resend key
         env:
@@ -125,7 +139,7 @@ jobs:
             echo ""
             echo "- Branch: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
             echo "- URL: $URL"
-            echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173"
-            echo "- Airtable access is read-only: saves fail while DATA_BACKEND is airtable."
-            echo "- Shadow reads compare with eddy-preview: counts at \`$URL/health?deep=1\`."
+            echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173 (or add \`-- --port 5174\`)"
+            echo "- Data: whatever DATA_BACKEND in [env.preview] says. On supabase, saves change eddy-preview; on airtable they fail (read-only token)."
+            echo "- Health: \`$URL/health?deep=1\` (with shadow counts when DATA_SHADOW_READ is on)."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -70,6 +70,40 @@ describe("Supabase data client", () => {
     expect(err.code).toBe("23505");
   });
 
+  it("tries a read once more after a network error or a gateway failure", async () => {
+    let n = 0;
+    const calls = stubFetch(() => {
+      n++;
+      if (n === 1) throw new TypeError("fetch failed");
+      if (n === 2) return { status: 503, body: "upstream" };
+      return { body: [{ id: "a" }] };
+    });
+    // First select: the network error is retried and the 503 answer then fails it.
+    await expect(db(env).select("teams", "select=id")).rejects.toMatchObject({ status: 503 });
+    // Second select: succeeds on its first try.
+    expect(await db(env).select("teams", "select=id")).toEqual([{ id: "a" }]);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("recovers from one gateway failure on a read", async () => {
+    let n = 0;
+    const calls = stubFetch(() => (n++ === 0 ? { status: 502, body: "bad gateway" } : { body: [{ id: "a" }] }));
+    expect(await db(env).one("teams", "select=id&id=eq.a")).toEqual({ id: "a" });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("never repeats a write, and does not retry a real error", async () => {
+    const writes = stubFetch(() => ({ status: 503, body: "upstream" }));
+    await expect(db(env).update("people", "id=eq.a", { active: true })).rejects.toMatchObject({ status: 503 });
+    await expect(db(env).rpc("set_match_selection", {})).rejects.toMatchObject({ status: 503 });
+    expect(writes).toHaveLength(2);
+
+    vi.unstubAllGlobals();
+    const reads = stubFetch(() => ({ status: 400, body: { message: "bad filter" } }));
+    await expect(db(env).select("teams", "select=nope")).rejects.toMatchObject({ status: 400 });
+    expect(reads).toHaveLength(1);
+  });
+
   it("encodes filter values", () => {
     expect(eq("2026-2027")).toBe("eq.2026-2027");
     expect(eq("a&b=c")).toBe("eq.a%26b%3Dc");
