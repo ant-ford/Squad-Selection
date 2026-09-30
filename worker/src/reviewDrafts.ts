@@ -233,9 +233,12 @@ export async function generateDrafts(env: Env, reviewApiId: string, step: DraftS
   );
   const patch: Record<string, string> = {};
   for (const r of results) {
-    // "Nothing to add" (other_information) is a legitimate empty answer; it is simply not stored.
-    if (r.status === "fulfilled" && r.value[1]) patch[r.value[0]] = r.value[1];
-    else console.error(`Review ${reviewApiId}: a ${step} draft failed: ${r.reason instanceof Error ? r.reason.message : "error"}`);
+    if (r.status === "rejected") {
+      console.error(`Review ${reviewApiId}: a ${step} draft failed: ${r.reason instanceof Error ? r.reason.message : "error"}`);
+    } else if (r.value[1]) {
+      // "Nothing to add" (other_information) is a legitimate empty answer; it is simply not stored.
+      patch[r.value[0]] = r.value[1];
+    }
   }
   if (Object.keys(patch).length === 0) return 0;
   await d.update("commitments", `api_id=${eq(reviewApiId)}`, {
