@@ -26,6 +26,9 @@ import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
 import { invalidateForTables } from "./airtableWebhook";
 import { draftNextStep } from "./reviewDrafts";
+import { signatureBytes, storeSignature } from "./signatures";
+
+export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { TABLES } from "../../shared/schema/tableNames";
@@ -46,9 +49,6 @@ import {
 /** An imported review keeps its Airtable id; one Eddy created has a uuid. */
 const REVIEW_ID = /^(rec[A-Za-z0-9]{14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
-/** A drawn signature is a small PNG; anything larger is not one. */
-const MAX_SIGNATURE_BYTES = 200_000;
-const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 interface ReviewRow {
   id: string;
@@ -341,18 +341,6 @@ export function officerReviewFrom(body: Record<string, unknown>): OfficerReview 
   return review;
 }
 
-/** A drawn signature (PNG data URL) as bytes, or a 400. */
-export function signatureBytes(dataUrl: string): Uint8Array<ArrayBuffer> {
-  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (!m) throw new HttpError("The signature is not a PNG image.", 400, "INVALID_INPUT");
-  const bin = atob(m[1]);
-  if (bin.length > MAX_SIGNATURE_BYTES) throw new HttpError("The signature image is too large.", 400, "INVALID_INPUT");
-  const bytes = new Uint8Array(new ArrayBuffer(bin.length));
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  if (!PNG_MAGIC.every((b, i) => bytes[i] === b)) throw new HttpError("The signature is not a PNG image.", 400, "INVALID_INPUT");
-  return bytes;
-}
-
 /**
  * The signature this submission is signed with: a newly drawn one, saved to
  * the signer's People record for next time, or the one saved before.
@@ -363,19 +351,10 @@ async function signatureFor(env: Env, user: AuthorizedUser, drawn: string | unde
     if (!saved) throw new HttpError("Sign the review.", 400, "INVALID_INPUT");
     return saved;
   }
-  const bytes = signatureBytes(drawn);
-  if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
-  const d = db(env);
-  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
+  signatureBytes(drawn); // a bad image is a 400 before anything is looked up
+  const person = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
   if (!person) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
-  const key = `signatures/${person.id}/${crypto.randomUUID()}.png`;
-  const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  await env.FILES.put(key, bytes, { httpMetadata: { contentType: "image/png" }, customMetadata: { sha256 } });
-  const [file] = await d.insert<{ id: string }>("files", [{
-    r2_key: key, kind: "signature", person_id: person.id, filename: "signature.png",
-    content_type: "image/png", bytes: bytes.length, sha256,
-  }]);
-  return file.id;
+  return storeSignature(env, person.id, drawn, "signature");
 }
 
 /** The database's answer to a submission, as an HTTP error. */

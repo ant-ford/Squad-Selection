@@ -19,6 +19,8 @@ const EmailLists = lazy(() => import('./pages/EmailLists'));
 const ClubStats = lazy(() => import('./pages/ClubStats'));
 // A commitment review: the member, their sponsor or a Membership Officer.
 const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
+// This season's waivers & declarations.
+const Waivers = lazy(() => import('./pages/Waivers'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -101,6 +103,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/waivers',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Waivers />
           </Suspense>
         ),
       },
