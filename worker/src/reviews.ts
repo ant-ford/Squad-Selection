@@ -25,6 +25,7 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
 import { invalidateForTables } from "./airtableWebhook";
+import { draftNextStep } from "./reviewDrafts";
 import { TABLES } from "../../shared/schema/tableNames";
 import {
   GAMES_UMPIRED,
@@ -92,6 +93,28 @@ interface ReviewRow {
   officer_submitted_at: string | null;
   sponsor_signature_file: string | null;
   officer_signature_file: string | null;
+  section_service_draft?: string | null;
+  hkfc_service_draft?: string | null;
+  recommendation_draft?: string | null;
+  is_player_needed_draft?: string | null;
+  other_comments_draft?: string | null;
+  other_information_draft?: string | null;
+  drafts_generated_at?: string | null;
+}
+
+/** The AI suggestions for the step the viewer is doing, by form field; empty ones left out. */
+export function draftsFor(row: ReviewRow, step: "sponsor" | "officer"): Record<string, string> {
+  const pairs: [string, string | null | undefined][] = step === "sponsor"
+    ? [["sectionService", row.section_service_draft], ["hkfcService", row.hkfc_service_draft], ["recommendation", row.recommendation_draft]]
+    : [["isPlayerNeeded", row.is_player_needed_draft], ["otherComments", row.other_comments_draft], ["otherInformation", row.other_information_draft]];
+  return Object.fromEntries(pairs.filter((p): p is [string, string] => typeof p[1] === "string" && p[1].trim() !== ""));
+}
+
+/** A review at this step with no drafts made for it yet (e.g. started before drafting existed). */
+function needsDrafts(row: ReviewRow, step: "sponsor" | "officer"): boolean {
+  if (Object.keys(draftsFor(row, step)).length > 0) return false;
+  if (step === "sponsor") return !row.drafts_generated_at;
+  return !row.drafts_generated_at || (!!row.sponsor_submitted_at && row.drafts_generated_at < row.sponsor_submitted_at);
 }
 
 interface NextStep {
@@ -243,6 +266,9 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
   }
   if (canDo === "sponsor" || canDo === "officer") {
     view.savedSignatureUrl = await signed(env, await savedSignature(env, user.personId));
+    view.drafts = draftsFor(row, canDo);
+    // Ready by the next time the page is opened.
+    if (needsDrafts(row, canDo)) draftNextStep(env, row.id, canDo);
   }
   return view;
 }
@@ -438,6 +464,7 @@ export async function submitMemberReport(env: Env, user: AuthorizedUser, rawId: 
       .catch(submissionError);
     at("cache");
     await invalidateForTables(env, [TABLES.commitment]);
+    draftNextStep(env, id, "sponsor");
     at("email");
     return { ok: true, emailed: await notifyNext(env, id, next?.[0], "sponsor") };
   });
@@ -459,6 +486,7 @@ export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId:
       .catch(submissionError);
     at("cache");
     await invalidateForTables(env, [TABLES.commitment]);
+    draftNextStep(env, id, "officer");
     at("email");
     return { ok: true, emailed: await notifyNext(env, id, next?.[0], "officer") };
   });

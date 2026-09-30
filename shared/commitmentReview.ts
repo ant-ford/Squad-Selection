@@ -104,4 +104,10 @@ export interface ReviewView {
   options?: { sponsors: ReviewOffice[]; officers: ReviewOffice[]; usualSponsor: string | null };
   /** For a signer: their saved signature, to sign with in one tap. */
   savedSignatureUrl?: string | null;
+  /**
+   * For the sponsor or Membership Officer doing their step: AI suggestions by
+   * form field (sectionService, hkfcService, recommendation / isPlayerNeeded,
+   * otherComments, otherInformation). Pre-filled; the reviewer edits them.
+   */
+  drafts?: Record<string, string>;
 }

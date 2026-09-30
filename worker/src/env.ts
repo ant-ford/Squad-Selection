@@ -77,4 +77,8 @@ export interface Env {
   REVIEW_EMAIL_FROM?: string;
   /** The web app's origin, for links in emails. */
   APP_ORIGIN?: string;
+  /** OpenRouter API key, as a Worker secret, for the review drafts (src/reviewDrafts.ts). Unset: no drafts. */
+  OPENROUTER_API_KEY?: string;
+  /** OpenRouter model for the review drafts, e.g. "qwen/qwen3.8-27b". */
+  AI_DRAFT_MODEL?: string;
 }

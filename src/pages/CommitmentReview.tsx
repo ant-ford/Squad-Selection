@@ -83,7 +83,13 @@ function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => v
   const [value, setValue] = useState<T>(() => {
     try {
       const saved = localStorage.getItem(key);
-      return saved ? { ...initial, ...(JSON.parse(saved) as Partial<T>) } : initial;
+      if (!saved) return initial;
+      // What was typed wins, but a box left empty keeps its starting value
+      // (an AI draft that arrived after the form was first opened).
+      const start = initial as Record<string, unknown>;
+      const empty = (v: unknown) => v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
+      const kept = Object.entries(JSON.parse(saved) as Record<string, unknown>).filter(([field, v]) => !empty(v) || empty(start[field]));
+      return { ...initial, ...Object.fromEntries(kept) };
     } catch {
       return initial;
     }
@@ -104,6 +110,16 @@ function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => v
     }
   };
   return [value, set, clear];
+}
+
+/** Shown above a reviewer's form when some answers start from an AI suggestion. */
+function DraftNote({ drafts }: { drafts: Record<string, string> }) {
+  if (Object.keys(drafts).length === 0) return null;
+  return (
+    <p className="text-[11px] rounded-md bg-muted/60 text-muted-foreground px-2 py-1.5">
+      Some answers start from a suggested draft. Check and edit them before you sign: what you submit is your review.
+    </p>
+  );
 }
 
 /** Why a submission failed, kept on screen by the button (a toast is easy to miss). */
@@ -280,7 +296,12 @@ function SignBlock({ savedUrl, onChange }: { savedUrl: string | null | undefined
 // ── Sponsor ─────────────────────────────────────────────────────────────
 
 function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
-  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, { sectionService: '', hkfcService: '', recommendation: '' });
+  const ai = review.drafts ?? {};
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, {
+    sectionService: ai.sectionService ?? '',
+    hkfcService: ai.hkfcService ?? '',
+    recommendation: ai.recommendation ?? '',
+  });
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -297,6 +318,7 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
 
   return (
     <div className="space-y-3">
+      <DraftNote drafts={ai} />
       <Field label="Potential for Section service and involvement">
         <textarea className={area} value={form.sectionService} onChange={(e) => setForm({ ...form, sectionService: e.target.value })} />
       </Field>
@@ -348,12 +370,13 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
 // ── Membership Officer ──────────────────────────────────────────────────
 
 function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
+  const ai = review.drafts ?? {};
   const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, {
     playersAvailable: '',
     optimumPlayers: '',
-    isPlayerNeeded: '',
-    otherComments: '',
-    otherInformation: '',
+    isPlayerNeeded: ai.isPlayerNeeded ?? '',
+    otherComments: ai.otherComments ?? '',
+    otherInformation: ai.otherInformation ?? '',
     recommendedReduction: '',
   });
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
@@ -373,6 +396,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
 
   return (
     <div className="space-y-3">
+      <DraftNote drafts={ai} />
       <div className="grid grid-cols-2 gap-3">
         <Field label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}>
           <input className={input} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />

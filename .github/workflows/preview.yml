@@ -111,6 +111,18 @@ jobs:
           fi
           printf '%s' "$RESEND_API_KEY" | npx wrangler secret put RESEND_API_KEY --config worker/wrangler.toml --env preview
 
+      # OpenRouter, for the commitment review drafts. Without it, no drafts.
+      - name: Set OpenRouter key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "::warning::OPENROUTER_API_KEY is not in the preview environment; reviews get no AI drafts."
+            exit 0
+          fi
+          printf '%s' "$OPENROUTER_API_KEY" | npx wrangler secret put OPENROUTER_API_KEY --config worker/wrangler.toml --env preview
+
       # A CORS preflight needs no sign-in and proves the two things the
       # local frontend depends on: the Worker answers, and it accepts
       # http://localhost:5173. Retried briefly while the deploy propagates.
