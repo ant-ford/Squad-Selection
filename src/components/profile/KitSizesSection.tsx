@@ -35,6 +35,11 @@ export default function KitSizesSection({ kit, value, onChange }: { kit: Details
         <SizeSelect label="Shorts" value={value.shorts} options={KIT_SIZE_OPTIONS.shorts} onChange={set('shorts')} />
         <SizeSelect label="Socks" value={value.socks} options={KIT_SIZE_OPTIONS.socks} onChange={set('socks')} />
       </div>
+      {kit.printedShirt?.size && (
+        <p className="text-[11px] text-muted-foreground">
+          Your #{kit.printedShirt.shirtNo} shirt is printed in {kit.printedShirt.size}, so its size can't change.
+        </p>
+      )}
       {kit.goalkeeper && (
         <div className="grid grid-cols-2 gap-3">
           <SizeSelect label="Goalkeeper smock" value={value.goalieSmock} options={KIT_SIZE_OPTIONS.goalieSmock} onChange={set('goalieSmock')} />
