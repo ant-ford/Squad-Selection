@@ -355,6 +355,27 @@ function submissionError(err: unknown): never {
   throw err;
 }
 
+/**
+ * Runs one submission; anything unexpected is logged and answered with a
+ * short reference (error type, database code, where it failed), never row
+ * values, so a failure seen on screen can be diagnosed without the logs.
+ */
+async function reported<T>(step: string, run: (at: (stage: string) => void) => Promise<T>): Promise<T> {
+  let stage = "start";
+  try {
+    return await run((s) => { stage = s; });
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    const ref = [
+      err instanceof Error ? err.name : typeof err,
+      err instanceof SupabaseError ? `${err.status}${err.code ? ` ${err.code}` : ""}` : null,
+      `at ${stage}`,
+    ].filter(Boolean).join(", ");
+    console.error(`Review ${step} submission failed (${ref}):`, err instanceof Error ? err.stack : err);
+    throw new HttpError(`Not submitted (${ref}).`, 500, "REVIEW_FAILED");
+  }
+}
+
 function appOrigin(env: Env): string {
   return (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 }
@@ -410,25 +431,37 @@ export async function submitMemberReport(env: Env, user: AuthorizedUser, rawId: 
   requireSupabase(env);
   const id = reviewId(rawId);
   const report = memberReportFrom(body);
-  const next = await db(env)
-    .rpc<NextStep[]>("submit_member_report", { p_commitment: id, p_actor: user.personId, p: report })
-    .catch(submissionError);
-  await invalidateForTables(env, [TABLES.commitment]);
-  return { ok: true, emailed: await notifyNext(env, id, next?.[0], "sponsor") };
+  return reported("member", async (at) => {
+    at("save");
+    const next = await db(env)
+      .rpc<NextStep[]>("submit_member_report", { p_commitment: id, p_actor: user.personId, p: report })
+      .catch(submissionError);
+    at("cache");
+    await invalidateForTables(env, [TABLES.commitment]);
+    at("email");
+    return { ok: true, emailed: await notifyNext(env, id, next?.[0], "sponsor") };
+  });
 }
 
 export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId: string, body: Record<string, unknown>) {
   requireSupabase(env);
   const id = reviewId(rawId);
   const { signature, ...review } = sponsorReviewFrom(body);
-  const row = await loadRow(env, id);
-  if (!rolesFor(user, row).includes("sponsor")) throw new HttpError("Only this member's sponsor can review their Player Statement.", 403, "FORBIDDEN");
-  const file = await signatureFor(env, user, signature);
-  const next = await db(env)
-    .rpc<NextStep[]>("submit_sponsor_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
-    .catch(submissionError);
-  await invalidateForTables(env, [TABLES.commitment]);
-  return { ok: true, emailed: await notifyNext(env, id, next?.[0], "officer") };
+  return reported("sponsor", async (at) => {
+    at("load");
+    const row = await loadRow(env, id);
+    if (!rolesFor(user, row).includes("sponsor")) throw new HttpError("Only this member's sponsor can review their Player Statement.", 403, "FORBIDDEN");
+    at(signature ? "signature-store" : "signature-saved");
+    const file = await signatureFor(env, user, signature);
+    at("save");
+    const next = await db(env)
+      .rpc<NextStep[]>("submit_sponsor_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
+      .catch(submissionError);
+    at("cache");
+    await invalidateForTables(env, [TABLES.commitment]);
+    at("email");
+    return { ok: true, emailed: await notifyNext(env, id, next?.[0], "officer") };
+  });
 }
 
 export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId: string, body: Record<string, unknown>) {
@@ -436,10 +469,15 @@ export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId:
   const id = reviewId(rawId);
   const { signature, ...review } = officerReviewFrom(body);
   if (!isOfficer(user)) throw new HttpError("Only a Membership Officer can complete the review.", 403, "FORBIDDEN");
-  const file = await signatureFor(env, user, signature);
-  await db(env)
-    .rpc("submit_officer_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
-    .catch(submissionError);
-  await invalidateForTables(env, [TABLES.commitment]);
-  return { ok: true };
+  return reported("officer", async (at) => {
+    at(signature ? "signature-store" : "signature-saved");
+    const file = await signatureFor(env, user, signature);
+    at("save");
+    await db(env)
+      .rpc("submit_officer_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
+      .catch(submissionError);
+    at("cache");
+    await invalidateForTables(env, [TABLES.commitment]);
+    return { ok: true };
+  });
 }

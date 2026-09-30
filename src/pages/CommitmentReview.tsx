@@ -101,6 +101,8 @@ function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => v
 /** Why a submission failed, kept on screen by the button (a toast is easy to miss). */
 function submitError(err: unknown): string {
   if (err instanceof ApiError && err.status < 500) return err.message;
+  // The Worker's reference for an unexpected failure (type, database code, stage).
+  if (err instanceof ApiError && err.code === 'REVIEW_FAILED') return `${err.message} Your answers are kept here; please try again.`;
   return 'Not submitted: the connection or the server failed. Your answers are kept here; please try again.';
 }
 
