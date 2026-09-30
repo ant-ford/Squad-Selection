@@ -8,7 +8,20 @@ export const GAMES_UMPIRED = ["0", "1", "2", "3", "4", "5+"] as const;
 
 export const PRACTICES = ["Very Regular 70%+", "Moderate 50-70%", "Hardly Ever <50%"] as const;
 
-export const SOCIAL_FUNCTIONS = ["Start of Season", "Christmas Party", "End of Season", "Hockey Section AGM", "None"] as const;
+/** Choosing none means none: there is no "None" option (owner, 2026-09-30). */
+export const SOCIAL_FUNCTIONS = ["Start of Season", "Christmas Party", "End of Season", "Hockey Section AGM"] as const;
+
+/** The commitment's match attendance: at least 70% of the team's matches. */
+export const MIN_MATCH_ATTENDANCE = 0.7;
+
+/**
+ * Whether the member is asked for a reason for low participation: when they
+ * played under 70% of their team's matches, or it cannot be worked out.
+ */
+export function belowAttendance(played: number | null | undefined, teamPlayed: number | null | undefined): boolean {
+  if (typeof played !== "number" || typeof teamPlayed !== "number" || teamPlayed <= 0) return true;
+  return played / teamPlayed < MIN_MATCH_ATTENDANCE;
+}
 
 export const RECOMMENDED_REDUCTIONS = ["None", "1 year", "1.5 years", "2 years"] as const;
 

@@ -267,9 +267,9 @@ export function memberReportFrom(body: Record<string, unknown>): MemberReport {
   };
   if (!(GAMES_UMPIRED as readonly string[]).includes(report.gamesUmpired)) throw new HttpError("Choose how many games you umpired.", 400, "INVALID_INPUT");
   if (!(PRACTICES as readonly string[]).includes(report.practices)) throw new HttpError("Choose how often you came to practice.", 400, "INVALID_INPUT");
-  const bad = report.socialFunctions.some((s) => !(SOCIAL_FUNCTIONS as readonly string[]).includes(s));
-  if (bad || report.socialFunctions.length === 0 || (report.socialFunctions.includes("None") && report.socialFunctions.length > 1)) {
-    throw new HttpError("Choose the social functions you went to, or None.", 400, "INVALID_INPUT");
+  // None chosen means none went to (there is no "None" option).
+  if (report.socialFunctions.some((s) => !(SOCIAL_FUNCTIONS as readonly string[]).includes(s))) {
+    throw new HttpError("Unknown social function.", 400, "INVALID_INPUT");
   }
   if (!report.sponsor) throw new HttpError("Choose your sponsor.", 400, "INVALID_INPUT");
   return report;

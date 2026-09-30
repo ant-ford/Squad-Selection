@@ -12,6 +12,7 @@ import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
+  belowAttendance,
   GAMES_UMPIRED,
   PRACTICES,
   RECOMMENDED_REDUCTIONS,
@@ -65,11 +66,58 @@ function Waiting({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
+/**
+ * Form state kept in this browser until the submission succeeds, so a failed
+ * submit, a reload or a dropped connection never loses what was typed.
+ * Storage can be unavailable (private mode); the form then works without it.
+ */
+function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => void, () => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? { ...initial, ...(JSON.parse(saved) as Partial<T>) } : initial;
+    } catch {
+      return initial;
+    }
+  });
+  const set = (next: T) => {
+    setValue(next);
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      /* not kept */
+    }
+  };
+  const clear = () => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* nothing to clear */
+    }
+  };
+  return [value, set, clear];
+}
+
+/** Why a submission failed, kept on screen by the button (a toast is easy to miss). */
+function submitError(err: unknown): string {
+  if (err instanceof ApiError && err.status < 500) return err.message;
+  return 'Not submitted: the connection or the server failed. Your answers are kept here; please try again.';
+}
+
+function SubmitError({ error }: { error: unknown }) {
+  if (!error) return null;
+  return (
+    <p role="alert" className="text-xs text-destructive">
+      {submitError(error)}
+    </p>
+  );
+}
+
 // ── Member ──────────────────────────────────────────────────────────────
 
 function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const options = review.options ?? { sponsors: [], officers: [], usualSponsor: null };
-  const [form, setForm] = useState<MemberReport>({
+  const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, {
     gamesUmpired: '',
     practices: '',
     socialFunctions: [],
@@ -81,25 +129,20 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
     officer: review.officer.office ?? (options.officers.length === 1 ? options.officers[0].id : ''),
   });
   const [confirming, setConfirming] = useState(false);
-  const set = <K extends keyof MemberReport>(k: K, v: MemberReport[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof MemberReport>(k: K, v: MemberReport[K]) => setForm({ ...form, [k]: v });
   const toggleSocial = (s: string) =>
-    set(
-      'socialFunctions',
-      s === 'None'
-        ? form.socialFunctions.includes('None') ? [] : ['None']
-        : form.socialFunctions.includes(s)
-          ? form.socialFunctions.filter((x) => x !== s)
-          : [...form.socialFunctions.filter((x) => x !== 'None'), s],
-    );
+    set('socialFunctions', form.socialFunctions.includes(s) ? form.socialFunctions.filter((x) => x !== s) : [...form.socialFunctions, s]);
+  // Asked only when match attendance is under the commitment's 70%.
+  const askReason = belowAttendance(review.attendance.matchesPlayed, review.attendance.matchesTeamPlayed);
   const submit = useMutation({
-    mutationFn: () => submitMemberReport(review.id, form),
+    mutationFn: () => submitMemberReport(review.id, { ...form, lowParticipationReason: askReason ? form.lowParticipationReason : '' }),
     onSuccess: () => {
+      clearDraft();
       const sponsor = options.sponsors.find((s) => s.id === form.sponsor)?.name;
       onDone(`Sent to ${sponsor ?? 'your sponsor'} for their review`);
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not submit. Please try again.'),
   });
-  const complete = !!form.gamesUmpired && !!form.practices && form.socialFunctions.length > 0 && !!form.sponsor;
+  const complete = !!form.gamesUmpired && !!form.practices && !!form.sponsor;
 
   return (
     <div className="space-y-3">
@@ -145,9 +188,11 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
       <Field label="Potential for HKFC service and involvement">
         <textarea className={area} value={form.hkfcService} onChange={(e) => set('hkfcService', e.target.value)} />
       </Field>
-      <Field label="Reason for low participation, if any">
-        <textarea className={area} value={form.lowParticipationReason} onChange={(e) => set('lowParticipationReason', e.target.value)} />
-      </Field>
+      {askReason && (
+        <Field label="Reason for low participation">
+          <textarea className={area} value={form.lowParticipationReason} onChange={(e) => set('lowParticipationReason', e.target.value)} />
+        </Field>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Sponsor">
           <select className={input} value={form.sponsor} onChange={(e) => set('sponsor', e.target.value)}>
@@ -162,6 +207,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           </select>
         </Field>
       </div>
+      <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Submit Player Statement'}
       </button>
@@ -190,11 +236,11 @@ function MemberReportView({ review }: { review: ReviewView }) {
         <Answer label="Games umpired" value={r.gamesUmpired} />
         <Answer label="Practices" value={r.practices} />
       </div>
-      <Answer label="Social functions" value={r.socialFunctions.join(', ')} />
+      <Answer label="Social functions" value={r.socialFunctions.join(', ') || 'None'} />
       <Answer label="Other contributions" value={r.otherContributions} />
       <Answer label="Potential for Section service and involvement" value={r.sectionService} />
       <Answer label="Potential for HKFC service and involvement" value={r.hkfcService} />
-      <Answer label="Reason for low participation" value={r.lowParticipationReason} />
+      {r.lowParticipationReason && <Answer label="Reason for low participation" value={r.lowParticipationReason} />}
     </div>
   );
 }
@@ -221,7 +267,7 @@ function SignBlock({ savedUrl, onChange }: { savedUrl: string | null | undefined
 // ── Sponsor ─────────────────────────────────────────────────────────────
 
 function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
-  const [form, setForm] = useState({ sectionService: '', hkfcService: '', recommendation: '' });
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, { sectionService: '', hkfcService: '', recommendation: '' });
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -229,8 +275,10 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       const body: SponsorReview = { ...form, ...(sig && sig !== 'saved' ? { signature: sig } : {}) };
       return submitSponsorReview(review.id, body);
     },
-    onSuccess: () => onDone('Sent to the Membership Officer'),
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not submit. Please try again.'),
+    onSuccess: () => {
+      clearDraft();
+      onDone('Sent to the Membership Officer');
+    },
   });
   const complete = !!form.sectionService.trim() && !!form.hkfcService.trim() && !!form.recommendation.trim() && !!sig;
 
@@ -245,7 +293,8 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       <Field label="Recommendation">
         <textarea className={area} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} />
       </Field>
-      <SignBlock savedUrl={review.savedSignatureUrl} onChange={(v) => setSig(v === null && review.savedSignatureUrl ? null : v)} />
+      <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and submit'}
       </button>
@@ -286,7 +335,7 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
 // ── Membership Officer ──────────────────────────────────────────────────
 
 function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
-  const [form, setForm] = useState({
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, {
     playersAvailable: '',
     optimumPlayers: '',
     isPlayerNeeded: '',
@@ -301,8 +350,10 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       const body: OfficerReview = { ...form, ...(sig && sig !== 'saved' ? { signature: sig } : {}) };
       return submitOfficerReview(review.id, body);
     },
-    onSuccess: () => onDone('Review complete'),
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not submit. Please try again.'),
+    onSuccess: () => {
+      clearDraft();
+      onDone('Review complete');
+    },
   });
   const n = (v: string) => /^\d{1,3}$/.test(v);
   const complete = n(form.playersAvailable) && n(form.optimumPlayers) && !!form.isPlayerNeeded.trim() && !!form.recommendedReduction && !!sig;
@@ -332,7 +383,8 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
           {RECOMMENDED_REDUCTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
       </Field>
-      <SignBlock savedUrl={review.savedSignatureUrl} onChange={(v) => setSig(v === null && review.savedSignatureUrl ? null : v)} />
+      <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and complete review'}
       </button>

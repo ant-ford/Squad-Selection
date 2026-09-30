@@ -12,6 +12,7 @@ import {
   submitMemberReport,
   submitSponsorReview,
 } from "../worker/src/reviews";
+import { belowAttendance } from "../shared/commitmentReview";
 
 const env = {
   DATA_BACKEND: "supabase",
@@ -134,9 +135,18 @@ describe("answers", () => {
     expect(memberReportFrom(good)).toMatchObject({ gamesUmpired: "2", socialFunctions: ["End of Season"] });
     expect(() => memberReportFrom({ ...good, gamesUmpired: "7" })).toThrow(/umpired/);
     expect(() => memberReportFrom({ ...good, practices: "Always" })).toThrow(/practice/);
-    expect(() => memberReportFrom({ ...good, socialFunctions: [] })).toThrow(/social/);
-    expect(() => memberReportFrom({ ...good, socialFunctions: ["None", "End of Season"] })).toThrow(/social/);
+    // Choosing none is saying none; there is no "None" option any more.
+    expect(memberReportFrom({ ...good, socialFunctions: [] }).socialFunctions).toEqual([]);
+    expect(() => memberReportFrom({ ...good, socialFunctions: ["None"] })).toThrow(/social function/);
     expect(() => memberReportFrom({ ...good, sponsor: "" })).toThrow(/sponsor/);
+  });
+
+  it("asks for a reason only under the commitment's 70% match attendance", () => {
+    expect(belowAttendance(18, 22)).toBe(false); // 82%
+    expect(belowAttendance(14, 20)).toBe(false); // exactly 70%
+    expect(belowAttendance(13, 20)).toBe(true); // 65%
+    expect(belowAttendance(0, 0)).toBe(true); // cannot tell: ask
+    expect(belowAttendance(null, 20)).toBe(true);
   });
 
   it("needs all three sponsor answers, and the officer's numbers and reduction", () => {
