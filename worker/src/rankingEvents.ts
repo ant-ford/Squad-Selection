@@ -20,7 +20,7 @@
 
 import { AirtableError } from "./airtable";
 import { people } from "./data/people";
-import { rankingEvents } from "./data/rankingEvents";
+import { rankingEvents, type RankingEventRow } from "./data/rankingEvents";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
@@ -147,6 +147,95 @@ export interface RankingChange {
 
 const RANKING_EVENTS_TTL_MS = 60 * 1000;
 
+type RankedEvent = Pick<RankingEventRow, "kind" | "actorEmail" | "timestamp" | "oldRank" | "newRank">;
+
+/**
+ * Drops the knock-on shifts from the recent-changes list, keeping the
+ * players a coach actually moved. Moving someone up three places shifts
+ * three others down one each; all four are recorded (the audit stays
+ * complete), but only the first is worth reading.
+ *
+ * One save stamps every event with the same timestamp, so a save is the
+ * events sharing timestamp + actor. Within it, the shifted players are the
+ * largest set whose order relative to each other didn't change; everyone
+ * else was moved. Among equally large sets the one with the smallest
+ * total shift wins, so the big jump is the one called a move.
+ *
+ * Two players trading adjacent places could be either one moving, so
+ * both are kept.
+ */
+export function withoutKnockOnShifts<T extends RankedEvent>(rows: T[]): T[] {
+  const saves = new Map<string, T[]>();
+  for (const r of rows) {
+    if ((r.kind !== "move" && r.kind !== "reorder") || r.oldRank == null || r.newRank == null) continue;
+    const key = `${r.timestamp}|${r.actorEmail.trim().toLowerCase()}`;
+    saves.set(key, [...(saves.get(key) ?? []), r]);
+  }
+
+  const shifted = new Set<T>();
+  for (const save of saves.values()) {
+    if (save.length < 2) continue;
+    if (
+      save.length === 2 &&
+      Math.abs(save[0].oldRank! - save[1].oldRank!) === 1 &&
+      save[0].newRank === save[1].oldRank &&
+      save[1].newRank === save[0].oldRank
+    ) {
+      continue;
+    }
+    // Unchanged players aren't recorded, but ranks run 1..n, so the gaps
+    // between the changed ranks are players who stayed put. They count:
+    // dropping below four players who didn't move is a move, not a shift.
+    const taken = new Set(save.map((r) => r.oldRank!));
+    const lo = Math.min(...taken);
+    const hi = Math.max(...taken);
+    const byOld: { row?: T; oldRank: number; newRank: number }[] = save.map((r) => ({
+      row: r,
+      oldRank: r.oldRank!,
+      newRank: r.newRank!,
+    }));
+    for (let rank = lo + 1; rank < hi; rank++) {
+      if (!taken.has(rank)) byOld.push({ oldRank: rank, newRank: rank });
+    }
+    byOld.sort((a, b) => a.oldRank - b.oldRank);
+
+    // Longest run of increasing new ranks (in old-rank order), cheapest on ties.
+    const shift = (i: number) => Math.abs(byOld[i].newRank - byOld[i].oldRank);
+    const len: number[] = [];
+    const cost: number[] = [];
+    const prev: number[] = [];
+    for (let i = 0; i < byOld.length; i++) {
+      len[i] = 1;
+      cost[i] = shift(i);
+      prev[i] = -1;
+      for (let j = 0; j < i; j++) {
+        if (byOld[j].newRank >= byOld[i].newRank) continue;
+        const l = len[j] + 1;
+        const c = cost[j] + shift(i);
+        if (l > len[i] || (l === len[i] && c < cost[i])) {
+          len[i] = l;
+          cost[i] = c;
+          prev[i] = j;
+        }
+      }
+    }
+    let end = 0;
+    for (let i = 1; i < byOld.length; i++) {
+      if (len[i] > len[end] || (len[i] === len[end] && cost[i] < cost[end])) end = i;
+    }
+    const kept: T[] = [];
+    for (let i = end; i !== -1; i = prev[i]) {
+      const row = byOld[i].row;
+      if (row) kept.push(row);
+    }
+    // A save always moves someone; if nobody reads as moved, show it all.
+    if (kept.length === save.length) continue;
+    for (const row of kept) shifted.add(row);
+  }
+
+  return rows.filter((r) => !shifted.has(r));
+}
+
 /**
  * Most recent ranking events within `days`, newest first, capped at the 20
  * newest. Names are joined from the club reference; players no longer in the
@@ -160,7 +249,9 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
       try {
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
         const rows = await rankingEvents(env).listNewestFirst();
-        const fresh = rows.filter((r) => r.timestamp !== "" && r.timestamp >= since);
+        // Knock-on shifts come out before the cap, or one long move would
+        // fill the 20 slots on its own.
+        const fresh = withoutKnockOnShifts(rows.filter((r) => r.timestamp !== "" && r.timestamp >= since));
         const ref = await getReferenceData(env);
         const playerById = new Map(ref.players.map((p) => [p.id, p]));
         const actorIdByEmail = new Map<string, string>();

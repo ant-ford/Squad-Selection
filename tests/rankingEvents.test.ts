@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   validateJustification,
   selectRankingEventChanges,
+  withoutKnockOnShifts,
   buildRankingEventRecords,
   recordRankingEvents,
   getRankingEvents,
@@ -151,6 +152,73 @@ describe("selectRankingEventChanges", () => {
       rank: i + 1 + 5,
     }));
     expect(selectRankingEventChanges(updates)).toHaveLength(25);
+  });
+});
+
+describe("withoutKnockOnShifts", () => {
+  const TS = "2026-09-30T08:00:00.000Z";
+  const ev = (name: string, oldRank: number | null, newRank: number | null, over: Record<string, unknown> = {}) => ({
+    name,
+    kind: "reorder",
+    actorEmail: "coach@example.com",
+    timestamp: TS,
+    oldRank,
+    newRank,
+    ...over,
+  });
+  const names = (rows: { name: string }[]) => rows.map((r) => r.name);
+
+  it("keeps only the player moved up, not the three shifted down", () => {
+    const rows = [ev("A", 5, 2), ev("B", 2, 3), ev("C", 3, 4), ev("D", 4, 5)];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A"]);
+  });
+
+  it("keeps only the player moved down", () => {
+    const rows = [ev("A", 2, 6), ev("B", 3, 2), ev("C", 4, 3), ev("D", 5, 4), ev("E", 6, 5)];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A"]);
+  });
+
+  it("keeps both players moved in one save", () => {
+    // A 10 -> 1 and B 3 -> 8 saved together.
+    const before = ["P1", "P2", "B", "P4", "P5", "P6", "P7", "P8", "P9", "A"];
+    const after = ["A", "P1", "P2", "P4", "P5", "P6", "P7", "B", "P8", "P9"];
+    const rows = before
+      .map((n, i) => ev(n, i + 1, after.indexOf(n) + 1))
+      .filter((r) => r.oldRank !== r.newRank);
+    expect(names(withoutKnockOnShifts(rows)).sort()).toEqual(["A", "B"]);
+  });
+
+  it("keeps both players when two swap over players who stayed put", () => {
+    const rows = [ev("A", 2, 6), ev("B", 6, 2)];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A", "B"]);
+  });
+
+  it("keeps both sides of a one-place swap", () => {
+    const rows = [ev("A", 4, 3), ev("B", 3, 4)];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A", "B"]);
+  });
+
+  it("treats separate saves separately", () => {
+    const rows = [
+      ev("A", 5, 2), ev("B", 2, 3), ev("C", 3, 4), ev("D", 4, 5),
+      ev("E", 9, 7, { timestamp: "2026-09-29T08:00:00.000Z" }),
+      ev("F", 7, 8, { timestamp: "2026-09-29T08:00:00.000Z" }),
+      ev("G", 8, 9, { timestamp: "2026-09-29T08:00:00.000Z" }),
+    ];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A", "E"]);
+  });
+
+  it("leaves activations and deactivations alone", () => {
+    const rows = [ev("A", null, 4, { kind: "activate" }), ev("B", 7, null, { kind: "deactivate" })];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["A", "B"]);
+  });
+
+  it("keeps newest-first order", () => {
+    const rows = [
+      ev("E", 9, 7, { timestamp: "2026-09-30T09:00:00.000Z" }),
+      ev("B", 2, 3), ev("A", 5, 2), ev("C", 3, 4), ev("D", 4, 5),
+    ];
+    expect(names(withoutKnockOnShifts(rows))).toEqual(["E", "A"]);
   });
 });
 
