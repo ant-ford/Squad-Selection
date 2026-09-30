@@ -25,6 +25,8 @@ const Waivers = lazy(() => import('./pages/Waivers'));
 const Kit = lazy(() => import('./pages/Kit'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
+// The member details update (one section per screen).
+const MyDetails = lazy(() => import('./pages/MyDetails'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -110,6 +112,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/my-details',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <MyDetails />
           </Suspense>
         ),
       },

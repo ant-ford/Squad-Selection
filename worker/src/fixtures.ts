@@ -15,6 +15,7 @@ import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
+import { backendFor } from "./data/backend";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
 
@@ -178,6 +179,8 @@ export async function getMyFixtures(
     // Officers' sections, for the dashboard's header buttons.
     sections: sectionsFor(authUser, env),
     volunteers: await canSeeVolunteers(env, authUser),
+    // Their details are Eddy's own screens on Supabase ("My details").
+    eddyProfile: backendFor(env, "people") === "supabase",
     // Decided here, on the Hong Kong calendar day, so the date of birth
     // itself never reaches the browser.
     isBirthday: isBirthdayOn(user.birthday, today),

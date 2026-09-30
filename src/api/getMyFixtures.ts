@@ -90,6 +90,8 @@ export interface GetMyFixturesOutput {
   sections?: ('membership' | 'chairman' | 'kit' | 'planning')[];
   /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
   volunteers?: boolean;
+  /** Whether their details are kept in Eddy (the Supabase backend): shows "My details". */
+  eddyProfile?: boolean;
   /** Today (Hong Kong time) is this player's birthday. */
   isBirthday?: boolean;
   /** Teammates (same Selected Team) whose birthday it is today, by name. */

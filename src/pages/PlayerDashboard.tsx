@@ -287,6 +287,11 @@ export default function PlayerDashboard() {
                 {data.shirtNoValue ? ` - #${data.shirtNoValue}` : ''}
               </p>
             </div>
+            {data.eddyProfile && (
+              <button onClick={() => navigate('/my-details')} className="text-xs font-medium text-primary shrink-0">
+                My details
+              </button>
+            )}
           </div>
         </div>
         <MyVolunteeringLink />
