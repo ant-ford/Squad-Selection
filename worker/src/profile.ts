@@ -3,6 +3,7 @@ import { getPlayerByEmail, getReferenceData, UNRANKED_TEAM_RANK } from "./refere
 import { HttpError } from "./http";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { planTeamsFor } from "./seasonPlan";
+import { canSeeVolunteers } from "./volunteerAccess";
 import { backendFor } from "./data/backend";
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
@@ -60,6 +61,9 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
         const teams = planTeamsFor(env, authUser);
         return teams === "all" || teams.length > 0;
       })(),
+
+    // Whether the Volunteers screen is theirs: officers, coaches, captains.
+    volunteers: await canSeeVolunteers(env, authUser),
 
     captainTeams,
 

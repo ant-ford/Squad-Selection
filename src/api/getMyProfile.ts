@@ -15,6 +15,8 @@ export interface ProfileData {
   sections: ('membership' | 'chairman' | 'kit' | 'planning')[];
   /** Whether the Season plans screen has teams for them (worker/src/seasonPlan.ts). */
   seasonPlans?: boolean;
+  /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
+  volunteers?: boolean;
   captainTeams: string[];
 
   coachTeams: {
