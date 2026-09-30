@@ -30,6 +30,11 @@ export class SupabaseError extends Error {
 /** PostgREST caps a response at this many rows (Supabase's default max_rows). */
 const PAGE = 1000;
 
+/** Gateway answers that mean the request did not get through; a read is tried again. */
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const RETRY_DELAY_MS = 200;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export interface Db {
   /** Rows matching a PostgREST query string (select=...&col=eq.value), every page. */
   select<T>(table: string, query: string): Promise<T[]>;
@@ -77,18 +82,40 @@ export function db(env: Env): Db {
   const root = `${base.replace(/\/+$/, "")}/rest/v1`;
 
   async function call(path: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<{ body: any; response: Response }> {
-    const startedAt = Date.now();
-    const response = await fetch(`${root}/${path}`, {
-      ...init,
-      headers: {
-        apikey: key!,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(init.headers ?? {}),
-      },
-    });
-    const text = await response.text();
-    recordDbCall(Date.now() - startedAt, text.length);
+    // A read that fails in transit (a network error, or a gateway 502/503/504)
+    // is tried once more. Writes are not: a write that timed out may have
+    // landed, and repeating it could apply it twice.
+    const attempts = (init.method ?? "GET") === "GET" ? 2 : 1;
+    let response!: Response;
+    let text!: string;
+    for (let attempt = 1; ; attempt++) {
+      const startedAt = Date.now();
+      try {
+        response = await fetch(`${root}/${path}`, {
+          ...init,
+          headers: {
+            apikey: key!,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...(init.headers ?? {}),
+          },
+        });
+        text = await response.text();
+      } catch (err) {
+        recordDbCall(Date.now() - startedAt, 0);
+        if (attempt < attempts) {
+          await sleep(RETRY_DELAY_MS);
+          continue;
+        }
+        throw err;
+      }
+      recordDbCall(Date.now() - startedAt, text.length);
+      if (attempt < attempts && RETRYABLE_STATUS.has(response.status)) {
+        await sleep(RETRY_DELAY_MS);
+        continue;
+      }
+      break;
+    }
     let body: any = null;
     if (text) {
       try {
