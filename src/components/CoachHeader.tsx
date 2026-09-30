@@ -1,9 +1,10 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { LogOut, User, ListChecks, Home, Users, Mail, Shirt, ClipboardList, HeartHandshake } from 'lucide-react';
+import { LogOut, User, ListChecks, Home } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
 import HelpLink from '@/components/HelpLink';
+import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
 import { coachDashboardPath } from '@/lib/scrollMemory';
 
 export default function CoachHeader({ profile }: { profile: ProfileData }) {
@@ -30,36 +31,7 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
         <ListChecks className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Ranking</span>
       </button>
-      {profile.volunteers && (
-        <button onClick={() => navigate('/volunteers')} className={headerNavClass(location.pathname === '/volunteers')}>
-          <HeartHandshake className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Volunteers</span>
-        </button>
-      )}
-      {profile.seasonPlans && (
-        <button onClick={() => navigate('/season-plans')} className={headerNavClass(location.pathname === '/season-plans')}>
-          <ClipboardList className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Season plans</span>
-        </button>
-      )}
-      {profile.sections?.includes('chairman') && (
-        <button onClick={() => navigate('/chairman')} className={headerNavClass()}>
-          <Mail className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Email lists</span>
-        </button>
-      )}
-      {profile.sections?.includes('membership') && (
-        <button onClick={() => navigate('/membership')} className={headerNavClass()}>
-          <Users className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Membership</span>
-        </button>
-      )}
-      {profile.sections?.includes('kit') && (
-        <button onClick={() => navigate('/kit')} className={headerNavClass()}>
-          <Shirt className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Kit</span>
-        </button>
-      )}
+      <OfficersMenu items={officerItems(profile)} />
       <button onClick={() => navigate('/')} className={headerNavClass()}>
         <User className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Player View</span>
