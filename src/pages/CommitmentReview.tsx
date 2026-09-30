@@ -44,14 +44,25 @@ function Card({ title, children, note }: { title: string; children: ReactNode; n
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block text-xs text-muted-foreground">
-      <span className="block mb-1">{label}</span>
-      {children}
+      <span className="block text-foreground/80">{label}</span>
+      {hint && <span className="block text-[11px] leading-snug mt-0.5">{hint}</span>}
+      <span className="block mt-1">{children}</span>
     </label>
   );
 }
+
+/** Ideas for the member's free-text answers (owner request, 2026-09-30). */
+const HINTS = {
+  otherContributions:
+    'For example: a team role (captain, vice-captain, manager), coaching or umpiring juniors, helping at club events such as the Easter 5s or tournaments, fixtures or kit admin.',
+  sectionService:
+    'How you could help the Hockey Section next season: a team or committee role, coaching, umpiring, organising socials or tours, mentoring new players.',
+  hkfcService:
+    'Beyond hockey: HKFC club committees, other sections, club-wide events, volunteering, representing the club.',
+};
 
 function Answer({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -102,7 +113,10 @@ function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => v
 function submitError(err: unknown): string {
   if (err instanceof ApiError && err.status < 500) return err.message;
   // The Worker's reference for an unexpected failure (type, database code, stage).
-  if (err instanceof ApiError && err.code === 'REVIEW_FAILED') return `${err.message} Your answers are kept here; please try again.`;
+  if (err instanceof ApiError && (err.code === 'REVIEW_FAILED' || err.code === 'DB_ERROR')) {
+    return `${err.message} Your answers are kept here; please try again.`;
+  }
+  if (err instanceof ApiError) return `Not submitted (${err.status}${err.code ? ` ${err.code}` : ''}). Your answers are kept here; please try again.`;
   return 'Not submitted: the connection or the server failed. Your answers are kept here; please try again.';
 }
 
@@ -181,13 +195,13 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           })}
         </div>
       </fieldset>
-      <Field label="Other contributions">
+      <Field label="Other contributions" hint={HINTS.otherContributions}>
         <textarea className={area} value={form.otherContributions} onChange={(e) => set('otherContributions', e.target.value)} />
       </Field>
-      <Field label="Potential for Section service and involvement">
+      <Field label="Potential for Section service and involvement" hint={HINTS.sectionService}>
         <textarea className={area} value={form.sectionService} onChange={(e) => set('sectionService', e.target.value)} />
       </Field>
-      <Field label="Potential for HKFC service and involvement">
+      <Field label="Potential for HKFC service and involvement" hint={HINTS.hkfcService}>
         <textarea className={area} value={form.hkfcService} onChange={(e) => set('hkfcService', e.target.value)} />
       </Field>
       {askReason && (

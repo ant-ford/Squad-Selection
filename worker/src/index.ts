@@ -1,7 +1,7 @@
 import { AirtableError, airtableList } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest } from "./files";
-import { db } from "./data/supabase";
+import { db, SupabaseError } from "./data/supabase";
 import { shadowSummary } from "./data/shadow";
 import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
@@ -692,6 +692,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // client - only the detail goes to Workers Logs.
       console.error("Airtable error:", err.message);
       return errorJson("Upstream data service error", 502, origin, "UPSTREAM_ERROR");
+    }
+    if (err instanceof SupabaseError) {
+      // Which table, status and code - enough to diagnose from the screen,
+      // never the database's message, which can quote a value.
+      console.error("Supabase error:", err.message);
+      const table = /^Supabase \w+ (\S+) failed/.exec(err.message)?.[1] ?? "?";
+      return errorJson(`Database error (${table}, ${err.status}${err.code ? ` ${err.code}` : ""}). Please try again.`, 502, origin, "DB_ERROR");
     }
 
     console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
