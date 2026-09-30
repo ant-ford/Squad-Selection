@@ -175,7 +175,9 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
     line.goals += c.goals ?? 0;
     if (c.captain === true) line.captain += 1;
     if (c.goalkeeper === true) line.keeper += 1;
-    if (c.playUp === true) line.playUps += 1;
+    // A game in goal isn't a play-up (Bye-law 7.6), the same exemption the
+    // eligibility count makes.
+    if (c.playUp === true && c.goalkeeper !== true) line.playUps += 1;
     bump(line, result);
     players.set(key, p);
 

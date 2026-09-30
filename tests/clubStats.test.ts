@@ -102,6 +102,20 @@ describe("a season's summary", () => {
     expect(players.find((p) => p.key === "raw:old timer")).toMatchObject({ name: "Old  TIMER" });
   });
 
+  it("doesn't count a game played up in goal as a play-up (Bye-law 7.6)", () => {
+    const { players } = buildSeasonSummary({
+      season: "2025-2026",
+      matches: MATCHES,
+      cards: [
+        card("k1", "m2", "HKFC B", { player: ["recP2"], playUp: true, goalkeeper: true }),
+        card("k2", "m3", "HKFC B", { player: ["recP2"], playUp: true }),
+      ],
+      names: NAMES,
+      today: "2026-09-26",
+    }).summary;
+    expect(players.find((p) => p.key === "recP2")!.teams["HKFC B"]).toMatchObject({ apps: 2, keeper: 1, playUps: 1 });
+  });
+
   it("matches a card with no People link to the player by full name", () => {
     const { summary } = buildSeasonSummary({
       season: "2025-2026",
