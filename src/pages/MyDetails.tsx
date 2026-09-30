@@ -6,6 +6,7 @@ import { Check, User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import ProfileFields from '@/components/profile/ProfileFields';
 import FileUpload from '@/components/profile/FileUpload';
 import KitSizesSection from '@/components/profile/KitSizesSection';
@@ -128,13 +129,30 @@ function SectionStep({ section, details, ...nav }: StepProps & { section: Sectio
     },
     onError: (err) => setProblem(errorText(err)),
   });
+  // Saying they won't be active makes them inactive at once (owner,
+  // 2026-10-01), so it asks first.
+  const [confirmInactive, setConfirmInactive] = useState(false);
   const next = () => {
     const bad = fields.map((f) => checkValue(f, values[f.key])).find(Boolean);
     setProblem(bad ?? null);
-    if (!bad) save.mutate();
+    if (bad) return;
+    if (section.key === 'hockey' && values.active === false && details.values.active !== false) setConfirmInactive(true);
+    else save.mutate();
   };
   return (
     <StepShell title={section.title} {...nav} onNext={next} busy={save.isPending} problem={problem}>
+      {confirmInactive && (
+        <ConfirmDialog
+          title="Not playing this season?"
+          message="You'll be marked as not active straight away: you won't be picked for squads or shown in the team lists until you're made active again."
+          confirmLabel="Yes, not this season"
+          onCancel={() => setConfirmInactive(false)}
+          onConfirm={() => {
+            setConfirmInactive(false);
+            save.mutate();
+          }}
+        />
+      )}
       {section.intro && <p className="text-xs text-muted-foreground">{section.intro}</p>}
       {section.key === 'personal' && (
         <div className="grid gap-3">
