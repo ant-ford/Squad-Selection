@@ -35,6 +35,13 @@ enabled = true
 binding = "CACHE"
 id = "841b5bd54444493ba85e09bffd2f9f49"
 
+# Members' files for the Supabase backend (photos, documents), served only
+# through signed links (src/files.ts). Unused while DATA_BACKEND is airtable:
+# only the Supabase repositories hand out those links.
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "eddy-files"
+
 [vars]
 AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 # Comma-separated allow-list. Both frontend hostnames are served during the
@@ -56,6 +63,11 @@ AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
 # rolling back is setting this back to "airtable" and deploying.
 DATA_BACKEND = "airtable"
 DATA_BACKEND_OVERRIDES = ""
+# eddy-production, which holds the data once DATA_BACKEND is supabase (the
+# same project as sign-in, SUPABASE_URL above). Its secret key is the
+# DATA_SUPABASE_SECRET_KEY secret, installed by the CI deploy. While the
+# backend is airtable, only /health uses it, to report whether it answers.
+DATA_SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 # This Worker's public origin, for the links it hands out (signed file links).
 API_ORIGIN = "https://api.eddy.global"
 # Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
