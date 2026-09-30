@@ -374,7 +374,7 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
 function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const ai = review.drafts ?? {};
   const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, {
-    playersAvailable: '',
+    playersAvailable: typeof review.teamActivePlayers === 'number' ? String(review.teamActivePlayers) : '',
     optimumPlayers: '',
     isPlayerNeeded: ai.isPlayerNeeded ?? '',
     otherComments: ai.otherComments ?? '',
@@ -400,7 +400,10 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
     <div className="space-y-3">
       <DraftNote drafts={ai} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}>
+        <Field
+          label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}
+          hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their Selected Team` : undefined}
+        >
           <input className={input} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />
         </Field>
         <Field label="Optimum number of players">

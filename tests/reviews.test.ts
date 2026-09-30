@@ -64,6 +64,14 @@ function fake(reviewRow: object | null, opts: { next?: object[]; rpcError?: { co
     if (url.pathname.endsWith("/rpc/emails_sent_today")) return reply(0);
     if (url.pathname.includes("/rpc/submit_")) return opts.rpcError ? reply(opts.rpcError, 400) : reply(opts.next ?? []);
     if (url.pathname.endsWith("/api_reviews")) return reply(reviewRow ? [reviewRow] : []);
+    if (url.pathname.endsWith("/api_players")) {
+      // Two with HKFC D as their Selected Team (one registered elsewhere), one selected for C.
+      return reply([
+        { id: "recP1", registered_team: "HKFC D", selected_team_sos: null, selected_team_eos: null, active: true },
+        { id: "recP2", registered_team: "HKFC E", selected_team_sos: "HKFC D", selected_team_eos: null, active: true },
+        { id: "recP3", registered_team: "HKFC D", selected_team_sos: null, selected_team_eos: "HKFC C", active: true },
+      ]);
+    }
     if (url.pathname.endsWith("/api_review_offices")) {
       return reply([{ id: "recSPONSOROFFICE0", role: "sponsor", preferred_name: "Pat", surname: "Lee", designation: null },
         { id: "recMOOFFICE000000", role: "membership_officer", preferred_name: "Mo", surname: "Wong", designation: "Membership Officer" }]);
@@ -112,6 +120,15 @@ describe("who sees and does what", () => {
     expect(v.canDo).toBe("member");
     expect(v.options?.usualSponsor).toBe("recSPONSOROFFICE0");
     expect(v.options?.officers.map((o) => o.name)).toEqual(["Mo Wong"]);
+  });
+
+  it("gives the Membership Officer the team's active players, counted by Selected Team", async () => {
+    fake(row({ stage: "Sponsor Submitted (with Membership Officer)", member_submitted_at: "x", sponsor_submitted_at: "y" }));
+    const v = await getReview(env, user("recSOMEONE0000000", true), REVIEW);
+    expect(v.canDo).toBe("officer");
+    expect(v.teamActivePlayers).toBe(2);
+    fake(row({ stage: "Member Submitted (with Sponsor)", member_submitted_at: "x" }));
+    expect((await getReview(env, user("recSPONSOR0000000"), REVIEW)).teamActivePlayers).toBeUndefined();
   });
 
   it("refuses anyone with no part in the review, and an unknown id", async () => {
