@@ -175,7 +175,7 @@ export async function getMyFixtures(
     captainTeams,
     isSectionCaptain: authUser.isSectionCaptain,
     // Officers' sections, for the dashboard's header buttons.
-    sections: sectionsFor(authUser),
+    sections: sectionsFor(authUser, env),
     // Decided here, on the Hong Kong calendar day, so the date of birth
     // itself never reaches the browser.
     isBirthday: isBirthdayOn(user.birthday, today),

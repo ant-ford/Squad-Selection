@@ -21,6 +21,19 @@ import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershi
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
 import { getMyDeclarations, submitDeclarations } from "./declarations";
+import {
+  allocateSpare,
+  editSizes,
+  getKitBoard,
+  getMyKit,
+  getSetHistory,
+  giveNewNumber,
+  moveKit,
+  releaseSet,
+  setOrderReceived,
+  swapItem,
+  topUpCsv,
+} from "./kit";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -640,6 +653,41 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireAuthorizedUser(request, env);
       const body = (await readJsonBody(request)) as Record<string, unknown>;
       return json(await submitDeclarations(env, user, body ?? {}), 200, origin);
+    }
+
+    // ── Kit (Supabase backend; src/kit.ts) ────────────────────────────────
+    // Anyone signed in sees their own kit and hands on what they hold; the
+    // board, spares and orders are the kit section's (Kit Convenor, Section
+    // Captains).
+    if (method === "GET" && pathname === "/api/kit/me") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getMyKit(env, user), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/kit/move") {
+      const user = await requireAuthorizedUser(request, env);
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(await moveKit(env, user, body ?? {}), 200, origin);
+    }
+    if (pathname.startsWith("/api/kit/")) {
+      const user = await requireSection(request, env, "kit");
+      if (method === "GET" && pathname === "/api/kit/board") {
+        return json(await getKitBoard(env, url.searchParams.get("order")), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/kit/top-up") {
+        return json(await topUpCsv(env, url.searchParams.get("order")), 200, origin);
+      }
+      const setMatch = pathname.match(/^\/api\/kit\/sets\/([^/]+)\/(history|sizes)$/);
+      if (method === "GET" && setMatch?.[2] === "history") return json(await getSetHistory(env, setMatch[1]), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (setMatch?.[2] === "sizes") return json(await editSizes(env, user, setMatch[1], body), 200, origin);
+        if (pathname === "/api/kit/allocate") return json(await allocateSpare(env, user, body), 200, origin);
+        if (pathname === "/api/kit/release") return json(await releaseSet(env, user, body), 200, origin);
+        if (pathname === "/api/kit/swap") return json(await swapItem(env, user, body), 200, origin);
+        if (pathname === "/api/kit/new-number") return json(await giveNewNumber(env, user, body), 200, origin);
+        const orderMatch = pathname.match(/^\/api\/kit\/orders\/([^/]+)\/received$/);
+        if (orderMatch) return json(await setOrderReceived(env, orderMatch[1], body), 200, origin);
+      }
     }
 
     // ── Commitment reviews (Supabase backend; src/reviews.ts) ─────────────

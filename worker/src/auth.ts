@@ -3,6 +3,7 @@ import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type OfficerRole } from "./reference";
 import { getCached } from "./cache";
+import { backendFor } from "./data/backend";
 
 // One definition for the whole app, browser included - see the module for
 // why every store in this system disagrees about case.
@@ -129,18 +130,27 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *
  *   membership - the membership board: Membership Officers, Section Captains
  *   chairman   - the chairman's email lists: Section Chairs, Section Captains
+ *   kit        - kit orders, handing out and spares: the Kit Convenor and
+ *                Section Captains (owner decision, 2026-09-30). Supabase
+ *                backend only.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
   chairman: ["sectionChair", "sectionCaptain"],
+  kit: ["kitConvenor", "sectionCaptain"],
 } as const satisfies Record<string, readonly Office[]>;
 
 export type Section = keyof typeof SECTION_OFFICES;
 
-/** The sections this person can open, in a fixed order. */
-export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">): Section[] {
-  return (Object.keys(SECTION_OFFICES) as Section[]).filter((section) =>
-    user.officerRoles.some((r) => (SECTION_OFFICES[section] as readonly Office[]).includes(r.office)),
+/**
+ * The sections this person can open, in a fixed order. The kit section needs
+ * `env` and the Supabase backend: it doesn't exist on Airtable.
+ */
+export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">, env?: Pick<Env, "DATA_BACKEND" | "DATA_BACKEND_OVERRIDES">): Section[] {
+  return (Object.keys(SECTION_OFFICES) as Section[]).filter(
+    (section) =>
+      (section !== "kit" || (!!env && backendFor(env, "people") === "supabase")) &&
+      user.officerRoles.some((r) => (SECTION_OFFICES[section] as readonly Office[]).includes(r.office)),
   );
 }
 
@@ -150,7 +160,7 @@ export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">): Section
  */
 export async function requireSection(request: Request, env: Env, section: Section): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);
-  if (!sectionsFor(user).includes(section)) {
+  if (!sectionsFor(user, env).includes(section)) {
     throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }
   return user;

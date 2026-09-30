@@ -21,6 +21,8 @@ const ClubStats = lazy(() => import('./pages/ClubStats'));
 const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
 // This season's waivers & declarations.
 const Waivers = lazy(() => import('./pages/Waivers'));
+// Kit: orders, handing out and spares (Kit Convenor, Section Captains).
+const Kit = lazy(() => import('./pages/Kit'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -103,6 +105,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/kit',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Kit />
           </Suspense>
         ),
       },

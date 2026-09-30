@@ -48,7 +48,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Which officers' sections to offer. Derived from the same rule the
     // Worker enforces, so the app never keeps its own copy of it.
-    sections: sectionsFor(authUser),
+    sections: sectionsFor(authUser, env),
 
     captainTeams,
 

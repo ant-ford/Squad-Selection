@@ -87,7 +87,7 @@ export interface GetMyFixturesOutput {
   captainTeams: string[];
   isSectionCaptain: boolean;
   /** Officers' sections this person may open, decided by the Worker. */
-  sections?: ('membership' | 'chairman')[];
+  sections?: ('membership' | 'chairman' | 'kit')[];
   /** Today (Hong Kong time) is this player's birthday. */
   isBirthday?: boolean;
   /** Teammates (same Selected Team) whose birthday it is today, by name. */
