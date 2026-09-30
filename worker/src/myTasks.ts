@@ -183,7 +183,9 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   const today = hkDateKey(new Date().toISOString());
   const tasks: MyTask[] = [...(waitingOn[personId] ?? [])];
   if (!waiversDoneThisSeason(mine.waiversSubmittedAt, today)) {
-    tasks.push({ id: "waivers", key: "waivers", url: text(mine.waiversFormUrl) });
+    // On Supabase, Eddy's own waivers screen (src/declarations.ts); on Airtable, the Fillout form.
+    const inEddy = backendFor(env, "people") === "supabase";
+    tasks.push({ id: "waivers", key: "waivers", url: inEddy ? "/waivers" : text(mine.waiversFormUrl) });
   }
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
   return { tasks };

@@ -20,6 +20,7 @@ import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
+import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -628,6 +629,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireSection(request, env, "membership");
       const body = (await readJsonBody(request)) as Record<string, unknown>;
       return json(await requestReviewEmail(env, user, String(body.commitmentId ?? "")), 200, origin);
+    }
+
+    // ── Waivers & declarations (Supabase backend; src/declarations.ts) ────
+    if (method === "GET" && pathname === "/api/declarations/me") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getMyDeclarations(env, user), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/declarations") {
+      const user = await requireAuthorizedUser(request, env);
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(await submitDeclarations(env, user, body ?? {}), 200, origin);
     }
 
     // ── Commitment reviews (Supabase backend; src/reviews.ts) ─────────────
