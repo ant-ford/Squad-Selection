@@ -12,7 +12,11 @@ export interface ProfileData {
     designation: string;
   }[];
   /** Officers' sections this person may open, decided by the Worker. */
-  sections: ('membership' | 'chairman' | 'kit')[];
+  sections: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  /** Whether the Season plans screen has teams for them (worker/src/seasonPlan.ts). */
+  seasonPlans?: boolean;
+  /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
+  volunteers?: boolean;
   captainTeams: string[];
 
   coachTeams: {

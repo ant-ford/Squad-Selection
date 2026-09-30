@@ -7,7 +7,7 @@ import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail, Trophy, Shirt } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Users, Mail, Trophy, Shirt, ClipboardList, HeartHandshake } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import { SectionHeader } from '@/components/shared';
@@ -21,6 +21,7 @@ import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
 import MyKitCard from '@/components/MyKitCard';
+import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import HelpLink from '@/components/HelpLink';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 
@@ -225,6 +226,18 @@ export default function PlayerDashboard() {
             <span className="hidden sm:inline">Membership</span>
           </button>
         )}
+        {data.volunteers && (
+          <button onClick={() => navigate('/volunteers')} className={headerNavClass()}>
+            <HeartHandshake className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Volunteers</span>
+          </button>
+        )}
+        {data.sections?.includes('planning') && (
+          <button onClick={() => navigate('/season-plans')} className={headerNavClass()}>
+            <ClipboardList className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Season plans</span>
+          </button>
+        )}
         {data.sections?.includes('kit') && (
           <button onClick={() => navigate('/kit')} className={headerNavClass()}>
             <Shirt className="h-3.5 w-3.5" />
@@ -304,6 +317,7 @@ export default function PlayerDashboard() {
             </div>
           </div>
         </div>
+        <MyVolunteeringLink />
         {data.isBirthday && <BirthdayBanner name={data.playerName} />}
         {!!data.teamBirthdays?.length && (
           <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />

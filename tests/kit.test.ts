@@ -34,7 +34,7 @@ describe("kit", () => {
   it("opens the kit section to the Kit Convenor and Section Captains, on Supabase only", () => {
     expect(sectionsFor(convenor, env)).toEqual(["kit"]);
     const captain = { officerRoles: [{ office: "sectionCaptain" as const, designation: "" }] };
-    expect(sectionsFor(captain, env)).toEqual(["membership", "chairman", "kit"]);
+    expect(sectionsFor(captain, env)).toEqual(["membership", "chairman", "kit", "planning"]);
     expect(sectionsFor(captain, { ...env, DATA_BACKEND: "airtable" })).toEqual(["membership", "chairman"]);
     expect(sectionsFor(player, env)).toEqual([]);
   });
