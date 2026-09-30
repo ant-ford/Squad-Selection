@@ -1,4 +1,5 @@
 import { ClipboardCheck, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { MyTask } from '@/api/getMyTasks';
 import { useMyTasks } from '@/lib/queries';
 
@@ -54,16 +55,25 @@ export default function MyTasksBanner() {
             {/* Only when there is no button to press. */}
             {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{noLinkHint(task)}</p>}
           </div>
-          {task.url && (
-            <a
-              href={task.url}
-              target="_blank"
-              rel="noreferrer"
-              className="shrink-0 inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              Open form <ExternalLink className="h-3 w-3" aria-hidden />
-            </a>
-          )}
+          {task.url &&
+            // Eddy's own screens open in place; the Fillout forms in a new tab.
+            (task.url.startsWith('/') ? (
+              <Link
+                to={task.url}
+                className="shrink-0 inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Open
+              </Link>
+            ) : (
+              <a
+                href={task.url}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Open form <ExternalLink className="h-3 w-3" aria-hidden />
+              </a>
+            ))}
         </div>
       ))}
     </section>

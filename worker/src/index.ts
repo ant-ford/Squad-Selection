@@ -19,6 +19,7 @@ import {
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
+import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -627,6 +628,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireSection(request, env, "membership");
       const body = (await readJsonBody(request)) as Record<string, unknown>;
       return json(await requestReviewEmail(env, user, String(body.commitmentId ?? "")), 200, origin);
+    }
+
+    // ── Commitment reviews (Supabase backend; src/reviews.ts) ─────────────
+    // Signed-in only: who may see or submit each review is decided per
+    // review (the member, their sponsor, Membership Officers).
+    const reviewMatch = pathname.match(/^\/api\/reviews\/([^/]+)(?:\/(member|sponsor|officer))?$/);
+    if (reviewMatch) {
+      const [, reviewId, step] = reviewMatch;
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && !step) return json(await getReview(env, user, reviewId), 200, origin);
+      if (method === "POST" && step) {
+        const body = (await readJsonBody(request)) as Record<string, unknown>;
+        const submit = step === "member" ? submitMemberReport : step === "sponsor" ? submitSponsorReview : submitOfficerReview;
+        return json(await submit(env, user, reviewId, body ?? {}), 200, origin);
+      }
     }
 
     // ── Chairman's section (Section Chairs + Section Captains table) ──────

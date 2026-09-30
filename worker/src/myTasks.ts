@@ -28,6 +28,7 @@ import { firstLink, getOfficeHolders } from "./contacts";
 import { WAITING_ON_KEY } from "./reference";
 import { people, type ApplicantTaskRow, type MyTaskRow } from "./data/people";
 import { commitments } from "./data/commitments";
+import { backendFor } from "./data/backend";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
@@ -119,6 +120,10 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         });
       }
 
+      // On Supabase the reviews are Eddy's own screen (src/reviews.ts); on
+      // Airtable they are still the Fillout forms.
+      const inEddy = backendFor(env, "commitments") === "supabase";
+      const reviewUrl = (id: string, fillout: unknown) => (inEddy ? `/review/${id}` : text(fillout));
       for (const r of reviews) {
         // The same cut-off as the Statements board: older periods are history.
         const periodEnd = firstText(r.periodEnd)?.slice(0, 10);
@@ -127,14 +132,14 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         const member = firstLink(r.people);
         const subject = firstText(r.fullName) ?? "A member";
         if (stage === NOTIFIED) {
-          add(member, { id: `statement:${r.id}`, key: "statement", url: firstText(r.memberFormUrl) });
+          add(member, { id: `statement:${r.id}`, key: "statement", url: inEddy ? `/review/${r.id}` : firstText(r.memberFormUrl) });
         } else if (stage === MEMBER_SUBMITTED) {
           add(holders[firstLink(r.sponsorLink) ?? ""], {
             id: `review:${r.id}`,
             key: "review",
             subject,
             role: "Sponsor",
-            url: text(r.sponsorFormUrl),
+            url: reviewUrl(r.id, r.sponsorFormUrl),
           });
         } else if (stage === SPONSOR_SUBMITTED) {
           add(holders[firstLink(r.officerLink) ?? ""], {
@@ -142,7 +147,7 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
             key: "review",
             subject,
             role: "Membership Officer",
-            url: text(r.officerFormUrl),
+            url: reviewUrl(r.id, r.officerFormUrl),
           });
         }
       }

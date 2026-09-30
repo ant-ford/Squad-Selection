@@ -17,6 +17,8 @@ const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
 const MembershipBoard = lazy(() => import('./pages/MembershipBoard'));
 const EmailLists = lazy(() => import('./pages/EmailLists'));
 const ClubStats = lazy(() => import('./pages/ClubStats'));
+// A commitment review: the member, their sponsor or a Membership Officer.
+const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -99,6 +101,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/review/:reviewId',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <CommitmentReview />
           </Suspense>
         ),
       },
