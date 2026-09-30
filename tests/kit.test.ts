@@ -45,8 +45,8 @@ describe("kit", () => {
     // More items that fit break a tie between two in the same range.
     const two = [spare(41, "HKFC B", sizes("L", { shorts: "S" })), spare(42, "HKFC B", sizes("L", { shorts: "M" }))];
     expect(suggestSpares({ team: "HKFC B", sizes: sizes("L", { shorts: "M" }) }, two, TEAMS)[0].shirtNo).toBe(42);
-    // No shirt size on record: every spare, own range first.
-    expect(suggestSpares({ team: "HKFC A", sizes: sizes(null) }, spares, TEAMS)[0].shirtNo).toBe(12);
+    // No shirt size on record: nothing, until they give one.
+    expect(suggestSpares({ team: "HKFC A", sizes: sizes(null) }, spares, TEAMS)).toEqual([]);
   });
 
   it("flags items where the owner's sizes differ from the set's", () => {

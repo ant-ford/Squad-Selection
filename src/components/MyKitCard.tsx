@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Shirt } from 'lucide-react';
@@ -6,6 +7,9 @@ import { safeFormat } from '@/lib/dateUtils';
 import { getMyKit, moveKit } from '@/api/kit';
 import { reportMove } from '@/components/kit/HandOutSheet';
 import type { MyKit } from '@shared/kit';
+
+/** A captain holding a team's kit sees the first few; the rest are a tap away. */
+const SHOWN = 5;
 
 const button =
   'shrink-0 inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50';
@@ -31,6 +35,7 @@ function mineLine(mine: NonNullable<MyKit['mine']>, convenors: string[]): string
 export default function MyKitCard() {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['myKit'], queryFn: getMyKit, staleTime: 30_000 });
+  const [showAll, setShowAll] = useState(false);
   const move = useMutation({
     mutationFn: (v: { setId: string; to: string; name: string; from: string | null }) =>
       moveKit({ setIds: [v.setId], to: v.to, expected: { [v.setId]: v.from } }).then((r) => ({ r, name: v.name })),
@@ -70,7 +75,7 @@ export default function MyKitCard() {
           </p>
           <p className="text-xs text-muted-foreground">Tap as you hand each one over. They can also confirm it themselves.</p>
           <ul className="divide-y divide-border">
-            {holding.map((h) => (
+            {(showAll ? holding : holding.slice(0, SHOWN)).map((h) => (
               <li key={h.id} className="flex items-center gap-3 py-1.5">
                 <span className="w-9 text-right font-mono text-sm font-semibold">{h.shirtNo}</span>
                 <span className="flex-1 min-w-0 text-sm text-foreground truncate">{h.owner?.name ?? 'Spare'}</span>
@@ -86,6 +91,11 @@ export default function MyKitCard() {
               </li>
             ))}
           </ul>
+          {holding.length > SHOWN && (
+            <button className="text-xs text-primary underline" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? 'Show fewer' : `Show all ${holding.length}`}
+            </button>
+          )}
         </div>
       )}
     </section>

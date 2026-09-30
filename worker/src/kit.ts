@@ -186,6 +186,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
       return {
         id: p.api_id,
         name: personName(p),
+        search: [p.preferred_name, p.given_names, p.surname].filter(Boolean).join(" ").toLowerCase(),
         team: personTeam(p),
         status: p.status ?? "",
         shirtNo: no,

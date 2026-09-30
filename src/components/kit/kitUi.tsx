@@ -62,7 +62,12 @@ export function PersonPicker({
     if (!t) return [];
     const byNo = /^\d+$/.test(t);
     return people
-      .filter((p) => (byNo ? String(p.shirtNo ?? '') === t : p.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(t)) || p.name.toLowerCase().includes(t)))
+      .filter((p) => {
+        if (byNo) return String(p.shirtNo ?? '') === t;
+        // Every word typed starts one of their names: "ant fo", "anthony ford".
+        const names = `${p.name.toLowerCase()} ${p.search}`.split(/\s+/);
+        return t.split(/\s+/).every((w) => names.some((n) => n.startsWith(w)));
+      })
       .slice(0, 8);
   }, [people, q]);
 

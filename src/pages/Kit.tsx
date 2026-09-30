@@ -166,11 +166,11 @@ export default function Kit() {
               ))}
             </div>
             <div className="flex gap-2">
-              <div className="relative flex-1">
+              <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
                 <input className={`${inputClass} pl-8`} value={q} onChange={(e) => setParam('q', e.target.value || null)} placeholder="Name or number" aria-label="Search" />
               </div>
-              <select className={`${inputClass} w-32`} value={team} onChange={(e) => setParam('team', e.target.value || null)} aria-label="Team">
+              <select className={`${inputClass.replace('w-full', 'w-36 shrink-0')}`} value={team} onChange={(e) => setParam('team', e.target.value || null)} aria-label="Team">
                 <option value="">All teams</option>
                 {board.teams.map((t) => (
                   <option key={t} value={t}>

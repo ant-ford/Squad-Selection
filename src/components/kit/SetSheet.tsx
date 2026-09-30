@@ -155,7 +155,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
             </SheetTitle>
             <p className="text-xs text-muted-foreground">
               {describePlace(set)}
-              {set.heldSince ? ` since ${safeFormat(set.heldSince, 'd MMM, HH:mm')}` : ''}
+              {set.heldSince ? `${set.place === 'with_owner' ? '' : ' since'} ${safeFormat(set.heldSince, 'd MMM, HH:mm')}` : ''}
               {owner ? ` · ${[owner.team, owner.status].filter(Boolean).join(' · ')}` : ''}
             </p>
           </div>

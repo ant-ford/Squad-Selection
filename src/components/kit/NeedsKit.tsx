@@ -43,7 +43,7 @@ function PersonRow({
             Spare #{s.shirtNo} · {s.sizes.shirt}
           </button>
         ))}
-        {person.shirtNo === null && (
+        {person.shirtNo === null && person.team && (
           <button className={`${secondaryButton} h-7 text-xs`} disabled={busy} onClick={() => onNewNumber(person)}>
             New number
           </button>
@@ -63,7 +63,9 @@ export default function NeedsKit({ board, onChanged }: { board: KitBoard; onChan
   const [confirm, setConfirm] = useState<null | { person: KitPerson; set: KitSet }>(null);
   const [exporting, setExporting] = useState(false);
   const spares = useMemo(() => board.sets.filter((s) => !s.owner), [board.sets]);
-  const noNumber = board.people.filter((p) => p.shirtNo === null);
+  // Those with sizes are ready to kit out; the rest are asked for sizes first.
+  const noNumber = board.people.filter((p) => p.shirtNo === null && p.sizes.shirt);
+  const noSizes = board.people.filter((p) => p.shirtNo === null && !p.sizes.shirt);
   const topUp = board.people.filter((p) => p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
   const bySize = useMemo(() => {
     const m = new Map<string, number>();
@@ -126,6 +128,14 @@ export default function NeedsKit({ board, onChanged }: { board: KitBoard; onChan
         <h2 className="text-sm font-semibold text-foreground px-3 pt-3">No number yet: {noNumber.length}</h2>
         <p className="text-xs text-muted-foreground px-3">Give a spare that fits (lower numbers for higher teams first), or a new number from their team’s range.</p>
         <ul className="divide-y divide-border mt-2">{noNumber.map(row)}</ul>
+        {noSizes.length > 0 && (
+          <details className="border-t border-border">
+            <summary className="px-3 py-2 text-xs text-muted-foreground cursor-pointer">
+              No number and no sizes yet: {noSizes.length} (ask them for their sizes first)
+            </summary>
+            <ul className="divide-y divide-border">{noSizes.map(row)}</ul>
+          </details>
+        )}
       </section>
 
       <section className="rounded-xl border border-border bg-card">

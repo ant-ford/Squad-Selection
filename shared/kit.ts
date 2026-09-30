@@ -73,6 +73,8 @@ export interface KitOrder {
 
 /** A person the kit screens can hand kit to or allocate a spare to. */
 export interface KitPerson extends KitPersonRef {
+  /** Every name they go by, lower case, for search ("ant anthony john ford"). */
+  search: string;
   team: string;
   status: string;
   shirtNo: number | null;
@@ -127,11 +129,12 @@ function rankOf(team: string | null, teams: readonly string[]): number {
  * Spares that fit a person, best first. The shirt must fit (it's printed);
  * then a number from their own team's range, since higher teams usually get
  * the lower numbers; then the most other items that fit; then the lower
- * number. Without a shirt size on record, every spare is offered.
+ * number. Without a shirt size on record nothing is offered: ask them first.
  */
 export function suggestSpares(person: Pick<KitPerson, "team" | "sizes">, spares: KitSet[], teams: readonly string[]): KitSet[] {
   const want = person.sizes;
-  const fits = spares.filter((s) => !s.owner && (!want.shirt || s.sizes.shirt === want.shirt));
+  if (!want.shirt) return [];
+  const fits = spares.filter((s) => !s.owner && s.sizes.shirt === want.shirt);
   const others = (s: KitSet) =>
     (["shorts", "socks", "goalieSmock"] as const).filter((k) => want[k] && s.sizes[k] === want[k]).length;
   const home = rankOf(person.team, teams);
