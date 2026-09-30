@@ -27,6 +27,8 @@ const input =
   'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
 const area =
   'w-full min-h-[84px] rounded-md border border-border bg-background p-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
+const shortArea =
+  'w-full rounded-md border border-border bg-background p-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none';
 const primary =
   'w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50';
 
@@ -406,7 +408,8 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
         </Field>
       </div>
       <Field label="Is the player needed?">
-        <input className={input} value={form.isPlayerNeeded} onChange={(e) => setForm({ ...form, isPlayerNeeded: e.target.value })} />
+        {/* Two lines, so a one-sentence answer is seen whole rather than scrolling off a single line. */}
+        <textarea rows={2} className={shortArea} value={form.isPlayerNeeded} onChange={(e) => setForm({ ...form, isPlayerNeeded: e.target.value })} />
       </Field>
       <Field label="Other comments">
         <textarea className={area} value={form.otherComments} onChange={(e) => setForm({ ...form, otherComments: e.target.value })} />

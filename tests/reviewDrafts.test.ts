@@ -70,6 +70,18 @@ describe("review drafts", () => {
     expect(failing.some((c) => c.method === "PATCH")).toBe(false);
   });
 
+  it("sends an answer over its word limit back once, and keeps the shorter", async () => {
+    const long = "Reliable defender with strong attendance, captaincy experience, and junior coaching availability strengthening the Section.";
+    const calls = fake({ reply: (i) => (i === 0 ? long : i === 3 ? "Reliable defender and captain; strengthens the Section." : `Draft ${i}`) });
+    await generateDrafts(env, "recREVIEW00000000", "officer");
+    const asks = calls.filter((c) => c.url.host === "openrouter.ai");
+    expect(asks).toHaveLength(4); // three drafts, one sent back
+    const retry = asks.find((a) => a.body.messages.length === 4)!;
+    expect(retry.body.messages[3].content).toMatch(/^That is 14 words\. Rewrite it as one sentence of 12 words or fewer\.$/);
+    const saved = calls.find((c) => c.method === "PATCH")!;
+    expect(saved.body.is_player_needed_draft).toBe("Reliable defender and captain; strengthens the Section.");
+  });
+
   it("cleans the model's answer to fit the field", () => {
     expect(cleanDraft("<think>hmm</think> \"Strong contributor.\"", 260)).toBe("Strong contributor.");
     expect(cleanDraft("Nothing", 260)).toBe("");

@@ -141,11 +141,14 @@ export const DRAFTS = {
     {
       column: "is_player_needed_draft",
       limit: 150,
+      // Airtable's own limit; the model is asked again if it runs over.
+      words: 12,
       prompt: [
         "You are the Membership Officer assessing whether the Section needs this candidate at the level indicated.",
         "Produce a single, concise sentence (12 words or fewer).",
         "Focus strictly on why the Section needs the candidate (playing strength, positional need, coaching depth, reliability, contribution).",
         "Keep tone factual and neutral. Do not add headings or extra text. Never assume the member's gender.",
+        "Output: (One sentence, 12 words or fewer)",
       ],
     },
     {
@@ -186,7 +189,10 @@ export function cleanDraft(text: string, limit: number): string {
   return (word > 0 ? cut.slice(0, word) : cut).replace(/[,;:\s]+$/, "") + "…";
 }
 
-async function complete(env: Env, system: string, context: string): Promise<string> {
+/** Words in a draft, as a person would count them. */
+export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+async function complete(env: Env, system: string, context: string, retry?: { previous: string; ask: string }): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -200,6 +206,7 @@ async function complete(env: Env, system: string, context: string): Promise<stri
       messages: [
         { role: "system", content: system },
         { role: "user", content: `Context:\n${context}\n\nOutput:` },
+        ...(retry ? [{ role: "assistant", content: retry.previous }, { role: "user", content: retry.ask }] : []),
       ],
       temperature: 0.3,
       max_tokens: 800,
@@ -229,7 +236,23 @@ export async function generateDrafts(env: Env, reviewApiId: string, step: DraftS
   if (!source) return 0;
   const context = draftContext(source, step === "officer");
   const results = await Promise.allSettled(
-    DRAFTS[step].map(async (draft) => [draft.column, cleanDraft(await complete(env, draft.prompt.join("\n"), context), draft.limit)] as const),
+    DRAFTS[step].map(async (draft) => {
+      const system = draft.prompt.join("\n");
+      let text = cleanDraft(await complete(env, system, context), draft.limit);
+      // A word limit the model overshot: asked once more, and the shorter answer kept.
+      const words = "words" in draft ? draft.words : undefined;
+      if (words && wordCount(text) > words) {
+        const again = cleanDraft(
+          await complete(env, system, context, {
+            previous: text,
+            ask: `That is ${wordCount(text)} words. Rewrite it as one sentence of ${words} words or fewer.`,
+          }),
+          draft.limit,
+        );
+        if (again && wordCount(again) < wordCount(text)) text = again;
+      }
+      return [draft.column, text] as const;
+    }),
   );
   const patch: Record<string, string> = {};
   for (const r of results) {
