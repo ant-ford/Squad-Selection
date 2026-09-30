@@ -15,6 +15,7 @@ import { invalidateForTables } from "./airtableWebhook";
 import { TABLES } from "../../shared/schema/tableNames";
 import {
   KIT_ITEMS,
+  SWAPPABLE,
   type KitBoard,
   type KitMove,
   type KitMoveResult,
@@ -44,6 +45,9 @@ interface SetRow {
   holder_id: string | null;
   holder_name: string | null;
   held_since: string | null;
+  number_holder_name: string | null;
+  number_holder_status: string | null;
+  number_holder_active: boolean | null;
 }
 
 interface OrderRow {
@@ -61,6 +65,7 @@ interface PersonRow {
   given_names: string | null;
   surname: string | null;
   status: string | null;
+  active: boolean | null;
   registered_team: string | null;
   selected_team_sos: string | null;
   selected_team_eos: string | null;
@@ -68,7 +73,7 @@ interface PersonRow {
 }
 
 const SET_COLUMNS =
-  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since";
+  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active";
 
 /** Kit sizes rows use the database's item names. */
 const ITEM_COLUMN: Record<keyof KitSizes, string> = {
@@ -146,7 +151,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
     d.select<OrderRow>("kit_orders", "select=id,supplier,name,ordered_on,received_on&order=ordered_on.desc.nullslast"),
     d.select<PersonRow>(
       "people",
-      "select=id,api_id,preferred_name,given_names,surname,status,registered_team,selected_team_sos,selected_team_eos,shirt_number_id",
+      "select=id,api_id,preferred_name,given_names,surname,status,active,registered_team,selected_team_sos,selected_team_eos,shirt_number_id",
     ),
     d.select<{ id: string; shirt_no: number; team_range: string | null }>("shirt_numbers", "select=id,shirt_no,team_range&order=shirt_no"),
   ]);
@@ -172,10 +177,13 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
       sizes: sizesOf(r),
       orderedForName: r.ordered_for_name,
       owner: owner ? { id: owner.api_id, name: personName(owner), team: personTeam(owner), status: owner.status ?? "" } : null,
+      numberHeldBy:
+        !r.owner_id && r.number_holder_name ? { name: r.number_holder_name, status: r.number_holder_status ?? "" } : null,
       holder: r.holder_id ? { id: r.holder_id, name: r.holder_name ?? "" } : null,
       heldSince: r.held_since,
       place: placeOf(r),
       mismatches: owner ? mismatches(sizesOf(r), sizes.get(owner.id)) : [],
+      wanted: owner ? sizes.get(owner.id) ?? null : null,
     };
   });
 
@@ -189,6 +197,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
         search: [p.preferred_name, p.given_names, p.surname].filter(Boolean).join(" ").toLowerCase(),
         team: personTeam(p),
         status: p.status ?? "",
+        active: p.active === true,
         shirtNo: no,
         sizes: sizes.get(p.id) ?? { ...EMPTY_SIZES },
         hasSet: no !== null && setNumbers.has(no),
@@ -355,6 +364,19 @@ export async function editSizes(env: Env, user: AuthorizedUser, setId: string, b
   return { ok: true };
 }
 
+/** Swaps one item (shorts, socks, smock) between two sets of the same order. */
+export async function swapItem(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+  requireSupabase(env);
+  const item = SWAPPABLE.find((s) => s.key === body.item)?.key;
+  if (!item) throw new HttpError("Only shorts, socks and smocks can be swapped.", 400, "INVALID_INPUT");
+  try {
+    await db(env).rpc("kit_swap", { p_actor: user.personId, p_set: oneId(body.setId), p_other: oneId(body.otherId), p_item: ITEM_COLUMN[item] });
+  } catch (err) {
+    asHttpError(err);
+  }
+  return { ok: true };
+}
+
 export async function setOrderReceived(env: Env, orderId: string, body: Record<string, unknown>) {
   requireSupabase(env);
   const on = body.receivedOn;
@@ -391,15 +413,15 @@ const cell = (v: string | number | null | undefined) => {
 };
 
 /**
- * Who needs kit from this order's supplier: members and applicants with a
- * number but no set in the order, in the order file's layout, for the next
+ * Who needs kit from this order's supplier: Active players with a number
+ * but no set in the order, in the order file's layout, for the next
  * top-up order. People without a number are left off: they need a number
  * (or a spare) first.
  */
 export async function topUpCsv(env: Env, orderId: string | null): Promise<{ filename: string; csv: string; count: number }> {
   const board = await getKitBoard(env, orderId);
   if (!board.order) throw new HttpError("There is no kit order yet.", 404, "NOT_FOUND");
-  const need = board.people.filter((p) => p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
+  const need = board.people.filter((p) => p.active && p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
   const header = ["Name", "Status", "Shirt No.", "Socks Size", "Shirt Size", "Shorts Size", "Goalie Smock Style", "Goalie Smock Size", "Team"];
   const lines = need.map((p) =>
     [p.name, p.status, p.shirtNo, p.sizes.socks, p.sizes.shirt, p.sizes.shorts, p.sizes.goalieSmockStyle, p.sizes.goalieSmock, p.team]

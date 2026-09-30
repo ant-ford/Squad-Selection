@@ -16,7 +16,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
 import { getKitBoard, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
-import type { KitSet } from '@shared/kit';
+import { suggestSwaps, type KitSet } from '@shared/kit';
 
 const FILTERS: { key: string; label: string; test: (s: KitSet) => boolean }[] = [
   { key: 'all', label: 'All', test: () => true },
@@ -196,6 +196,9 @@ export default function Kit() {
                         <span className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 truncate">
                           <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden /> {s.mismatches.join('; ')}
                         </span>
+                      )}
+                      {s.mismatches.length > 0 && suggestSwaps(s, board.sets).length > 0 && (
+                        <span className="block text-xs text-primary">Swap available</span>
                       )}
                     </span>
                     <PlaceBadge set={s} />

@@ -3,7 +3,7 @@ import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
 import { getKitBoard, getMyKit, mismatches, moveKit, topUpCsv } from "../worker/src/kit";
-import { suggestSpares, type KitSet, type KitSizes } from "../shared/kit";
+import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recPLAYER", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
@@ -11,7 +11,7 @@ const convenor = { ...player, personId: "recCONVENOR", officerRoles: [{ office: 
 
 const sizes = (shirt: string | null, more: Partial<KitSizes> = {}): KitSizes => ({ shirt, shorts: null, socks: null, goalieSmock: null, goalieSmockStyle: null, ...more });
 const spare = (shirtNo: number, teamRange: string, s: KitSizes): KitSet => ({
-  id: `s${shirtNo}`, shirtNo, teamRange, sizes: s, orderedForName: null, owner: null, holder: null, heldSince: null, place: "in_store", mismatches: [],
+  id: `s${shirtNo}`, shirtNo, teamRange, sizes: s, orderedForName: null, owner: null, numberHeldBy: null, wanted: null, holder: null, heldSince: null, place: "in_store", mismatches: [],
 });
 
 type Call = { url: URL; method: string; body: any };
@@ -49,6 +49,22 @@ describe("kit", () => {
     expect(suggestSpares({ team: "HKFC A", sizes: sizes(null) }, spares, TEAMS)).toEqual([]);
   });
 
+  it("suggests swapping shorts or socks with a spare, or with a player who wants the other size, never the shirt", () => {
+    const owned = (shirtNo: number, s: KitSizes, wanted: KitSizes): KitSet => ({
+      ...spare(shirtNo, "HKFC A", s), owner: { id: `r${shirtNo}`, name: `P${shirtNo}`, team: "HKFC A", status: "Member" }, wanted,
+    });
+    const me = owned(5, sizes("L", { shorts: "M", socks: "Large" }), sizes("XL", { shorts: "XL", socks: "Large" }));
+    const sets = [
+      me,
+      spare(40, "HKFC B", sizes("L", { shorts: "XL" })),
+      spare(12, "HKFC A", sizes("M", { shorts: "XL" })),
+      owned(7, sizes("M", { shorts: "XL" }), sizes("M", { shorts: "M" })), // wants my M: one swap fixes both
+      spare(13, "HKFC A", sizes("XL")), // the shirt I want, but shirts aren't swapped
+    ];
+    expect(suggestSwaps(me, sets).map((s) => [s.item, s.with.shirtNo, s.mutual])).toEqual([["shorts", 7, true], ["shorts", 12, false]]);
+    expect(suggestSwaps(sets[1], sets)).toEqual([]); // a spare has no owner to suit
+  });
+
   it("flags items where the owner's sizes differ from the set's", () => {
     expect(mismatches(sizes("L", { shorts: "M" }), sizes("L", { shorts: "XL", socks: "Large" }))).toEqual(["Shorts: M, wants XL", "Socks: wants Large, none ordered"]);
     expect(mismatches(sizes("L"), undefined)).toEqual([]);
@@ -69,24 +85,27 @@ describe("kit", () => {
   it("shows a board: owners, holders, where each set is and who still needs kit", async () => {
     fake({
       kit_orders: [{ id: "o1", supplier: "Kukri", name: "2026-27 Kukri order 1", ordered_on: "2026-08-17", received_on: "2026-10-03" }],
-      shirt_numbers: [{ id: "n1", shirt_no: 1, team_range: "HKFC A" }, { id: "n2", shirt_no: 2, team_range: "HKFC A" }, { id: "n3", shirt_no: 31, team_range: "HKFC B" }],
+      shirt_numbers: [{ id: "n1", shirt_no: 1, team_range: "HKFC A" }, { id: "n2", shirt_no: 2, team_range: "HKFC A" }, { id: "n3", shirt_no: 31, team_range: "HKFC B" }, { id: "n4", shirt_no: 32, team_range: "HKFC B" }],
       people: [
-        { id: "u1", api_id: "recA", preferred_name: "Al", given_names: "Alan", surname: "One", status: "Member", selected_team_sos: "HKFC A", shirt_number_id: "n1" },
-        { id: "u2", api_id: "recB", preferred_name: null, given_names: "Bo", surname: "Two", status: "Applicant", selected_team_sos: "HKFC B", shirt_number_id: "n3" },
+        { id: "u1", api_id: "recA", preferred_name: "Al", given_names: "Alan", surname: "One", status: "Member", active: true, selected_team_sos: "HKFC A", shirt_number_id: "n1" },
+        { id: "u2", api_id: "recB", preferred_name: null, given_names: "Bo", surname: "Two", status: "Applicant", active: true, selected_team_sos: "HKFC B", shirt_number_id: "n3" },
+        // Not Active: numbered, but gets no kit, so isn't on the top-up list.
+        { id: "u4", api_id: "recD", preferred_name: null, given_names: "Di", surname: "Four", status: "Applicant", active: false, shirt_number_id: "n4" },
         { id: "u3", api_id: "recC", preferred_name: null, given_names: "Cy", surname: "Three", status: "Resigned", shirt_number_id: null },
       ],
       kit_sets_v: [
         { id: "k1", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 1, team_range: "HKFC A", shirt: "L", shorts: "M", owner_id: "recA", owner_name: "Al One", holder_id: "recC", holder_name: "Cy Three" },
-        { id: "k2", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 2, team_range: "HKFC A", shirt: "XL", owner_id: null, holder_id: null },
+        { id: "k2", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 2, team_range: "HKFC A", shirt: "XL", owner_id: null, holder_id: null, number_holder_name: "Ed Five", number_holder_status: "Applicant", number_holder_active: false },
       ],
       kit_sizes: [{ id: "z1", person_id: "u1", item: "shorts", size: "L" }],
     });
     const board = await getKitBoard(env, null);
     expect(board.teams).toEqual(["HKFC A", "HKFC B"]);
     expect(board.sets[0]).toMatchObject({ shirtNo: 1, owner: { id: "recA", name: "Al One", team: "HKFC A" }, holder: { name: "Cy Three" }, place: "with_holder", mismatches: ["Shorts: M, wants L"] });
-    expect(board.sets[1]).toMatchObject({ shirtNo: 2, owner: null, place: "in_store" });
+    // A spare: its number is still held by someone who isn't Active.
+    expect(board.sets[1]).toMatchObject({ shirtNo: 2, owner: null, place: "in_store", numberHeldBy: { name: "Ed Five", status: "Applicant" } });
     // Members and applicants only; Bo has a number but nothing in this order.
-    expect(board.people.map((p) => [p.name, p.shirtNo, p.hasSet])).toEqual([["Al One", 1, true], ["Bo Two", 31, false]]);
+    expect(board.people.map((p) => [p.name, p.shirtNo, p.hasSet, p.active])).toEqual([["Al One", 1, true, true], ["Bo Two", 31, false, true], ["Di Four", 32, false, false]]);
     const csv = await topUpCsv(env, null);
     expect(csv.count).toBe(1);
     expect(csv.csv.split("\r\n")[1]).toBe("Bo Two,Applicant,31,,,,,,HKFC B");

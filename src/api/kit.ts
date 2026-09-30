@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
-import type { KitBoard, KitMove, KitMoveResult, KitSizes, MyKit } from '@shared/kit';
+import type { KitBoard, KitMove, KitMoveResult, KitSizes, MyKit, SwappableItem } from '@shared/kit';
 
 /** Kit (worker/src/kit.ts). The board and its actions are the kit section's. */
 export function getKitBoard(orderId?: string | null): Promise<KitBoard> {
@@ -21,6 +21,11 @@ export function moveKit(body: { setIds: string[]; to: string | null; expected?: 
 
 export function allocateSpare(setId: string, personId: string): Promise<{ ok: true }> {
   return apiPost('/api/kit/allocate', { setId, personId });
+}
+
+/** Swaps one item (shorts, socks, smock) between two sets. */
+export function swapItem(setId: string, otherId: string, item: SwappableItem): Promise<{ ok: true }> {
+  return apiPost('/api/kit/swap', { setId, otherId, item });
 }
 
 export function releaseSet(setId: string): Promise<{ ok: true }> {

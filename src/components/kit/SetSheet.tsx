@@ -7,8 +7,19 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { allocateSpare, editSetSizes, getSetHistory, moveKit, releaseSet } from '@/api/kit';
-import { KIT_ITEMS, KIT_SIZE_OPTIONS, describePlace, type KitBoard, type KitMove, type KitPerson, type KitSet, type KitSizes } from '@shared/kit';
+import { allocateSpare, editSetSizes, getSetHistory, moveKit, releaseSet, swapItem } from '@/api/kit';
+import {
+  KIT_ITEMS,
+  KIT_SIZE_OPTIONS,
+  describePlace,
+  suggestSwaps,
+  type KitBoard,
+  type KitMove,
+  type KitPerson,
+  type KitSet,
+  type KitSizes,
+  type KitSwap,
+} from '@shared/kit';
 import { reportMove } from './HandOutSheet';
 import { PersonPicker, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
 
@@ -111,6 +122,15 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
     },
     onError: failed,
   });
+  const swap = useMutation({
+    mutationFn: (s: KitSwap) => swapItem(set.id, s.with.id, s.item).then(() => s),
+    onSuccess: (s) => {
+      toast.success(`${s.label} swapped with #${s.with.shirtNo}`);
+      done();
+    },
+    onError: failed,
+  });
+  const swaps = useMemo(() => suggestSwaps(set, board.sets), [set, board.sets]);
   const release = useMutation({
     mutationFn: () => releaseSet(set.id),
     onSuccess: () => {
@@ -124,11 +144,11 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
   const candidates = useMemo(
     () =>
       board.people
-        .filter((p) => !p.hasSet)
+        .filter((p) => p.active && !p.hasSet)
         .sort((a, b) => Number(b.sizes.shirt === set.sizes.shirt) - Number(a.sizes.shirt === set.sizes.shirt) || a.name.localeCompare(b.name)),
     [board.people, set.sizes.shirt],
   );
-  const busy = move.isPending || allocate.isPending || release.isPending;
+  const busy = move.isPending || allocate.isPending || release.isPending || swap.isPending;
   const owner = set.owner;
   const orderedForSomeoneElse = set.orderedForName && owner && set.orderedForName.toLowerCase() !== owner.name.toLowerCase();
 
@@ -137,6 +157,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
       title: `Give #${set.shirtNo} to ${p.name}?`,
       message: [
         `${p.name} takes number ${set.shirtNo}${p.shirtNo ? `, instead of ${p.shirtNo}` : ''}, and this set.`,
+        set.numberHeldBy ? `${set.numberHeldBy.name} (not Active) gives up the number.` : '',
         p.sizes.shirt && p.sizes.shirt !== set.sizes.shirt ? `Their shirt size is ${p.sizes.shirt}; this shirt is ${set.sizes.shirt}.` : '',
       ]
         .filter(Boolean)
@@ -164,11 +185,40 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
         <section className="space-y-1">
           <p className="text-sm text-foreground">{sizesLine(set.sizes) || 'No sizes'}</p>
           {orderedForSomeoneElse && <p className="text-xs text-muted-foreground">Ordered for {set.orderedForName}.</p>}
+          {set.numberHeldBy && (
+            <p className="text-xs text-muted-foreground">
+              A spare: number {set.shirtNo} is held by {set.numberHeldBy.name} ({[set.numberHeldBy.status, 'not Active'].filter(Boolean).join(', ')}).
+              It moves to whoever gets this set.
+            </p>
+          )}
           {set.mismatches.map((m) => (
             <p key={m} className="text-xs text-amber-700 dark:text-amber-300 flex gap-1 items-start">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" aria-hidden /> {m}
             </p>
           ))}
+          {swaps.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {swaps.map((s) => (
+                <button
+                  key={`${s.item}-${s.with.id}`}
+                  className={secondaryButton}
+                  disabled={busy}
+                  onClick={() =>
+                    setConfirm({
+                      title: `Swap ${s.label.toLowerCase()} with #${s.with.shirtNo}?`,
+                      message: s.mutual
+                        ? `#${set.shirtNo} gets ${s.label.toLowerCase()} ${s.with.sizes[s.item]} and ${s.with.owner!.name} (#${s.with.shirtNo}) gets ${set.sizes[s.item]}, the size each wants.`
+                        : `#${set.shirtNo} gets the spare's ${s.label.toLowerCase()} (${s.with.sizes[s.item]}), and spare #${s.with.shirtNo} keeps ${set.sizes[s.item] ?? 'none'} instead.`,
+                      label: 'Swap',
+                      run: () => swap.mutate(s),
+                    })
+                  }
+                >
+                  {s.label} {s.with.sizes[s.item]}: {s.mutual ? `swap with ${firstName(s.with.owner!.name)} #${s.with.shirtNo}` : `from spare #${s.with.shirtNo}`}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         {set.place === 'on_order' ? (
@@ -217,7 +267,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
                 onClick={() =>
                   setConfirm({
                     title: `Make #${set.shirtNo} a spare?`,
-                    message: `${owner.name} (${owner.status || 'no status'}) gives up number ${set.shirtNo}, and the set is kept as a spare for someone it fits. Do this when an applicant doesn't join.`,
+                    message: `${owner.name} (${owner.status || 'no status'}) gives up number ${set.shirtNo}, and the set is kept as a spare for someone it fits. Someone who stops being Active doesn't need this: their set is already a spare.`,
                     label: 'Make it a spare',
                     run: () => release.mutate(),
                   })

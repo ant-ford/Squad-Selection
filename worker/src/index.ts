@@ -31,6 +31,7 @@ import {
   moveKit,
   releaseSet,
   setOrderReceived,
+  swapItem,
   topUpCsv,
 } from "./kit";
 import { getMyTasks } from "./myTasks";
@@ -682,6 +683,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (setMatch?.[2] === "sizes") return json(await editSizes(env, user, setMatch[1], body), 200, origin);
         if (pathname === "/api/kit/allocate") return json(await allocateSpare(env, user, body), 200, origin);
         if (pathname === "/api/kit/release") return json(await releaseSet(env, user, body), 200, origin);
+        if (pathname === "/api/kit/swap") return json(await swapItem(env, user, body), 200, origin);
         if (pathname === "/api/kit/new-number") return json(await giveNewNumber(env, user, body), 200, origin);
         const orderMatch = pathname.match(/^\/api\/kit\/orders\/([^/]+)\/received$/);
         if (orderMatch) return json(await setOrderReceived(env, orderMatch[1], body), 200, origin);

@@ -64,9 +64,11 @@ export default function NeedsKit({ board, onChanged }: { board: KitBoard; onChan
   const [exporting, setExporting] = useState(false);
   const spares = useMemo(() => board.sets.filter((s) => !s.owner), [board.sets]);
   // Those with sizes are ready to kit out; the rest are asked for sizes first.
-  const noNumber = board.people.filter((p) => p.shirtNo === null && p.sizes.shirt);
-  const noSizes = board.people.filter((p) => p.shirtNo === null && !p.sizes.shirt);
-  const topUp = board.people.filter((p) => p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
+  // Only Active players get kit.
+  const active = board.people.filter((p) => p.active);
+  const noNumber = active.filter((p) => p.shirtNo === null && p.sizes.shirt);
+  const noSizes = active.filter((p) => p.shirtNo === null && !p.sizes.shirt);
+  const topUp = active.filter((p) => p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
   const bySize = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of spares) m.set(s.sizes.shirt ?? '?', (m.get(s.sizes.shirt ?? '?') ?? 0) + 1);
@@ -120,7 +122,9 @@ export default function NeedsKit({ board, onChanged }: { board: KitBoard; onChan
       <section className="rounded-xl border border-border bg-card p-3">
         <h2 className="text-sm font-semibold text-foreground">Spares: {spares.length}</h2>
         <p className="text-xs text-muted-foreground">
-          {spares.length ? bySize.map(([size, n]) => `${n} × ${size}`).join(', ') : 'None yet. An applicant who doesn’t join leaves one: open their set and make it a spare.'}
+          {spares.length
+            ? bySize.map(([size, n]) => `${n} × ${size}`).join(', ')
+            : 'None yet. A set becomes a spare when its number’s holder isn’t Active.'}
         </p>
       </section>
 
@@ -154,7 +158,8 @@ export default function NeedsKit({ board, onChanged }: { board: KitBoard; onChan
           title={`Give #${confirm.set.shirtNo} to ${confirm.person.name}?`}
           message={[
             `${confirm.person.name} takes number ${confirm.set.shirtNo}${confirm.person.shirtNo ? `, instead of ${confirm.person.shirtNo}` : ''}, and this set (${sizesLine(confirm.set.sizes)}).`,
-          ].join(' ')}
+            confirm.set.numberHeldBy ? `${confirm.set.numberHeldBy.name} (not Active) gives up the number.` : '',
+          ].filter(Boolean).join(' ')}
           confirmLabel="Give it to them"
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
