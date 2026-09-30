@@ -10,8 +10,8 @@
  * page has none; the Worker adds the signed-in player's own on request.
  */
 
-/** Bump when the summary's shape changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 6;
+/** Bump when the summary's shape or counting changes: stored summaries are keyed by it. */
+export const SUMMARY_VERSION = 7; // 7: games in goal are not play-ups
 
 export interface WDL {
   w: number;

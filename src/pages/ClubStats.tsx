@@ -462,7 +462,7 @@ function TeamsTab({
           title="Played up into this team"
           rows={leaders(stats.players, 'playUps', { team: t.team })}
           unit="games played up"
-          caption="Games for this team by players registered lower down."
+          caption="Games for this team by players registered lower down, not counting games in goal."
         />
       </div>
 
