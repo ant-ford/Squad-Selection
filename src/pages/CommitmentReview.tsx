@@ -56,12 +56,9 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 /** Ideas for the member's free-text answers (owner request, 2026-09-30). */
 const HINTS = {
-  otherContributions:
-    'For example: a team role (captain, vice-captain, manager), coaching or umpiring juniors, helping at club events such as the Easter 5s or tournaments, fixtures or kit admin.',
-  sectionService:
-    'How you could help the Hockey Section next season: a team or committee role, coaching, umpiring, organising socials or tours, mentoring new players.',
-  hkfcService:
-    'Beyond hockey: HKFC club committees, other sections, club-wide events, volunteering, representing the club.',
+  otherContributions: 'Team role (captain, vice-captain, social secretary), coaching, helping at club events, kit admin',
+  sectionService: 'Team or committee role, coaching, umpiring, organising socials or tours',
+  hkfcService: 'HKFC club committees, contributions to other sections, club-wide events, volunteering',
 };
 
 function Answer({ label, value }: { label: string; value: ReactNode }) {
