@@ -1,7 +1,7 @@
 import { AirtableError, airtableList } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest } from "./files";
-import { db } from "./data/supabase";
+import { db, SupabaseError } from "./data/supabase";
 import { shadowSummary } from "./data/shadow";
 import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
@@ -19,6 +19,7 @@ import {
 import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
+import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -629,6 +630,21 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await requestReviewEmail(env, user, String(body.commitmentId ?? "")), 200, origin);
     }
 
+    // ── Commitment reviews (Supabase backend; src/reviews.ts) ─────────────
+    // Signed-in only: who may see or submit each review is decided per
+    // review (the member, their sponsor, Membership Officers).
+    const reviewMatch = pathname.match(/^\/api\/reviews\/([^/]+)(?:\/(member|sponsor|officer))?$/);
+    if (reviewMatch) {
+      const [, reviewId, step] = reviewMatch;
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && !step) return json(await getReview(env, user, reviewId), 200, origin);
+      if (method === "POST" && step) {
+        const body = (await readJsonBody(request)) as Record<string, unknown>;
+        const submit = step === "member" ? submitMemberReport : step === "sponsor" ? submitSponsorReview : submitOfficerReview;
+        return json(await submit(env, user, reviewId, body ?? {}), 200, origin);
+      }
+    }
+
     // ── Chairman's section (Section Chairs + Section Captains table) ──────
     // The directory carries every member's email address, so it is gated on
     // the section like the membership routes.
@@ -676,6 +692,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // client - only the detail goes to Workers Logs.
       console.error("Airtable error:", err.message);
       return errorJson("Upstream data service error", 502, origin, "UPSTREAM_ERROR");
+    }
+    if (err instanceof SupabaseError) {
+      // Which table, status and code - enough to diagnose from the screen,
+      // never the database's message, which can quote a value.
+      console.error("Supabase error:", err.message);
+      const table = /^Supabase \w+ (\S+) failed/.exec(err.message)?.[1] ?? "?";
+      return errorJson(`Database error (${table}, ${err.status}${err.code ? ` ${err.code}` : ""}). Please try again.`, 502, origin, "DB_ERROR");
     }
 
     console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);

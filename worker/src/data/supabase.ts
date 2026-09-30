@@ -30,8 +30,12 @@ export class SupabaseError extends Error {
 /** PostgREST caps a response at this many rows (Supabase's default max_rows). */
 const PAGE = 1000;
 
-/** Gateway answers that mean the request did not get through; a read is tried again. */
-const RETRYABLE_STATUS = new Set([502, 503, 504]);
+/**
+ * Answers after which a read is tried again: the gateway ones, and 500. Preview
+ * testing saw sign-in lookups fail now and then with a small 500 that the
+ * same read a moment later answered; a read is safe to repeat.
+ */
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 const RETRY_DELAY_MS = 200;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

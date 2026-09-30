@@ -90,6 +90,12 @@ describe("Supabase data client", () => {
     const calls = stubFetch(() => (n++ === 0 ? { status: 502, body: "bad gateway" } : { body: [{ id: "a" }] }));
     expect(await db(env).one("teams", "select=id&id=eq.a")).toEqual({ id: "a" });
     expect(calls).toHaveLength(2);
+
+    // And from a passing 500, as preview's sign-in lookups saw now and then.
+    let m = 0;
+    const again = stubFetch(() => (m++ === 0 ? { status: 500, body: { code: "XX000", message: "blip" } } : { body: [{ id: "b" }] }));
+    expect(await db(env).one("teams", "select=id&id=eq.b")).toEqual({ id: "b" });
+    expect(again).toHaveLength(2);
   });
 
   it("never repeats a write, and does not retry a real error", async () => {
