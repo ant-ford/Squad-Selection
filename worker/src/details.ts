@@ -11,6 +11,7 @@ import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { invalidateForTables } from "./airtableWebhook";
+import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -205,6 +206,8 @@ export async function confirmDetails(env: Env, user: AuthorizedUser) {
   requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   await db(env).update("people", `id=${eq(p.id)}`, { profile_updated_at: new Date().toISOString() });
+  // The My Tasks line goes at once, not when its minute's cache runs out.
+  invalidateCache(`my-details-check:${user.personId}`);
   await invalidateForTables(env, [TABLES.player]);
   return { ok: true };
 }
