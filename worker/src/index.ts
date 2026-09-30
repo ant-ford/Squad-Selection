@@ -23,6 +23,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
+import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import {
   allocateSpare,
   editSizes,
@@ -671,6 +672,22 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/season-plan/board") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getSeasonPlanBoard(env, user), 200, origin);
+    }
+
+    // ── Personal details (Supabase backend; src/details.ts) ───────────────
+    // The signed-in person's own details only.
+    if (pathname.startsWith("/api/details/")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/details/me") return json(await getMyDetails(env, user), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        const section = pathname.match(/^\/api\/details\/sections\/([a-z]+)$/);
+        if (section) return json(await saveSection(env, user, section[1], body), 200, origin);
+        const upload = pathname.match(/^\/api\/details\/files\/([a-z]+)$/);
+        if (upload) return json(await uploadFile(env, user, upload[1], body), 200, origin);
+        if (pathname === "/api/details/kit") return json(await saveKitSizes(env, user, body), 200, origin);
+        if (pathname === "/api/details/confirm") return json(await confirmDetails(env, user), 200, origin);
+      }
     }
 
     // ── Volunteering (Supabase backend; src/volunteering.ts) ──────────────

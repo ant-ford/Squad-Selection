@@ -29,11 +29,13 @@ import { WAITING_ON_KEY } from "./reference";
 import { people, type ApplicantTaskRow, type MyTaskRow } from "./data/people";
 import { commitments } from "./data/commitments";
 import { backendFor } from "./data/backend";
+import { db, eq } from "./data/supabase";
+import { checkedThisSeason } from "../../shared/profile";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "joiner" | "statement" | "waivers" | "application" | "review";
+export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "review";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -157,6 +159,19 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
   );
 }
 
+/** An Active member who hasn't confirmed their details since 1 July. */
+async function needsDetailsCheck(env: Env, personId: string, today: string): Promise<boolean> {
+  const { data } = await getCached(
+    `my-details-check:${personId}`,
+    async () => db(env).one<{ status: string | null; active: boolean; profile_updated_at: string | null }>(
+      "people",
+      `select=status,active,profile_updated_at&api_id=${eq(personId)}`,
+    ),
+    MY_RECORD_TTL_MS,
+  );
+  return !!data && data.active && data.status === "Member" && !checkedThisSeason(data.profile_updated_at, today);
+}
+
 /** Waivers count for the season they were submitted in (July to June). */
 export function waiversDoneThisSeason(submittedAt: unknown, today: string): boolean {
   const at = text(submittedAt);
@@ -165,11 +180,15 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { joiner: 0, statement: 1, waivers: 2, application: 3, review: 4 };
+const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, review: 5 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
-  if (!personId || !/^rec[A-Za-z0-9]{14}$/.test(personId)) return { tasks: [] };
+  const onSupabase = backendFor(env, "people") === "supabase";
+  // Airtable ids only on Airtable (the id goes into a formula); on Supabase,
+  // people created in Eddy have a uuid.
+  const idPattern = onSupabase ? /^(rec[A-Za-z0-9]{14}|[0-9a-f-]{36})$/ : /^rec[A-Za-z0-9]{14}$/;
+  if (!personId || !idPattern.test(personId)) return { tasks: [] };
 
   const [mine, waitingOn] = await Promise.all([
     getCached(
@@ -186,6 +205,10 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     // On Supabase, Eddy's own waivers screen (src/declarations.ts); on Airtable, the Fillout form.
     const inEddy = backendFor(env, "people") === "supabase";
     tasks.push({ id: "waivers", key: "waivers", url: inEddy ? "/waivers" : text(mine.waiversFormUrl) });
+  }
+  // Members check their details at the start of each season (Supabase: Eddy's screen).
+  if (onSupabase && (await needsDetailsCheck(env, personId, today))) {
+    tasks.push({ id: "details", key: "details", url: "/my-details" });
   }
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
   return { tasks };
