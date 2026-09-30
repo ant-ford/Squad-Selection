@@ -91,77 +91,82 @@ export function draftContext(s: DraftSource, forOfficer: boolean): string {
     .join("\n\n");
 }
 
-const PLAIN = "Produce a concise, professional comment in plain text only. Do not add headings or extra text.";
+/** Every draft: plain text, and no gender assumed (the model is never told who the member is). */
+const PLAIN = "Produce a concise, professional comment in plain text only. Do not add headings or extra text. Refer to the person as \"the member\" or \"they\"; never assume their gender.";
 
-/** Each draft: the column it fills, the Airtable prompt, and its length limit. */
+/**
+ * Each draft: the column it fills, the Airtable prompt, and a hard cap set
+ * comfortably above the length the prompt asks for, so it trims only a
+ * runaway answer.
+ */
 export const DRAFTS = {
   sponsor: [
     {
       column: "section_service_draft",
-      limit: 260,
+      limit: 300,
       prompt: [
         "You are a sponsor reviewing a member's commitment and potential contribution to the Hockey Section.",
         "Write a brief comment (under 30 words) on the member's potential for involvement and service within the Section.",
         "Consider match attendance: higher than 70% should positively influence tone.",
         "If attendance is below 70% and a reason is provided, acknowledge it briefly and neutrally.",
         `Highlight Section-relevant contribution and potential. Calibrate tone based on attendance. ${PLAIN}`,
-        "260 characters or less.",
+        "Keep it under 230 characters.",
       ],
     },
     {
       column: "hkfc_service_draft",
-      limit: 200,
+      limit: 240,
       prompt: [
         "You are a sponsor reviewing a member's broader potential contribution to HKFC.",
         "Write a brief comment (under 30 words) on the member's potential for involvement and service across the Club.",
         "Consider match attendance: higher than 70% should positively influence tone.",
         "If attendance is below 70% and a reason is provided, acknowledge it briefly and neutrally.",
         `Focus on Club-wide contribution potential. Calibrate tone based on attendance. ${PLAIN}`,
-        "200 characters or less.",
+        "Keep it under 180 characters.",
       ],
     },
     {
       column: "recommendation_draft",
-      limit: 440,
+      limit: 500,
       prompt: [
         "You are a sponsor providing an objective recommendation on whether the member has met their commitment requirements and whether you support their membership.",
         "Compare the member's record against the Section's commitment requirements: umpiring, match attendance (70% minimum), training attendance, social functions, contribution to team/Section roles, overall involvement and future value.",
         "If attendance is below 70% and a reason is provided, acknowledge it neutrally.",
         "State clearly whether the member meets requirements. If shortfalls exist, note them objectively and indicate whether mitigation exists.",
-        `${PLAIN} 440 characters or less.`,
+        `${PLAIN} Keep it under 400 characters.`,
       ],
     },
   ],
   officer: [
     {
       column: "is_player_needed_draft",
-      limit: 120,
+      limit: 150,
       prompt: [
         "You are the Membership Officer assessing whether the Section needs this candidate at the level indicated.",
         "Produce a single, concise sentence (12 words or fewer).",
         "Focus strictly on why the Section needs the candidate (playing strength, positional need, coaching depth, reliability, contribution).",
-        "Keep tone factual and neutral. Do not add headings or extra text.",
+        "Keep tone factual and neutral. Do not add headings or extra text. Never assume the member's gender.",
       ],
     },
     {
       column: "other_comments_draft",
-      limit: 260,
+      limit: 300,
       prompt: [
         "You are the Membership Officer reviewing whether the candidate has fulfilled their Commitment Requirements and whether they demonstrate future value to the Section and HKFC.",
         "Assess the candidate against: umpiring, match attendance (70% minimum), training attendance, social functions, team/Section roles, overall contribution, future value.",
         "If shortfalls exist, note them objectively and indicate whether mitigation or exceptional contribution justifies leniency.",
-        `State clearly whether expectations were met overall. ${PLAIN} 260 characters or less.`,
+        `State clearly whether expectations were met overall. ${PLAIN} Keep it under 230 characters.`,
       ],
     },
     {
       column: "other_information_draft",
-      limit: 260,
+      limit: 300,
       prompt: [
         "You are the Membership Officer reviewing the candidate's application.",
         "Provide any additional relevant insight that may assist the Membership Sub-Committee.",
         "Include only information that is relevant, factual, and helpful. Do not repeat information already covered in other fields.",
         "If there is no meaningful additional insight, output nothing at all.",
-        `${PLAIN} 260 characters or less.`,
+        `${PLAIN} Keep it under 230 characters.`,
       ],
     },
   ],
@@ -197,14 +202,23 @@ async function complete(env: Env, system: string, context: string): Promise<stri
         { role: "user", content: `Context:\n${context}\n\nOutput:` },
       ],
       temperature: 0.3,
-      max_tokens: 400,
+      max_tokens: 800,
+      // A short plain answer is wanted, not a reasoning model's thinking: left
+      // on, the thinking used up the allowance and the longest draft came
+      // back empty (preview, 2026-09-30).
+      reasoning: { enabled: false },
       // Only providers that neither keep nor train on the prompt.
       provider: { data_collection: "deny" },
     }),
   });
-  const body = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null;
+  const body = (await res.json().catch(() => null)) as {
+    choices?: { message?: { content?: string }; finish_reason?: string }[];
+    error?: { message?: string };
+  } | null;
   if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${body?.error?.message?.slice(0, 160) ?? "error"}`);
-  return body?.choices?.[0]?.message?.content ?? "";
+  const choice = body?.choices?.[0];
+  if (!choice?.message?.content?.trim()) throw new Error(`OpenRouter gave no text (finish: ${choice?.finish_reason ?? "?"})`);
+  return choice.message.content;
 }
 
 /** Drafts one step's answers for a review and stores them. Returns how many were written. */
@@ -219,7 +233,8 @@ export async function generateDrafts(env: Env, reviewApiId: string, step: DraftS
   );
   const patch: Record<string, string> = {};
   for (const r of results) {
-    if (r.status === "fulfilled") patch[r.value[0]] = r.value[1];
+    // "Nothing to add" (other_information) is a legitimate empty answer; it is simply not stored.
+    if (r.status === "fulfilled" && r.value[1]) patch[r.value[0]] = r.value[1];
     else console.error(`Review ${reviewApiId}: a ${step} draft failed: ${r.reason instanceof Error ? r.reason.message : "error"}`);
   }
   if (Object.keys(patch).length === 0) return 0;
