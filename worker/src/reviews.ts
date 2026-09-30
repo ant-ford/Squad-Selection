@@ -26,6 +26,8 @@ import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
 import { invalidateForTables } from "./airtableWebhook";
 import { draftNextStep } from "./reviewDrafts";
+import { getReferenceData } from "./reference";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { TABLES } from "../../shared/schema/tableNames";
 import {
   GAMES_UMPIRED,
@@ -263,6 +265,13 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
       officers: offices.filter((o) => o.role === "membership_officer").map(asOption),
       usualSponsor: row.sponsor_office ?? row.usual_sponsor_office,
     };
+  }
+  if (canDo === "officer" && row.team) {
+    // Counted as the membership Insights squad sizes count them: Active
+    // players, by the team the app shows them in (Selected Team EOS -> SOS
+    // -> Registered), which is how the review's own team is chosen too.
+    const ref = await getReferenceData(env);
+    view.teamActivePlayers = ref.players.filter((p) => (selectedDisplayTeam(p) || p.registeredTeam || "") === row.team).length;
   }
   if (canDo === "sponsor" || canDo === "officer") {
     view.savedSignatureUrl = await signed(env, await savedSignature(env, user.personId));

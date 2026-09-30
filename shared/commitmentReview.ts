@@ -110,4 +110,10 @@ export interface ReviewView {
    * otherComments, otherInformation). Pre-filled; the reviewer edits them.
    */
   drafts?: Record<string, string>;
+  /**
+   * For the Membership Officer: Active players whose Selected Team (EOS ->
+   * SOS -> Registered) is the member's team, as the Insights squad sizes
+   * count them. Pre-fills "Players available".
+   */
+  teamActivePlayers?: number;
 }
