@@ -26,7 +26,7 @@ import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
 import { invalidateForTables } from "./airtableWebhook";
 import { draftNextStep } from "./reviewDrafts";
-import { signatureBytes, storeSignature } from "./signatures";
+import { savedSignature, signatureFor } from "./signatures";
 
 export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
@@ -166,18 +166,6 @@ async function loadRow(env: Env, id: string): Promise<ReviewRow> {
 }
 
 const signed = async (env: Env, fileId: string | null) => (fileId ? fileLink(env, fileId) : null);
-
-/** The signer's saved signature (files, kind 'signature', on their People row), newest first. */
-async function savedSignature(env: Env, personApiId: string): Promise<string | null> {
-  const d = db(env);
-  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
-  if (!person) return null;
-  const rows = await d.select<{ id: string }>(
-    "files",
-    `select=id&person_id=${eq(person.id)}&kind=eq.signature&order=created_at.desc`,
-  );
-  return rows[0]?.id ?? null;
-}
 
 export async function getReview(env: Env, user: AuthorizedUser, rawId: string): Promise<ReviewView> {
   requireSupabase(env);
@@ -341,22 +329,6 @@ export function officerReviewFrom(body: Record<string, unknown>): OfficerReview 
   return review;
 }
 
-/**
- * The signature this submission is signed with: a newly drawn one, saved to
- * the signer's People record for next time, or the one saved before.
- */
-async function signatureFor(env: Env, user: AuthorizedUser, drawn: string | undefined): Promise<string> {
-  if (!drawn) {
-    const saved = await savedSignature(env, user.personId);
-    if (!saved) throw new HttpError("Sign the review.", 400, "INVALID_INPUT");
-    return saved;
-  }
-  signatureBytes(drawn); // a bad image is a 400 before anything is looked up
-  const person = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
-  if (!person) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
-  return storeSignature(env, person.id, drawn, "signature");
-}
-
 /** The database's answer to a submission, as an HTTP error. */
 function submissionError(err: unknown): never {
   if (err instanceof SupabaseError) {
@@ -467,7 +439,7 @@ export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId:
     const row = await loadRow(env, id);
     if (!rolesFor(user, row).includes("sponsor")) throw new HttpError("Only this member's sponsor can review their Player Statement.", 403, "FORBIDDEN");
     at(signature ? "signature-store" : "signature-saved");
-    const file = await signatureFor(env, user, signature);
+    const file = await signatureFor(env, user, signature, "Sign the review.");
     at("save");
     const next = await db(env)
       .rpc<NextStep[]>("submit_sponsor_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
@@ -487,7 +459,7 @@ export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId:
   if (!isOfficer(user)) throw new HttpError("Only a Membership Officer can complete the review.", 403, "FORBIDDEN");
   return reported("officer", async (at) => {
     at(signature ? "signature-store" : "signature-saved");
-    const file = await signatureFor(env, user, signature);
+    const file = await signatureFor(env, user, signature, "Sign the review.");
     at("save");
     await db(env)
       .rpc("submit_officer_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })

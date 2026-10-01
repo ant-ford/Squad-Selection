@@ -41,6 +41,9 @@ export function TextBlock({ label, text }: { label: string; text?: string }) {
   );
 }
 
+/** Stages where the application and its signatures can be opened (Eddy's signing screen). */
+const SIGNING_STAGES = ['3. Club Application (Signed)', '4. Sponsor (Signed)', '5. Chairman (Signed)', '6. Membership Officer (Signed)'];
+
 export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard; onClose: () => void }) {
   const wide = useMediaQuery('(min-width: 640px)');
   const whatsApp = applicantWhatsApp(card);
@@ -129,6 +132,14 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
             className="mb-4 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
           >
             <Mail className="h-3.5 w-3.5" /> Details, invitation, kit and registration
+          </Link>
+        )}
+        {SIGNING_STAGES.includes(card.stage) && (
+          <Link
+            to={`/sign-application/${card.id}`}
+            className="mb-4 ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
+          >
+            <FileText className="h-3.5 w-3.5" /> Application and signatures
           </Link>
         )}
         {card.canApprove && <ApproveForm card={card} onDone={onClose} />}
