@@ -304,11 +304,6 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
           )}
         </div>
       )}
-      {section.key === 'contact' && (
-        <p className="text-xs text-muted-foreground">
-          You sign in with <span className="text-foreground">{details.email ?? 'no email'}</span>. To change it, ask the Membership Officer.
-        </p>
-      )}
       <ProfileFields
         fields={fields}
         values={values}
@@ -393,7 +388,7 @@ export function VolunteeringStep({ initial, ...nav }: Omit<StepProps, 'details'>
   };
   return (
     <StepShell title="Volunteering" {...nav} onNext={next} busy={save.isPending} problem={problem}>
-      <VolunteeringSection value={answers} onChange={setAnswers} />
+      <VolunteeringSection value={answers} onChange={setAnswers} heading={false} />
     </StepShell>
   );
 }

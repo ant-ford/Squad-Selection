@@ -102,13 +102,12 @@ export function RegisterStep({ trial, ...nav }: Omit<StepProps, 'details'> & { t
       {sent ? (
         <p className="text-sm text-foreground flex gap-2 items-start">
           <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-          Thanks, you're registered{trial.registeredAt ? ` (${safeFormat(trial.registeredAt, 'd MMM yyyy')})` : ''}. A Section Captain will be in touch. You can come
+          Thanks, you're registered{trial.registeredAt ? ` (${safeFormat(trial.registeredAt, 'd MMM yyyy')})` : ''}. We will be in touch. You can come
           back and change your details any time.
         </p>
       ) : (
         <p className="text-sm text-foreground">
-          That's everything. Send your registration and the Section Captains will be in touch
-          {trial.referredBy ? `; we'll let them know ${trial.referredBy} sent you` : ''}.
+          That's everything. Send your registration and we will be in touch.
         </p>
       )}
     </StepShell>
