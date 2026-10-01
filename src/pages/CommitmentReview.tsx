@@ -6,7 +6,7 @@ import { User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import SignaturePad from '@/components/SignaturePad';
+import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
@@ -277,23 +277,6 @@ function MemberReportView({ review }: { review: ReviewView }) {
 }
 
 // ── Signing ─────────────────────────────────────────────────────────────
-
-/** Sign with the saved signature in one tap, or draw one (it is kept for next time). */
-function SignBlock({ savedUrl, onChange }: { savedUrl: string | null | undefined; onChange: (png: string | null | 'saved') => void }) {
-  const [redraw, setRedraw] = useState(!savedUrl);
-  if (savedUrl && !redraw) {
-    return (
-      <div>
-        <p className="text-xs text-muted-foreground mb-1">Signed with your saved signature</p>
-        <img src={savedUrl} alt="Your saved signature" className="h-20 rounded-md border border-border bg-white object-contain" />
-        <button type="button" className="block text-xs text-primary hover:underline mt-1" onClick={() => { setRedraw(true); onChange(null); }}>
-          Sign again instead
-        </button>
-      </div>
-    );
-  }
-  return <SignaturePad onChange={onChange} />;
-}
 
 // ── Sponsor ─────────────────────────────────────────────────────────────
 

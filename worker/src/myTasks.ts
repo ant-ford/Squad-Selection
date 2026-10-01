@@ -20,6 +20,9 @@
  *    applicant's Sponsored By links.
  *  - review: a statement at Member Submitted waits on its sponsor, at
  *    Sponsor Submitted on its membership officer.
+ *  - On Supabase the three sign in any order (applicationSigning.ts): each
+ *    who hasn't signed has an application line, and once all three have,
+ *    the membership officer has an accept line.
  *  - kit / registration (Supabase): a Section Captain's request to the Kit
  *    Convenor or the Hockey Convenor for a new joiner, until they mark it
  *    done (joiners.ts).
@@ -34,12 +37,13 @@ import { commitments } from "./data/commitments";
 import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { openJoinerTasks } from "./joiners";
+import { signingTasks } from "./applicationSigning";
 import { checkedThisSeason } from "../../shared/profile";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "review" | "kit" | "registration";
+export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "accept" | "review" | "kit" | "registration";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -93,10 +97,12 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
     async () => {
       const stages = [INVITED_STAGE, ...Object.keys(SIGNERS)];
       const reviewStages = [NOTIFIED, MEMBER_SUBMITTED, SPONSOR_SUBMITTED];
-      const [applicants, reviews, holders] = await Promise.all([
+      const onSupabase = backendFor(env, "people") === "supabase";
+      const [applicants, reviews, holders, signing] = await Promise.all([
         people(env).listApplicantsAtStages(stages),
         commitments(env).listReviewsAtStages(reviewStages),
         getOfficeHolders(env),
+        onSupabase ? signingTasks(env) : Promise.resolve({} as Record<string, MyTask[]>),
       ]);
 
       const out: WaitingOn = {};
@@ -116,7 +122,8 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
           add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: inEddy ? "/apply" : text(r.joinerFormUrl) });
           continue;
         }
-        const signer = SIGNERS[stage];
+        // On Supabase the signing lines come from applicationSigning.ts (below).
+        const signer = onSupabase ? undefined : SIGNERS[stage];
         if (!signer) continue;
         const [role, link, form] = signer;
         add(holders[firstLink(r[link]) ?? ""], {
@@ -127,6 +134,8 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
           url: text(r[form]),
         });
       }
+
+      for (const [personId, tasks] of Object.entries(signing)) for (const t of tasks) add(personId, t);
 
       // On Supabase the reviews are Eddy's own screen (src/reviews.ts); on
       // Airtable they are still the Fillout forms.
@@ -186,7 +195,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, review: 5, kit: 6, registration: 7 };
+const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, accept: 5, review: 6, kit: 7, registration: 8 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;

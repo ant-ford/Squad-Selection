@@ -1,13 +1,15 @@
 /**
  * Drawn signatures: a PNG from the screen's signature pad, checked and kept
  * in R2 (FILES) with a files row on the person it belongs to. Used by the
- * commitment reviews (the signer's own signature, kind 'signature') and the
- * waivers (a parent or guardian's, kind 'guardian_consent_signature', filed
- * on the player).
+ * commitment reviews and the application signing (the signer's own
+ * signature, kind 'signature', saved once and reused) and the waivers (a
+ * parent or guardian's, kind 'guardian_consent_signature', filed on the
+ * player).
  */
 import type { Env } from "./env";
+import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { db } from "./data/supabase";
+import { db, eq } from "./data/supabase";
 
 /** A drawn signature is a small PNG; anything larger is not one. */
 const MAX_SIGNATURE_BYTES = 200_000;
@@ -42,4 +44,29 @@ export async function storeSignature(
     content_type: "image/png", bytes: bytes.length, sha256,
   }]);
   return file.id;
+}
+
+/** The signer's saved signature (files, kind 'signature', on their People row), newest first. */
+export async function savedSignature(env: Env, personApiId: string): Promise<string | null> {
+  const d = db(env);
+  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
+  if (!person) return null;
+  const rows = await d.select<{ id: string }>("files", `select=id&person_id=${eq(person.id)}&kind=eq.signature&order=created_at.desc`);
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * The signature a submission is signed with: a newly drawn one, saved to
+ * the signer's People record for next time, or the one saved before.
+ */
+export async function signatureFor(env: Env, user: AuthorizedUser, drawn: string | undefined, missing: string): Promise<string> {
+  if (!drawn) {
+    const saved = await savedSignature(env, user.personId);
+    if (!saved) throw new HttpError(missing, 400, "INVALID_INPUT");
+    return saved;
+  }
+  signatureBytes(drawn); // a bad image is a 400 before anything is looked up
+  const person = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
+  if (!person) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  return storeSignature(env, person.id, drawn, "signature");
 }

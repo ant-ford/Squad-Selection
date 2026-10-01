@@ -32,6 +32,7 @@ const Apply = lazy(() => import('./pages/Apply'));
 const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
+const SignApplication = lazy(() => import('./pages/SignApplication'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -133,6 +134,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/sign-application/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <SignApplication />
           </Suspense>
         ),
       },

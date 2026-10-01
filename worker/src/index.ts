@@ -25,6 +25,7 @@ import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonP
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
+import { draftSponsorAnswers, getSigningView, signApplication } from "./applicationSigning";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   completeJoinerTask,
@@ -738,6 +739,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2] === "invite") return json(await inviteJoiner(env, user, one[1]), 200, origin);
         if (one?.[2] === "kit") return json(await requestKit(env, user, one[1], body), 200, origin);
         if (one?.[2] === "registration") return json(await requestRegistration(env, user, one[1], body), 200, origin);
+      }
+    }
+    // ── Signing new members' applications (Supabase; applicationSigning.ts) ──
+    const signing = pathname.match(/^\/api\/applications\/([A-Za-z0-9-]{3,40})\/(sign|drafts)$/);
+    if (signing) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && signing[2] === "sign") return json(await getSigningView(env, user, signing[1]), 200, origin);
+      if (method === "POST" && signing[2] === "drafts") return json(await draftSponsorAnswers(env, user, signing[1]), 200, origin);
+      if (method === "POST" && signing[2] === "sign") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(await signApplication(env, user, signing[1], body), 200, origin);
       }
     }
     // Club documents behind sign-in (shared/application.ts CLUB_DOCS).
