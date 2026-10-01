@@ -23,7 +23,7 @@ import { hkDateKey } from "./hkDateKey";
 import { seasonStartYear } from "./membershipInsights";
 import { joinPhone, normaliseHkid, phoneProblem, splitPhone } from "./phone";
 
-export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno" | "hkid";
+export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno" | "hkid" | "branch" | "account";
 
 /** Who is answering: a member, or an applicant who is an existing or a new HKFC member. */
 export type Audience = "member" | "existing" | "new";
@@ -43,7 +43,12 @@ export interface FieldSpec {
   hint?: string;
   /** Who is asked; everyone when absent. */
   audiences?: Audience[];
+  /** Asked only when this holds of the section's other answers; stored empty otherwise. */
+  showIf?: (v: ProfileValues) => boolean;
 }
+
+/** Whether a field applies, given the other answers. */
+export const isShown = (f: FieldSpec, v: ProfileValues) => !f.showIf || f.showIf(v);
 
 export type SectionKey = "application" | "personal" | "emergency" | "contact" | "work" | "guardian" | "hockey" | "background" | "billing";
 
@@ -239,7 +244,8 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
       {
         key: "playingLevel",
         column: "playing_level",
-        label: "Levels you've played at",
+        label: "What level do you think you play at?",
+        hint: "Choose one, or two if you're between levels.",
         type: "multi",
         options: ["Premier League", "Division 1", "Division 2", "Division 3", "Division 4", "Division 5", "Division 6"],
         required: APPLICANTS,
@@ -267,12 +273,31 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
     fields: [
       { key: "billPayer", column: "bill_payer", label: "Who pays the club account?", type: "select", options: ["Applicant", "Spouse / Partner", "Guardian / Parent"] },
       { key: "bankName", column: "bank_name", label: "Bank", type: "select", options: Object.keys(BANKS) },
-      { key: "bankBranchNo", column: "bank_branch_no", label: "Branch no.", type: "text", required: true },
-      { key: "bankAccountNo", column: "bank_account_no", label: "Account no.", type: "text", required: true },
+      { key: "bankBranchNo", column: "bank_branch_no", label: "Branch no.", type: "branch", required: true, hint: "3 digits, e.g. 123." },
+      {
+        key: "bankAccountNo",
+        column: "bank_account_no",
+        label: "Account no.",
+        type: "account",
+        required: true,
+        hint: "Without the bank and branch codes.",
+      },
       { key: "bankContactNo", column: "bank_contact_no", label: "Contact no. for the bank", type: "phone" },
       { key: "bankPaymentLimit", column: "bank_payment_limit", label: "Payment limit", type: "select", options: ["Unlimited", "Each Payment", "Each Month"], required: true },
-      { key: "bankPaymentLimitAmount", column: "bank_payment_limit_amount", label: "Limit amount (HK$)", type: "number", hint: "Unless the limit is Unlimited." },
-      { key: "guardianBankAccountName", column: "guardian_bank_account_name", label: "Parent or guardian's name on the account", type: "text", hint: "If a parent or guardian pays." },
+      {
+        key: "bankPaymentLimitAmount",
+        column: "bank_payment_limit_amount",
+        label: "Limit amount (HK$)",
+        type: "number",
+        showIf: (v) => !!v.bankPaymentLimit && v.bankPaymentLimit !== "Unlimited",
+      },
+      {
+        key: "guardianBankAccountName",
+        column: "guardian_bank_account_name",
+        label: "Parent or guardian's name on the account",
+        type: "text",
+        showIf: (v) => v.billPayer === "Guardian / Parent",
+      },
     ],
   },
   {
@@ -380,6 +405,8 @@ export function checkValue(f: FieldSpec, v: unknown, who: Audience = "member"): 
     const problem = phoneProblem(s);
     if (problem) return `${f.label}: ${problem}.`;
   }
+  if (f.type === "branch" && !/^\d{3}$/.test(s)) return `${f.label}: a branch number is 3 digits.`;
+  if (f.type === "account" && !/^\d{6,14}$/.test(s.replace(/[\s-]/g, ""))) return `${f.label}: give the digits of the account number (6 to 14).`;
   if (f.type === "hkid" && !normaliseHkid(s)) return `${f.label}: check the number and the digit in brackets, e.g. A123456(7).`;
   if (f.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${f.label}: that isn't a date.`;
   return null;
@@ -393,6 +420,7 @@ export function checkedThisSeason(checkedAt: string | null, day: string): boolea
 /** An answer as stored: HKID numbers written A123456(7), phone numbers "+852 9123 4567". */
 export function normaliseValue(f: FieldSpec, v: string): string {
   if (f.type === "hkid") return normaliseHkid(v) ?? v;
+  if (f.type === "account") return v.replace(/[\s-]/g, "");
   if (f.type === "phone") {
     const { code, number } = splitPhone(v);
     return joinPhone(code, number) || v;

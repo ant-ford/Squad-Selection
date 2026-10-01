@@ -39,7 +39,7 @@ import {
   type Relative,
   type TrialAttended,
 } from "../../shared/application";
-import { PROFILE_SECTIONS, audienceOf, checkValue, fieldsFor, sectionFor, sectionProblem, type Audience, type ProfileValues } from "../../shared/profile";
+import { PROFILE_SECTIONS, audienceOf, checkValue, fieldsFor, isShown, sectionFor, sectionProblem, type Audience, type ProfileValues } from "../../shared/profile";
 
 interface PersonRow {
   id: string;
@@ -319,12 +319,16 @@ export function applicationGaps(p: PersonRow, view: ApplyView, who: Audience, ha
   const under18 = isUnderEighteen(p.date_of_birth, day);
   for (const s of PROFILE_SECTIONS) {
     if (!sectionFor(s, who) || (s.underEighteenOnly && !under18)) continue;
-    const bad = fieldsFor(s, who).map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(s.key, values);
+    const bad =
+      fieldsFor(s, who)
+        .filter((f) => isShown(f, values))
+        .map((f) => checkValue(f, values[f.key], who))
+        .find(Boolean) ?? sectionProblem(s.key, values);
     if (bad) gaps.push(`${s.title}: ${bad}`);
   }
   if (!hasPhoto) gaps.push("Personal details: upload your photo.");
   if (!hasHkid) gaps.push("Personal details: upload a copy of your HKID.");
-  if (p.marital_status === "Married" && !view.hasMarriageCertificate) gaps.push("Personal details: upload your marriage certificate.");
+  if (p.marital_status === "Married" && !view.hasMarriageCertificate) gaps.push("Family: upload your marriage certificate.");
   if (view.spouse) {
     if (!view.spouse.files.photo) gaps.push("Family: upload your spouse or partner's photo.");
     if (!view.spouse.files.hkid) gaps.push("Family: upload your spouse or partner's HKID.");
@@ -354,7 +358,7 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
   const view = await getApply(env, user);
   const own = await db(env).select<{ kind: string }>("files", `select=id,kind&person_id=${eq(p.id)}&family_member_id=is.null&kind=in.(photo,hkid)`);
   const gaps = applicationGaps(p, view, who, own.some((f) => f.kind === "photo"), own.some((f) => f.kind === "hkid"), day);
-  if (gaps.length) throw new HttpError(`Not quite finished: ${gaps[0]}`, 400, "INCOMPLETE");
+  if (gaps.length) throw new HttpError(`Not quite finished:\n${gaps.map((g) => `• ${g}`).join("\n")}`, 400, "INCOMPLETE");
 
   const under18 = isUnderEighteen(p.date_of_birth, day);
   const required = requiredTicks(who, under18);

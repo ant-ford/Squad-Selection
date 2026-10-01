@@ -47,7 +47,7 @@ describe("my details", () => {
     expect(() => parseSection("hockey", { values: { playingPosition: "Goalkeeper" } }, "member")).toThrow(/active member/);
     // Applicants aren't asked whether they'll be active, or for selection comments.
     expect(parseSection("hockey", { values: { playingPosition: "Forward", playingLevel: ["Division 3"] } }, "new")).toEqual({ playing_position: "Forward", playing_level: ["Division 3"] });
-    expect(() => parseSection("hockey", { values: { playingPosition: "Forward" } }, "new")).toThrow(/Levels/);
+    expect(() => parseSection("hockey", { values: { playingPosition: "Forward" } }, "new")).toThrow(/level do you think/);
   });
 
   it("asks bank details of new HKFC members only, with the rules across its answers", async () => {
@@ -61,7 +61,14 @@ describe("my details", () => {
     expect(parseSection("billing", { values: { ...bank, bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, "new")).toMatchObject({
       bank_name: "HSBC", bank_payment_limit: "Each Month", bank_payment_limit_amount: 5000,
     });
-    expect(() => parseSection("billing", { values: { ...bank, bankPaymentLimitAmount: "lots" } }, "new")).toThrow(/number/);
+    expect(() => parseSection("billing", { values: { ...bank, bankPaymentLimit: "Each Payment", bankPaymentLimitAmount: "lots" } }, "new")).toThrow(/number/);
+    // An amount with an Unlimited limit, or a guardian's name when the applicant pays, isn't asked: stored empty.
+    expect(parseSection("billing", { values: { ...bank, bankPaymentLimitAmount: "lots", guardianBankAccountName: "Someone" } }, "new")).toMatchObject({
+      bank_payment_limit_amount: null, guardian_bank_account_name: null,
+    });
+    expect(() => parseSection("billing", { values: { ...bank, bankBranchNo: "12" } }, "new")).toThrow(/3 digits/);
+    expect(() => parseSection("billing", { values: { ...bank, bankAccountNo: "12a456" } }, "new")).toThrow(/digits of the account/);
+    expect(parseSection("billing", { values: { ...bank, bankAccountNo: "123-456 789" } }, "new")).toMatchObject({ bank_account_no: "123456789" });
     expect(() => parseSection("billing", { values: { ...bank, bankName: "Bank of Nowhere" } }, "new")).toThrow(/list/);
   });
 

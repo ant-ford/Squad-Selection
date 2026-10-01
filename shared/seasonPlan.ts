@@ -32,7 +32,7 @@ export type CaptaincyInterest = (typeof CAPTAINCY_OPTIONS)[number];
 
 export const SEASON_PLAN_QUESTIONS = {
   availabilityLevel: "How much of the season can you play?",
-  availabilityHalf: "Only part of the season?",
+  availabilityHalf: "Which part of the season?",
   playingPreference: "If you're picked for a development-focused team, would you rather play…",
   captaincyInterest: "Would you like to be a team captain or vice-captain?",
 } as const;

@@ -18,6 +18,7 @@ import {
   checkValue,
   fieldsFor,
   formatHkAddress,
+  isShown,
   sectionProblem,
   type Audience,
   type MyDetails,
@@ -70,11 +71,11 @@ export function StepShell({
       </div>
       {children}
       {problem && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-xs text-destructive whitespace-pre-line">
           {problem}
         </p>
       )}
-      <div className="flex gap-2 justify-between">
+      <div className="flex gap-2 justify-between pt-4 mt-2 border-t border-border">
         {onBack ? (
           <button className={secondary} onClick={onBack} disabled={busy}>
             Back
@@ -146,12 +147,13 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const who: Audience = section.key === 'application' ? audienceOf('Applicant', values.applicantType as string | null) : details.audience;
   const allFields = fieldsFor(section, who);
   // Not playing this season: the rest of the hockey questions don't apply.
-  const fields = section.key === 'hockey' && who === 'member' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
+  const asked = section.key === 'hockey' && who === 'member' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
+  const fields = asked.filter((f) => isShown(f, values));
   const [problem, setProblem] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState(details.photoUrl);
   const [hkid, setHkid] = useState(details.hasHkidCopy);
   const save = useMutation({
-    mutationFn: () => saveDetailsSection(section.key, Object.fromEntries(fields.map((f) => [f.key, values[f.key] ?? null]))),
+    mutationFn: () => saveDetailsSection(section.key, Object.fromEntries(asked.map((f) => [f.key, isShown(f, values) ? (values[f.key] ?? null) : null]))),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['myDetails'] });
       nav.onDone();
@@ -162,7 +164,11 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   // 2026-10-01), so it asks first.
   const [confirmInactive, setConfirmInactive] = useState(false);
   const next = () => {
-    const bad = fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(section.key, values);
+    const uploads =
+      section.key === 'personal' && who !== 'member'
+        ? [!photoUrl && 'your photo', !hkid && 'a copy of your HKID'].filter(Boolean).join(' and ')
+        : '';
+    const bad = fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(section.key, values) ?? (uploads ? `Upload ${uploads}.` : null);
     setProblem(bad ?? null);
     if (bad) return;
     if (section.key === 'hockey' && who === 'member' && values.active === false && details.values.active !== false) setConfirmInactive(true);

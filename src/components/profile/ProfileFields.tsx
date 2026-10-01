@@ -178,14 +178,17 @@ function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChan
       </div>
     );
   }
-  const type = f.type === 'number' ? 'number' : f.type;
+  const digits = f.type === 'branch' || f.type === 'account';
+  const type = f.type === 'number' ? 'number' : digits ? 'text' : f.type;
   return (
     <div className="space-y-1">
       {label}
       <input
         id={id}
         type={type}
-        inputMode={f.type === 'number' ? 'decimal' : undefined}
+        inputMode={f.type === 'number' ? 'decimal' : digits ? 'numeric' : undefined}
+        maxLength={f.type === 'branch' ? 3 : undefined}
+        autoComplete={digits ? 'off' : undefined}
         className={fieldInput}
         value={str}
         onChange={(e) => onChange(e.target.value)}

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Upload } from 'lucide-react';
+import { Check, FileText, Upload } from 'lucide-react';
 import { ApiError } from '@/lib/apiClient';
 import { uploadDetailsFile } from '@/api/details';
 
@@ -27,9 +27,10 @@ async function prepare(file: File): Promise<string> {
 }
 
 /**
- * Upload (or replace) a photo or a document (HKID, certificate). A photo
- * shows as a preview; a document only says one is on file. `upload` sends it
- * somewhere other than the person's own photo or HKID (a family member's).
+ * Upload (or replace) a photo or a document (HKID, certificate). What they
+ * pick shows straight away as a thumbnail, with a tick once it's saved; a
+ * document already on file says so. `upload` sends it somewhere other than
+ * the person's own photo or HKID (a family member's).
  */
 export default function FileUpload({
   kind,
@@ -50,11 +51,14 @@ export default function FileUpload({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  // What they picked this visit: an image's thumbnail (or a PDF's name), and whether it saved.
+  const [picked, setPicked] = useState<{ thumb: string | null; name: string; saved: boolean } | null>(null);
   const pick = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     try {
       const dataUrl = await prepare(file);
+      setPicked({ thumb: dataUrl.startsWith('data:image/') ? dataUrl : null, name: file.name, saved: false });
       if (upload) {
         await upload(dataUrl);
         onUploaded(null);
@@ -62,8 +66,10 @@ export default function FileUpload({
         const { url } = await uploadDetailsFile(kind === 'photo' ? 'photo' : 'hkid', dataUrl);
         onUploaded(url);
       }
+      setPicked((p) => (p ? { ...p, saved: true } : p));
       toast.success(`${label} saved`);
     } catch (err) {
+      setPicked(null);
       toast.error(err instanceof ApiError ? err.message : "Couldn't upload that file. Try another, or try again.");
     } finally {
       setBusy(false);
@@ -72,15 +78,33 @@ export default function FileUpload({
   };
   return (
     <div className="flex items-center gap-3 sm:col-span-2">
-      {kind === 'photo' && !upload && (
+      {kind === 'photo' && !upload ? (
         <div className="h-16 w-16 shrink-0 rounded-full bg-muted overflow-hidden flex items-center justify-center">
-          {currentUrl ? <img src={currentUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs text-muted-foreground">No photo</span>}
+          {picked?.thumb || currentUrl ? (
+            <img src={picked?.thumb ?? currentUrl!} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="text-xs text-muted-foreground">No photo</span>
+          )}
+        </div>
+      ) : (
+        <div className="h-16 w-16 shrink-0 rounded-md bg-muted overflow-hidden flex items-center justify-center">
+          {picked?.thumb ? <img src={picked.thumb} alt="" className="h-full w-full object-cover" /> : <FileText className={`h-6 w-6 ${hasFile ? 'text-primary' : 'text-muted-foreground'}`} />}
         </div>
       )}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-foreground">{label}</p>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-        {kind !== 'photo' && <p className="text-[11px] text-muted-foreground">{hasFile ? 'A copy is on file.' : 'None on file yet.'}</p>}
+        {picked?.saved ? (
+          <p className="text-[11px] text-primary flex items-center gap-1 truncate">
+            <Check className="h-3.5 w-3.5 shrink-0" /> Uploaded: {picked.name}
+          </p>
+        ) : hasFile ? (
+          <p className="text-[11px] text-primary flex items-center gap-1">
+            <Check className="h-3.5 w-3.5 shrink-0" /> On file
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">Not uploaded yet</p>
+        )}
       </div>
       <input
         ref={input}

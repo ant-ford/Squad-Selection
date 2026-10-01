@@ -25,7 +25,7 @@ function SizeSelect({ label, value, options, onChange, disabled }: { label: stri
  */
 export default function KitSizesSection({ kit, value, onChange }: { kit: DetailsKit; value: KitSizes; onChange: (next: KitSizes) => void }) {
   const [showChart, setShowChart] = useState(false);
-  const charts = KIT_SIZE_CHARTS[kit.supplier] ?? [];
+  const charts = (KIT_SIZE_CHARTS[kit.supplier] ?? []).filter((c) => kit.goalkeeper || !/goalkeeper/i.test(c.garment));
   const set = (k: keyof KitSizes) => (v: string | null) => onChange({ ...value, [k]: v });
   return (
     <div className="space-y-3">

@@ -57,7 +57,7 @@ describe("the new joiner application", () => {
     expect(applicationGaps(complete as any, emptyView, "existing", true, true, day)).toEqual([]);
     expect(applicationGaps(complete as any, emptyView, "existing", false, true, day)).toEqual(["Personal details: upload your photo."]);
     const married = { ...complete, marital_status: "Married" };
-    expect(applicationGaps(married as any, emptyView, "existing", true, true, day)).toContain("Personal details: upload your marriage certificate.");
+    expect(applicationGaps(married as any, emptyView, "existing", true, true, day)).toContain("Family: upload your marriage certificate.");
     const child = { id: "c1", surname: "Lee", givenNames: "Kim", dateOfBirth: "2005-01-01", gender: "F", files: { photo: true, hkid: false, birthCertificate: true } };
     expect(applicationGaps(complete as any, { ...emptyView, children: [child] }, "existing", true, true, day)).toEqual(["Family: upload child 1's HKID."]);
     // A new HKFC member is asked more, including the bank details.

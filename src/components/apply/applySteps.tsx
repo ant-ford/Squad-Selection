@@ -296,6 +296,7 @@ export function FamilyStep({ view, details, ...nav }: ApplyStepProps) {
       await queryClient.invalidateQueries({ queryKey: ['apply'] });
       setSaved(true);
       setProblem(null);
+      if (!hasSpouse && children.length === 0 && !(married && !view.hasMarriageCertificate)) nav.onDone();
     },
     onError: (err) => setProblem(errorText(err)),
   });
@@ -304,19 +305,38 @@ export function FamilyStep({ view, details, ...nav }: ApplyStepProps) {
     children.map((c, i) => childProblem(c, i + 1)).find(Boolean) ||
     relatives.map((r, i) => relativeProblem(r, i + 1)).find(Boolean) ||
     null;
+  const filesFor = (id?: string) => (id ? (view.spouse?.id === id ? view.spouse.files : view.children.find((c) => c.id === id)?.files) : undefined);
+  /** The documents still to upload, once the family is saved. */
+  const missingDocs = () => {
+    const missing: string[] = [];
+    if (married && !view.hasMarriageCertificate) missing.push('your marriage certificate');
+    if (hasSpouse) {
+      const f = filesFor(spouse.id);
+      if (!f?.photo) missing.push("your spouse or partner's photo");
+      if (!f?.hkid) missing.push("your spouse or partner's HKID");
+    }
+    children.forEach((c, i) => {
+      const f = filesFor(c.id);
+      if (!f?.photo) missing.push(`child ${i + 1}'s photo`);
+      if (!f?.birthCertificate) missing.push(`child ${i + 1}'s birth certificate`);
+      if (c.dateOfBirth && childNeedsHkid(c.dateOfBirth, today()) && !f?.hkid) missing.push(`child ${i + 1}'s HKID`);
+    });
+    return missing;
+  };
   const next = () => {
     const bad = check();
     setProblem(bad);
     if (bad) return;
-    if (!saved) save.mutate();
+    if (!saved) return save.mutate();
+    const missing = missingDocs();
+    if (missing.length) setProblem(`Upload ${missing.join(', ')}.`);
     else nav.onDone();
   };
-  const filesFor = (id?: string) => (id ? (view.spouse?.id === id ? view.spouse.files : view.children.find((c) => c.id === id)?.files) : undefined);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['apply'] });
   const dirty = () => setSaved(false);
 
   return (
-    <StepShell title="Family" {...nav} onNext={next} nextLabel={saved ? 'Next' : 'Save family'} busy={save.isPending} problem={problem}>
+    <StepShell title="Family" {...nav} onNext={next} nextLabel={saved ? 'Next' : 'Save and next'} busy={save.isPending} problem={problem}>
       {married && (
         <FileUpload
           kind="document"

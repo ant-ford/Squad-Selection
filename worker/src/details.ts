@@ -21,6 +21,7 @@ import {
   audienceOf,
   checkValue,
   fieldsFor,
+  isShown,
   normaliseValue,
   sectionFor,
   sectionProblem,
@@ -158,6 +159,10 @@ export function parseSection(key: string, body: Record<string, unknown>, saved: 
   if (key === "hockey" && who === "member" && values.active === false) return { active: false };
   const patch: Record<string, string | string[] | number | boolean | null> = {};
   for (const f of fieldsFor(section, who)) {
+    if (!isShown(f, values as ProfileValues)) {
+      patch[f.column] = f.type === "multi" ? [] : null;
+      continue;
+    }
     const problem = checkValue(f, values[f.key], who);
     if (problem) throw new HttpError(problem, 400, "INVALID_INPUT");
     const v = values[f.key];
