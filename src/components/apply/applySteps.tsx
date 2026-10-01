@@ -4,7 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import FileUpload from '@/components/profile/FileUpload';
 import PhoneInput from '@/components/profile/PhoneInput';
 import SignaturePad from '@/components/SignaturePad';
-import { ChoiceOrOther, fieldInput } from '@/components/profile/ProfileFields';
+import { ChoiceOrOther, fieldInput, HkidInput } from '@/components/profile/ProfileFields';
 import { StepShell, errorText, type StepProps } from '@/components/profile/steps';
 import { saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from '@/api/apply';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -244,7 +244,12 @@ function MemberFields({ m, onChange, spouse }: { m: FamilyMemberDetails; onChang
       {spouse ? (
         <>
           <Text label="Wedding anniversary" type="date" value={m.weddingAnniversary} onChange={set('weddingAnniversary')} />
-          <Text label="HKID no." value={m.hkidNo} onChange={(v) => set('hkidNo')(v.toUpperCase())} required />
+          <div className="space-y-1 text-xs font-medium text-foreground">
+            <span>
+              HKID no.<span className="text-destructive"> *</span>
+            </span>
+            <HkidInput id="spouse-hkid" value={m.hkidNo ?? ''} onChange={set('hkidNo')} />
+          </div>
           <Text label="Passport no." value={m.passportNo} onChange={set('passportNo')} />
           <div className="space-y-1 text-xs font-medium text-foreground">
             <span>

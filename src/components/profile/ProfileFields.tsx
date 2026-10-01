@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import PhoneInput from '@/components/profile/PhoneInput';
+import { normaliseHkid } from '@shared/phone';
 import { isRequired, regionOfDistrict, type Audience, type FieldSpec, type ProfileValues } from '@shared/profile';
 
 export const fieldInput =
@@ -14,6 +15,39 @@ const OTHER = '__other__';
  * (a district, a nationality). A plain menu rather than a type-ahead: phones
  * showed the type-ahead's suggestions off the side of the screen.
  */
+/**
+ * An HKID number: shown and tidied the standard way, A123456(7), when it's
+ * a valid one (including one saved before the check existed); a number that
+ * fails the check digit says so as soon as they leave the box.
+ */
+export function HkidInput({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  // Starts as left, so a saved number that fails the check says so at once.
+  const [left, setLeft] = useState(true);
+  const shown = normaliseHkid(value) ?? value;
+  const bad = left && !!value.trim() && !normaliseHkid(value);
+  return (
+    <>
+      <input
+        id={id}
+        className={`${fieldInput} uppercase ${bad ? 'border-destructive' : ''}`}
+        autoCapitalize="characters"
+        autoComplete="off"
+        placeholder="A123456(7)"
+        aria-invalid={bad}
+        value={left ? shown : value}
+        onChange={(e) => onChange(e.target.value.toUpperCase())}
+        onFocus={() => setLeft(false)}
+        onBlur={() => {
+          setLeft(true);
+          const tidy = normaliseHkid(value);
+          if (tidy && tidy !== value) onChange(tidy);
+        }}
+      />
+      {bad && <p className="text-[11px] text-destructive">Check the number and the digit in brackets, e.g. A123456(7).</p>}
+    </>
+  );
+}
+
 export function ChoiceOrOther({ f, id, value, required, onChange }: { f: FieldSpec; id: string; value: string; required: boolean; onChange: (v: string | null) => void }) {
   const listed = !value || f.options!.includes(value);
   const [typing, setTyping] = useState(!listed);
@@ -156,15 +190,7 @@ function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChan
     return (
       <div className="space-y-1">
         {label}
-        <input
-          id={id}
-          className={`${fieldInput} uppercase`}
-          autoCapitalize="characters"
-          autoComplete="off"
-          placeholder="A123456(7)"
-          value={str}
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
-        />
+        <HkidInput id={id} value={str} onChange={onChange} />
         {hint}
       </div>
     );
