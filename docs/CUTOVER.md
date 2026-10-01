@@ -1,12 +1,12 @@
 # Switch-over: Airtable → Supabase
 
-**Updated 1 Oct 2026.** It is finished on Friday 2 Oct, from what the last checks show.
+**Updated 2 Oct 2026**, after the readiness check (database, settings, import, replacements and free-plan limits).
 
 - **When:** Saturday 3 Oct 2026 (Sunday 4 Oct in reserve), with the owner present throughout.
 - **Go/no-go:** Friday 2 Oct. Every box under [Before Saturday](#before-saturday) must be ticked, or the switch-over moves.
 - **Hard stop:** Airtable's subscription ends on 20 Oct 2026. Until then Airtable is the way back, but only on the day itself (see [Roll back](#5-decide-the-same-day)).
 
-**Roles.** The **owner** (Anthony) does everything in Airtable, Fillout, Make, Google Apps Script, Cloudflare and GitHub settings. The owner also runs every script that writes eddy-production: `import-airtable.mjs`, `import-kit-order.mjs`, and migrations. **Claude** writes the PRs, runs the read-only checks (parity, `/health`, read comparisons) and watches the logs. Claude never writes to Airtable, Fillout, Make or Apps Script.
+**Roles.** The **owner** (Anthony) does everything in Airtable, Fillout, Zite, Make, Google Apps Script, Cloudflare and GitHub settings, and runs `import-airtable.mjs`. **Claude** writes the PRs, runs the read-only checks (parity, `/health`, read comparisons, counts) and watches the logs, and with the owner's OK applies migrations and runs `import-kit-order.mjs` and `upload-club-doc.mjs` against eddy-production. Claude never writes to Airtable, Fillout, Zite, Make or Apps Script.
 
 ## Before Saturday
 
@@ -20,22 +20,29 @@ GATE C, decided on Friday:
 - [x] The production Worker has `DATA_SUPABASE_URL`, `DATA_SUPABASE_SECRET_KEY`, the `FILES` bucket and `OPENROUTER_API_KEY`, still on `DATA_BACKEND=airtable`.
 - [x] Emails send from menscaptain@hkfchockey.com through Resend (tested 1 Oct).
 - [x] Officers and section captains know the date.
-- [ ] **Every migration on `main` is applied to eddy-production**, and its data tables are still empty. Still to apply, as of 1 Oct evening: `20261001200000_application_signing` and `20261001210000_application_signing_order`, plus anything merged later. A read-only comparison with preview must match.
-- [ ] **The id fix is merged** (`fix/eddy-ids`): squad saves, auto-select, approving an applicant, Notify Now and contact lookups accept the uuid ids of people and commitments created in Eddy.
-- [ ] The October forms work in preview: commitment reviews ✓, waivers ✓, member details ✓, new joiner (propose, apply, sign) ✓. The gaps that stay manual are listed under [Not in Eddy yet](#not-in-eddy-yet).
-- [ ] Before the freeze, the owner has saved anything that only exists in Fillout (see [Before cancelling](#before-cancelling-by-20-oct)), at least the two PDFs Fillout hosts.
+- [x] **Every migration on `main` is applied to eddy-production**, and its tables are still empty (2 Oct: 26 migrations; the read-only comparison with preview matches table for table, column for column; RLS on every table; no grants to anon or authenticated).
+- [x] **The id fix is merged** (#106): squad saves, auto-select, approving an applicant, Notify Now and contact lookups accept the uuid ids of people and commitments created in Eddy.
+- [x] The October forms are in Eddy: commitment reviews, waivers, member details, new joiner (propose, apply, sign in order, PDF to the Club), and trials registration (`/join`). The gaps that stay manual are under [Not in Eddy yet](#not-in-eddy-yet).
+- [x] The two PDFs Fillout hosts (SAM terms pages 11-12, Commitment Pledge) are in Eddy; the New Members Info Sheet is on eddy-files (private, behind sign-in).
+- [x] The production Worker has every secret, binding and the render-pdf Edge Function it needs (checked 2 Oct); hkha-sync has its production key.
+- [ ] **#114 is merged** and its migration `20261002120000_email_recipients` applied to eddy-production first (no blind copies or membership-inbox copies; Eddy counts every address against 70 a day, leaving Resend's last ~30 for sign-in codes; review cron at most 10 a run; KV only for Stats on Supabase).
+- [ ] **The three applications part-way through signing** (1 waiting on its sponsor, 2 on the Chairman, in Airtable on 2 Oct) are settled: either finished in Fillout before the freeze, or (owner's choice) given an Eddy application record by Claude after the import, tested on preview first, so their signing carries on in Eddy. The import alone makes no Eddy application for them. Stage 6 (10 people) is fine: approve them on the board. Stage 2 (1 person): after the flip, the Section Captain re-sends the invitation from Eddy.
+- [ ] **Supabase egress checked**: the organisation's Usage → Egress for 30 Sep–2 Oct (preview has run on Supabase since 30 Sep). Production and preview share the free plan's 5 GB a month. If it's billed uncompressed, the week-1 fixes under [Watch](#6-watch-in-week-1) go in first thing.
+- [ ] **A copy of the kit order CSV** (`2026-27 Kukri Kit Order 1 (2026.08.17).csv`) is on the owner's machine. It is not in the repo (it has names).
+- [ ] Quizzes: decided whether the four Fillout quizzes close with the rest (scores stop until Eddy has a quiz) or stay open until 20 Oct with scores copied across by hand.
 
 ## 1. Freeze (owner, about 30 minutes)
 
 Nothing may write to Airtable after this point, or it is lost.
 
-1. **Close every Fillout form**, all 17. Set each form's closed message to "This form has moved to Eddy: eddy.global", because emails sent before today still link to them:
+1. **Close every Fillout form**, all 17, and the **Zite trials form**. Set each closed message to "This form has moved to Eddy: https://app.eddy.global" (not eddy.global, which is the public website), because emails sent before today still link to them. For the trials forms use https://app.eddy.global/join. For the quizzes (if closed), name who to contact:
    - Section Captain New Joiner (Create), Section Captain New Joiner (Update);
    - Applicant New Joiner Form, Sponsor New Joiner Form, Signatures New Joiner Form;
    - Trials Registration Login, Trials Registration;
    - Member Login Page, Member Data Update, Member Waivers & Consent;
    - Member Commitment Reporting, Sponsor Commitment Review, Membership Officer Commitment Review;
-   - Hockey Rules Quiz 1.0 (2025), 1.0 (2026), 2.0 (2026), 3.0 (2026).
+   - Hockey Rules Quiz 1.0 (2025), 1.0 (2026), 2.0 (2026), 3.0 (2026);
+   - also: the Zite trials form, the Commitment Record Picker (old review emails link to it) and the 2026.08.24 umpire course sign-up (it writes Airtable).
 2. **Switch off the Make.com scenario** "Section Captain - New Joiner Workflow".
 3. **Switch off the 9 Airtable automations:**
    - Email Commitment Form (60 Days Trigger);
@@ -56,7 +63,7 @@ Nothing may write to Airtable after this point, or it is lost.
 
 6. Tell Claude "frozen", with the time.
 
-The production Worker is still on Airtable at this point, so the app keeps working, read-mostly, for anyone using it.
+The production Worker is still on Airtable at this point, so the app keeps working for anyone using it, and **anything they do (availability, squad saves, ranking) still goes to Airtable**. Keep the import-to-flip window short: do it early on Saturday, tell players and coaches the app is read-only for an hour, and re-run the import just before the flip (step 3).
 
 ## 2. Final import (owner, about 45 minutes)
 
@@ -78,14 +85,16 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
   ```
 
 - Upload the New Members Info Sheet to production if it is not there yet (done 1 Oct): `node upload-club-doc.mjs --target=production --i-understand-this-writes-production`.
+- Claude checks, read-only: the PDF templates and the Chinese font are in eddy-files under `templates/`; how many reviews the first 11:00 HKT run will email (`select count(*) from reviews_due_v`, about 1 expected; at most 10 go a day); the in-flight applicants by stage.
 - Then back up eddy-production (**Actions → Database backup → Run workflow**), so the starting point is kept.
 
 **After the flip, never run `import-airtable.mjs` again.** It copies Airtable over whatever Eddy holds, and rows hkha-sync creates have no `airtable_id`, so a re-import would duplicate them.
 
 ## 3. Flip (Claude PR, owner merges)
 
-1. A PR sets `DATA_BACKEND = "supabase"` in the production `[vars]` of `worker/wrangler.toml`. Merging deploys it through CI in about 5 minutes.
-2. Point hkha-sync at production only, re-enable it, and run it once by hand:
+1. **Re-run the import** (`import-airtable.mjs --apply --target=production --i-understand-this-writes-production`), so anything written to Airtable through the app since the first run comes across. It is safe until the flip, never after.
+2. Merge the switch PR (ready as a draft): it sets `DATA_BACKEND = "supabase"` (exactly that, lowercase, not through `DATA_BACKEND_OVERRIDES`) in the production `[vars]` of `worker/wrangler.toml`, and bumps the Stats summary version so the first stats are built from Supabase. CI deploys it in about 2 minutes.
+3. Point hkha-sync at production only, re-enable it, and run it once by hand:
 
    ```bash
    gh variable set SYNC_TARGETS --repo ant-ford/hkha-sync --body '["supabase-production"]'
@@ -99,17 +108,18 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
    gh workflow run "HKHA Sync" --repo ant-ford/hkha-sync
    ```
 
-3. Check that `/health?deep=1` answers, and that the request log shows `dbCalls` and no `airtableCalls` for data routes.
+4. Check that `/health?deep=1` answers, and that the request log shows `dbCalls` and no `airtableCalls` for data routes.
+5. **Kit:** on the kit screen, set the Kukri order's arrival date. Until it is set, every hand-out is refused as "still on order". Kit already handed out before today is recorded on the kit screen as it is handed out.
 
 ## 4. Smoke test (both, 1 hour)
 
-Signed in as a player, a coach, the Section Captain and an officer:
+Signed in as a player, a coach, the Section Captain and an officer. **Production has no email redirect: every email goes to the real person.** Use only test people whose address is yours, and never press Send on an application, Send invitation, Ask for kit / registration or Invite to a practice trial for a real person.
 
 - **Player:** dashboard fixtures, availability (one fixture, a whole date, the rest of the day after a No), standing rules, season stats, My Tasks, My details, volunteering, kit (who holds my set), and an existing calendar feed link. Imported people keep their Airtable ids, so old links keep working.
 - **Coach:** fixture list, squad selection (save, derby, displacement), match kit, auto-select, recommendations, ranking (move, reorder, activate or deactivate), ranking history, WhatsApp notify, season plans for their teams.
-- **Section Captain:** season plans (all teams), volunteers, kit screens, propose a new joiner (on a test person only).
+- **Section Captain:** season plans (all teams), volunteers, kit screens (set the arrival date), trial sessions, propose a new joiner (on a test person only).
 - **Officer:** membership board and Insights, Statements board and Notify Now, email lists and CSV, active-member export, sign an application and approve an applicant (test applicant only).
-- **October forms:** commitment report and reviews (with AI drafts), waivers, member details, new joiner application.
+- **October forms:** commitment report and reviews (with AI drafts), waivers, member details, new joiner application, `/join` with a test email of yours (then delete that test person).
 - **Stats:** club, teams, players, umpires.
 
 Watch Workers Logs for an hour for errors, 5xx responses and slow requests. Then delete any test people made on production.
@@ -125,14 +135,26 @@ Writes made after the flip exist only in Supabase, so decide by Saturday evening
   3. Anything written in Supabase since the flip must be re-entered in Airtable by hand. Claude lists it from `activity_log` and `updated_at`.
   4. **Some work cannot go back.** Kit moves, season plans, volunteering, declarations and applications started in Eddy have no Airtable home. They are lost on a rollback unless re-entered elsewhere. So rolling back is only realistic on Saturday itself.
 
+## 6. Watch in week 1
+
+Free-plan limits (checked 2 Oct):
+
+- **Supabase egress** (5 GB a month, production and preview together): look at Usage → Egress daily. If it runs at more than ~150 MB a day, Claude's fixes, in order: read one player's availability, not the season's (availability answers, the coach squad poll, the dashboard); cache calendar feeds; slow the kit board's 20-second refresh; explicit columns instead of `select=*` for players.
+- **Resend** (100 addresses a day, 3,000 a month, resetting at 08:00 HKT, shared with sign-in codes): Eddy stops itself at 70. If sign-in codes still fail on a busy day, give Supabase Auth's SMTP its own sending account, or take Resend Pro for October.
+- **Workers**: errors from running over 10 ms of CPU (Workers Logs / Metrics), especially uploads of large PDFs (over ~1.5 MB). Workers Builds also builds hkfc-api: check in the dashboard that it doesn't deploy separately from CI.
+- **CALENDAR_SECRET** must never change (a new value breaks every subscribed calendar); it's in `eddy-secrets.txt`.
+
 ## Not in Eddy yet
 
 These stay manual after the switch-over, until they are built:
 
 | What | Until it is built |
 |---|---|
-| Existing HKFC member joining hockey: the "Accepted" email to the member (the Make scenario sent one) | The Membership Officer sends it by hand. The levy form now goes to the front desk from Eddy, and sending it accepts them. |
-| Trials registration, Hockey Rules quizzes | "Flag an officer". Rebuilt later from the saved Fillout forms. |
+| Existing HKFC member joining hockey: an "Accepted" email to the member | The levy form goes to the front desk from Eddy when the MO presses Send, copying the member and any parent or guardian; sending it accepts them. A separate welcome is by hand. |
+| Hockey Rules quizzes | Not built, and no fallback screen: see the quiz decision under Before Saturday. Rebuilt later from the saved Fillout forms. |
+| Applications part-way through signing in Fillout at the freeze | Finished in Fillout first, or given an Eddy application record after the import (Before Saturday). |
+| A junior already a Member moving to Junior / Sports Preferred Associate (Make's "Child/Junior" route) | By hand: Eddy's new joiner screen refuses people who are already Members. |
+| The HockeyHK U18 form for a new under-18 joiner | It comes with their waivers, not with the application, so the Hockey Convenor's registration task shows it only once they've signed waivers. |
 | WhatsApp mail merge (People "Send WhatsApp" button: template → personalised message → WhatsApp, logged) | Templates and the message log are imported (`message_templates`, `message_log`); the screen is not built. |
 | HockeyHK registration Google Form (pre-filled from Airtable) | Dropped this season. |
 
