@@ -11,7 +11,7 @@
  */
 
 /** Bump when the summary's shape or counting changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 7; // 7: games in goal are not play-ups
+export const SUMMARY_VERSION = 8; // 8: rebuilt from Supabase at the switch-over; 7: games in goal are not play-ups
 
 export interface WDL {
   w: number;
