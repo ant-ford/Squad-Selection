@@ -208,7 +208,10 @@ function SendBlock({ v, sending }: { v: SigningView; sending: NonNullable<Signin
           Open the {what} (PDF)
         </a>
       ) : (
-        <p className="text-sm text-muted-foreground">The PDF is being made. Reload in a minute to see it.</p>
+        <p className="text-sm text-muted-foreground">
+          No PDF yet. It is made just after {sending.document === 'levy' ? 'they submit' : 'the Membership Officer signs'}; reload in a minute
+          {sending.canSend ? ', or make it now.' : '.'}
+        </p>
       )}
       {sending.sentAt ? (
         <p className="text-xs flex items-center gap-1 text-primary">
@@ -238,7 +241,7 @@ function SendBlock({ v, sending }: { v: SigningView; sending: NonNullable<Signin
               remake.mutate();
             }}
           >
-            {remake.isPending ? 'Making it…' : 'Make the PDF again'}
+            {remake.isPending ? 'Making it…' : sending.pdfUrl ? 'Make the PDF again' : 'Make the PDF'}
           </button>
           {confirming ? (
             <>
