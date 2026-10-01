@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
-import { getKitBoard, getMyKit, mismatches, moveKit, topUpCsv } from "../worker/src/kit";
+import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, topUpCsv } from "../worker/src/kit";
 import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -11,7 +11,7 @@ const convenor = { ...player, personId: "recCONVENOR", officerRoles: [{ office: 
 
 const sizes = (shirt: string | null, more: Partial<KitSizes> = {}): KitSizes => ({ shirt, shorts: null, socks: null, goalieSmock: null, goalieSmockStyle: null, ...more });
 const spare = (shirtNo: number, teamRange: string, s: KitSizes): KitSet => ({
-  id: `s${shirtNo}`, shirtNo, teamRange, sizes: s, orderedForName: null, owner: null, numberHeldBy: null, wanted: null, holder: null, heldSince: null, place: "in_store", mismatches: [],
+  id: `s${shirtNo}`, shirtNo, teamRange, sizes: s, orderedForName: null, owner: null, numberHeldBy: null, wanted: null, holder: null, heldSince: null, pendingTo: null, place: "in_store", mismatches: [],
 });
 
 type Call = { url: URL; method: string; body: any };
@@ -111,6 +111,22 @@ describe("kit", () => {
     expect(csv.csv.split("\r\n")[1]).toBe("Bo Two,Applicant,31,,,,,,HKFC B");
   });
 
+  it("asks the receiver of a passed-on set to confirm, and records their answer", async () => {
+    const calls = fake({
+      kit_confirm: null,
+      kit_sets_v: [
+        { id: "k1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 5, owner_id: "recPLAYER", holder_id: "recCAP", holder_name: "Cap Tain", pending_to_id: "recPLAYER", pending_to_name: "Pla Yer" },
+        { id: "k2", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 6, owner_id: "recMATE", owner_name: "Mate", holder_id: "recPLAYER", pending_to_id: "recMATE", pending_to_name: "Mate" },
+      ],
+    });
+    const kit = await getMyKit(env, player);
+    expect(kit.incoming).toMatchObject([{ id: "k1", shirtNo: 5, mine: true, holder: { name: "Cap Tain" } }]);
+    expect(kit.holding).toMatchObject([{ shirtNo: 6, pendingTo: { name: "Mate" } }]);
+    await confirmKit(env, player, { setId: "00000000-0000-0000-0000-00000000000a", accept: true });
+    expect(calls.at(-1)!.body).toEqual({ p_actor: "recPLAYER", p_set: "00000000-0000-0000-0000-00000000000a", p_accept: true });
+    await expect(confirmKit(env, player, { setId: "00000000-0000-0000-0000-00000000000a" })).rejects.toMatchObject({ status: 400 });
+  });
+
   it("tells a player where their kit is and what they're holding for others", async () => {
     const calls = fake({
       kit_sets_v: [
@@ -121,7 +137,7 @@ describe("kit", () => {
     const kit = await getMyKit(env, player);
     expect(kit.mine).toMatchObject({ shirtNo: 5, place: "with_holder", holder: { name: "Cap Tain" } });
     expect(kit.holding).toMatchObject([{ shirtNo: 6, owner: { name: "Mate" } }]);
-    expect(calls[0].url.searchParams.get("or")).toBe('(owner_id.eq."recPLAYER",holder_id.eq."recPLAYER")');
+    expect(calls[0].url.searchParams.get("or")).toBe('(owner_id.eq."recPLAYER",holder_id.eq."recPLAYER",pending_to_id.eq."recPLAYER")');
     // Nothing on Airtable, rather than an error on everyone's dashboard.
     expect(await getMyKit({ ...env, DATA_BACKEND: "airtable" }, player)).toMatchObject({ mine: null, holding: [] });
   });

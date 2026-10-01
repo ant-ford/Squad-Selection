@@ -61,6 +61,8 @@ export interface KitSet {
   numberHeldBy: { name: string; status: string } | null;
   holder: KitPersonRef | null;
   heldSince: string | null;
+  /** The holder has passed it on and is waiting for this person to confirm they've got it. */
+  pendingTo: KitPersonRef | null;
   place: KitPlace;
   /** Items where the owner's own sizes differ from the set's, e.g. "Shorts: wants XL". */
   mismatches: string[];
@@ -140,7 +142,7 @@ export interface KitBoard {
 }
 
 export interface KitMove {
-  kind: "handed" | "delivered" | "returned" | "allocated" | "released" | "edited";
+  kind: "handed" | "delivered" | "returned" | "allocated" | "released" | "edited" | "offered" | "declined";
   from: string | null;
   to: string | null;
   by: string | null;
@@ -152,14 +154,18 @@ export interface KitMove {
 export interface MyKit {
   /** The player's own id, as the kit moves name people. */
   personId: string;
-  mine: (Pick<KitSet, "id" | "shirtNo" | "sizes" | "holder" | "heldSince" | "place"> & { supplier: string }) | null;
-  holding: Pick<KitSet, "id" | "shirtNo" | "owner" | "heldSince" | "sizes">[];
+  mine: (Pick<KitSet, "id" | "shirtNo" | "sizes" | "holder" | "heldSince" | "place" | "pendingTo"> & { supplier: string }) | null;
+  holding: Pick<KitSet, "id" | "shirtNo" | "owner" | "heldSince" | "sizes" | "pendingTo">[];
+  /** Sets someone says they've given them, waiting for them to confirm (their own, or one to pass on). */
+  incoming: (Pick<KitSet, "id" | "shirtNo" | "owner" | "holder"> & { mine: boolean })[];
   /** Who hands kit out, for "collect it from ...". */
   convenors: string[];
 }
 
 export interface KitMoveResult {
   moved: string[];
+  /** Passed on by a holder: waiting for the receiver to confirm. */
+  offered: string[];
   conflicts: { id: string; shirtNo: number | null; reason: string }[];
 }
 
@@ -191,7 +197,7 @@ export function suggestSpares(person: Pick<KitPerson, "team" | "sizes">, spares:
 }
 
 /** Where a set is, in a few words. */
-export function describePlace(set: Pick<KitSet, "place" | "holder">): string {
+export function describePlace(set: Pick<KitSet, "place" | "holder"> & { pendingTo?: KitPersonRef | null }): string {
   switch (set.place) {
     case "on_order":
       return "On order";
@@ -200,7 +206,7 @@ export function describePlace(set: Pick<KitSet, "place" | "holder">): string {
     case "with_owner":
       return "Handed out";
     case "with_holder":
-      return `With ${set.holder?.name ?? "someone"}`;
+      return set.pendingTo ? `With ${set.holder?.name ?? "someone"}, offered to ${set.pendingTo.name}` : `With ${set.holder?.name ?? "someone"}`;
   }
 }
 

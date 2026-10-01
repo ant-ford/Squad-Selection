@@ -48,6 +48,8 @@ interface SetRow {
   number_holder_name: string | null;
   number_holder_status: string | null;
   number_holder_active: boolean | null;
+  pending_to_id: string | null;
+  pending_to_name: string | null;
 }
 
 interface OrderRow {
@@ -73,7 +75,7 @@ interface PersonRow {
 }
 
 const SET_COLUMNS =
-  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active";
+  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active,pending_to_id,pending_to_name";
 
 /** Kit sizes rows use the database's item names. */
 const ITEM_COLUMN: Record<keyof KitSizes, string> = {
@@ -103,6 +105,8 @@ function placeOf(r: SetRow): KitPlace {
   if (!r.holder_id) return "in_store";
   return r.holder_id === r.owner_id ? "with_owner" : "with_holder";
 }
+
+const pendingOf = (r: SetRow) => (r.pending_to_id ? { id: r.pending_to_id, name: r.pending_to_name ?? "" } : null);
 
 const sizesOf = (r: SetRow): KitSizes => ({
   shirt: r.shirt,
@@ -181,6 +185,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
         !r.owner_id && r.number_holder_name ? { name: r.number_holder_name, status: r.number_holder_status ?? "" } : null,
       holder: r.holder_id ? { id: r.holder_id, name: r.holder_name ?? "" } : null,
       heldSince: r.held_since,
+      pendingTo: pendingOf(r),
       place: placeOf(r),
       mismatches: owner ? mismatches(sizesOf(r), sizes.get(owner.id)) : [],
       wanted: owner ? sizes.get(owner.id) ?? null : null,
@@ -211,12 +216,12 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
 export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
   // Shown on everyone's dashboard, so the Airtable backend answers "nothing"
   // rather than an error.
-  if (backendFor(env, "people") !== "supabase") return { personId: user.personId, mine: null, holding: [], convenors: [] };
+  if (backendFor(env, "people") !== "supabase") return { personId: user.personId, mine: null, holding: [], incoming: [], convenors: [] };
   const d = db(env);
   const me = encodeURIComponent(user.personId);
   const rows = await d.select<SetRow>(
     "kit_sets_v",
-    `select=${SET_COLUMNS}&or=(owner_id.eq."${me}",holder_id.eq."${me}")&order=ordered_on.desc.nullslast,shirt_no`,
+    `select=${SET_COLUMNS}&or=(owner_id.eq."${me}",holder_id.eq."${me}",pending_to_id.eq."${me}")&order=ordered_on.desc.nullslast,shirt_no`,
   );
   const own = rows.find((r) => r.owner_id === user.personId);
   const holding = rows
@@ -227,6 +232,16 @@ export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
       owner: r.owner_id ? { id: r.owner_id, name: r.owner_name ?? "", team: "", status: "" } : null,
       heldSince: r.held_since,
       sizes: sizesOf(r),
+      pendingTo: pendingOf(r),
+    }));
+  const incoming = rows
+    .filter((r) => r.pending_to_id === user.personId)
+    .map((r) => ({
+      id: r.id,
+      shirtNo: r.shirt_no,
+      owner: r.owner_id ? { id: r.owner_id, name: r.owner_name ?? "", team: "", status: "" } : null,
+      holder: r.holder_id ? { id: r.holder_id, name: r.holder_name ?? "" } : null,
+      mine: r.owner_id === user.personId,
     }));
   let convenors: string[] = [];
   if (own && placeOf(own) === "in_store") {
@@ -251,9 +266,11 @@ export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
           holder: own.holder_id ? { id: own.holder_id, name: own.holder_name ?? "" } : null,
           heldSince: own.held_since,
           place: placeOf(own),
+          pendingTo: pendingOf(own),
         }
       : null,
     holding,
+    incoming,
     convenors,
   };
 }
@@ -293,6 +310,18 @@ export async function moveKit(env: Env, user: AuthorizedUser, body: Record<strin
   } catch (err) {
     asHttpError(err);
   }
+}
+
+/** The receiver of an offered set says whether they've got it. */
+export async function confirmKit(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+  requireSupabase(env);
+  if (typeof body.accept !== "boolean") throw new HttpError("Say whether you've got it.", 400, "INVALID_INPUT");
+  try {
+    await db(env).rpc("kit_confirm", { p_actor: user.personId, p_set: oneId(body.setId), p_accept: body.accept });
+  } catch (err) {
+    asHttpError(err);
+  }
+  return { ok: true };
 }
 
 const oneId = (v: unknown) => {
