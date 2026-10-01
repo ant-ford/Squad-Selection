@@ -10,6 +10,7 @@ import KitSizesSection from '@/components/profile/KitSizesSection';
 import SeasonPlanSection from '@/components/SeasonPlanSection';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { ApiError } from '@/lib/apiClient';
+import { useMyProfile } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { confirmDetails, readIdDocument, saveDetailsSection, saveKitSizes } from '@/api/details';
 import { submitSeasonPlan } from '@/api/seasonPlan';
@@ -219,6 +220,10 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   // Saying they won't be active makes them inactive at once (owner,
   // 2026-10-01), so it asks first.
   const [confirmInactive, setConfirmInactive] = useState(false);
+  // An inactive member keeps app access only as a coach or officer
+  // (worker/src/auth.ts), so everyone else is told they'll be locked out.
+  const profile = useMyProfile(section.key === 'hockey' && who === 'member');
+  const keepsAccess = !!profile.data && (profile.data.isCoach || profile.data.officerRoles.length > 0);
   const next = () => {
     const uploads =
       section.key === 'personal' && who !== 'member'
@@ -246,7 +251,11 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
       {confirmInactive && (
         <ConfirmDialog
           title="Not playing this season?"
-          message="You'll be marked as not active straight away: you won't be picked for squads or shown in the team lists until you're made active again."
+          message={
+            keepsAccess
+              ? "You'll be marked as not active straight away: you won't be picked for squads or shown in the team lists until you're made active again."
+              : "You'll be marked as not active straight away. You won't be picked for squads or shown in the team lists, and you won't be able to use Eddy until the Section Captain makes you active again."
+          }
           confirmLabel="Yes, not this season"
           onCancel={() => setConfirmInactive(false)}
           onConfirm={() => {
