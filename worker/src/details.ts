@@ -113,7 +113,7 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
   const d = db(env);
   const [season, files, kit] = await Promise.all([
     d.rpc<string>("current_season", {}),
-    d.select<{ id: string; kind: string }>("files", `select=id,kind&person_id=${eq(p.id)}&kind=in.(photo,hkid)&order=created_at.desc`),
+    d.select<{ id: string; kind: string }>("files", `select=id,kind&person_id=${eq(p.id)}&kind=in.(photo,hkid,passport)&order=created_at.desc`),
     loadKit(env, p),
   ]);
   const values: ProfileValues = {};
@@ -142,6 +142,7 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
     },
     photoUrl: photo ? await fileLink(env, photo.id) : null,
     hasHkidCopy: files.some((f) => f.kind === "hkid"),
+    hasPassportCopy: files.some((f) => f.kind === "passport"),
     kit,
     checkedAt: p.profile_updated_at,
   };
@@ -237,6 +238,8 @@ export async function confirmDetails(env: Env, user: AuthorizedUser) {
 const UPLOAD_KINDS = {
   photo: { types: ["image/jpeg", "image/png", "image/webp"], max: 5_000_000, name: "photo" },
   hkid: { types: ["image/jpeg", "image/png", "image/webp", "application/pdf"], max: 5_000_000, name: "hkid" },
+  // For someone without an HKID (owner, 2026-10-01).
+  passport: { types: ["image/jpeg", "image/png", "image/webp", "application/pdf"], max: 5_000_000, name: "passport" },
 } as const;
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 
@@ -245,7 +248,7 @@ export function uploadBytes(kind: keyof typeof UPLOAD_KINDS, dataUrl: unknown): 
   const spec = UPLOAD_KINDS[kind];
   const m = typeof dataUrl === "string" ? /^data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl) : null;
   if (!m || !(spec.types as readonly string[]).includes(m[1])) {
-    throw new HttpError(kind === "photo" ? "Upload a JPEG, PNG or WebP photo." : "Upload a photo or PDF of your HKID.", 400, "INVALID_INPUT");
+    throw new HttpError(kind === "photo" ? "Upload a JPEG, PNG or WebP photo." : `Upload a photo or PDF of your ${kind === "passport" ? "passport" : "HKID"}.`, 400, "INVALID_INPUT");
   }
   const bin = atob(m[2]);
   if (bin.length > spec.max) throw new HttpError("That file is over 5 MB. Try a smaller one.", 400, "INVALID_INPUT");
@@ -255,12 +258,12 @@ export function uploadBytes(kind: keyof typeof UPLOAD_KINDS, dataUrl: unknown): 
 }
 
 /**
- * Replaces their photo or HKID copy: the new file is stored and the old one
+ * Replaces their photo, HKID or passport copy: the new file is stored and the old one
  * removed, as re-uploading on the Fillout form did.
  */
 export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, body: Record<string, unknown>) {
   requireSupabase(env);
-  if (kind !== "photo" && kind !== "hkid") throw new HttpError("Unknown upload.", 404, "NOT_FOUND");
+  if (kind !== "photo" && kind !== "hkid" && kind !== "passport") throw new HttpError("Unknown upload.", 404, "NOT_FOUND");
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const { bytes, type } = uploadBytes(kind, body.dataUrl);
   const p = await loadPerson(env, user.personId);

@@ -24,6 +24,7 @@ import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
+import { readIdDocument } from "./idRead";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   completeJoinerTask,
@@ -699,6 +700,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const upload = pathname.match(/^\/api\/details\/files\/([a-z]+)$/);
         if (upload) return json(await uploadFile(env, user, upload[1], body), 200, origin);
         if (pathname === "/api/details/kit") return json(await saveKitSizes(env, user, body), 200, origin);
+        if (pathname === "/api/details/read-id") return json(await readIdDocument(env, user, body), 200, origin);
         if (pathname === "/api/details/confirm") return json(await confirmDetails(env, user), 200, origin);
       }
     }

@@ -188,7 +188,13 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
       { key: "chineseName", column: "chinese_name", label: "Chinese name", type: "text" },
       { key: "dateOfBirth", column: "date_of_birth", label: "Date of birth", type: "date", required: true },
       { key: "gender", column: "gender", label: "Gender", type: "select", options: ["Male", "Female"], required: true },
-      { key: "hkidNo", column: "hkid_no", label: "HKID no.", type: "hkid", required: true, hint: "As on the card, with the digit in brackets: A123456(7)" },
+      {
+        key: "hkidNo",
+        column: "hkid_no",
+        label: "HKID no.",
+        type: "hkid",
+        hint: "As on the card, with the digit in brackets: A123456(7). No HKID? Give your passport number instead.",
+      },
       { key: "passportNo", column: "passport_no", label: "Passport no.", type: "text" },
       { key: "nationality", column: "nationality", label: "Nationality", type: "suggest", options: NATIONALITIES, required: true },
       { key: "maritalStatus", column: "marital_status", label: "Marital status", type: "select", options: ["Single", "Married", "Partner"], audiences: APPLICANTS, required: true },
@@ -324,6 +330,10 @@ export function fieldsFor(section: SectionSpec, who: Audience): FieldSpec[] {
 
 /** Rules across fields that the field list can't say on its own. */
 export function sectionProblem(key: SectionKey, v: ProfileValues): string | null {
+  const given = (k: string) => typeof v[k] === "string" && (v[k] as string).trim() !== "";
+  if (key === "personal" && !given("hkidNo") && !given("passportNo")) {
+    return "Give your HKID number or, if you don't have an HKID, your passport number.";
+  }
   if (key === "billing") {
     const amount = v.bankPaymentLimitAmount;
     if (v.bankPaymentLimit && v.bankPaymentLimit !== "Unlimited" && (amount === null || amount === undefined || amount === "")) {
@@ -371,6 +381,8 @@ export interface MyDetails {
   /** A signed link to their current photo, if any. */
   photoUrl: string | null;
   hasHkidCopy: boolean;
+  /** A copy of their passport, for someone without an HKID. */
+  hasPassportCopy: boolean;
   kit: DetailsKit | null;
   /** When they last confirmed their details (the start-of-season check). */
   checkedAt: string | null;

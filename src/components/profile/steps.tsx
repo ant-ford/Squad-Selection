@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Check } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ProfileFields from '@/components/profile/ProfileFields';
@@ -10,7 +11,7 @@ import SeasonPlanSection from '@/components/SeasonPlanSection';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
-import { confirmDetails, saveDetailsSection, saveKitSizes } from '@/api/details';
+import { confirmDetails, readIdDocument, saveDetailsSection, saveKitSizes } from '@/api/details';
 import { submitSeasonPlan } from '@/api/seasonPlan';
 import { saveVolunteering } from '@/api/volunteering';
 import {
@@ -21,6 +22,7 @@ import {
   isShown,
   sectionProblem,
   type Audience,
+  type FieldSpec,
   type MyDetails,
   type ProfileValues,
   type SectionSpec,
@@ -124,6 +126,42 @@ export function MembershipStep({ details, ...nav }: StepProps) {
   );
 }
 
+/** What the AI read from their ID, to check before it goes into the boxes. */
+function IdSuggestionsPanel({
+  suggestions,
+  fields,
+  onUse,
+  onDismiss,
+}: {
+  suggestions: Record<string, string>;
+  fields: FieldSpec[];
+  onUse: () => void;
+  onDismiss: () => void;
+}) {
+  const rows = fields.filter((f) => suggestions[f.key]);
+  return (
+    <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
+      <p className="text-xs font-medium text-foreground">From your document. Check each one:</p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-sm">
+        {rows.map((f) => (
+          <div key={f.key} className="contents">
+            <dt className="text-muted-foreground">{f.label}</dt>
+            <dd className="text-foreground">{suggestions[f.key]}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex gap-2">
+        <button type="button" className={primary} onClick={onUse}>
+          Fill these in
+        </button>
+        <button type="button" className={secondary} onClick={onDismiss}>
+          No thanks
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** The address as Hong Kong Post would write it, so they can check each part is in the right box. */
 function AddressPreview({ lines }: { lines: string[] }) {
   if (lines.length === 0) return null;
@@ -152,6 +190,21 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const [problem, setProblem] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState(details.photoUrl);
   const [hkid, setHkid] = useState(details.hasHkidCopy);
+  const [passport, setPassport] = useState(details.hasPassportCopy);
+  // Which ID they have: an HKID card, or a passport if they don't (owner, 2026-10-01).
+  const [idKind, setIdKind] = useState<'hkid' | 'passport'>(details.hasPassportCopy && !details.hasHkidCopy ? 'passport' : 'hkid');
+  const [suggested, setSuggested] = useState<Record<string, string> | null>(null);
+  const read = useMutation({
+    mutationFn: ({ kind, dataUrl }: { kind: 'hkid' | 'passport'; dataUrl: string }) => readIdDocument(kind, dataUrl),
+    // Only what differs from what's in the boxes already.
+    onSuccess: ({ suggestions }) => {
+      const fresh = Object.fromEntries(Object.entries(suggestions).filter(([k, v]) => v && k in values && values[k] !== v));
+      setSuggested(Object.keys(fresh).length ? fresh : null);
+      if (!Object.keys(fresh).length) toast.message('Nothing new to fill in from the document.');
+    },
+    onError: (err) => toast.error(errorText(err)),
+  });
+  const readable = (dataUrl: string) => dataUrl.startsWith('data:image/');
   const save = useMutation({
     mutationFn: () => saveDetailsSection(section.key, Object.fromEntries(asked.map((f) => [f.key, isShown(f, values) ? (values[f.key] ?? null) : null]))),
     onSuccess: () => {
@@ -166,7 +219,9 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const next = () => {
     const uploads =
       section.key === 'personal' && who !== 'member'
-        ? [!photoUrl && 'your photo', !hkid && 'a copy of your HKID'].filter(Boolean).join(' and ')
+        ? [!photoUrl && 'your photo', !(hkid || passport) && (idKind === 'passport' ? 'a copy of your passport' : 'a copy of your HKID')]
+            .filter(Boolean)
+            .join(' and ')
         : '';
     const bad = fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(section.key, values) ?? (uploads ? `Upload ${uploads}.` : null);
     setProblem(bad ?? null);
@@ -199,7 +254,38 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             hasFile={!!photoUrl}
             onUploaded={(url) => setPhotoUrl(url)}
           />
-          <FileUpload kind="hkid" label="Copy of your HKID" hasFile={hkid} onUploaded={() => setHkid(true)} />
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-medium text-foreground">Your ID</legend>
+            <div className="flex flex-wrap gap-4">
+              {(['hkid', 'passport'] as const).map((k) => (
+                <label key={k} className="flex gap-2 items-center text-sm text-foreground">
+                  <input type="radio" name="id-kind" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={idKind === k} onChange={() => setIdKind(k)} />
+                  {k === 'hkid' ? 'Hong Kong ID card' : "Passport (I don't have an HKID)"}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <FileUpload
+            key={idKind}
+            kind={idKind}
+            label={idKind === 'hkid' ? 'Copy of your HKID' : 'Copy of your passport (the photo page)'}
+            hint="A photo of it can fill in the boxes below for you: it's read by an AI service, which doesn't keep it, and you check what it finds."
+            hasFile={idKind === 'hkid' ? hkid : passport}
+            onUploaded={() => (idKind === 'hkid' ? setHkid(true) : setPassport(true))}
+            onSaved={(dataUrl) => readable(dataUrl) && read.mutate({ kind: idKind, dataUrl })}
+          />
+          {read.isPending && <p className="text-xs text-muted-foreground">Reading your {idKind === 'hkid' ? 'HKID' : 'passport'}…</p>}
+          {suggested && (
+            <IdSuggestionsPanel
+              suggestions={suggested}
+              fields={fields}
+              onUse={() => {
+                setValues({ ...values, ...suggested });
+                setSuggested(null);
+              }}
+              onDismiss={() => setSuggested(null)}
+            />
+          )}
         </div>
       )}
       {section.key === 'contact' && (
