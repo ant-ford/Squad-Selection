@@ -98,6 +98,25 @@ describe("Supabase data client", () => {
     expect(again).toHaveLength(2);
   });
 
+  it("repeats a request, write or read, whose token the database rejected (401 PGRST303), up to twice", async () => {
+    const rejected = { status: 401, body: { code: "PGRST303", message: "JWT issued at future" } };
+    let n = 0;
+    const writes = stubFetch(() => (n++ === 0 ? rejected : { body: [{ id: "a" }] }));
+    expect(await db(env).update("people", "id=eq.a", { active: true })).toEqual([{ id: "a" }]);
+    expect(writes).toHaveLength(2);
+
+    vi.unstubAllGlobals();
+    const always = stubFetch(() => rejected);
+    await expect(db(env).one("api_offices", "select=id")).rejects.toMatchObject({ status: 401, code: "PGRST303" });
+    expect(always).toHaveLength(3);
+
+    // A 401 for any other reason (a wrong key) is not repeated.
+    vi.unstubAllGlobals();
+    const wrongKey = stubFetch(() => ({ status: 401, body: { message: "Invalid API key" } }));
+    await expect(db(env).rpc("kit_move", {})).rejects.toMatchObject({ status: 401 });
+    expect(wrongKey).toHaveLength(1);
+  });
+
   it("never repeats a write, and does not retry a real error", async () => {
     const writes = stubFetch(() => ({ status: 503, body: "upstream" }));
     await expect(db(env).update("people", "id=eq.a", { active: true })).rejects.toMatchObject({ status: 503 });

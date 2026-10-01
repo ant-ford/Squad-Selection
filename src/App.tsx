@@ -27,6 +27,8 @@ const Kit = lazy(() => import('./pages/Kit'));
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
 const MyDetails = lazy(() => import('./pages/MyDetails'));
+// The new joiner (applicant) form.
+const Apply = lazy(() => import('./pages/Apply'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -112,6 +114,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/apply',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Apply />
           </Suspense>
         ),
       },

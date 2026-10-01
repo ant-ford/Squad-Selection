@@ -75,9 +75,12 @@ export default function SeasonPlanSection({
       </Question>
 
       {value.availabilityLevel && playing && (
-        <Question label={SEASON_PLAN_QUESTIONS.availabilityHalf} hint="Leave both unselected if you're around all season.">
+        <Question label={SEASON_PLAN_QUESTIONS.availabilityHalf}>
+          <Choice selected={!value.availabilityHalf} onClick={() => set({ availabilityHalf: null })}>
+            The whole season
+          </Choice>
           {AVAILABILITY_HALVES.map((h) => (
-            <Choice key={h.key} selected={value.availabilityHalf === h.key} onClick={() => set({ availabilityHalf: value.availabilityHalf === h.key ? null : h.key })}>
+            <Choice key={h.key} selected={value.availabilityHalf === h.key} onClick={() => set({ availabilityHalf: h.key })}>
               {h.label}
             </Choice>
           ))}

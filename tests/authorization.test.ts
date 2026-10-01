@@ -291,6 +291,22 @@ describe("requireAuthorizedUser", () => {
     await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
   });
 
+  it("lets an applicant in the New Joiner process sign in on Supabase, to fill in their application", async () => {
+    const applicant = { id: "recApplicant", email: "new@example.com", active: false, playerCoach: [], status: "Applicant", applicantStage: "2. Section Captain Invitation" };
+    const SUPA = { ...ENV, DATA_BACKEND: "supabase" };
+    supabaseReturns(applicant.email);
+    mocks.getPlayerByEmail.mockResolvedValue(applicant);
+    expect((await requireAuthorizedUser(authedRequest(), SUPA)).personId).toBe("recApplicant");
+    // Not on Airtable, where the form is still Fillout's; not once rejected.
+    invalidateAll();
+    supabaseReturns(applicant.email);
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
+    invalidateAll();
+    supabaseReturns(applicant.email);
+    mocks.getPlayerByEmail.mockResolvedValue({ ...applicant, applicantStage: "Rejected" });
+    await expectError(requireAuthorizedUser(authedRequest(), SUPA), 403, "APPLICATION_ACCESS_DENIED");
+  });
+
   it("denies an email that does not exist in People with 403 APPLICATION_ACCESS_DENIED", async () => {
     supabaseReturns("stranger@example.com");
     mocks.getPlayerByEmail.mockResolvedValue(null);

@@ -24,6 +24,7 @@ import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
+import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   allocateSpare,
   confirmKit,
@@ -688,6 +689,25 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (upload) return json(await uploadFile(env, user, upload[1], body), 200, origin);
         if (pathname === "/api/details/kit") return json(await saveKitSizes(env, user, body), 200, origin);
         if (pathname === "/api/details/confirm") return json(await confirmDetails(env, user), 200, origin);
+      }
+    }
+
+    // ── The new joiner form (Supabase backend; src/apply.ts) ───────────────
+    // The signed-in applicant's own application only.
+    if (pathname.startsWith("/api/apply/")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/apply/me") return json(await getApply(env, user), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/apply/family") return json(await saveFamily(env, user, body), 200, origin);
+        if (pathname === "/api/apply/clubs") return json(await saveClubs(env, user, body), 200, origin);
+        if (pathname === "/api/apply/trials") return json(await saveTrials(env, user, body), 200, origin);
+        if (pathname === "/api/apply/submit") return json(await submitApplication(env, user, body), 200, origin);
+        if (pathname === "/api/apply/polish") return json(await polishAnswer(env, user, body), 200, origin);
+        const own = pathname.match(/^\/api\/apply\/files\/([a-z_]+)$/);
+        if (own) return json(await uploadApplicantFile(env, user, null, own[1], body), 200, origin);
+        const family = pathname.match(/^\/api\/apply\/family\/([0-9a-f-]{36})\/files\/([a-z_]+)$/);
+        if (family) return json(await uploadApplicantFile(env, user, family[1], family[2], body), 200, origin);
       }
     }
 
