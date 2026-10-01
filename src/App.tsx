@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
+import { useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
@@ -61,6 +62,14 @@ function AuthGate() {
   return <Outlet />;
 }
 
+/** The player page, or for an applicant (or someone registering to join) their application. */
+function Home() {
+  const { data, isLoading } = useMyProfile();
+  if (isLoading) return <AppLoading />;
+  if (data?.applicant) return <Navigate to="/apply" replace />;
+  return <PlayerDashboard />;
+}
+
 /** Minimal skeleton shown while a lazy coach route loads. */
 function RouteSkeleton() {
   return (
@@ -118,7 +127,7 @@ const router = createBrowserRouter([
     element: <AuthGate />,
     errorElement: <RouteError />,
     children: [
-      { path: '/', element: <PlayerDashboard /> },
+      { path: '/', element: <Home /> },
       {
         path: '/chairman',
         element: (
