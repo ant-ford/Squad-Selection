@@ -1,6 +1,7 @@
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { teams as teamsRepo } from "./data/teams";
+import { isRowId } from "./data/ids";
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
@@ -319,7 +320,7 @@ export async function syncSquad(
   if (!match) throw new HttpError("Match not found", 404);
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
-  const cleanIds = targetPlayerIds.filter((id) => typeof id === "string" && id.startsWith("rec"));
+  const cleanIds = targetPlayerIds.filter((id) => isRowId(env, "people", id));
 
     // ── Server-side eligibility revalidation (INV-003) ──────────────────
   const currentSelectedBefore = getSelectedPlayerIds(match, ref.teamRankMap, side);
@@ -455,7 +456,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   const team = ref.teams.find(t => t.teamName === teamName);
   if (!team) throw new HttpError("Team not found", 404);
 
-  const validIds = playerIds.filter(id => typeof id === "string" && id.startsWith("rec"));
+  const validIds = playerIds.filter((id) => isRowId(env, "people", id));
 
   // Use team.id from reference data — avoids a redundant Airtable lookup
   await teamsRepo(env).setAutoSelectPlayers(team.id, validIds);

@@ -13,6 +13,7 @@ import { getShared } from "./cache";
 import { MEMBERSHIP_RECORDS_KEY, getReferenceData } from "./reference";
 import { firstLink, getOfficeHolders, getPeopleByIds } from "./contacts";
 import { people, type MembershipRow } from "./data/people";
+import { isRowId } from "./data/ids";
 import { membershipEvents, type NewMembershipEvent } from "./data/membershipEvents";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import type { InsightFact, TeamSquad } from "../../shared/membershipInsights";
@@ -488,7 +489,7 @@ function isIsoDate(value: unknown): value is string {
 export async function approveApplicant(env: Env, actor: AuthorizedUser, input: ApproveInput) {
   const personId = typeof input.personId === "string" ? input.personId.trim() : "";
   const membershipNo = typeof input.membershipNo === "string" ? input.membershipNo.trim() : "";
-  if (!/^rec[A-Za-z0-9]{14}$/.test(personId)) throw new HttpError("Unknown applicant.", 400, "INVALID_INPUT");
+  if (!isRowId(env, "people", personId)) throw new HttpError("Unknown applicant.", 400, "INVALID_INPUT");
   if (!isIsoDate(input.joinDate)) throw new HttpError("Join Date must be a date.", 400, "INVALID_INPUT");
   if (!isIsoDate(input.commitmentEndDate)) {
     throw new HttpError("Commitment End Date must be a date.", 400, "INVALID_INPUT");

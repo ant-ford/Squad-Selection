@@ -50,9 +50,9 @@ function install(matches: ReturnType<typeof fixture>[]) {
       id: `recT${i}`, fields: { "Team Name": n, "Team Rank": i + 1, Active: true, "Target Squad Size": 14 },
     })),
     People: [
-      person("recU21", "Uma", "HKFC D", { "U21 Eligible": true }),
-      person("recSam", "Sam", "HKFC D"),
-      person("recKim", "Kim", "HKFC D"),
+      person("recU21PlayerAAAAA", "Uma", "HKFC D", { "U21 Eligible": true }),
+      person("recSamPlayerAAAAA", "Sam", "HKFC D"),
+      person("recKimPlayerAAAAA", "Kim", "HKFC D"),
     ],
     Matches: matches,
   };
@@ -67,52 +67,52 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("syncSquad: higher team priority", () => {
   it("takes a U21 out of their own team's squad when a higher team picks them", async () => {
-    install([fixture("recLow", "HKFC D", ["recU21", "recKim"]), fixture("recHigh", "HKFC B", [])]);
+    install([fixture("recLow", "HKFC D", ["recU21PlayerAAAAA", "recKimPlayerAAAAA"]), fixture("recHigh", "HKFC B", [])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recU21"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, "recHigh", ["recU21PlayerAAAAA"], "coach@hkfc.com", "home");
 
-    expect(selected("recHigh")).toEqual(["recU21"]);
-    expect(selected("recLow")).toEqual(["recKim"]);
-    expect(displaced).toEqual([{ playerId: "recU21", playerName: "Uma S", team: "HKFC D", matchId: "recLow" }]);
+    expect(selected("recHigh")).toEqual(["recU21PlayerAAAAA"]);
+    expect(selected("recLow")).toEqual(["recKimPlayerAAAAA"]);
+    expect(displaced).toEqual([{ playerId: "recU21PlayerAAAAA", playerName: "Uma S", team: "HKFC D", matchId: "recLow" }]);
   });
 
   it("does the same for any player, not only U21s", async () => {
-    install([fixture("recLow", "HKFC D", ["recSam"]), fixture("recHigh", "HKFC B", [])]);
+    install([fixture("recLow", "HKFC D", ["recSamPlayerAAAAA"]), fixture("recHigh", "HKFC B", [])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSam"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
 
     expect(selected("recLow")).toEqual([]);
-    expect(displaced.map((d) => d.playerId)).toEqual(["recSam"]);
+    expect(displaced.map((d) => d.playerId)).toEqual(["recSamPlayerAAAAA"]);
   });
 
   it("leaves players already in the squad where they are (only new picks move)", async () => {
     // Re-saving a squad must not keep reaching into other squads.
-    install([fixture("recLow", "HKFC D", ["recKim"]), fixture("recHigh", "HKFC B", ["recSam"])]);
+    install([fixture("recLow", "HKFC D", ["recKimPlayerAAAAA"]), fixture("recHigh", "HKFC B", ["recSamPlayerAAAAA"])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSam"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
 
     expect(displaced).toEqual([]);
-    expect(selected("recLow")).toEqual(["recKim"]);
+    expect(selected("recLow")).toEqual(["recKimPlayerAAAAA"]);
   });
 
   it("does not rewrite a lower squad whose match has been played", async () => {
     install([
-      fixture("recLow", "HKFC D", ["recSam"], { "Match Status": "Played" }),
+      fixture("recLow", "HKFC D", ["recSamPlayerAAAAA"], { "Match Status": "Played" }),
       fixture("recHigh", "HKFC B", []),
     ]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSam"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
 
     expect(displaced).toEqual([]);
-    expect(selected("recLow")).toEqual(["recSam"]);
+    expect(selected("recLow")).toEqual(["recSamPlayerAAAAA"]);
   });
 
   it("still rejects the reverse: a lower team cannot take a player a higher team has", async () => {
-    install([fixture("recLow", "HKFC D", []), fixture("recHigh", "HKFC B", ["recU21"])]);
+    install([fixture("recLow", "HKFC D", []), fixture("recHigh", "HKFC B", ["recU21PlayerAAAAA"])]);
 
-    await expect(syncSquad(ENV, "recLow", ["recU21"], "coach@hkfc.com", "home")).rejects.toThrow(
+    await expect(syncSquad(ENV, "recLow", ["recU21PlayerAAAAA"], "coach@hkfc.com", "home")).rejects.toThrow(
       /Selected for HKFC B on same day/,
     );
-    expect(selected("recHigh")).toEqual(["recU21"]);
+    expect(selected("recHigh")).toEqual(["recU21PlayerAAAAA"]);
   });
 });

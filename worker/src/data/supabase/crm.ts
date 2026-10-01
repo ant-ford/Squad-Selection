@@ -11,8 +11,9 @@ import type { FieldMap, Row } from "../rows";
 import type { CommitmentsRepo } from "../commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../commitments";
 import {
-  APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, ID_RE, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
+  APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
 } from "../people";
+import { API_ID_RE } from "../ids";
 import type { MembershipEventsRepo } from "../membershipEvents";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../../../shared/schema/fieldMaps";
 import { REVIEWS_FROM } from "../../../../shared/statementStages";
@@ -67,7 +68,7 @@ export function peopleCrmReads(env: Env) {
     },
     listDirectory: () => selectRows(env, "api_people_crm", CHAIRMAN_FIELDS, "or=(status.is.null,status.neq.Resigned)"),
     listContactsByIds: async (ids: Iterable<string>) => {
-      const wanted = [...new Set([...ids].filter((id) => ID_RE.test(id)))];
+      const wanted = [...new Set([...ids].filter((id) => API_ID_RE.test(id)))];
       if (wanted.length === 0) return [];
       return selectRows(env, "api_people_crm", CONTACT_FIELDS, `id=${inList(wanted)}`);
     },

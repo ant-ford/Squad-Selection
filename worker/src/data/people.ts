@@ -1,5 +1,6 @@
 import { airtableBatchUpdate, airtableFindAll, airtableFindById, airtableUpdate, escapeFormulaValue } from "../airtable";
 import type { Env } from "../env";
+import { AIRTABLE_ID_RE } from "./ids";
 import { pick } from "./backend";
 import { supabasePeople } from "./supabase/people";
 import { toRow, type Row } from "./rows";
@@ -106,8 +107,8 @@ export const APPLICANT_TASK_FIELDS = {
 } as const;
 export type ApplicantTaskRow = Row<typeof APPLICANT_TASK_FIELDS>;
 
-/** A People record id, as Airtable writes one. */
-export const ID_RE = /^rec[A-Za-z0-9]{14}$/;
+/** A People record id, as Airtable writes one (Supabase ids: data/ids.ts). */
+export const ID_RE = AIRTABLE_ID_RE;
 
 /** Record ids per request: keeps the filter formula well inside URL limits. */
 const IDS_PER_READ = 40;
