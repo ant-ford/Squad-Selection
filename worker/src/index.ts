@@ -24,7 +24,7 @@ import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
-import { getApply, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
+import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   allocateSpare,
   confirmKit,
@@ -703,6 +703,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/apply/clubs") return json(await saveClubs(env, user, body), 200, origin);
         if (pathname === "/api/apply/trials") return json(await saveTrials(env, user, body), 200, origin);
         if (pathname === "/api/apply/submit") return json(await submitApplication(env, user, body), 200, origin);
+        if (pathname === "/api/apply/polish") return json(await polishAnswer(env, user, body), 200, origin);
         const own = pathname.match(/^\/api\/apply\/files\/([a-z_]+)$/);
         if (own) return json(await uploadApplicantFile(env, user, null, own[1], body), 200, origin);
         const family = pathname.match(/^\/api\/apply\/family\/([0-9a-f-]{36})\/files\/([a-z_]+)$/);

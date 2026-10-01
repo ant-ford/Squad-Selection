@@ -11,6 +11,7 @@
  * new APPLICATION_VERSION: each application records the version agreed to.
  */
 import type { Audience } from "./profile";
+import { normaliseHkid, phoneProblem } from "./phone";
 
 export const APPLICATION_VERSION = "2026-10-01";
 
@@ -173,10 +174,10 @@ export function spouseProblem(s: FamilyMemberDetails): string | null {
   if (!isDate(s.dateOfBirth)) return "Give your spouse or partner's date of birth.";
   if (!["Male", "Female"].includes(s.gender)) return "Give your spouse or partner's gender.";
   if (blank(s.salutation)) return "Give your spouse or partner's title.";
-  if (blank(s.hkidNo)) return "Give your spouse or partner's HKID no.";
+  if (blank(s.hkidNo) || !normaliseHkid(String(s.hkidNo))) return "Check your spouse or partner's HKID no., e.g. A123456(7).";
   if (blank(s.nationality)) return "Give your spouse or partner's nationality.";
   if (blank(s.email) || !/^\S+@\S+\.\S+$/.test(String(s.email))) return "Give your spouse or partner's email.";
-  if (blank(s.mobileNo)) return "Give your spouse or partner's mobile no.";
+  if (blank(s.mobileNo) || phoneProblem(String(s.mobileNo))) return "Check your spouse or partner's mobile no.";
   return null;
 }
 

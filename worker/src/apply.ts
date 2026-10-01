@@ -15,6 +15,8 @@ import { invalidateForTables } from "./airtableWebhook";
 import { isUnderEighteen } from "./declarations";
 import { signatureBytes } from "./signatures";
 import { uploadBytes } from "./details";
+import { cleanDraft, complete } from "./reviewDrafts";
+import { joinPhone, normaliseHkid, splitPhone } from "../../shared/phone";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -108,10 +110,15 @@ function toMember(r: FamilyRow): FamilyMemberDetails {
   return out;
 }
 
-function memberColumns(m: Record<string, unknown>): Record<string, string | null> {
+function memberColumns(m: Record<string, unknown>, spouse: boolean): Record<string, string | null> {
   const out: Record<string, string | null> = {};
   for (const [k, col] of Object.entries(FAMILY_COLUMNS)) {
     out[col] = k === "dateOfBirth" || k === "weddingAnniversary" ? dateOrNull(m[k]) : text(m[k]);
+  }
+  // Written the standard way: a spouse's HKID A123456(7), phones "+852 9123 4567".
+  if (spouse && out.hkid_no) out.hkid_no = normaliseHkid(out.hkid_no) ?? out.hkid_no;
+  for (const col of ["mobile_no", "office_telephone_no"]) {
+    if (out[col]) out[col] = joinPhone(splitPhone(out[col]).code, splitPhone(out[col]).number) || out[col];
   }
   return out;
 }
@@ -169,8 +176,8 @@ export async function saveFamily(env: Env, user: AuthorizedUser, body: Record<st
 
   const d = db(env);
   const rows = [
-    ...(spouse ? [{ person_id: p.id, relation: "spouse", ordinal: 1, ...memberColumns(spouse as unknown as Record<string, unknown>) }] : []),
-    ...children.map((c, i) => ({ person_id: p.id, relation: "child", ordinal: i + 1, ...memberColumns(c as unknown as Record<string, unknown>) })),
+    ...(spouse ? [{ person_id: p.id, relation: "spouse", ordinal: 1, ...memberColumns(spouse as unknown as Record<string, unknown>, true) }] : []),
+    ...children.map((c, i) => ({ person_id: p.id, relation: "child", ordinal: i + 1, ...memberColumns(c as unknown as Record<string, unknown>, false) })),
   ];
   const saved = rows.length ? await d.upsert<FamilyRow>("family_members", rows, "person_id,relation,ordinal") : [];
   // Anyone no longer listed goes, with their documents (files cascade).
@@ -193,12 +200,13 @@ export async function saveClubs(env: Env, user: AuthorizedUser, body: Record<str
   if (clubs.length > MAX_CLUBS) throw new HttpError("Up to four clubs.", 400, "INVALID_INPUT");
   const year = new Date().getFullYear();
   for (const c of clubs) {
-    if (!(PRIVATE_CLUBS as readonly string[]).includes(c.club)) throw new HttpError("Choose each club from the list.", 400, "INVALID_INPUT");
+    // The list's clubs or any other (owner, 2026-10-01).
+    if (typeof c.club !== "string" || !c.club.trim() || c.club.length > 100) throw new HttpError("Give each club's name.", 400, "INVALID_INPUT");
     if (c.sinceYear !== null && (!Number.isInteger(c.sinceYear) || c.sinceYear < 1900 || c.sinceYear > year)) throw new HttpError("That isn't a year.", 400, "INVALID_INPUT");
   }
   const d = db(env);
   await d.remove("previous_clubs", `person_id=${eq(p.id)}`);
-  if (clubs.length) await d.insert("previous_clubs", clubs.map((c, i) => ({ person_id: p.id, ordinal: i + 1, club: c.club, since_year: c.sinceYear })));
+  if (clubs.length) await d.insert("previous_clubs", clubs.map((c, i) => ({ person_id: p.id, ordinal: i + 1, club: c.club.trim(), since_year: c.sinceYear })));
   return { ok: true };
 }
 
@@ -247,6 +255,47 @@ export async function uploadApplicantFile(env: Env, user: AuthorizedUser, member
     await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
   }
   return { ok: true };
+}
+
+/**
+ * The Polish button on the applicant's longer answers: a draft improvement
+ * of what they wrote, for them to use or not. Nothing is saved here.
+ */
+const POLISH: Record<string, { question: string; aim: string; words: number }> = {
+  sportsBackground: {
+    question: "Sports background and involvement",
+    aim: "their hockey career (clubs, levels, positions, years, achievements) and any other sports they have played",
+    words: 120,
+  },
+  personalInterest: {
+    question: "Personal and family interests",
+    aim: "what they and their family enjoy outside hockey, which helps the club see how they would take part in club life",
+    words: 100,
+  },
+};
+
+export async function polishAnswer(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+  requireSupabase(env);
+  const spec = POLISH[String(body.field)];
+  if (!spec) throw new HttpError("That answer can't be polished.", 400, "INVALID_INPUT");
+  const answer = text(body.text, 2000);
+  if (!answer || answer.split(/\s+/).length < 3) throw new HttpError("Write a few words first, then polish them.", 400, "INVALID_INPUT");
+  await loadApplicant(env, user.personId);
+  if (!env.OPENROUTER_API_KEY) throw new HttpError("Polishing isn't available right now.", 503, "AI_UNAVAILABLE");
+  const system = [
+    "You help someone applying to join HKFC Hockey, the hockey section of the Hong Kong Football Club, improve one answer on their membership application.",
+    `The question is "${spec.question}": ${spec.aim}.`,
+    "Rewrite their answer so it reads clearly and confidently, in the first person, in British English.",
+    "Keep every fact they gave and add none: never invent clubs, teams, levels, dates, places, people or achievements.",
+    `Keep it under ${spec.words} words. If their answer is short, keep yours short.`,
+    "Reply with the rewritten answer only: no heading, no quotation marks, no comments.",
+  ].join(" ");
+  try {
+    return { text: cleanDraft(await complete(env, system, `Their answer:\n${answer}`), 1200) };
+  } catch (err) {
+    console.error(`Polish failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new HttpError("Couldn't polish it just now. Try again in a moment.", 502, "AI_FAILED");
+  }
 }
 
 /** Stores one drawn signature; returns its files id. */

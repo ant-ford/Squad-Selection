@@ -21,6 +21,7 @@ import {
   audienceOf,
   checkValue,
   fieldsFor,
+  normaliseValue,
   sectionFor,
   sectionProblem,
   type Audience,
@@ -164,7 +165,7 @@ export function parseSection(key: string, body: Record<string, unknown>, saved: 
       f.type === "multi" ? ((v ?? []) as string[])
       : f.type === "yesno" ? (v as boolean)
       : f.type === "number" ? (v === null || v === undefined || v === "" ? null : Number(v))
-      : typeof v === "string" && v.trim() ? v.trim() : null;
+      : typeof v === "string" && v.trim() ? normaliseValue(f, v.trim()) : null;
   }
   const across = sectionProblem(section.key, values as ProfileValues);
   if (across) throw new HttpError(across, 400, "INVALID_INPUT");

@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import FileUpload from '@/components/profile/FileUpload';
+import PhoneInput from '@/components/profile/PhoneInput';
 import SignaturePad from '@/components/SignaturePad';
-import { fieldInput } from '@/components/profile/ProfileFields';
+import { ChoiceOrOther, fieldInput } from '@/components/profile/ProfileFields';
 import { StepShell, errorText, type StepProps } from '@/components/profile/steps';
 import { saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from '@/api/apply';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -54,6 +55,18 @@ function Text({ label, value, onChange, type = 'text', required, list }: { label
   );
 }
 
+function Phone({ label, value, onChange, required }: { label: string; value: string | null | undefined; onChange: (v: string) => void; required?: boolean }) {
+  return (
+    <div className="space-y-1 text-xs font-medium text-foreground">
+      <span>
+        {label}
+        {required && <span className="text-destructive"> *</span>}
+      </span>
+      <PhoneInput value={value ?? null} onChange={onChange} />
+    </div>
+  );
+}
+
 function Choose({ label, value, options, onChange, required }: { label: string; value: string | null | undefined; options: readonly string[]; onChange: (v: string) => void; required?: boolean }) {
   return (
     <label className="space-y-1 text-xs font-medium text-foreground">
@@ -96,28 +109,67 @@ export function ClubsStep({ view, ...nav }: ApplyStepProps) {
     },
     onError: (err) => setProblem(errorText(err)),
   });
+  const thisYear = new Date().getFullYear();
   const next = () => {
-    const bad = clubs.some((c) => !c.club) ? 'Choose each club, or fewer clubs.' : null;
+    const bad = clubs.some((c) => !c.club.trim())
+      ? 'Give each club, or choose fewer clubs.'
+      : clubs.some((c) => c.sinceYear !== null && (c.sinceYear < 1900 || c.sinceYear > thisYear))
+        ? `Give each year as four digits, ${thisYear} or earlier.`
+        : null;
     setProblem(bad);
     if (!bad) save.mutate();
   };
+  const set = (i: number, patch: Partial<PrivateClub>) => setClubs(clubs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   return (
     <StepShell title="Private clubs" {...nav} onNext={next} busy={save.isPending} problem={problem}>
-      <Count label="Are you a member of a private club?" value={clubs.length} max={MAX_CLUBS} onChange={(n) => setClubs(resize(clubs, n, () => ({ club: '', sinceYear: null })))} />
+      <Count label="Are you a member of a private club?" value={clubs.length} max={MAX_CLUBS} onChange={(n) => setClubs(resize(clubs, n, () => ({ club: '', sinceYear: thisYear })))} />
       {clubs.map((c, i) => (
-        <div key={i} className="grid grid-cols-3 gap-3">
+        <div key={i} className="grid grid-cols-3 gap-3 items-end">
           <div className="col-span-2">
-            <Choose label={`Club ${i + 1}`} value={c.club} options={PRIVATE_CLUBS} onChange={(v) => setClubs(clubs.map((x, j) => (j === i ? { ...x, club: v } : x)))} required />
+            <ClubChoice label={`Club ${i + 1}`} value={c.club} onChange={(v) => set(i, { club: v })} />
           </div>
-          <Text
-            label="Since (year)"
-            type="number"
-            value={c.sinceYear ? String(c.sinceYear) : ''}
-            onChange={(v) => setClubs(clubs.map((x, j) => (j === i ? { ...x, sinceYear: v ? Number(v) : null } : x)))}
-          />
+          <Text label="Member since" type="number" value={c.sinceYear ? String(c.sinceYear) : ''} onChange={(v) => set(i, { sinceYear: v ? Number(v) : null })} />
         </div>
       ))}
     </StepShell>
+  );
+}
+
+/** A private club from the list, or any other typed in. */
+function ClubChoice({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const listed = !value || (PRIVATE_CLUBS as readonly string[]).includes(value);
+  const [typing, setTyping] = useState(!listed);
+  return (
+    <div className="space-y-1.5">
+      <label className="space-y-1 text-xs font-medium text-foreground block">
+        <span>
+          {label}
+          <span className="text-destructive"> *</span>
+        </span>
+        <select
+          className={fieldInput}
+          value={typing ? '__other__' : value}
+          onChange={(e) => {
+            if (e.target.value === '__other__') {
+              setTyping(true);
+              onChange(listed ? '' : value);
+            } else {
+              setTyping(false);
+              onChange(e.target.value);
+            }
+          }}
+        >
+          <option value="">Choose…</option>
+          {PRIVATE_CLUBS.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+          <option value="__other__">Another club (type it)</option>
+        </select>
+      </label>
+      {typing && <input className={fieldInput} aria-label={`${label} name`} placeholder="The club's name" value={value} onChange={(e) => onChange(e.target.value)} />}
+    </div>
   );
 }
 
@@ -192,21 +244,27 @@ function MemberFields({ m, onChange, spouse }: { m: FamilyMemberDetails; onChang
       {spouse ? (
         <>
           <Text label="Wedding anniversary" type="date" value={m.weddingAnniversary} onChange={set('weddingAnniversary')} />
-          <Text label="HKID no." value={m.hkidNo} onChange={set('hkidNo')} required />
+          <Text label="HKID no." value={m.hkidNo} onChange={(v) => set('hkidNo')(v.toUpperCase())} required />
           <Text label="Passport no." value={m.passportNo} onChange={set('passportNo')} />
-          <Text label="Nationality" value={m.nationality} onChange={set('nationality')} required list="spouse-nationality" />
-          <datalist id="spouse-nationality">
-            {NATIONALITIES.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
+          <div className="space-y-1 text-xs font-medium text-foreground">
+            <span>
+              Nationality<span className="text-destructive"> *</span>
+            </span>
+            <ChoiceOrOther
+              f={{ key: 'spouseNationality', column: 'nationality', label: 'Nationality', type: 'suggest', options: NATIONALITIES }}
+              id="spouse-nationality"
+              value={m.nationality ?? ''}
+              required
+              onChange={(v) => set('nationality')(v ?? '')}
+            />
+          </div>
           <Text label="Email" type="email" value={m.email} onChange={set('email')} required />
-          <Text label="Mobile no." type="tel" value={m.mobileNo} onChange={set('mobileNo')} required />
+          <Phone label="Mobile no." value={m.mobileNo} onChange={set('mobileNo')} required />
           <Text label="Company" value={m.companyName} onChange={set('companyName')} />
           <Text label="Position" value={m.workPosition} onChange={set('workPosition')} />
           <Text label="Nature of business" value={m.natureOfBusiness} onChange={set('natureOfBusiness')} />
           <Text label="Office email" type="email" value={m.officeEmail} onChange={set('officeEmail')} />
-          <Text label="Office telephone no." type="tel" value={m.officeTelephoneNo} onChange={set('officeTelephoneNo')} />
+          <Phone label="Office telephone no." value={m.officeTelephoneNo} onChange={set('officeTelephoneNo')} />
         </>
       ) : (
         <Text label="HKID or passport no." value={m.hkidNo} onChange={set('hkidNo')} />

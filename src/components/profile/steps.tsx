@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ProfileFields from '@/components/profile/ProfileFields';
+import PolishButton from '@/components/profile/PolishButton';
 import FileUpload from '@/components/profile/FileUpload';
 import KitSizesSection from '@/components/profile/KitSizesSection';
 import SeasonPlanSection from '@/components/SeasonPlanSection';
@@ -12,7 +13,17 @@ import { safeFormat } from '@/lib/dateUtils';
 import { confirmDetails, saveDetailsSection, saveKitSizes } from '@/api/details';
 import { submitSeasonPlan } from '@/api/seasonPlan';
 import { saveVolunteering } from '@/api/volunteering';
-import { audienceOf, checkValue, fieldsFor, sectionProblem, type Audience, type MyDetails, type ProfileValues, type SectionSpec } from '@shared/profile';
+import {
+  audienceOf,
+  checkValue,
+  fieldsFor,
+  formatHkAddress,
+  sectionProblem,
+  type Audience,
+  type MyDetails,
+  type ProfileValues,
+  type SectionSpec,
+} from '@shared/profile';
 import { EMPTY_SEASON_PLAN, seasonPlanMissing, type SeasonPlanAnswers } from '@shared/seasonPlan';
 import { volunteeringMissing, type VolunteeringAnswers } from '@shared/volunteering';
 import type { KitSizes } from '@shared/kit';
@@ -112,6 +123,21 @@ export function MembershipStep({ details, ...nav }: StepProps) {
   );
 }
 
+/** The address as Hong Kong Post would write it, so they can check each part is in the right box. */
+function AddressPreview({ lines }: { lines: string[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="rounded-md border border-border bg-muted/40 p-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">How your address reads</p>
+      {lines.map((l) => (
+        <p key={l} className="text-sm text-foreground">
+          {l}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function SectionStep({ section, details, ...nav }: StepProps & { section: SectionSpec }) {
   const queryClient = useQueryClient();
   // Everything the section could ask, so a choice that shows more questions keeps their saved answers.
@@ -120,7 +146,7 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const who: Audience = section.key === 'application' ? audienceOf('Applicant', values.applicantType as string | null) : details.audience;
   const allFields = fieldsFor(section, who);
   // Not playing this season: the rest of the hockey questions don't apply.
-  const fields = section.key === 'hockey' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
+  const fields = section.key === 'hockey' && who === 'member' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
   const [problem, setProblem] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState(details.photoUrl);
   const [hkid, setHkid] = useState(details.hasHkidCopy);
@@ -139,7 +165,7 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
     const bad = fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(section.key, values);
     setProblem(bad ?? null);
     if (bad) return;
-    if (section.key === 'hockey' && values.active === false && details.values.active !== false) setConfirmInactive(true);
+    if (section.key === 'hockey' && who === 'member' && values.active === false && details.values.active !== false) setConfirmInactive(true);
     else save.mutate();
   };
   return (
@@ -175,7 +201,18 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
           You sign in with <span className="text-foreground">{details.email ?? 'no email'}</span>. To change it, ask the Membership Officer.
         </p>
       )}
-      <ProfileFields fields={fields} values={values} onChange={setValues} who={who} />
+      <ProfileFields
+        fields={fields}
+        values={values}
+        onChange={setValues}
+        who={who}
+        extra={(f) =>
+          section.key === 'background' ? (
+            <PolishButton field={f.key} text={typeof values[f.key] === 'string' ? (values[f.key] as string) : ''} onUse={(better) => setValues({ ...values, [f.key]: better })} />
+          ) : null
+        }
+      />
+      {(section.key === 'contact' || section.key === 'work') && <AddressPreview lines={formatHkAddress(values, section.key === 'contact' ? 'home' : 'business')} />}
     </StepShell>
   );
 }

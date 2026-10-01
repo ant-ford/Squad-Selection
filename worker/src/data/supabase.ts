@@ -37,6 +37,16 @@ const PAGE = 1000;
  */
 const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
 const RETRY_DELAY_MS = 200;
+
+/**
+ * A 401 whose body is a PostgREST token error (PGRST301/PGRST303): Supabase's
+ * gateway turns the secret key into a short-lived token per request, and now
+ * and then PostgREST rejects that token (seen on preview, 2026-10-01: "401
+ * PGRST303" on a first request, the same request a moment later fine). The
+ * request was refused before it ran, so it is safe to repeat even a write.
+ */
+const TOKEN_REJECTED = /"code"\s*:\s*"PGRST30[13]"/;
+const TOKEN_RETRIES = 2;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface Db {
@@ -92,6 +102,7 @@ export function db(env: Env): Db {
     const attempts = (init.method ?? "GET") === "GET" ? 2 : 1;
     let response!: Response;
     let text!: string;
+    let tokenRetries = 0;
     for (let attempt = 1; ; attempt++) {
       const startedAt = Date.now();
       try {
@@ -114,6 +125,12 @@ export function db(env: Env): Db {
         throw err;
       }
       recordDbCall(Date.now() - startedAt, text.length);
+      if (response.status === 401 && tokenRetries < TOKEN_RETRIES && TOKEN_REJECTED.test(text)) {
+        tokenRetries++;
+        attempt--; // not counted against the transit retries
+        await sleep(RETRY_DELAY_MS * 2 * tokenRetries);
+        continue;
+      }
       if (attempt < attempts && RETRYABLE_STATUS.has(response.status)) {
         await sleep(RETRY_DELAY_MS);
         continue;

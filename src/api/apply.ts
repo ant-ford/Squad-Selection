@@ -27,6 +27,11 @@ export function uploadApplicantFile(kind: string, dataUrl: string, memberId?: st
   return apiPost(memberId ? `/api/apply/family/${memberId}/files/${kind}` : `/api/apply/files/${kind}`, { dataUrl });
 }
 
+/** A clearer version of one of their longer answers (the Polish button). */
+export function polishAnswer(field: string, text: string): Promise<{ text: string }> {
+  return apiPost('/api/apply/polish', { field, text });
+}
+
 export function submitApplication(body: {
   version: string;
   accepted: string[];

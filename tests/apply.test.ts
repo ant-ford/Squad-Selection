@@ -29,7 +29,7 @@ const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
 const complete = {
   id: "u1", api_id: "recAPP", status: "Applicant", applicant_type: "Existing HKFC Member", applicant_stage: "2. Section Captain Invitation",
   membership_no: "M123", member_type: "Main", category_type: "Sports Preferred",
-  surname: "Lee", given_names: "Sam", preferred_name: "Sam", date_of_birth: "1990-01-01", gender: "Male", hkid_no: "A1", nationality: "British",
+  surname: "Lee", given_names: "Sam", preferred_name: "Sam", date_of_birth: "1990-01-01", gender: "Male", hkid_no: "A123456(3)", nationality: "British",
   marital_status: "Single", emergency_contact: "Jo", emergency_contact_no: "+852 5555 0000", mobile_no: "+852 5555 1111",
   home_flat_type: "Flat", home_unit: "A", home_street: "Conduit Road", home_district: "Mid-Levels", home_region: "Hong Kong",
   playing_position: "Forward", playing_level: ["Division 3"],
@@ -69,7 +69,7 @@ describe("the new joiner application", () => {
       people: [complete],
       family_members: (c: Call) => (c.method === "POST" ? c.body.map((r: any, i: number) => ({ id: `f${i}`, ...r })) : []),
     });
-    const spouse = { salutation: "Mrs", surname: "Lee", givenNames: "Jo", dateOfBirth: "1991-02-03", gender: "Female", hkidNo: "B2", nationality: "British", email: "jo@x.com", mobileNo: "+852 5555 2222" };
+    const spouse = { salutation: "Mrs", surname: "Lee", givenNames: "Jo", dateOfBirth: "1991-02-03", gender: "Female", hkidNo: "B234567(1)", nationality: "British", email: "jo@x.com", mobileNo: "+852 5555 2222" };
     const ids = await saveFamily(env, user, { spouse, children: [{ surname: "Lee", givenNames: "Kim", dateOfBirth: "2015-01-01", gender: "F" }], relatives: [{ name: "Pat Lee", membershipNo: "M9", relationship: "Parent" }] });
     expect(ids).toEqual({ spouseId: "f0", childIds: ["f1"] });
     const upsert = calls.find((c) => c.method === "POST" && c.url.pathname.endsWith("/family_members"))!;

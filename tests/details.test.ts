@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { getMyDetails, parseSection, saveKitSizes, saveSection, uploadBytes } from "../worker/src/details";
-import { checkedThisSeason, checkValue, PROFILE_SECTIONS } from "../shared/profile";
+import { checkedThisSeason, checkValue, formatHkAddress, PROFILE_SECTIONS, regionOfDistrict } from "../shared/profile";
+import { joinPhone, normaliseHkid, splitPhone } from "../shared/phone";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test", FILE_LINK_SECRET: "x" } as unknown as Env;
 const user = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
@@ -20,13 +21,13 @@ function fake(tables: Record<string, unknown>) {
 afterEach(() => vi.unstubAllGlobals());
 
 const personal = {
-  surname: "Lee", givenNames: "Sam", preferredName: "Sam", dateOfBirth: "1990-01-01", gender: "Male", hkidNo: "A123456(7)", nationality: "British",
+  surname: "Lee", givenNames: "Sam", preferredName: "Sam", dateOfBirth: "1990-01-01", gender: "Male", hkidNo: "a1234563", nationality: "British",
 };
 
 describe("my details", () => {
   it("checks a section's answers and writes only its columns, applicant-only questions for applicants alone", () => {
     const member = parseSection("personal", { values: { ...personal, maritalStatus: "Married" } }, "member");
-    expect(member).toMatchObject({ surname: "Lee", given_names: "Sam", hkid_no: "A123456(7)", chinese_name: null });
+    expect(member).toMatchObject({ surname: "Lee", given_names: "Sam", hkid_no: "A123456(3)", chinese_name: null }); // written the standard way
     expect(member).not.toHaveProperty("marital_status");
     const newcomer = { ...personal, maritalStatus: "Married", placeOfBirth: "London", arrivedInHkOn: "2020-01-01" };
     expect(parseSection("personal", { values: newcomer }, "new")).toMatchObject({ marital_status: "Married", place_of_birth: "London" });
@@ -64,13 +65,43 @@ describe("my details", () => {
     expect(() => parseSection("billing", { values: { ...bank, bankName: "Bank of Nowhere" } }, "new")).toThrow(/list/);
   });
 
+  it("checks HKID numbers by their check digit and writes them the standard way", () => {
+    expect(normaliseHkid("a1234563")).toBe("A123456(3)");
+    expect(normaliseHkid("AB987654(3)")).toBe("AB987654(3)");
+    expect(normaliseHkid("Z123456 (1)")).toBe("Z123456(1)");
+    expect(normaliseHkid("A123456(7)")).toBeNull();
+    expect(normaliseHkid("123456")).toBeNull();
+  });
+
+  it("splits and joins phone numbers by country code, Hong Kong's as 4 + 4", () => {
+    expect(splitPhone("+852 9123 4567")).toEqual({ code: "+852", number: "91234567" });
+    expect(splitPhone("+85291234567")).toEqual({ code: "+852", number: "91234567" });
+    expect(splitPhone("+447911123456")).toEqual({ code: "+44", number: "7911123456" });
+    expect(splitPhone("9123 4567")).toEqual({ code: "+852", number: "9123 4567" });
+    expect(joinPhone("+852", "9123-4567")).toBe("+852 9123 4567");
+    expect(joinPhone("+61", "412 345 678")).toBe("+61 412345678");
+  });
+
+  it("writes an address as Hong Kong Post does, and fills in the district's region", () => {
+    expect(formatHkAddress({ homeFlatType: "Flat", homeUnit: "B", homeFloor: "12", homeBlock: "3", homeBuilding: "Example Court", homeStreet: "1 Sample Road", homeDistrict: "Mid-Levels", homeRegion: "Hong Kong" }, "home")).toEqual([
+      "Flat B, 12/F, Block 3", "Example Court", "1 Sample Road", "Mid-Levels, Hong Kong",
+    ]);
+    expect(formatHkAddress({ businessFloor: "G", businessBuilding: "Tower One" }, "business")).toEqual(["G/F", "Tower One"]);
+    expect(regionOfDistrict("Sai Kung")).toBe("New Territories");
+    expect(regionOfDistrict("Somewhere")).toBeNull();
+  });
+
   it("takes any nationality or district, but checks emails, phones and dates", () => {
     const f = (key: string) => PROFILE_SECTIONS.flatMap((s) => s.fields).find((x) => x.key === key)!;
     expect(checkValue(f("nationality"), "Belgium ")).toBeNull();
     expect(checkValue(f("homeDistrict"), "Somewhere New")).toBeNull();
     expect(checkValue(f("guardianEmail"), "not-an-email")).toMatch(/email/);
     expect(checkValue(f("mobileNo"), "+852 9123 4567")).toBeNull();
-    expect(checkValue(f("mobileNo"), "call me")).toMatch(/phone/);
+    expect(checkValue(f("mobileNo"), "call me")).toMatch(/8 digits/);
+    expect(checkValue(f("mobileNo"), "+852 9123 456")).toMatch(/8 digits/);
+    expect(checkValue(f("mobileNo"), "+44 7911123456")).toBeNull();
+    expect(checkValue(f("hkidNo"), "A123456(3)")).toBeNull();
+    expect(checkValue(f("hkidNo"), "A123456(7)")).toMatch(/digit in brackets/);
     expect(checkValue(f("dateOfBirth"), "01/01/1990")).toMatch(/date/);
   });
 

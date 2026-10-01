@@ -192,7 +192,8 @@ export function cleanDraft(text: string, limit: number): string {
 /** Words in a draft, as a person would count them. */
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
-async function complete(env: Env, system: string, context: string, retry?: { previous: string; ask: string }): Promise<string> {
+/** One completion from the drafting model (also the applicant form's Polish button, apply.ts). */
+export async function complete(env: Env, system: string, context: string, retry?: { previous: string; ask: string }): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {

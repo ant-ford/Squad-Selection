@@ -21,8 +21,9 @@
 
 import { hkDateKey } from "./hkDateKey";
 import { seasonStartYear } from "./membershipInsights";
+import { joinPhone, normaliseHkid, phoneProblem, splitPhone } from "./phone";
 
-export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno";
+export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno" | "hkid";
 
 /** Who is answering: a member, or an applicant who is an existing or a new HKFC member. */
 export type Audience = "member" | "existing" | "new";
@@ -35,6 +36,8 @@ export interface FieldSpec {
   label: string;
   type: FieldType;
   options?: readonly string[];
+  /** Options in labelled groups (districts by region); `options` is then every one of them. */
+  groups?: readonly { label: string; options: readonly string[] }[];
   /** Required of everyone asked (true), or only of these. */
   required?: boolean | Audience[];
   hint?: string;
@@ -68,14 +71,39 @@ export const NATIONALITIES = [
   "German", "Indian", "Irish", "Japanese", "Korean", "Malaysian", "New Zealander", "Pakistani", "Singaporean", "South African", "Swiss",
 ] as const;
 
-export const HK_DISTRICTS = [
-  "Aberdeen", "Admiralty", "Ap Lei Chau", "Braemar Hill", "Causeway Bay", "Central", "Chai Wan", "Clear Water Bay", "Discovery Bay",
-  "Eastern", "Happy Valley", "Ho Man Tin", "Hung Hom", "Jardine's Lookout", "Kennedy Town", "Kowloon Bay", "Kowloon City",
-  "Kowloon Tong", "Kwai Chung", "Kwun Tong", "Ma On Shan", "Mid-Levels", "North Point", "Pokfulam", "Quarry Bay", "Sai Kung",
-  "Sai Ying Pun", "Sham Shui Po", "Shatin", "Shau Kei Wan", "Shek O", "Sheung Shui", "Sheung Wan", "Southern", "Stanley",
-  "Tai Kok Tsui", "Tai Po", "Tai Wai", "Taikoo Shing", "Tin Hau", "Tin Shui Wai", "Tsim Sha Tsui", "Tsing Yi", "Tsuen Wan",
-  "Tsz Wan Shan", "Tuen Mun", "Wan Chai", "West Kowloon", "Yau Tsim Mong", "Yuen Long",
+/** Districts by the region they're in (Hong Kong Island is "Hong Kong" in the address). */
+export const DISTRICT_GROUPS = [
+  {
+    label: "Hong Kong Island",
+    region: "Hong Kong",
+    options: [
+      "Aberdeen", "Admiralty", "Ap Lei Chau", "Braemar Hill", "Causeway Bay", "Central", "Chai Wan", "Eastern", "Happy Valley",
+      "Jardine's Lookout", "Kennedy Town", "Mid-Levels", "North Point", "Pokfulam", "Quarry Bay", "Sai Ying Pun", "Shau Kei Wan",
+      "Shek O", "Sheung Wan", "Southern", "Stanley", "Taikoo Shing", "Tin Hau", "Wan Chai",
+    ],
+  },
+  {
+    label: "Kowloon",
+    region: "Kowloon",
+    options: [
+      "Ho Man Tin", "Hung Hom", "Kowloon Bay", "Kowloon City", "Kowloon Tong", "Kwun Tong", "Sham Shui Po", "Tai Kok Tsui",
+      "Tsim Sha Tsui", "Tsz Wan Shan", "West Kowloon", "Yau Tsim Mong",
+    ],
+  },
+  {
+    label: "New Territories and Islands",
+    region: "New Territories",
+    options: [
+      "Clear Water Bay", "Discovery Bay", "Kwai Chung", "Ma On Shan", "Sai Kung", "Shatin", "Sheung Shui", "Tai Po", "Tai Wai",
+      "Tin Shui Wai", "Tsing Yi", "Tsuen Wan", "Tuen Mun", "Yuen Long",
+    ],
+  },
 ] as const;
+
+export const HK_DISTRICTS: readonly string[] = DISTRICT_GROUPS.flatMap((g) => g.options);
+
+/** The region a district is in, for filling it in when the district is chosen. */
+export const regionOfDistrict = (district: string) => DISTRICT_GROUPS.find((g) => (g.options as readonly string[]).includes(district))?.region ?? null;
 
 export const REGIONS = ["Hong Kong", "Kowloon", "New Territories"] as const;
 
@@ -101,7 +129,7 @@ const address = (prefix: "home" | "business", label: string, flatTypes: readonly
   { key: `${prefix}Block`, column: `${prefix}_block`, label: "Block", type: "text" },
   { key: `${prefix}Building`, column: `${prefix}_building`, label: "Building", type: "text" },
   { key: `${prefix}Street`, column: `${prefix}_street`, label: "Street", type: "text", required },
-  { key: `${prefix}District`, column: `${prefix}_district`, label: "District", type: "suggest", options: HK_DISTRICTS, required },
+  { key: `${prefix}District`, column: `${prefix}_district`, label: "District", type: "suggest", options: HK_DISTRICTS, groups: DISTRICT_GROUPS, required },
   { key: `${prefix}Region`, column: `${prefix}_region`, label: "Region", type: "select", options: REGIONS, required },
 ];
 
@@ -155,7 +183,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
       { key: "chineseName", column: "chinese_name", label: "Chinese name", type: "text" },
       { key: "dateOfBirth", column: "date_of_birth", label: "Date of birth", type: "date", required: true },
       { key: "gender", column: "gender", label: "Gender", type: "select", options: ["Male", "Female"], required: true },
-      { key: "hkidNo", column: "hkid_no", label: "HKID no.", type: "text", required: true, hint: "e.g. A123456(7)" },
+      { key: "hkidNo", column: "hkid_no", label: "HKID no.", type: "hkid", required: true, hint: "As on the card, with the digit in brackets: A123456(7)" },
       { key: "passportNo", column: "passport_no", label: "Passport no.", type: "text" },
       { key: "nationality", column: "nationality", label: "Nationality", type: "suggest", options: NATIONALITIES, required: true },
       { key: "maritalStatus", column: "marital_status", label: "Marital status", type: "select", options: ["Single", "Married", "Partner"], audiences: APPLICANTS, required: true },
@@ -223,7 +251,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
   {
     key: "background",
     title: "About you",
-    intro: "For your sponsor and the club: the hockey and other sport you've played, and what you and your family enjoy.",
+    intro: "This is for your sponsor and the club. Tell us about your hockey career and the other sports you've been involved with, and what you and your family enjoy.",
     audiences: ["new"],
     fields: [
       { key: "sportsBackground", column: "sports_background", label: "Sports background and involvement", type: "textarea", required: true },
@@ -348,7 +376,11 @@ export function checkValue(f: FieldSpec, v: unknown, who: Audience = "member"): 
   if (s.length > (f.type === "textarea" ? 2000 : 200)) return `${f.label} is too long.`;
   if (f.type === "select" && !f.options!.includes(s)) return `${f.label}: choose from the list.`;
   if (f.type === "email" && !/^\S+@\S+\.\S+$/.test(s)) return `${f.label}: that doesn't look like an email address.`;
-  if (f.type === "phone" && !/^\+?[\d\s()-]{6,24}$/.test(s)) return `${f.label}: that doesn't look like a phone number.`;
+  if (f.type === "phone") {
+    const problem = phoneProblem(s);
+    if (problem) return `${f.label}: ${problem}.`;
+  }
+  if (f.type === "hkid" && !normaliseHkid(s)) return `${f.label}: check the number and the digit in brackets, e.g. A123456(7).`;
   if (f.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${f.label}: that isn't a date.`;
   return null;
 }
@@ -356,4 +388,41 @@ export function checkValue(f: FieldSpec, v: unknown, who: Audience = "member"): 
 /** Whether they've confirmed their details since this season began (1 July, Hong Kong time). */
 export function checkedThisSeason(checkedAt: string | null, day: string): boolean {
   return !!checkedAt && hkDateKey(checkedAt) >= `${seasonStartYear(day)}-07-01`;
+}
+
+/** An answer as stored: HKID numbers written A123456(7), phone numbers "+852 9123 4567". */
+export function normaliseValue(f: FieldSpec, v: string): string {
+  if (f.type === "hkid") return normaliseHkid(v) ?? v;
+  if (f.type === "phone") {
+    const { code, number } = splitPhone(v);
+    return joinPhone(code, number) || v;
+  }
+  return v;
+}
+
+/**
+ * An address the way Hong Kong Post writes it, one line per part, from the
+ * fields of a home or business address:
+ *   Flat B, 12/F, Block 3
+ *   Example Court
+ *   1 Sample Road
+ *   Mid-Levels, Hong Kong
+ */
+export function formatHkAddress(v: ProfileValues, prefix: "home" | "business"): string[] {
+  const get = (k: string) => {
+    const x = v[`${prefix}${k}`];
+    return typeof x === "string" ? x.trim() : "";
+  };
+  const unit = get("Unit");
+  const flat = unit ? `${get("FlatType") || "Flat"} ${unit}` : "";
+  const floorRaw = get("Floor");
+  const floor = !floorRaw ? "" : /^g$/i.test(floorRaw) ? "G/F" : /\/F$|floor$/i.test(floorRaw) ? floorRaw : `${floorRaw.replace(/\s*F$/i, "")}/F`;
+  const blockRaw = get("Block");
+  const block = !blockRaw ? "" : /^(block|tower|house|phase)\b/i.test(blockRaw) ? blockRaw : `Block ${blockRaw}`;
+  return [
+    [flat, floor, block].filter(Boolean).join(", "),
+    get("Building"),
+    get("Street"),
+    [get("District"), get("Region")].filter(Boolean).join(", "),
+  ].filter(Boolean);
 }
