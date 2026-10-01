@@ -39,14 +39,17 @@ export default function FileUpload({
   currentUrl,
   hasFile,
   onUploaded,
+  onSaved,
   upload,
 }: {
-  kind: 'photo' | 'hkid' | 'document';
+  kind: 'photo' | 'hkid' | 'passport' | 'document';
   label: string;
   hint?: string;
   currentUrl?: string | null;
   hasFile: boolean;
   onUploaded: (url: string | null) => void;
+  /** The file as uploaded, once it's saved (the Personal step reads an ID picture from it). */
+  onSaved?: (dataUrl: string) => void;
   upload?: (dataUrl: string) => Promise<unknown>;
 }) {
   const input = useRef<HTMLInputElement>(null);
@@ -63,9 +66,10 @@ export default function FileUpload({
         await upload(dataUrl);
         onUploaded(null);
       } else {
-        const { url } = await uploadDetailsFile(kind === 'photo' ? 'photo' : 'hkid', dataUrl);
+        const { url } = await uploadDetailsFile(kind === 'document' ? 'hkid' : kind, dataUrl);
         onUploaded(url);
       }
+      onSaved?.(dataUrl);
       setPicked((p) => (p ? { ...p, saved: true } : p));
       toast.success(`${label} saved`);
     } catch (err) {

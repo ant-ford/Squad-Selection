@@ -15,9 +15,14 @@ export function saveKitSizes(sizes: KitSizes): Promise<{ ok: true }> {
   return apiPost('/api/details/kit', { sizes });
 }
 
-/** Replaces their photo or HKID copy with a data URL (already shrunk in the browser). */
-export function uploadDetailsFile(kind: 'photo' | 'hkid', dataUrl: string): Promise<{ ok: true; url: string | null }> {
+/** Replaces their photo, HKID or passport copy with a data URL (already shrunk in the browser). */
+export function uploadDetailsFile(kind: 'photo' | 'hkid' | 'passport', dataUrl: string): Promise<{ ok: true; url: string | null }> {
   return apiPost(`/api/details/files/${kind}`, { dataUrl });
+}
+
+/** What an AI reading of their HKID or passport picture suggests for the Personal details (nothing is stored). */
+export function readIdDocument(kind: 'hkid' | 'passport', dataUrl: string): Promise<{ suggestions: Record<string, string> }> {
+  return apiPost('/api/details/read-id', { kind, dataUrl });
 }
 
 /** The end of the start-of-season check. */

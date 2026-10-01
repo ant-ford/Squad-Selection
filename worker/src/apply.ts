@@ -327,7 +327,7 @@ export function applicationGaps(p: PersonRow, view: ApplyView, who: Audience, ha
     if (bad) gaps.push(`${s.title}: ${bad}`);
   }
   if (!hasPhoto) gaps.push("Personal details: upload your photo.");
-  if (!hasHkid) gaps.push("Personal details: upload a copy of your HKID.");
+  if (!hasHkid) gaps.push("Personal details: upload a copy of your HKID, or your passport if you don't have one.");
   if (p.marital_status === "Married" && !view.hasMarriageCertificate) gaps.push("Family: upload your marriage certificate.");
   if (view.spouse) {
     if (!view.spouse.files.photo) gaps.push("Family: upload your spouse or partner's photo.");
@@ -356,8 +356,9 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
   const who = audienceOf(p.status, p.applicant_type);
   const day = today();
   const view = await getApply(env, user);
-  const own = await db(env).select<{ kind: string }>("files", `select=id,kind&person_id=${eq(p.id)}&family_member_id=is.null&kind=in.(photo,hkid)`);
-  const gaps = applicationGaps(p, view, who, own.some((f) => f.kind === "photo"), own.some((f) => f.kind === "hkid"), day);
+  const own = await db(env).select<{ kind: string }>("files", `select=id,kind&person_id=${eq(p.id)}&family_member_id=is.null&kind=in.(photo,hkid,passport)`);
+  // An HKID copy, or a passport for someone without an HKID.
+  const gaps = applicationGaps(p, view, who, own.some((f) => f.kind === "photo"), own.some((f) => f.kind === "hkid" || f.kind === "passport"), day);
   if (gaps.length) throw new HttpError(`Not quite finished:\n${gaps.map((g) => `• ${g}`).join("\n")}`, 400, "INCOMPLETE");
 
   const under18 = isUnderEighteen(p.date_of_birth, day);

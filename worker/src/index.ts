@@ -1,6 +1,6 @@
 import { AirtableError, airtableList } from "./airtable";
 import { getCached } from "./cache";
-import { handleFileRequest } from "./files";
+import { handleFileRequest, serveClubDoc } from "./files";
 import { db, SupabaseError } from "./data/supabase";
 import { shadowSummary } from "./data/shadow";
 import { backendFor } from "./data/backend";
@@ -24,6 +24,7 @@ import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
+import { readIdDocument } from "./idRead";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   completeJoinerTask,
@@ -699,6 +700,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const upload = pathname.match(/^\/api\/details\/files\/([a-z]+)$/);
         if (upload) return json(await uploadFile(env, user, upload[1], body), 200, origin);
         if (pathname === "/api/details/kit") return json(await saveKitSizes(env, user, body), 200, origin);
+        if (pathname === "/api/details/read-id") return json(await readIdDocument(env, user, body), 200, origin);
         if (pathname === "/api/details/confirm") return json(await confirmDetails(env, user), 200, origin);
       }
     }
@@ -737,6 +739,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2] === "kit") return json(await requestKit(env, user, one[1], body), 200, origin);
         if (one?.[2] === "registration") return json(await requestRegistration(env, user, one[1], body), 200, origin);
       }
+    }
+    // Club documents behind sign-in (shared/application.ts CLUB_DOCS).
+    const clubDoc = pathname.match(/^\/api\/club-docs\/([a-z-]+)$/);
+    if (method === "GET" && clubDoc) {
+      await requireAuthorizedUser(request, env);
+      return await serveClubDoc(env, clubDoc[1], origin);
     }
     if (pathname.startsWith("/api/joiner-tasks/")) {
       const user = await requireAuthorizedUser(request, env);

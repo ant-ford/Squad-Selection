@@ -162,3 +162,14 @@ describe("my details", () => {
     await expect(getMyDetails({ ...env, DATA_BACKEND: "airtable" } as Env, user)).rejects.toMatchObject({ status: 409 });
   });
 });
+
+describe("HKID or passport", () => {
+  it("needs the number of one of them, and either copy", async () => {
+    const { sectionProblem } = await import("../shared/profile");
+    expect(sectionProblem("personal", { hkidNo: "", passportNo: "" })).toMatch(/Give your HKID number. Only if/);
+    expect(sectionProblem("personal", { hkidNo: null, passportNo: "K1234567" })).toBeNull();
+    expect(sectionProblem("personal", { hkidNo: "A123456(3)", passportNo: null })).toBeNull();
+    expect(uploadBytes("passport", "data:application/pdf;base64,AAAA").type).toBe("application/pdf");
+    expect(() => uploadBytes("passport", "data:text/plain;base64,AAAA")).toThrow(/passport/);
+  });
+});

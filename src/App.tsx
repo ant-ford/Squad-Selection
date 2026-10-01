@@ -31,6 +31,7 @@ const MyDetails = lazy(() => import('./pages/MyDetails'));
 const Apply = lazy(() => import('./pages/Apply'));
 const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
+const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -132,6 +133,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/club-docs/:name',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <ClubDoc />
           </Suspense>
         ),
       },
