@@ -53,6 +53,17 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Worker enforces, so the app never keeps its own copy of it.
     sections: sectionsFor(authUser, env),
 
+    // Applicants (and people registering to join) belong on their
+    // application, not the player page.
+    applicant: user.status === "Applicant",
+
+    // Their own link for inviting someone to register to join (trials.ts):
+    // members only, once the app is on Supabase.
+    inviteLink:
+      backendFor(env, "people") === "supabase" && user.status === "Member"
+        ? `${(env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "")}/join?ref=${encodeURIComponent(user.id)}`
+        : null,
+
     // Whether the Season plans screen has anything for them: Section
     // Captains every team, coaches their own. Supabase backend only.
     seasonPlans:

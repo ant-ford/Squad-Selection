@@ -7,7 +7,7 @@ import { setAccessDenied } from './accessDenied';
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  loginWithEmail: (email: string) => Promise<void>;
+  loginWithEmail: (email: string, redirectTo?: string) => Promise<void>;
   verifyEmailOtp: (email: string, token: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -82,10 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // exists because corporate mail scanners (Outlook Safe Links, Mimecast,
   // Proofpoint) pre-fetch links to inspect them, which burns the single-use
   // magic-link token before the recipient ever clicks it.
-  const loginWithEmail = async (email: string): Promise<void> => {
+  // `redirectTo` brings the magic link back to a page (the join page); the
+  // code works wherever they are.
+  const loginWithEmail = async (email: string, redirectTo?: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: redirectTo ?? window.location.origin },
     });
     if (error) throw error;
   };

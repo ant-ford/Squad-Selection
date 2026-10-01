@@ -75,6 +75,8 @@ export interface Env {
   REVIEW_EMAIL_CC?: string;
   /** Who the review request comes from, e.g. "Anthony Ford <menscaptain@hkfchockey.com>" (blind-copied). */
   REVIEW_EMAIL_FROM?: string;
+  /** The Assistant Director of Hockey, "Name <email>": told about practice trials (trials.ts). */
+  ASSISTANT_DIRECTOR?: string;
   /** The web app's origin, for links in emails. */
   APP_ORIGIN?: string;
   /** OpenRouter API key, as a Worker secret, for the review drafts (src/reviewDrafts.ts). Unset: no drafts. */

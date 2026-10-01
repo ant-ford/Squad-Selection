@@ -373,6 +373,8 @@ export interface DetailsKit {
 export interface MyDetails {
   season: string;
   applicant: boolean;
+  /** Registering to join (an applicant at stage 1). */
+  trialist: boolean;
   /** Which questions they're asked. */
   audience: Audience;
   underEighteen: boolean;

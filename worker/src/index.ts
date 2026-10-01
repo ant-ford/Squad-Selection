@@ -16,7 +16,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
-import { requireAuthorizedUser, requireCoach, requireSection } from "./auth";
+import { requireAuthorizedUser, requireCoach, requireSection, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
@@ -26,6 +26,17 @@ import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volun
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, signApplication } from "./applicationSigning";
+import {
+  addSession,
+  declineRegistration,
+  getMyTrial,
+  invitePracticeTrial,
+  listSessions,
+  registerInterest,
+  removeSession,
+  saveMyTrial,
+  submitRegistration,
+} from "./trials";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   completeJoinerTask,
@@ -730,7 +741,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (pathname.startsWith("/api/joiners")) {
       const user = await requireAuthorizedUser(request, env);
       if (method === "GET" && pathname === "/api/joiners/options") return json(await getJoinerOptions(env, user), 200, origin);
-      const one = pathname.match(/^\/api\/joiners\/([A-Za-z0-9-]{3,40})(?:\/(invite|kit|registration))?$/);
+      const one = pathname.match(/^\/api\/joiners\/([A-Za-z0-9-]{3,40})(?:\/(invite|kit|registration|practice-trial|decline))?$/);
       if (method === "GET" && one && !one[2]) return json(await getJoiner(env, user, one[1]), 200, origin);
       if (method === "POST") {
         const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
@@ -739,8 +750,31 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2] === "invite") return json(await inviteJoiner(env, user, one[1]), 200, origin);
         if (one?.[2] === "kit") return json(await requestKit(env, user, one[1], body), 200, origin);
         if (one?.[2] === "registration") return json(await requestRegistration(env, user, one[1], body), 200, origin);
+        if (one?.[2] === "practice-trial") return json(await invitePracticeTrial(env, user, one[1], body), 200, origin);
+        if (one?.[2] === "decline") return json(await declineRegistration(env, user, one[1]), 200, origin);
       }
     }
+    // ── Registering to join (Supabase; trials.ts) ─────────────────────────
+    // Signing up works off the confirmed email alone: there's no People record yet.
+    if (method === "POST" && pathname === "/api/join/register") {
+      const email = await requireVerifiedEmail(request, env);
+      const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+      return json(await registerInterest(env, email, body), 200, origin);
+    }
+    if (pathname.startsWith("/api/trials/")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/trials/me") return json(await getMyTrial(env, user), 200, origin);
+      if (method === "GET" && pathname === "/api/trials/sessions") return json(await listSessions(env, user), 200, origin);
+      const session = pathname.match(/^\/api\/trials\/sessions\/([0-9a-f-]{36})\/remove$/);
+      if (method === "POST" && session) return json(await removeSession(env, user, session[1]), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/trials/me") return json(await saveMyTrial(env, user, body), 200, origin);
+        if (pathname === "/api/trials/submit") return json(await submitRegistration(env, user), 200, origin);
+        if (pathname === "/api/trials/sessions") return json(await addSession(env, user, body), 200, origin);
+      }
+    }
+
     // ── Signing new members' applications (Supabase; applicationSigning.ts) ──
     const signing = pathname.match(/^\/api\/applications\/([A-Za-z0-9-]{3,40})\/(sign|drafts)$/);
     if (signing) {

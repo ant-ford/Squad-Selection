@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
+import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy, UserPlus } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
@@ -22,6 +22,7 @@ import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
+import InviteDialog from '@/components/InviteDialog';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
@@ -130,6 +131,11 @@ export default function PlayerDashboard() {
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
   const [conflictHint, setConflictHint] = useState<string | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  // Members' own link for inviting someone to join (my-profile; Supabase only),
+  // on whichever address the app is open at.
+  const profileInvite = useMyProfile().data?.inviteLink;
+  const inviteLink = profileInvite ? `${window.location.origin}/join${new URL(profileInvite).search}` : null;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -271,7 +277,10 @@ export default function PlayerDashboard() {
           <Trophy className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Stats</span>
         </button>
-        <OfficersMenu items={officerItems(data)} />
+        <OfficersMenu
+          items={officerItems(data)}
+          action={inviteLink ? { label: 'Invite someone to join', icon: UserPlus, onSelect: () => setShowInvite(true) } : undefined}
+        />
         {(data.isCoach || data.isSectionCaptain) && (
           <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
             <Shield className="h-3.5 w-3.5" />
@@ -309,6 +318,7 @@ export default function PlayerDashboard() {
           <LogOut className="h-4 w-4" />
         </button>
       </AppHeader>
+      {showInvite && inviteLink && <InviteDialog link={inviteLink} onClose={() => setShowInvite(false)} />}
 
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">

@@ -16,6 +16,7 @@
  * (owner decision).
  */
 import { phoneProblem } from "./phone";
+import type { JoinerTrial } from "./trials";
 
 export const APPLICATION_TYPES = ["Existing HKFC Member", "New HKFC Member"] as const;
 export const CATEGORY_TYPES = ["Sports Preferred", "Junior (21-27)", "Junior (under 21)", "Sports Debenture", "Sports Subscriber"] as const;
@@ -69,6 +70,8 @@ export interface OfficeChoice {
 
 /** GET /api/joiners/options: who can be picked for each office. */
 export interface JoinerOptions {
+  /** Active teams, for a practice trial. */
+  teams: string[];
   sponsors: OfficeChoice[];
   officers: OfficeChoice[];
   chairs: OfficeChoice[];
@@ -95,6 +98,8 @@ export interface JoinerView {
   invitedAt: string | null;
   kit: JoinerStepState | null;
   registration: JoinerStepState | null;
+  /** For someone who registered to join (stage 1). */
+  trial: JoinerTrial | null;
 }
 
 /** The first thing wrong with the form, or null. */

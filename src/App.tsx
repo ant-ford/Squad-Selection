@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
+import { useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
@@ -33,9 +34,20 @@ const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 const SignApplication = lazy(() => import('./pages/SignApplication'));
+const Join = lazy(() => import('./pages/Join'));
+const TrialSessions = lazy(() => import('./pages/TrialSessions'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
+
+/** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
+function pendingJoin(): boolean {
+  try {
+    return localStorage.getItem('join:pending') === '1';
+  } catch {
+    return false;
+  }
+}
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -45,8 +57,17 @@ function AuthGate() {
   const accessDenied = useSyncExternalStore(subscribeAccessDenied, getAccessDenied, () => null);
   if (isLoading) return <AppLoading />;
   if (!user) return <Login />;
+  if (accessDenied && pendingJoin()) return <Navigate to="/join" replace />;
   if (accessDenied) return <AccessNotActive message={accessDenied} />;
   return <Outlet />;
+}
+
+/** The player page, or for an applicant (or someone registering to join) their application. */
+function Home() {
+  const { data, isLoading } = useMyProfile();
+  if (isLoading) return <AppLoading />;
+  if (data?.applicant) return <Navigate to="/apply" replace />;
+  return <PlayerDashboard />;
 }
 
 /** Minimal skeleton shown while a lazy coach route loads. */
@@ -92,11 +113,21 @@ function RouteError() {
 }
 
 const router = createBrowserRouter([
+  // Open to anyone with a member's link: it signs them up (pages/Join.tsx).
+  {
+    path: '/join',
+    errorElement: <RouteError />,
+    element: (
+      <Suspense fallback={<RouteSkeleton />}>
+        <Join />
+      </Suspense>
+    ),
+  },
   {
     element: <AuthGate />,
     errorElement: <RouteError />,
     children: [
-      { path: '/', element: <PlayerDashboard /> },
+      { path: '/', element: <Home /> },
       {
         path: '/chairman',
         element: (
@@ -134,6 +165,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/trial-sessions',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <TrialSessions />
           </Suspense>
         ),
       },

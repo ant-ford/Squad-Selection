@@ -29,7 +29,8 @@ function writePendingEmail(value: string | null) {
   }
 }
 
-export default function Login() {
+/** The sign-in screen; the join page gives its own title, intro and return address. */
+export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter your email to sign in', redirectTo }: { title?: string; intro?: string; redirectTo?: string } = {}) {
   const [email, setEmail] = useState(() => readPendingEmail());
   const [code, setCode] = useState('');
   // 'request' collects the email; 'verify' accepts the code. We resume
@@ -48,7 +49,7 @@ export default function Login() {
   const sendEmail = async (): Promise<boolean> => {
     setSending(true);
     try {
-      await loginWithEmail(normalizeEmail(email));
+      await loginWithEmail(normalizeEmail(email), redirectTo);
       toast.success('Email sent! Use the link or enter the code below.');
       return true;
     } catch (err: unknown) {
@@ -115,13 +116,13 @@ export default function Login() {
           />
         </div>
         <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
-          HKFC Squad Selection
+          {title}
         </h1>
 
         {step === 'request' ? (
           <>
             <p className="text-muted-foreground mb-6 text-center">
-              Enter your email to sign in
+              {intro}
             </p>
             <form onSubmit={handleRequest}>
               <input
