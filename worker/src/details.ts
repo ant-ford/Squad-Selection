@@ -16,12 +16,23 @@ import { isUnderEighteen } from "./declarations";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
-import { PROFILE_SECTIONS, checkValue, fieldsFor, type MyDetails, type ProfileValues, type SectionKey } from "../../shared/profile";
+import {
+  PROFILE_SECTIONS,
+  audienceOf,
+  checkValue,
+  fieldsFor,
+  sectionFor,
+  sectionProblem,
+  type Audience,
+  type MyDetails,
+  type ProfileValues,
+  type SectionKey,
+} from "../../shared/profile";
 
 const ALL_FIELDS = PROFILE_SECTIONS.flatMap((s) => s.fields);
 
 const PERSON_COLUMNS = [
-  "id,api_id,status,email,playing_position,shirt_number_id,profile_updated_at",
+  "id,api_id,status,applicant_type,email,playing_position,shirt_number_id,profile_updated_at",
   "member_type,category_type,player_coach,membership_no,join_date,commitment_end_date",
   ...ALL_FIELDS.map((f) => f.column),
 ].join(",");
@@ -30,6 +41,7 @@ type PersonRow = Record<string, unknown> & {
   id: string;
   api_id: string;
   status: string | null;
+  applicant_type: string | null;
   email: string | null;
   date_of_birth: string | null;
   playing_position: string | null;
@@ -45,6 +57,7 @@ function requireSupabase(env: Env): void {
 
 const today = () => hkDateKey(new Date().toISOString());
 const isApplicant = (p: PersonRow) => p.status === "Applicant";
+const audience = (p: PersonRow) => audienceOf(p.status, p.applicant_type);
 
 async function loadPerson(env: Env, personApiId: string): Promise<PersonRow> {
   const row = await db(env).one<PersonRow>("people", `select=${PERSON_COLUMNS}&api_id=${eq(personApiId)}`);
@@ -113,6 +126,7 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
   return {
     season,
     applicant: isApplicant(p),
+    audience: audience(p),
     underEighteen: isUnderEighteen(p.date_of_birth, today()),
     email: p.email,
     values,
@@ -132,15 +146,18 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
 }
 
 /** Checks one section's answers; returns the People columns to write. */
-export function parseSection(key: string, body: Record<string, unknown>, applicant: boolean): Record<string, string | string[] | number | boolean | null> {
+export function parseSection(key: string, body: Record<string, unknown>, saved: Audience): Record<string, string | string[] | number | boolean | null> {
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
   if (!section) throw new HttpError("Unknown section.", 404, "NOT_FOUND");
   const values = (body.values ?? {}) as Record<string, unknown>;
+  // On the application step the questions follow the type they've just chosen.
+  const who: Audience = key === "application" && saved !== "member" ? audienceOf("Applicant", values.applicantType as string) : saved;
+  if (!sectionFor(section, who)) throw new HttpError(`${section.title} isn't asked of you.`, 400, "INVALID_INPUT");
   // Not playing this season: only that answer is saved (the Fillout form hid the rest).
-  if (key === "hockey" && !applicant && values.active === false) return { active: false };
+  if (key === "hockey" && who === "member" && values.active === false) return { active: false };
   const patch: Record<string, string | string[] | number | boolean | null> = {};
-  for (const f of fieldsFor(section, applicant)) {
-    const problem = checkValue(f, values[f.key]);
+  for (const f of fieldsFor(section, who)) {
+    const problem = checkValue(f, values[f.key], who);
     if (problem) throw new HttpError(problem, 400, "INVALID_INPUT");
     const v = values[f.key];
     patch[f.column] =
@@ -149,6 +166,8 @@ export function parseSection(key: string, body: Record<string, unknown>, applica
       : f.type === "number" ? (v === null || v === undefined || v === "" ? null : Number(v))
       : typeof v === "string" && v.trim() ? v.trim() : null;
   }
+  const across = sectionProblem(section.key, values as ProfileValues);
+  if (across) throw new HttpError(across, 400, "INVALID_INPUT");
   return patch;
 }
 
@@ -157,13 +176,10 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
-  if (section?.applicantOnly && !isApplicant(p)) {
-    throw new HttpError("Bank and billing details are asked of new joiners only.", 400, "INVALID_INPUT");
-  }
   if (section?.underEighteenOnly && !isUnderEighteen(p.date_of_birth, today())) {
     throw new HttpError("Only under-18s give a parent or guardian's details.", 400, "INVALID_INPUT");
   }
-  const patch = parseSection(key, body, isApplicant(p));
+  const patch = parseSection(key, body, audience(p));
   await db(env).update("people", `id=${eq(p.id)}`, patch);
   await invalidateForTables(env, [TABLES.player]);
   return { ok: true };

@@ -1,16 +1,17 @@
-import type { FieldSpec, ProfileValues } from '@shared/profile';
+import { isRequired, type Audience, type FieldSpec, type ProfileValues } from '@shared/profile';
 
 export const fieldInput =
   'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
 
 type Value = string | string[] | boolean | null;
 
-function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (v: Value) => void }) {
+function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChange: (v: Value) => void; who: Audience }) {
   const id = `f-${f.key}`;
+  const required = isRequired(f, who);
   const label = (
     <label htmlFor={id} className="text-xs font-medium text-foreground">
       {f.label}
-      {f.required && <span className="text-destructive"> *</span>}
+      {required && <span className="text-destructive"> *</span>}
     </label>
   );
   const hint = f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>;
@@ -21,7 +22,7 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (
       <fieldset className="space-y-1 sm:col-span-2">
         <legend className="text-xs font-medium text-foreground">
           {f.label}
-          {f.required && <span className="text-destructive"> *</span>}
+          {required && <span className="text-destructive"> *</span>}
         </legend>
         <div className="flex gap-2" role="radiogroup">
           {[true, false].map((b) => (
@@ -45,7 +46,10 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (
     const list = Array.isArray(value) ? value : [];
     return (
       <fieldset className="sm:col-span-2">
-        <legend className="text-xs font-medium text-foreground">{f.label}</legend>
+        <legend className="text-xs font-medium text-foreground">
+          {f.label}
+          {required && <span className="text-destructive"> *</span>}
+        </legend>
         <div className="grid sm:grid-cols-2 gap-x-4">
           {f.options!.map((o) => (
             <label key={o} className="flex gap-2 items-start py-1 text-sm text-foreground">
@@ -68,7 +72,7 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (
       <div className="space-y-1">
         {label}
         <select id={id} className={fieldInput} value={str} onChange={(e) => onChange(e.target.value || null)}>
-          <option value="">{f.required ? 'Choose…' : 'None'}</option>
+          <option value="">{required ? 'Choose…' : 'None'}</option>
           {/* An older answer not on today's list still shows. */}
           {[...(str && !f.options!.includes(str) ? [str] : []), ...f.options!].map((o) => (
             <option key={o} value={o}>
@@ -115,11 +119,22 @@ function Field({ f, value, onChange }: { f: FieldSpec; value: Value; onChange: (
 }
 
 /** A section's questions, drawn from shared/profile.ts. Controlled. */
-export default function ProfileFields({ fields, values, onChange }: { fields: FieldSpec[]; values: ProfileValues; onChange: (next: ProfileValues) => void }) {
+export default function ProfileFields({
+  fields,
+  values,
+  onChange,
+  who = 'member',
+}: {
+  fields: FieldSpec[];
+  values: ProfileValues;
+  onChange: (next: ProfileValues) => void;
+  /** Who is answering: decides which questions are required. */
+  who?: Audience;
+}) {
   return (
     <div className="grid sm:grid-cols-2 gap-3">
       {fields.map((f) => (
-        <Field key={f.key} f={f} value={values[f.key] ?? null} onChange={(v) => onChange({ ...values, [f.key]: v })} />
+        <Field key={f.key} f={f} who={who} value={values[f.key] ?? null} onChange={(v) => onChange({ ...values, [f.key]: v })} />
       ))}
     </div>
   );

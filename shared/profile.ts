@@ -4,6 +4,10 @@
  * choices and rules. The Worker validates against it and the screens are
  * drawn from it, so the two can't disagree.
  *
+ * Who is asked what (an Audience): members; applicants who are existing
+ * HKFC members; applicants who are new HKFC members. The applicants' rules
+ * follow the Fillout form's own visibility settings.
+ *
  * Owner decisions, 2026-10-01: one set of sections for both forms;
  * members check them one section per screen at the start of each season;
  * bank and billing details are asked of new joiners only;
@@ -20,6 +24,10 @@ import { seasonStartYear } from "./membershipInsights";
 
 export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno";
 
+/** Who is answering: a member, or an applicant who is an existing or a new HKFC member. */
+export type Audience = "member" | "existing" | "new";
+export const APPLICANTS: Audience[] = ["existing", "new"];
+
 export interface FieldSpec {
   key: string;
   /** The People column. */
@@ -27,15 +35,14 @@ export interface FieldSpec {
   label: string;
   type: FieldType;
   options?: readonly string[];
-  required?: boolean;
+  /** Required of everyone asked (true), or only of these. */
+  required?: boolean | Audience[];
   hint?: string;
-  /** Asked of applicants only (the club application needs it). */
-  applicantOnly?: boolean;
-  /** Asked of members only. */
-  memberOnly?: boolean;
+  /** Who is asked; everyone when absent. */
+  audiences?: Audience[];
 }
 
-export type SectionKey = "personal" | "emergency" | "contact" | "work" | "guardian" | "hockey" | "billing";
+export type SectionKey = "application" | "personal" | "emergency" | "contact" | "work" | "guardian" | "hockey" | "background" | "billing";
 
 export interface SectionSpec {
   key: SectionKey;
@@ -44,8 +51,16 @@ export interface SectionSpec {
   fields: FieldSpec[];
   /** Shown only to under-18s. */
   underEighteenOnly?: boolean;
-  /** Asked of new joiners (applicants) only. */
-  applicantOnly?: boolean;
+  /** Who is asked; everyone when absent. */
+  audiences?: Audience[];
+}
+
+export const isRequired = (f: FieldSpec, who: Audience) => f.required === true || (Array.isArray(f.required) && f.required.includes(who));
+
+/** A person's audience from their People record. */
+export function audienceOf(status: string | null, applicantType: string | null): Audience {
+  if (status !== "Applicant") return "member";
+  return applicantType === "Existing HKFC Member" ? "existing" : "new";
 }
 
 export const NATIONALITIES = [
@@ -78,23 +93,62 @@ export const BANKS: Record<string, string> = {
 
 const CHANNELS = ["Personal Email", "Office Email", "Spouse Personal Email", "Spouse Office Email"] as const;
 
-const address = (prefix: "home" | "business", label: string, flatTypes: readonly string[]): FieldSpec[] => [
-  { key: `${prefix}FlatType`, column: `${prefix}_flat_type`, label: `${label}: flat, room, apartment…`, type: "select", options: flatTypes },
-  { key: `${prefix}Unit`, column: `${prefix}_unit`, label: "Letter / number / reference", type: "text" },
+/** An address; `required` lists who must give its main parts (applicants, for the home address). */
+const address = (prefix: "home" | "business", label: string, flatTypes: readonly string[], required?: Audience[]): FieldSpec[] => [
+  { key: `${prefix}FlatType`, column: `${prefix}_flat_type`, label: `${label}: flat, room, apartment…`, type: "select", options: flatTypes, required },
+  { key: `${prefix}Unit`, column: `${prefix}_unit`, label: "Letter / number / reference", type: "text", required },
   { key: `${prefix}Floor`, column: `${prefix}_floor`, label: "Floor", type: "text" },
   { key: `${prefix}Block`, column: `${prefix}_block`, label: "Block", type: "text" },
   { key: `${prefix}Building`, column: `${prefix}_building`, label: "Building", type: "text" },
-  { key: `${prefix}Street`, column: `${prefix}_street`, label: "Street", type: "text" },
-  { key: `${prefix}District`, column: `${prefix}_district`, label: "District", type: "suggest", options: HK_DISTRICTS },
-  { key: `${prefix}Region`, column: `${prefix}_region`, label: "Region", type: "select", options: REGIONS },
+  { key: `${prefix}Street`, column: `${prefix}_street`, label: "Street", type: "text", required },
+  { key: `${prefix}District`, column: `${prefix}_district`, label: "District", type: "suggest", options: HK_DISTRICTS, required },
+  { key: `${prefix}Region`, column: `${prefix}_region`, label: "Region", type: "select", options: REGIONS, required },
 ];
 
 export const PROFILE_SECTIONS: SectionSpec[] = [
   {
+    key: "application",
+    title: "Your application",
+    audiences: APPLICANTS,
+    fields: [
+      {
+        key: "applicantType",
+        column: "applicant_type",
+        label: "Type of application",
+        type: "select",
+        options: ["Existing HKFC Member", "New HKFC Member"],
+        required: true,
+        hint: "Child or Junior Associate members switching to a Junior or Sports Preferred membership apply as a New HKFC Member.",
+      },
+      { key: "membershipNo", column: "membership_no", label: "Your HKFC membership no.", type: "text", required: true, audiences: ["existing"] },
+      {
+        key: "memberType",
+        column: "member_type",
+        label: "Member type",
+        type: "select",
+        options: ["Main", "Spouse", "Child", "Partner"],
+        required: true,
+        audiences: ["existing"],
+        hint: "Main only if you're the primary member.",
+      },
+      {
+        key: "categoryType",
+        column: "category_type",
+        label: "Membership category",
+        type: "select",
+        options: ["Sports Preferred", "Junior (21-27)", "Junior (under 21)", "Sports Debenture", "Sports Subscriber"],
+        required: true,
+      },
+      { key: "playerCoach", column: "player_coach", label: "Joining as", type: "multi", options: ["Player", "Coach"], required: true, audiences: ["new"] },
+      { key: "billingChannels", column: "billing_channels", label: "Send club bills to", type: "multi", options: CHANNELS, required: true, audiences: ["new"] },
+      { key: "correspondenceChannels", column: "correspondence_channels", label: "Send club letters to", type: "multi", options: CHANNELS, required: true, audiences: ["new"] },
+    ],
+  },
+  {
     key: "personal",
     title: "Personal details",
     fields: [
-      { key: "salutation", column: "salutation", label: "Title", type: "select", options: ["Mr", "Mrs", "Ms", "Miss", "Dr", "Professor"], applicantOnly: true },
+      { key: "salutation", column: "salutation", label: "Title", type: "select", options: ["Mr", "Mrs", "Ms", "Miss", "Dr", "Professor"], audiences: ["new"] },
       { key: "surname", column: "surname", label: "Surname", type: "text", required: true },
       { key: "givenNames", column: "given_names", label: "Given name(s)", type: "text", required: true, hint: "As on your HKID or passport." },
       { key: "preferredName", column: "preferred_name", label: "Preferred name", type: "text", required: true, hint: "What the app and your teammates call you." },
@@ -104,24 +158,16 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
       { key: "hkidNo", column: "hkid_no", label: "HKID no.", type: "text", required: true, hint: "e.g. A123456(7)" },
       { key: "passportNo", column: "passport_no", label: "Passport no.", type: "text" },
       { key: "nationality", column: "nationality", label: "Nationality", type: "suggest", options: NATIONALITIES, required: true },
-      { key: "placeOfBirth", column: "place_of_birth", label: "Place of birth", type: "text", applicantOnly: true },
-      { key: "maritalStatus", column: "marital_status", label: "Marital status", type: "select", options: ["Single", "Married", "Partner"], applicantOnly: true },
-      { key: "arrivedInHkOn", column: "arrived_in_hk_on", label: "Date of arrival in Hong Kong", type: "date", applicantOnly: true },
+      { key: "maritalStatus", column: "marital_status", label: "Marital status", type: "select", options: ["Single", "Married", "Partner"], audiences: APPLICANTS, required: true },
+      { key: "placeOfBirth", column: "place_of_birth", label: "Place of birth", type: "text", audiences: ["new"], required: true },
+      { key: "arrivedInHkOn", column: "arrived_in_hk_on", label: "Date of arrival in Hong Kong", type: "date", audiences: ["new"], required: true },
       {
         key: "academicQualifications",
         column: "academic_qualifications",
         label: "Academic qualifications",
         type: "multi",
         options: ["Secondary", "Diploma / Certificate / Associate Degree", "Bachelor's Degree", "Post-Graduate / Master's Degree", "Doctorate / PHD / Post-Doctorate", "Other"],
-        applicantOnly: true,
-      },
-      {
-        key: "aeTraining",
-        column: "ae_training",
-        label: "First aid or A&E training",
-        type: "select",
-        options: ["Yes, I work in the medical field", "Yes, I have basic A&E knowledge or first aid training", "No, I do not have medical training"],
-        applicantOnly: true,
+        audiences: ["new"],
       },
     ],
   },
@@ -140,7 +186,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
     fields: [
       { key: "mobileNo", column: "mobile_no", label: "Mobile no. (WhatsApp)", type: "phone", required: true },
       { key: "telephoneNo", column: "telephone_no", label: "Home telephone no.", type: "phone" },
-      ...address("home", "Home address", ["Flat", "Room", "Apartment", "Suite", "House"]),
+      ...address("home", "Home address", ["Flat", "Room", "Apartment", "Suite", "House"], APPLICANTS),
     ],
   },
   {
@@ -160,7 +206,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
     key: "hockey",
     title: "Your hockey this season",
     fields: [
-      { key: "active", column: "active", label: "Will you be an active member this season?", type: "yesno", required: true, memberOnly: true },
+      { key: "active", column: "active", label: "Will you be an active member this season?", type: "yesno", required: true, audiences: ["member"] },
       { key: "playingPosition", column: "playing_position", label: "Playing position", type: "select", options: ["Goalkeeper", "Defender", "Midfielder", "Forward", "Flexible/Varies"], required: true },
       {
         key: "playingLevel",
@@ -168,28 +214,37 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
         label: "Levels you've played at",
         type: "multi",
         options: ["Premier League", "Division 1", "Division 2", "Division 3", "Division 4", "Division 5", "Division 6"],
+        required: APPLICANTS,
       },
-      { key: "selectionComments", column: "selection_comments", label: "Selection comments and coach/S&C requests", type: "textarea", memberOnly: true },
-      { key: "improvementIdeas", column: "improvement_ideas", label: "Feedback and ideas", type: "textarea", memberOnly: true },
+      { key: "selectionComments", column: "selection_comments", label: "Selection comments and coach/S&C requests", type: "textarea", audiences: ["member"] },
+      { key: "improvementIdeas", column: "improvement_ideas", label: "Feedback and ideas", type: "textarea", audiences: ["member"] },
+    ],
+  },
+  {
+    key: "background",
+    title: "About you",
+    intro: "For your sponsor and the club: the hockey and other sport you've played, and what you and your family enjoy.",
+    audiences: ["new"],
+    fields: [
+      { key: "sportsBackground", column: "sports_background", label: "Sports background and involvement", type: "textarea", required: true },
+      { key: "personalInterest", column: "personal_interest", label: "Personal and family interests", type: "textarea", required: true },
     ],
   },
   {
     key: "billing",
     title: "Bank and billing",
     intro: "For the club's direct debit of your monthly account, on your Sports Associate membership forms.",
-    // New joiners only (owner, 2026-10-01): used once, for their associate membership forms.
-    applicantOnly: true,
+    // New joiners who are new HKFC members (owner, 2026-10-01; the Fillout form's rule).
+    audiences: ["new"],
     fields: [
       { key: "billPayer", column: "bill_payer", label: "Who pays the club account?", type: "select", options: ["Applicant", "Spouse / Partner", "Guardian / Parent"] },
       { key: "bankName", column: "bank_name", label: "Bank", type: "select", options: Object.keys(BANKS) },
-      { key: "bankBranchNo", column: "bank_branch_no", label: "Branch no.", type: "text" },
-      { key: "bankAccountNo", column: "bank_account_no", label: "Account no.", type: "text" },
+      { key: "bankBranchNo", column: "bank_branch_no", label: "Branch no.", type: "text", required: true },
+      { key: "bankAccountNo", column: "bank_account_no", label: "Account no.", type: "text", required: true },
       { key: "bankContactNo", column: "bank_contact_no", label: "Contact no. for the bank", type: "phone" },
-      { key: "bankPaymentLimit", column: "bank_payment_limit", label: "Payment limit", type: "select", options: ["Unlimited", "Each Payment", "Each Month"] },
+      { key: "bankPaymentLimit", column: "bank_payment_limit", label: "Payment limit", type: "select", options: ["Unlimited", "Each Payment", "Each Month"], required: true },
       { key: "bankPaymentLimitAmount", column: "bank_payment_limit_amount", label: "Limit amount (HK$)", type: "number", hint: "Unless the limit is Unlimited." },
       { key: "guardianBankAccountName", column: "guardian_bank_account_name", label: "Parent or guardian's name on the account", type: "text", hint: "If a parent or guardian pays." },
-      { key: "billingChannels", column: "billing_channels", label: "Send bills to", type: "multi", options: CHANNELS },
-      { key: "correspondenceChannels", column: "correspondence_channels", label: "Send club letters to", type: "multi", options: CHANNELS },
     ],
   },
   {
@@ -206,9 +261,26 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
   },
 ];
 
-/** The fields a person answers in a section: applicant-only ones for applicants, member-only ones for members. */
-export function fieldsFor(section: SectionSpec, applicant: boolean): FieldSpec[] {
-  return section.fields.filter((f) => (applicant ? !f.memberOnly : !f.applicantOnly));
+/** Whether a section is asked of this audience. */
+export const sectionFor = (section: SectionSpec, who: Audience) => !section.audiences || section.audiences.includes(who);
+
+/** The fields a person answers in a section. */
+export function fieldsFor(section: SectionSpec, who: Audience): FieldSpec[] {
+  return section.fields.filter((f) => !f.audiences || f.audiences.includes(who));
+}
+
+/** Rules across fields that the field list can't say on its own. */
+export function sectionProblem(key: SectionKey, v: ProfileValues): string | null {
+  if (key === "billing") {
+    const amount = v.bankPaymentLimitAmount;
+    if (v.bankPaymentLimit && v.bankPaymentLimit !== "Unlimited" && (amount === null || amount === undefined || amount === "")) {
+      return "Give the limit amount.";
+    }
+    if (v.billPayer === "Guardian / Parent" && !(typeof v.guardianBankAccountName === "string" && v.guardianBankAccountName.trim())) {
+      return "Give the parent or guardian's name on the account.";
+    }
+  }
+  return null;
 }
 
 export type ProfileValues = Record<string, string | string[] | boolean | null>;
@@ -236,6 +308,8 @@ export interface DetailsKit {
 export interface MyDetails {
   season: string;
   applicant: boolean;
+  /** Which questions they're asked. */
+  audience: Audience;
   underEighteen: boolean;
   /** The sign-in email; changing it goes through the Membership Officer. */
   email: string | null;
@@ -250,13 +324,14 @@ export interface MyDetails {
 }
 
 /** Loose checks, the same in the browser and the Worker. */
-export function checkValue(f: FieldSpec, v: unknown): string | null {
+export function checkValue(f: FieldSpec, v: unknown, who: Audience = "member"): string | null {
+  const required = isRequired(f, who);
   if (f.type === "yesno") {
     if (v === true || v === false) return null;
-    return f.required ? `${f.label} Choose yes or no.` : null;
+    return required ? `${f.label} Choose yes or no.` : null;
   }
   if (f.type === "number") {
-    if (v === null || v === undefined || v === "") return f.required ? `${f.label} is needed.` : null;
+    if (v === null || v === undefined || v === "") return required ? `${f.label} is needed.` : null;
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) && n >= 0 && n < 1e10 ? null : `${f.label}: that isn't a number.`;
   }
@@ -264,12 +339,12 @@ export function checkValue(f: FieldSpec, v: unknown): string | null {
     if (v !== undefined && v !== null && !Array.isArray(v)) return `${f.label}: choose from the list.`;
     const list = (v ?? []) as unknown[];
     if (list.some((x) => typeof x !== "string" || !f.options!.includes(x))) return `${f.label}: choose from the list.`;
-    if (f.required && list.length === 0) return `${f.label} is needed.`;
+    if (required && list.length === 0) return `${f.label} is needed.`;
     return null;
   }
   const s = typeof v === "string" ? v.trim() : v === null || v === undefined ? "" : null;
   if (s === null) return `${f.label}: that isn't a valid answer.`;
-  if (!s) return f.required ? `${f.label} is needed.` : null;
+  if (!s) return required ? `${f.label} is needed.` : null;
   if (s.length > (f.type === "textarea" ? 2000 : 200)) return `${f.label} is too long.`;
   if (f.type === "select" && !f.options!.includes(s)) return `${f.label}: choose from the list.`;
   if (f.type === "email" && !/^\S+@\S+\.\S+$/.test(s)) return `${f.label}: that doesn't look like an email address.`;

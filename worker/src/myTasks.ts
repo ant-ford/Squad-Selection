@@ -107,7 +107,9 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         const first = text(r.preferredName) ?? text(r.givenNames);
         const subject = [first, text(r.surname)].filter(Boolean).join(" ") || "An applicant";
         if (stage === INVITED_STAGE) {
-          add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: text(r.joinerFormUrl) });
+          // On Supabase, Eddy's own application screen (src/apply.ts); on Airtable, the Fillout form.
+          const inEddy = backendFor(env, "people") === "supabase";
+          add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: inEddy ? "/apply" : text(r.joinerFormUrl) });
           continue;
         }
         const signer = SIGNERS[stage];

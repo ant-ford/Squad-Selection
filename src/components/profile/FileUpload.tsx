@@ -27,8 +27,9 @@ async function prepare(file: File): Promise<string> {
 }
 
 /**
- * Upload (or replace) their photo or a copy of their HKID. The photo shows
- * as a preview; the HKID copy only says one is on file.
+ * Upload (or replace) a photo or a document (HKID, certificate). A photo
+ * shows as a preview; a document only says one is on file. `upload` sends it
+ * somewhere other than the person's own photo or HKID (a family member's).
  */
 export default function FileUpload({
   kind,
@@ -37,13 +38,15 @@ export default function FileUpload({
   currentUrl,
   hasFile,
   onUploaded,
+  upload,
 }: {
-  kind: 'photo' | 'hkid';
+  kind: 'photo' | 'hkid' | 'document';
   label: string;
   hint?: string;
   currentUrl?: string | null;
   hasFile: boolean;
   onUploaded: (url: string | null) => void;
+  upload?: (dataUrl: string) => Promise<unknown>;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -51,9 +54,15 @@ export default function FileUpload({
     if (!file) return;
     setBusy(true);
     try {
-      const { url } = await uploadDetailsFile(kind, await prepare(file));
-      toast.success(kind === 'photo' ? 'Photo saved' : 'HKID copy saved');
-      onUploaded(url);
+      const dataUrl = await prepare(file);
+      if (upload) {
+        await upload(dataUrl);
+        onUploaded(null);
+      } else {
+        const { url } = await uploadDetailsFile(kind === 'photo' ? 'photo' : 'hkid', dataUrl);
+        onUploaded(url);
+      }
+      toast.success(`${label} saved`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't upload that file. Try another, or try again.");
     } finally {
@@ -63,7 +72,7 @@ export default function FileUpload({
   };
   return (
     <div className="flex items-center gap-3 sm:col-span-2">
-      {kind === 'photo' && (
+      {kind === 'photo' && !upload && (
         <div className="h-16 w-16 shrink-0 rounded-full bg-muted overflow-hidden flex items-center justify-center">
           {currentUrl ? <img src={currentUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs text-muted-foreground">No photo</span>}
         </div>
@@ -71,7 +80,7 @@ export default function FileUpload({
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-foreground">{label}</p>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-        {kind === 'hkid' && <p className="text-[11px] text-muted-foreground">{hasFile ? 'A copy is on file.' : 'None on file yet.'}</p>}
+        {kind !== 'photo' && <p className="text-[11px] text-muted-foreground">{hasFile ? 'A copy is on file.' : 'None on file yet.'}</p>}
       </div>
       <input
         ref={input}

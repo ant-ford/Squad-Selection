@@ -25,34 +25,43 @@ const personal = {
 
 describe("my details", () => {
   it("checks a section's answers and writes only its columns, applicant-only questions for applicants alone", () => {
-    const member = parseSection("personal", { values: { ...personal, maritalStatus: "Married" } }, false);
+    const member = parseSection("personal", { values: { ...personal, maritalStatus: "Married" } }, "member");
     expect(member).toMatchObject({ surname: "Lee", given_names: "Sam", hkid_no: "A123456(7)", chinese_name: null });
     expect(member).not.toHaveProperty("marital_status");
-    expect(parseSection("personal", { values: { ...personal, maritalStatus: "Married" } }, true)).toMatchObject({ marital_status: "Married" });
-    expect(() => parseSection("personal", { values: { ...personal, surname: " " } }, false)).toThrow(/Surname is needed/);
-    expect(() => parseSection("personal", { values: { ...personal, gender: "Other" } }, false)).toThrow(/choose from the list/);
-    expect(() => parseSection("nope", { values: {} }, false)).toThrow(/Unknown section/);
+    const newcomer = { ...personal, maritalStatus: "Married", placeOfBirth: "London", arrivedInHkOn: "2020-01-01" };
+    expect(parseSection("personal", { values: newcomer }, "new")).toMatchObject({ marital_status: "Married", place_of_birth: "London" });
+    // New HKFC members also give where they were born and when they arrived; existing ones don't.
+    expect(() => parseSection("personal", { values: { ...personal, maritalStatus: "Married" } }, "new")).toThrow(/Place of birth/);
+    expect(parseSection("personal", { values: { ...personal, maritalStatus: "Single" } }, "existing")).not.toHaveProperty("place_of_birth");
+    expect(() => parseSection("personal", { values: { ...personal, surname: " " } }, "member")).toThrow(/Surname is needed/);
+    expect(() => parseSection("personal", { values: { ...personal, gender: "Other" } }, "member")).toThrow(/choose from the list/);
+    expect(() => parseSection("nope", { values: {} }, "member")).toThrow(/Unknown section/);
   });
 
   it("saves only 'not active' when a member won't play this season, and the hockey answers when they will", () => {
-    expect(parseSection("hockey", { values: { active: false, playingPosition: "" } }, false)).toEqual({ active: false });
-    expect(parseSection("hockey", { values: { active: true, playingPosition: "Goalkeeper", playingLevel: ["Division 2"] } }, false)).toMatchObject({
+    expect(parseSection("hockey", { values: { active: false, playingPosition: "" } }, "member")).toEqual({ active: false });
+    expect(parseSection("hockey", { values: { active: true, playingPosition: "Goalkeeper", playingLevel: ["Division 2"] } }, "member")).toMatchObject({
       active: true, playing_position: "Goalkeeper", playing_level: ["Division 2"], selection_comments: null,
     });
-    expect(() => parseSection("hockey", { values: { playingPosition: "Goalkeeper" } }, false)).toThrow(/active member/);
+    expect(() => parseSection("hockey", { values: { playingPosition: "Goalkeeper" } }, "member")).toThrow(/active member/);
     // Applicants aren't asked whether they'll be active, or for selection comments.
-    expect(parseSection("hockey", { values: { playingPosition: "Forward" } }, true)).toEqual({ playing_position: "Forward", playing_level: [] });
+    expect(parseSection("hockey", { values: { playingPosition: "Forward", playingLevel: ["Division 3"] } }, "new")).toEqual({ playing_position: "Forward", playing_level: ["Division 3"] });
+    expect(() => parseSection("hockey", { values: { playingPosition: "Forward" } }, "new")).toThrow(/Levels/);
   });
 
-  it("asks bank details of new joiners only, and checks the limit amount is a number", async () => {
+  it("asks bank details of new HKFC members only, with the rules across its answers", async () => {
     fake({ people: [{ id: "u1", api_id: "recME", status: "Member" }] });
-    await expect(saveSection(env, user, "billing", { values: { bankName: "HSBC" } })).rejects.toThrow(/new joiners only/);
-    expect(parseSection("billing", { values: {} }, true)).toMatchObject({ bank_name: null, bank_payment_limit_amount: null, billing_channels: [] });
-    expect(parseSection("billing", { values: { bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, true)).toMatchObject({
+    await expect(saveSection(env, user, "billing", { values: { bankName: "HSBC" } })).rejects.toThrow(/isn't asked of you/);
+    expect(() => parseSection("billing", { values: {} }, "existing")).toThrow(/isn't asked of you/);
+    const bank = { bankBranchNo: "123", bankAccountNo: "456789", bankPaymentLimit: "Unlimited" };
+    expect(parseSection("billing", { values: bank }, "new")).toMatchObject({ bank_branch_no: "123", bank_payment_limit_amount: null });
+    expect(() => parseSection("billing", { values: { ...bank, bankPaymentLimit: "Each Month" } }, "new")).toThrow(/limit amount/);
+    expect(() => parseSection("billing", { values: { ...bank, billPayer: "Guardian / Parent" } }, "new")).toThrow(/parent or guardian's name/);
+    expect(parseSection("billing", { values: { ...bank, bankName: "HSBC", bankPaymentLimit: "Each Month", bankPaymentLimitAmount: "5000" } }, "new")).toMatchObject({
       bank_name: "HSBC", bank_payment_limit: "Each Month", bank_payment_limit_amount: 5000,
     });
-    expect(() => parseSection("billing", { values: { bankPaymentLimitAmount: "lots" } }, true)).toThrow(/number/);
-    expect(() => parseSection("billing", { values: { bankName: "Bank of Nowhere" } }, true)).toThrow(/list/);
+    expect(() => parseSection("billing", { values: { ...bank, bankPaymentLimitAmount: "lots" } }, "new")).toThrow(/number/);
+    expect(() => parseSection("billing", { values: { ...bank, bankName: "Bank of Nowhere" } }, "new")).toThrow(/list/);
   });
 
   it("takes any nationality or district, but checks emails, phones and dates", () => {
