@@ -15,6 +15,12 @@ export function taskTitle(task: MyTask): string {
       return 'Complete your Player Statement';
     case 'waivers':
       return "Complete this season's Waivers & Declarations";
+    case 'details': {
+      // The season runs July to June.
+      const now = new Date();
+      const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+      return `Check your details for ${start}–${String(start + 1).slice(2)}`;
+    }
     case 'application':
       return task.role === 'Sponsor'
         ? `Support ${who}'s membership application`

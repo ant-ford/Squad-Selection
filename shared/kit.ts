@@ -209,3 +209,22 @@ export function describePlace(set: Pick<KitSet, "place" | "holder"> & { pendingT
       return set.pendingTo ? `With ${set.holder?.name ?? "someone"}, offered to ${set.pendingTo.name}` : `With ${set.holder?.name ?? "someone"}`;
   }
 }
+
+/**
+ * Suppliers' size charts, for the size pickers (inches). Kukri's from its
+ * size guide and goalkeeper smock sizing (owner, 2026-09-30).
+ */
+export const KIT_SIZE_CHARTS: Record<string, { garment: string; columns: string[]; rows: [string, ...number[]][] }[]> = {
+  Kukri: [
+    {
+      garment: "Shirts and shorts",
+      columns: ["To fit chest", "To fit waist"],
+      rows: [["2XS", 34, 28], ["XS", 36, 30], ["S", 38, 32], ["M", 40, 34], ["L", 42, 36], ["XL", 44, 38], ["2XL", 46, 40], ["3XL", 48, 42], ["4XL", 50, 44]],
+    },
+    {
+      garment: "Goalkeeper smock",
+      columns: ["Chest", "Hem"],
+      rows: [["2XS", 46, 46], ["XS", 49, 49], ["S", 51, 51], ["M", 53, 53], ["L", 56, 56], ["XL", 58, 58], ["2XL", 60.5, 60.5]],
+    },
+  ],
+};
