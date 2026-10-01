@@ -43,6 +43,9 @@ describe("Supabase data client", () => {
   it("pages in a total order, ending on id", () => {
     expect(withTotalOrder("select=*")).toBe("select=*&order=id");
     expect(withTotalOrder("select=*&order=occurred_at.desc")).toBe("select=*&order=occurred_at.desc,id");
+    // A table keyed on two columns, with no id, orders by them instead.
+    expect(withTotalOrder("select=*", "person_id,session_id")).toBe("select=*&order=person_id,session_id");
+    expect(withTotalOrder("select=*&order=person_id", "person_id,session_id")).toBe("select=*&order=person_id,session_id");
     expect(withTotalOrder("select=*&order=occurred_at.desc&kind=eq.move")).toBe("select=*&order=occurred_at.desc,id&kind=eq.move");
     expect(withTotalOrder("select=*&order=id")).toBe("select=*&order=id");
     expect(withTotalOrder("select=*&order=season,id.desc")).toBe("select=*&order=season,id.desc");

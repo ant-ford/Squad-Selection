@@ -74,6 +74,9 @@ export async function registerInterest(env: Env, email: string, body: Record<str
   return { status: "registering", stage: TRIAL_STAGE };
 }
 
+/** trial_availability is keyed on the two columns, with no id (for the paging order). */
+const AVAILABILITY_KEY = "person_id,session_id";
+
 interface SessionRow {
   id: string;
   starts_at: string;
@@ -116,7 +119,7 @@ export async function getMyTrial(env: Env, user: AuthorizedUser): Promise<MyTria
   const p = await loadTrialist(env, user.personId);
   const [sessions, chosen, referredBy] = await Promise.all([
     upcomingSessions(env),
-    db(env).select<{ session_id: string }>("trial_availability", `select=session_id&person_id=${eq(p.id)}`),
+    db(env).select<{ session_id: string }>("trial_availability", `select=session_id&person_id=${eq(p.id)}`, AVAILABILITY_KEY),
     referrerName(env, p.referred_by_id),
   ]);
   return { sessions, chosen: chosen.map((c) => c.session_id).filter((id) => sessions.some((s) => s.id === id)), registeredAt: p.trial_registered_at, referredBy };
@@ -184,7 +187,11 @@ async function tellCaptains(env: Env, t: TrialistRow, p: Record<string, unknown>
   const name = nameOf(p as never) || "Someone";
   const [referredBy, chosen] = await Promise.all([
     referrerName(env, t.referred_by_id),
-    db(env).select<{ trial_sessions: { starts_at: string; place: string } | null }>("trial_availability", `select=trial_sessions(starts_at,place)&person_id=${eq(t.id)}`),
+    db(env).select<{ trial_sessions: { starts_at: string; place: string } | null }>(
+      "trial_availability",
+      `select=trial_sessions(starts_at,place)&person_id=${eq(t.id)}`,
+      AVAILABILITY_KEY,
+    ),
   ]);
   const sessions = chosen.map((c) => c.trial_sessions).filter((s): s is { starts_at: string; place: string } => !!s);
   await sendEmail(env, {
@@ -249,7 +256,11 @@ export async function joinerTrial(env: Env, personId: string): Promise<JoinerTri
   const d = db(env);
   const [p, chosen, invites] = await Promise.all([
     d.one<{ trial_registered_at: string | null; referred_by_id: string | null }>("people", `select=trial_registered_at,referred_by_id&id=${eq(personId)}`),
-    d.select<{ trial_sessions: { starts_at: string; place: string } | null }>("trial_availability", `select=trial_sessions(starts_at,place)&person_id=${eq(personId)}`),
+    d.select<{ trial_sessions: { starts_at: string; place: string } | null }>(
+      "trial_availability",
+      `select=trial_sessions(starts_at,place)&person_id=${eq(personId)}`,
+      AVAILABILITY_KEY,
+    ),
     d.select<{ sent_at: string }>("email_log", `select=sent_at&template=eq.trial-practice-player&status=eq.sent&to_person_id=${eq(personId)}&order=sent_at.desc&limit=1`),
   ]);
   return {
@@ -287,6 +298,7 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
   const coaches = await d.select<{ people: { id: string; email: string | null; preferred_name: string | null; given_names: string | null } | null }>(
     "team_people",
     `select=people(id,email,preferred_name,given_names)&team_id=${eq(teamRow.id)}&role=eq.coach`,
+    "team_id,role,person_id",
   );
   const coachList = coaches.map((c) => c.people).filter((c): c is NonNullable<typeof c> => !!c?.email);
   const adh = env.ASSISTANT_DIRECTOR || "";

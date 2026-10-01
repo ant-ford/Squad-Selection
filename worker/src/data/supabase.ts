@@ -50,8 +50,12 @@ const TOKEN_RETRIES = 2;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface Db {
-  /** Rows matching a PostgREST query string (select=...&col=eq.value), every page. */
-  select<T>(table: string, query: string): Promise<T[]>;
+  /**
+   * Rows matching a PostgREST query string (select=...&col=eq.value), every
+   * page. `key` is the table's unique key for the paging order: id, or the
+   * columns of a table keyed on two (e.g. "person_id,session_id").
+   */
+  select<T>(table: string, query: string, key?: string): Promise<T[]>;
   /** At most one row; null when none. */
   one<T>(table: string, query: string): Promise<T | null>;
   /** Inserts, returning the new rows. */
@@ -79,12 +83,13 @@ export const inList = (values: readonly (string | number)[]) =>
  * another (seen on ranking events, ordered by a timestamp with ties). Every
  * table and api_* view has a unique `id`.
  */
-export function withTotalOrder(query: string): string {
+export function withTotalOrder(query: string, key = "id"): string {
   const order = /(^|&)order=([^&]*)/.exec(query);
-  if (!order) return `${query}&order=id`;
+  if (!order) return `${query}&order=${key}`;
   const columns = order[2].split(",").map((c) => c.split(".")[0]);
-  if (columns.includes("id")) return query;
-  return query.replace(order[0], `${order[1]}order=${order[2]},id`);
+  const missing = key.split(",").filter((k) => !columns.includes(k));
+  if (missing.length === 0) return query;
+  return query.replace(order[0], `${order[1]}order=${order[2]},${missing.join(",")}`);
 }
 
 export function db(env: Env): Db {
@@ -160,9 +165,9 @@ export function db(env: Env): Db {
   const returning = { Prefer: "return=representation" };
 
   return {
-    async select<T>(table: string, query: string) {
+    async select<T>(table: string, query: string, key?: string) {
       const out: T[] = [];
-      const ordered = withTotalOrder(query);
+      const ordered = withTotalOrder(query, key);
       for (let from = 0; ; from += PAGE) {
         const { body } = await call(`${table}?${ordered}`, {
           headers: { "Range-Unit": "items", Range: `${from}-${from + PAGE - 1}` },
