@@ -24,7 +24,16 @@ function Check({ checked, onChange, label }: { checked: boolean; onChange: (v: b
  * "Nothing for now", and coaching and umpiring levels. Controlled: the page
  * holds the answers and saves them with saveVolunteering.
  */
-export default function VolunteeringSection({ value, onChange }: { value: VolunteeringAnswers; onChange: (next: VolunteeringAnswers) => void }) {
+export default function VolunteeringSection({
+  value,
+  onChange,
+  heading = true,
+}: {
+  value: VolunteeringAnswers;
+  onChange: (next: VolunteeringAnswers) => void;
+  /** Off inside a form step, which has the heading already. */
+  heading?: boolean;
+}) {
   const toggle = (group: keyof typeof EMPTY_ROLES, option: string, on: boolean) => {
     const current = value.roles[group];
     const next = on ? [...current, option] : current.filter((o) => o !== option);
@@ -34,7 +43,7 @@ export default function VolunteeringSection({ value, onChange }: { value: Volunt
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-4">
       <div>
-        <h2 className="text-sm font-semibold text-foreground">Volunteering</h2>
+        {heading && <h2 className="text-sm font-semibold text-foreground">Volunteering</h2>}
         <p className="text-xs text-muted-foreground">
           Tick anything you'd help with. Officers, coaches and captains see this when they need a hand. You can change it any time.
         </p>

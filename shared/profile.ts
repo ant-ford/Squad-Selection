@@ -231,7 +231,6 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
   {
     key: "work",
     title: "Work",
-    intro: "Optional. The club's forms ask for it.",
     fields: [
       { key: "companyName", column: "company_name", label: "Company", type: "text" },
       { key: "workPosition", column: "work_position", label: "Position", type: "text" },

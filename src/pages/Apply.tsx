@@ -59,7 +59,6 @@ export default function ApplyPage() {
         ...(d.underEighteen ? [{ key: 'guardian' as const, title: 'Parent or guardian' }] : []),
         { key: 'contact' as const, title: 'Contact' },
         { key: 'emergency' as const, title: 'Emergency contact' },
-        { key: 'work' as const, title: 'Work' },
         { key: 'background' as const, title: 'Hockey CV' },
         { key: 'hockey' as const, title: 'Hockey' },
         { key: 'plan' as const, title: 'Season plan' },

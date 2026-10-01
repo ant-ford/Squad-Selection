@@ -286,7 +286,6 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             key={idKind}
             kind={idKind}
             label={idKind === 'hkid' ? 'Copy of your HKID' : 'Copy of your passport (the photo page)'}
-            hint="A photo of it can fill in the boxes below for you: it's read by an AI service, which doesn't keep it, and you check what it finds."
             hasFile={idKind === 'hkid' ? hkid : passport}
             onUploaded={() => (idKind === 'hkid' ? setHkid(true) : setPassport(true))}
             onSaved={(dataUrl) => readable(dataUrl) && read.mutate({ kind: idKind, dataUrl })}
@@ -304,11 +303,6 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             />
           )}
         </div>
-      )}
-      {section.key === 'contact' && (
-        <p className="text-xs text-muted-foreground">
-          You sign in with <span className="text-foreground">{details.email ?? 'no email'}</span>. To change it, ask the Membership Officer.
-        </p>
       )}
       <ProfileFields
         fields={fields}
@@ -394,7 +388,7 @@ export function VolunteeringStep({ initial, ...nav }: Omit<StepProps, 'details'>
   };
   return (
     <StepShell title="Volunteering" {...nav} onNext={next} busy={save.isPending} problem={problem}>
-      <VolunteeringSection value={answers} onChange={setAnswers} />
+      <VolunteeringSection value={answers} onChange={setAnswers} heading={false} />
     </StepShell>
   );
 }
