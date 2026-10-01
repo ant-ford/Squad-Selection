@@ -278,7 +278,7 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             </div>
             {idKind === 'passport' && (
               <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-foreground">
-                Players give their HKID. Only choose a passport if you don't have an HKID: without one you'll be classed as a visiting player, which has restrictions.
+                Only choose a passport if you don't have an HKID: without one you'll be classed as a visiting player, which has restrictions.
               </p>
             )}
           </fieldset>
