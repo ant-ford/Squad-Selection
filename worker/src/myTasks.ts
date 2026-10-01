@@ -35,6 +35,7 @@ import { WAITING_ON_KEY } from "./reference";
 import { people, type ApplicantTaskRow, type MyTaskRow } from "./data/people";
 import { commitments } from "./data/commitments";
 import { backendFor } from "./data/backend";
+import { isRowId } from "./data/ids";
 import { db, eq } from "./data/supabase";
 import { openJoinerTasks } from "./joiners";
 import { signingTasks } from "./applicationSigning";
@@ -202,8 +203,7 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   const onSupabase = backendFor(env, "people") === "supabase";
   // Airtable ids only on Airtable (the id goes into a formula); on Supabase,
   // people created in Eddy have a uuid.
-  const idPattern = onSupabase ? /^(rec[A-Za-z0-9]{14}|[0-9a-f-]{36})$/ : /^rec[A-Za-z0-9]{14}$/;
-  if (!personId || !idPattern.test(personId)) return { tasks: [] };
+  if (!isRowId(env, "people", personId)) return { tasks: [] };
 
   const [mine, waitingOn] = await Promise.all([
     getCached(

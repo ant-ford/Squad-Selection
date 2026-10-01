@@ -48,12 +48,12 @@ describe("officer-section reads on Supabase", () => {
     expect(calls[0].url.searchParams.get("applicantStage")).toBe('in.("3. Club Application (Signed)")');
   });
 
-  it("only looks up contacts by record id, as the Airtable read does", async () => {
+  it("looks up contacts by row id: imported (rec...) or created in Eddy (uuid)", async () => {
     const calls = postgrest(() => []);
     expect(await people(env).listContactsByIds(["not-an-id", ""])).toEqual([]);
     expect(calls).toHaveLength(0);
-    await people(env).listContactsByIds(["recAAAAAAAAAAAAAA"]);
-    expect(calls[0].url.searchParams.get("id")).toBe('in.("recAAAAAAAAAAAAAA")');
+    await people(env).listContactsByIds(["recAAAAAAAAAAAAAA", "a0818f1e-7782-40cd-9b25-8b55e49a3059"]);
+    expect(calls[0].url.searchParams.get("id")).toBe('in.("recAAAAAAAAAAAAAA","a0818f1e-7782-40cd-9b25-8b55e49a3059")');
   });
 
   it("reads the Statements board from api_commitments_crm with the same date window", async () => {

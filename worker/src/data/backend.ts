@@ -34,7 +34,7 @@ export const DATA_MODULES = [
 export type DataModule = (typeof DATA_MODULES)[number];
 export type Backend = "airtable" | "supabase";
 
-type BackendEnv = Pick<Env, "DATA_BACKEND" | "DATA_BACKEND_OVERRIDES">;
+export type BackendEnv = Pick<Env, "DATA_BACKEND" | "DATA_BACKEND_OVERRIDES">;
 
 function parseBackend(value: string | undefined): Backend | null {
   const v = value?.trim().toLowerCase();

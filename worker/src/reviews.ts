@@ -21,6 +21,7 @@ import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
+import { API_ID_RE } from "./data/ids";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
@@ -47,7 +48,7 @@ import {
 } from "../../shared/commitmentReview";
 
 /** An imported review keeps its Airtable id; one Eddy created has a uuid. */
-const REVIEW_ID = /^(rec[A-Za-z0-9]{14}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+const REVIEW_ID = API_ID_RE;
 
 
 interface ReviewRow {

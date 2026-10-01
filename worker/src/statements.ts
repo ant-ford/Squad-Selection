@@ -17,6 +17,7 @@ import { STATEMENT_RECORDS_KEY } from "./reference";
 import { daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
 import { firstLink, getOfficeHolders, getPeopleByIds, type Contact } from "./contacts";
 import { commitments, type StatementRow } from "./data/commitments";
+import { isRowId } from "./data/ids";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -304,7 +305,7 @@ export async function getStatementBoard(env: Env): Promise<StatementBoard> {
  */
 export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commitmentId: string) {
   const id = typeof commitmentId === "string" ? commitmentId.trim() : "";
-  if (!/^rec[A-Za-z0-9]{14}$/.test(id)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
+  if (!isRowId(env, "commitments", id)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
 
   // Fresh, not from the board cache: the automation may have run meanwhile.
   const row = await commitments(env).getNotifyState(id);
