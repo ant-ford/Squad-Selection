@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ClipboardList, HeartHandshake, LayoutGrid, Mail, Shirt, Users, type LucideIcon } from 'lucide-react';
-import { headerNavClass } from '@/components/AppHeader';
+import { headerIconClass, headerNavClass } from '@/components/AppHeader';
 
 interface Item {
   to: string;
   label: string;
   icon: LucideIcon;
+}
+
+/** Something to do rather than a screen to open (inviting someone to join), shown last. */
+export interface MenuAction {
+  label: string;
+  icon: LucideIcon;
+  onSelect: () => void;
 }
 
 /** The officers' screens a person may open, in a fixed order, from what the Worker says. */
@@ -29,9 +36,11 @@ export function officerItems(p: {
 /**
  * One header button for the officers' screens, so an officer who also
  * coaches doesn't get a row of buttons that pushes the title off a phone.
- * A single screen is a plain button; two or more open a menu.
+ * A single screen is a plain button; two or more open a menu. An action
+ * (inviting someone to join, for every member) goes last in the menu, or
+ * is a single icon for someone with no officers' screens.
  */
-export default function OfficersMenu({ items }: { items: Item[] }) {
+export default function OfficersMenu({ items, action }: { items: Item[]; action?: MenuAction }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -54,8 +63,16 @@ export default function OfficersMenu({ items }: { items: Item[] }) {
     };
   }, [open]);
 
-  if (items.length === 0) return null;
-  if (items.length === 1) {
+  if (items.length === 0 && !action) return null;
+  if (items.length === 0 && action) {
+    const Icon = action.icon;
+    return (
+      <button onClick={action.onSelect} className={headerIconClass} title={action.label} aria-label={action.label}>
+        <Icon className="h-4 w-4" />
+      </button>
+    );
+  }
+  if (items.length === 1 && !action) {
     const [only] = items;
     const Icon = only.icon;
     return (
@@ -80,7 +97,7 @@ export default function OfficersMenu({ items }: { items: Item[] }) {
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 mt-1 w-48 rounded-md border border-border bg-card shadow-lg z-50 py-1">
+        <div role="menu" className="absolute right-0 mt-1 w-56 rounded-md border border-border bg-card shadow-lg z-50 py-1">
           {items.map((i) => {
             const Icon = i.icon;
             return (
@@ -98,6 +115,19 @@ export default function OfficersMenu({ items }: { items: Item[] }) {
               </button>
             );
           })}
+          {action && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                action.onSelect();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted text-foreground border-t border-border mt-1"
+            >
+              <action.icon className="h-4 w-4" />
+              {action.label}
+            </button>
+          )}
         </div>
       )}
     </div>
