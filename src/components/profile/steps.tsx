@@ -286,7 +286,6 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             key={idKind}
             kind={idKind}
             label={idKind === 'hkid' ? 'Copy of your HKID' : 'Copy of your passport (the photo page)'}
-            hint="A photo of it can fill in the boxes below for you: it's read by an AI service, which doesn't keep it, and you check what it finds."
             hasFile={idKind === 'hkid' ? hkid : passport}
             onUploaded={() => (idKind === 'hkid' ? setHkid(true) : setPassport(true))}
             onSaved={(dataUrl) => readable(dataUrl) && read.mutate({ kind: idKind, dataUrl })}
