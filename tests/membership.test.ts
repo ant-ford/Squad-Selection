@@ -288,7 +288,7 @@ describe("the active-members export", () => {
 describe("Approve", () => {
   const valid = { personId: ID.atStage6, joinDate: "2026-09-25", commitmentEndDate: "2028-09-24", membershipNo: "3001" };
 
-  it("moves stage 6 to Accepted with the club's details, writing exactly five fields", async () => {
+  it("moves stage 6 to Accepted with the club's details and makes them Active, writing exactly six fields", async () => {
     const res = await approve("olive@personal.com", valid);
     expect(res.status).toBe(200);
     expect(patches()).toEqual([
@@ -297,6 +297,7 @@ describe("Approve", () => {
         fields: {
           Status: "Member",
           "Applicant Stage": "Accepted",
+          Active: true,
           "Join Date": "2026-09-25",
           "Commitment End Date": "2028-09-24",
           "Membership No.": "3001",

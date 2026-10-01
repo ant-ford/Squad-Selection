@@ -253,7 +253,7 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
         <ConfirmDialog
           title={`Approve ${card.name}?`}
           message={
-            `Status → Member, stage → Accepted, Join Date ${date(joinDate)}, Commitment End Date ${date(
+            `Status → Member, stage → Accepted, Active, Join Date ${date(joinDate)}, Commitment End Date ${date(
               commitmentEndDate,
             )}, Membership No. ${membershipNo.trim()}.` +
             (holders.length > 0

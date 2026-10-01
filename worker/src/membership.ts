@@ -524,10 +524,13 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
     );
   }
 
-  // Exactly these five, in this order; none of them is a link.
+  // Exactly these six, in this order; none of them is a link. A new member
+  // is made Active (owner, 2026-10-01): it's what lets them sign in and be
+  // picked.
   await people(env).update(personId, {
     status: "Member",
     applicantStage: ACCEPTED_STAGE,
+    active: true,
     joinDate: input.joinDate,
     commitmentEndDate: input.commitmentEndDate,
     membershipNo,
@@ -557,6 +560,7 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
     personId,
     Status: "Member",
     "Applicant Stage": ACCEPTED_STAGE,
+    Active: true,
     "Join Date": input.joinDate,
     "Commitment End Date": input.commitmentEndDate,
     "Membership No.": membershipNo,
