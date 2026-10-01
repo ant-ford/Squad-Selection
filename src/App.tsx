@@ -33,9 +33,20 @@ const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 const SignApplication = lazy(() => import('./pages/SignApplication'));
+const Join = lazy(() => import('./pages/Join'));
+const TrialSessions = lazy(() => import('./pages/TrialSessions'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
+
+/** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
+function pendingJoin(): boolean {
+  try {
+    return localStorage.getItem('join:pending') === '1';
+  } catch {
+    return false;
+  }
+}
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
@@ -45,6 +56,7 @@ function AuthGate() {
   const accessDenied = useSyncExternalStore(subscribeAccessDenied, getAccessDenied, () => null);
   if (isLoading) return <AppLoading />;
   if (!user) return <Login />;
+  if (accessDenied && pendingJoin()) return <Navigate to="/join" replace />;
   if (accessDenied) return <AccessNotActive message={accessDenied} />;
   return <Outlet />;
 }
@@ -92,6 +104,16 @@ function RouteError() {
 }
 
 const router = createBrowserRouter([
+  // Open to anyone with a member's link: it signs them up (pages/Join.tsx).
+  {
+    path: '/join',
+    errorElement: <RouteError />,
+    element: (
+      <Suspense fallback={<RouteSkeleton />}>
+        <Join />
+      </Suspense>
+    ),
+  },
   {
     element: <AuthGate />,
     errorElement: <RouteError />,
@@ -134,6 +156,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/trial-sessions',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <TrialSessions />
           </Suspense>
         ),
       },

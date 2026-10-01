@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
 import { createJoiner, getJoiner, getJoinerOptions, inviteJoiner, requestJoinerStep, updateJoiner } from '@/api/joiners';
+import { declineRegistration, invitePracticeTrial } from '@/api/trials';
 import {
   APPLICATION_TYPES,
   CATEGORY_TYPES,
@@ -227,12 +228,114 @@ function Editor({ view, options }: { view: JoinerView | null; options: JoinerOpt
           )}
         </div>
       </section>
+      {view?.trial && <TrialPanel view={view} options={options} onChanged={refresh} />}
       {view && <Actions view={view} options={options} onChanged={refresh} />}
     </>
   );
 }
 
 const when = (iso: string) => safeFormat(iso, 'd MMM yyyy, HH:mm');
+
+/**
+ * Someone who registered to join through a member's link: their trial
+ * choices, and the captain's options: a practice trial (players for the
+ * Premier League or Division 1, perhaps umpires), or not this time. To
+ * propose them as a new joiner, fill in the form above and send the
+ * invitation below.
+ */
+function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: JoinerOptions; onChanged: () => void }) {
+  const t = view.trial!;
+  const [team, setTeam] = useState('');
+  const [where, setWhere] = useState('');
+  const [confirm, setConfirm] = useState<null | 'practice' | 'decline'>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const act = useMutation({
+    mutationFn: (what: 'practice' | 'decline') => (what === 'practice' ? invitePracticeTrial(view.id, team, where) : declineRegistration(view.id)),
+    onSuccess: (_r, what) => {
+      onChanged();
+      setProblem(null);
+      toast.success(what === 'practice' ? 'Practice trial emails sent' : 'Registration closed');
+      if (what === 'decline') navigate('/membership');
+    },
+    onError: (err) => setProblem(errorText(err)),
+  });
+  const name = view.form.preferredName || 'them';
+  return (
+    <section className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <h2 className="text-base font-semibold text-foreground">Registered to join</h2>
+      <dl className="grid sm:grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Sent</dt>
+          <dd className="text-foreground">{t.registeredAt ? when(t.registeredAt) : 'Still filling it in'}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Through the link of</dt>
+          <dd className="text-foreground">{t.referredBy ?? '–'}</dd>
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Trial sessions they can come to</dt>
+          <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, h:mm a')} (${s.place})`).join('; ') : 'None'}</dd>
+        </div>
+      </dl>
+      <div className="space-y-2 pt-3 border-t border-border">
+        <p className="text-sm font-medium text-foreground">Practice trial</p>
+        <p className="text-xs text-muted-foreground">
+          For players who could play for the Premier League or Division 1 teams, or umpires. The Assistant Director of Hockey and the team's coach get their hockey
+          CV, and {name} is told when to come.
+          {t.practiceInvitedAt ? ` Last sent ${when(t.practiceInvitedAt)}.` : ''}
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <select className={fieldInput} value={team} onChange={(e) => setTeam(e.target.value)}>
+            <option value="">Team…</option>
+            {options.teams.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+          <input
+            className={`${fieldInput} sm:col-span-2`}
+            placeholder="When and where, e.g. Tuesday 7 Oct, 8pm, HKFC pitch"
+            value={where}
+            onChange={(e) => setWhere(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2 justify-between">
+          <button className={secondary} onClick={() => setConfirm('decline')} disabled={act.isPending}>
+            Not this time
+          </button>
+          <button className={primary} onClick={() => setConfirm('practice')} disabled={act.isPending || !team || !where.trim()}>
+            Invite to a practice trial
+          </button>
+        </div>
+      </div>
+      {problem && (
+        <p role="alert" className="text-xs text-destructive">
+          {problem}
+        </p>
+      )}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm === 'practice' ? 'Invite them to a practice trial?' : 'Not this time?'}
+          message={
+            confirm === 'practice'
+              ? `The Assistant Director of Hockey and the ${team} coach are emailed ${name}'s hockey CV, and ${name} is told: ${where}`
+              : `${name}'s registration is closed (Rejected on the board). No email goes to them: let them know yourself.`
+          }
+          confirmLabel={confirm === 'practice' ? 'Send' : 'Close it'}
+          destructive={confirm === 'decline'}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const what = confirm;
+            setConfirm(null);
+            act.mutate(what);
+          }}
+        />
+      )}
+    </section>
+  );
+}
 
 function stepStatus(s: JoinerStepState | null): string {
   if (!s) return 'Not asked yet.';

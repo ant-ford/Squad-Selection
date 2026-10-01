@@ -15,6 +15,7 @@ import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { TRIAL_STAGE } from "../../shared/trials";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
 import {
   PROFILE_SECTIONS,
@@ -34,7 +35,7 @@ import {
 const ALL_FIELDS = PROFILE_SECTIONS.flatMap((s) => s.fields);
 
 const PERSON_COLUMNS = [
-  "id,api_id,status,applicant_type,email,playing_position,shirt_number_id,profile_updated_at",
+  "id,api_id,status,applicant_type,applicant_stage,email,playing_position,shirt_number_id,profile_updated_at",
   "member_type,category_type,player_coach,membership_no,join_date,commitment_end_date",
   ...ALL_FIELDS.map((f) => f.column),
 ].join(",");
@@ -59,6 +60,8 @@ function requireSupabase(env: Env): void {
 
 const today = () => hkDateKey(new Date().toISOString());
 const isApplicant = (p: PersonRow) => p.status === "Applicant";
+/** Registering to join: an applicant at stage 1. */
+const isTrialist = (p: PersonRow) => isApplicant(p) && p.applicant_stage === TRIAL_STAGE;
 const audience = (p: PersonRow) => audienceOf(p.status, p.applicant_type);
 
 async function loadPerson(env: Env, personApiId: string): Promise<PersonRow> {
@@ -128,6 +131,7 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
   return {
     season,
     applicant: isApplicant(p),
+    trialist: isTrialist(p),
     audience: audience(p),
     underEighteen: isUnderEighteen(p.date_of_birth, today()),
     email: p.email,
@@ -149,22 +153,29 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
 }
 
 /** Checks one section's answers; returns the People columns to write. */
-export function parseSection(key: string, body: Record<string, unknown>, saved: Audience): Record<string, string | string[] | number | boolean | null> {
+export function parseSection(
+  key: string,
+  body: Record<string, unknown>,
+  saved: Audience,
+  opts: { trialist?: boolean } = {},
+): Record<string, string | string[] | number | boolean | null> {
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
   if (!section) throw new HttpError("Unknown section.", 404, "NOT_FOUND");
   const values = (body.values ?? {}) as Record<string, unknown>;
   // On the application step the questions follow the type they've just chosen.
   const who: Audience = key === "application" && saved !== "member" ? audienceOf("Applicant", values.applicantType as string) : saved;
-  if (!sectionFor(section, who)) throw new HttpError(`${section.title} isn't asked of you.`, 400, "INVALID_INPUT");
+  // Registering to join, everyone gives their hockey CV (the old trial form).
+  const cv = opts.trialist && key === "background";
+  if (!cv && !sectionFor(section, who)) throw new HttpError(`${section.title} isn't asked of you.`, 400, "INVALID_INPUT");
   // Not playing this season: only that answer is saved (the Fillout form hid the rest).
   if (key === "hockey" && who === "member" && values.active === false) return { active: false };
   const patch: Record<string, string | string[] | number | boolean | null> = {};
-  for (const f of fieldsFor(section, who)) {
+  for (const f of cv ? section.fields : fieldsFor(section, who)) {
     if (!isShown(f, values as ProfileValues)) {
       patch[f.column] = f.type === "multi" ? [] : null;
       continue;
     }
-    const problem = checkValue(f, values[f.key], who);
+    const problem = checkValue(f, values[f.key], cv ? "new" : who);
     if (problem) throw new HttpError(problem, 400, "INVALID_INPUT");
     const v = values[f.key];
     patch[f.column] =
@@ -186,7 +197,7 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   if (section?.underEighteenOnly && !isUnderEighteen(p.date_of_birth, today())) {
     throw new HttpError("Only under-18s give a parent or guardian's details.", 400, "INVALID_INPUT");
   }
-  const patch = parseSection(key, body, audience(p));
+  const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p) });
   await db(env).update("people", `id=${eq(p.id)}`, patch);
   await invalidateForTables(env, [TABLES.player]);
   return { ok: true };

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Search, User, UserPlus, AlertTriangle } from 'lucide-react';
+import { CalendarDays, Download, Search, User, UserPlus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -188,6 +188,11 @@ export default function MembershipBoard() {
           >
             {showParked ? 'Hide' : 'Show'} parked ({parkedCount})
           </button>
+          {canPropose && (
+            <button onClick={() => navigate('/trial-sessions')} className={headerNavClass()}>
+              <CalendarDays className="h-3.5 w-3.5" /> Trial sessions
+            </button>
+          )}
           {canPropose && (
             <button
               onClick={() => navigate('/joiners/new')}

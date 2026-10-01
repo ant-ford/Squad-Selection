@@ -22,6 +22,7 @@ import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
+import InviteCard from '@/components/InviteCard';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
@@ -313,6 +314,7 @@ export default function PlayerDashboard() {
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
         <MyTasksBanner />
+        <InviteCard />
         <MyKitCard />
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">

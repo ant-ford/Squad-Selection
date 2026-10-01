@@ -14,9 +14,11 @@ import { getMySeasonPlan } from '@/api/seasonPlan';
 import { getMyVolunteering } from '@/api/volunteering';
 import { KitStep, SeasonPlanStep, SectionStep, VolunteeringStep, type StepProps } from '@/components/profile/steps';
 import { AgreeStep, ClubsStep, FamilyStep, TrialsStep } from '@/components/apply/applySteps';
+import { RegisterStep, TrialDatesStep } from '@/components/apply/trialSteps';
+import { getMyTrial } from '@/api/trials';
 import { PROFILE_SECTIONS, sectionFor, type SectionKey } from '@shared/profile';
 
-type StepKey = SectionKey | 'clubs' | 'trials' | 'family' | 'plan' | 'kit' | 'volunteering' | 'agree';
+type StepKey = SectionKey | 'clubs' | 'trials' | 'family' | 'plan' | 'kit' | 'volunteering' | 'agree' | 'trialDates' | 'register';
 
 /** Stages after the applicant's own step: their application is in. */
 const SUBMITTED_STAGES = ['3. Club Application (Signed)', '4. Sponsor (Signed)', '5. Chairman (Signed)', '6. Membership Officer (Signed)', 'Accepted'];
@@ -26,6 +28,10 @@ const SUBMITTED_STAGES = ['3. Club Application (Signed)', '4. Sponsor (Signed)',
  * each saved as they go, ending with the agreements and signatures. The
  * questions follow the Fillout form's rules for existing and new HKFC
  * members.
+ *
+ * Someone registering to join (stage 1, from a member's link) gets the old
+ * trial form's questions instead, ending with the trial sessions and Send;
+ * if they're invited to apply, the answers carry over.
  */
 export default function ApplyPage() {
   const navigate = useNavigate();
@@ -35,6 +41,8 @@ export default function ApplyPage() {
   const view = useQuery({ queryKey: ['apply'], queryFn: getApply });
   const plan = useQuery({ queryKey: ['mySeasonPlan'], queryFn: getMySeasonPlan, enabled: details.isSuccess });
   const volunteering = useQuery({ queryKey: ['myVolunteering'], queryFn: getMyVolunteering, enabled: details.isSuccess });
+  const trialist = details.data?.trialist ?? false;
+  const trial = useQuery({ queryKey: ['myTrial'], queryFn: getMyTrial, enabled: trialist });
 
   const steps = useMemo<{ key: StepKey; title: string }[]>(() => {
     const d = details.data;
@@ -42,6 +50,24 @@ export default function ApplyPage() {
     const who = d.audience;
     const asked = (key: SectionKey) => sectionFor(PROFILE_SECTIONS.find((s) => s.key === key)!, who);
     const newMember = who === 'new';
+    if (d.trialist) {
+      // The old trial form's questions; everyone gives their hockey CV.
+      return [
+        { key: 'application' as const, title: 'About your application' },
+        { key: 'personal' as const, title: 'Personal' },
+        ...(d.underEighteen ? [{ key: 'guardian' as const, title: 'Parent or guardian' }] : []),
+        { key: 'contact' as const, title: 'Contact' },
+        { key: 'emergency' as const, title: 'Emergency contact' },
+        { key: 'work' as const, title: 'Work' },
+        { key: 'background' as const, title: 'Hockey CV' },
+        { key: 'hockey' as const, title: 'Hockey' },
+        { key: 'plan' as const, title: 'Season plan' },
+        { key: 'trialDates' as const, title: 'Trials' },
+        ...(d.kit ? [{ key: 'kit' as const, title: 'Kit sizes' }] : []),
+        { key: 'volunteering' as const, title: 'Volunteering' },
+        { key: 'register' as const, title: 'Send' },
+      ];
+    }
     return [
       { key: 'application' as const, title: 'Application' },
       { key: 'personal' as const, title: 'Personal' },
@@ -74,8 +100,8 @@ export default function ApplyPage() {
     void queryClient.invalidateQueries({ queryKey: ['myTasks'] });
   };
 
-  const loading = details.isLoading || view.isLoading || (details.isSuccess && (plan.isLoading || volunteering.isLoading));
-  const failed = details.error || view.error || plan.error || volunteering.error;
+  const loading = details.isLoading || view.isLoading || (details.isSuccess && (plan.isLoading || volunteering.isLoading || (trialist && trial.isLoading)));
+  const failed = details.error || view.error || plan.error || volunteering.error || trial.error;
 
   const body = () => {
     if (loading) return <Skeleton className="h-96 w-full" />;
@@ -136,13 +162,15 @@ export default function ApplyPage() {
         {step.key === 'kit' && <KitStep {...props} />}
         {step.key === 'volunteering' && <VolunteeringStep {...props} initial={volunteering.data} />}
         {step.key === 'agree' && <AgreeStep {...props} view={view.data} onFinished={finished} />}
+        {step.key === 'trialDates' && trial.data && <TrialDatesStep {...props} trial={trial.data} />}
+        {step.key === 'register' && trial.data && <RegisterStep {...props} trial={trial.data} />}
       </>
     );
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="New joiner application">
+      <AppHeader subtitle={trialist ? 'Register to join' : 'New joiner application'}>
         <button onClick={() => navigate('/')} className={headerNavClass()}>
           <User className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Player View</span>

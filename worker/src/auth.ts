@@ -51,6 +51,15 @@ export interface AuthorizedUser {
  *    linked to the person also grants access with Active = false, and never
  *    grants coach access
  */
+/**
+ * The signed-in email, confirmed by Supabase, without looking for a People
+ * record: only for signing up from a member's link (trials.ts), where there
+ * isn't one yet.
+ */
+export async function requireVerifiedEmail(request: Request, env: Env): Promise<string> {
+  return normalizeEmail(await verifySupabaseSession(request, env));
+}
+
 export async function requireAuthorizedUser(request: Request, env: Env): Promise<AuthorizedUser> {
   const email = await verifySupabaseSession(request, env);
   const normalizedEmail = normalizeEmail(email);

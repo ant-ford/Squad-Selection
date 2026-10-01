@@ -23,6 +23,8 @@ import { TABLES } from "../../shared/schema/tableNames";
 import { joinPhone, splitPhone } from "../../shared/phone";
 import { AGREEMENT_PDFS, NEW_MEMBERS_INFO_SHEET } from "../../shared/application";
 import { isUnderEighteen } from "./declarations";
+import { joinerTrial } from "./trials";
+import { TRIAL_STAGE } from "../../shared/trials";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   EMPTY_JOINER,
@@ -82,7 +84,9 @@ export async function getJoinerOptions(env: Env, user: AuthorizedUser): Promise<
       .filter((r) => r.role === role && r.people)
       .map((r) => ({ id: r.id, name: fullName(r.people) ?? "?", designation: r.designation ?? "" }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  const teams = await db(env).select<{ team_name: string }>("teams", "select=team_name&active=eq.true&order=team_name");
   return {
+    teams: teams.map((t) => t.team_name),
     sponsors: of("sponsor"),
     officers: of("membership_officer"),
     chairs: of("section_chair"),
@@ -453,6 +457,7 @@ export async function getJoiner(env: Env, actor: AuthorizedUser, apiId: string):
     invitedAt: invites[0]?.sent_at ?? null,
     kit: toStepState(steps.find((s) => s.step === "kit")),
     registration: toStepState(steps.find((s) => s.step === "registration")),
+    trial: p.applicant_stage === TRIAL_STAGE ? await joinerTrial(env, p.id) : null,
   };
 }
 
