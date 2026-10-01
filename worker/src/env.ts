@@ -71,6 +71,8 @@ export interface Env {
   CLUB_MEMBERSHIP_EMAIL?: string;
   /** Who the application email greets there, e.g. "Caren". */
   CLUB_MEMBERSHIP_CONTACT?: string;
+  /** The Club's front desk, "Name <address>": gets an existing member's levy form (src/pdf/application.ts). */
+  FRONT_DESK_EMAIL?: string;
   /** Resend API key, as a Worker secret (src/mailer.ts). */
   RESEND_API_KEY?: string;
   /** Sender for Eddy's own email, e.g. "Eddy <notifications@eddy.global>". */

@@ -19,6 +19,9 @@ import { cleanDraft, complete } from "./reviewDrafts";
 import { notifySigner } from "./applicationSigning";
 import { joinPhone, normaliseHkid, splitPhone } from "../../shared/phone";
 import { TABLES } from "../../shared/schema/tableNames";
+import { inBackground } from "./requestContext";
+import { pdfsEnabled } from "./pdf/render";
+import { makeApplicationPdf } from "./pdf/application";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   APPLICATION_VERSION,
@@ -401,5 +404,7 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
   await invalidateForTables(env, [TABLES.player]);
   // A new HKFC member's application now waits on their sponsor (then the Chairman, then the Membership Officer).
   if (who === "new") await notifySigner(env, p.api_id, "sponsor").catch((err) => console.error("Sponsor's email not sent:", err instanceof Error ? err.message : err));
+  // An existing member's levy form, for the Membership Officer to check and send to the front desk.
+  else if (pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, p.api_id));
   return { ok: true };
 }

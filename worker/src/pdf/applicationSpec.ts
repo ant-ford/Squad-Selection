@@ -467,6 +467,11 @@ function pledgePart(f: ApplicationFacts): DocumentPart {
   };
 }
 
+/** An existing HKFC member's Section Membership Application (levy), on its own, for the front desk. */
+export function levySpec(f: ApplicationFacts): RenderSpec {
+  return { title: `${PDF_TEMPLATES["section-membership-levy"].title}: ${fullName(f.applicant)}`, parts: [levyPart(f)] };
+}
+
 export function applicationSpec(f: ApplicationFacts): RenderSpec {
   const dd = directDebit(f);
   const parts: DocumentPart[] = [

@@ -77,6 +77,9 @@ PDFS = "on"
 # there as one PDF, from the Membership Officer (src/pdf/application.ts).
 CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
 CLUB_MEMBERSHIP_CONTACT = "Caren"
+FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
+# An existing member's levy form goes to the front desk.
+FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
 # Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
 # the RESEND_API_KEY secret, installed by the CI deploy.
 MAIL_FROM = "Eddy <notifications@eddy.global>"

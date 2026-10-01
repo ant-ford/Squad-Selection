@@ -1,18 +1,32 @@
 /**
- * Makes and sends the consolidated application (applicationSpec.ts) once
- * the Membership Officer signs a new member's application, the last of the
- * three signatures (applicationSigning.ts): kept on the applicant (files
- * kind 'application_form', like the imported ones) and emailed, with the
- * PDF attached, to the Club's membership office (CLUB_MEMBERSHIP_EMAIL),
- * from the Membership Officer, who gets a copy (owner, 1 Oct 2026: the
- * officer signs, then it goes to the office).
+ * An application's PDF, made when it is ready and sent once the Membership
+ * Officer has checked it (owner, 2 Oct 2026: check, then send):
+ *
+ *  - a new HKFC member: the consolidated application (applicationSpec.ts),
+ *    made when the Membership Officer signs, the last of the three
+ *    signatures, for the Club's membership office (CLUB_MEMBERSHIP_EMAIL);
+ *  - an existing HKFC member: their Section Membership (levy) form, made
+ *    when they submit, for the front desk (FRONT_DESK_EMAIL). Sending it
+ *    accepts them, as the Make scenario did.
+ *
+ * The PDF is kept on the applicant (files kind 'application_form' or
+ * 'section_membership_form', like the imported ones) and recorded on the
+ * application (applications.pdf_file_id); sending records sent_at, sent_by
+ * and sent_to. The email goes in the officer's name, with a copy to them.
  */
 import type { Env } from "../env";
+import type { AuthorizedUser } from "../auth";
+import { HttpError } from "../http";
+import { invalidateForTables } from "../airtableWebhook";
+import { people as peopleData } from "../data/people";
+import { recordMembershipEvent } from "../membership";
+import { TABLES } from "../../../shared/schema/tableNames";
+import { ACCEPTED_STAGE } from "../../../shared/membershipStages";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
 import { documentFilename, fileAsset, renderPdf, storeDocument, templateAsset, type Asset } from "./render";
-import { ASSET, applicationSpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
+import { ASSET, applicationSpec, levySpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
 import { isUnderEighteen } from "../declarations";
 import { BANKS } from "../../../shared/profile";
 
@@ -44,6 +58,7 @@ interface FileRow {
 }
 
 interface ApplicationRow {
+  application_type: string;
   id: string;
   submitted_at: string;
   signature_file_id: string | null;
@@ -121,7 +136,18 @@ export interface MadeApplication {
   leftOut: string[];
 }
 
-/** Gathers everything, renders and keeps the consolidated application. Null when there is no application. */
+export type ApplicationPdf = "application" | "levy";
+
+const NEW_MEMBER = "New HKFC Member";
+
+/** Which PDF an application gets: a new member's whole application, an existing member's levy form. */
+export const pdfFor = (applicationType: string): ApplicationPdf => (applicationType === NEW_MEMBER ? "application" : "levy");
+
+/**
+ * Gathers everything, renders and keeps an application's PDF (the latest
+ * application's), and records it on the application. Null when there is
+ * no application.
+ */
 export async function makeApplicationPdf(env: Env, personApiId: string): Promise<MadeApplication | null> {
   const d = db(env);
   const p = await d.one<Row>("people", `select=${PERSON_COLUMNS}&api_id=${eq(personApiId)}`);
@@ -130,7 +156,7 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
   const [app, family, relatives, clubs, trials, files] = await Promise.all([
     d.one<ApplicationRow>(
       "applications",
-      `select=id,submitted_at,signature_file_id,spouse_signature_file_id,guardian_signature_file_id,guardian_account_signature_file_id,sponsor_signed_at,sponsor_signature_file_id,chair_signed_at,chair_signature_file_id,officer_signed_at,officer_signature_file_id&person_id=${eq(personId)}&order=submitted_at.desc&limit=1`,
+      `select=id,application_type,submitted_at,signature_file_id,spouse_signature_file_id,guardian_signature_file_id,guardian_account_signature_file_id,sponsor_signed_at,sponsor_signature_file_id,chair_signed_at,chair_signature_file_id,officer_signed_at,officer_signature_file_id&person_id=${eq(personId)}&order=submitted_at.desc&limit=1`,
     ),
     d.select<Row>("family_members", `select=${FAMILY_COLUMNS}&person_id=${eq(personId)}&order=relation,ordinal`),
     d.select<Row>("relatives", `select=name,membership_no,relationship&person_id=${eq(personId)}&order=ordinal`),
@@ -142,6 +168,7 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
     ),
   ]);
   if (!app) return null;
+  const which = pdfFor(app.application_type);
   const officeIds = [p.sponsored_by_sponsor_id, p.sponsored_by_chair_id, p.sponsored_by_officer_id].filter((x): x is string => typeof x === "string");
   const offices = officeIds.length
     ? await d.select<OfficeRow>(
@@ -157,13 +184,17 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
   const newest = (kind: string, familyMemberId: string | null = null) =>
     files.find((f) => f.kind === kind && f.family_member_id === familyMemberId) ?? null;
 
-  // The bytes the spec draws, by asset name.
-  const assets: Record<string, Asset> = {
-    [ASSET.sam]: await templateAsset(env, "sports-associate-application"),
-    [ASSET.levy]: await templateAsset(env, "section-membership-levy"),
-    [ASSET.pledge]: await templateAsset(env, "commitment-pledge"),
-  };
-  const images: [string, string | null | undefined][] = [
+  // The bytes the spec draws, by asset name: the levy form needs only its
+  // template and the applicant's signature.
+  const assets: Record<string, Asset> =
+    which === "levy"
+      ? { [ASSET.levy]: await templateAsset(env, "section-membership-levy") }
+      : {
+          [ASSET.sam]: await templateAsset(env, "sports-associate-application"),
+          [ASSET.levy]: await templateAsset(env, "section-membership-levy"),
+          [ASSET.pledge]: await templateAsset(env, "commitment-pledge"),
+        };
+  const allImages: [string, string | null | undefined][] = [
     [ASSET.photo, newest("photo")?.id],
     [ASSET.signature, app.signature_file_id],
     [ASSET.spouseSignature, app.spouse_signature_file_id],
@@ -173,17 +204,18 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
     [ASSET.officerSignature, app.officer_signature_file_id],
   ];
   childRows.forEach((c, i) => {
-    images.push([ASSET.childPhoto(i + 1), newest("photo", String(c.id))?.id]);
-    images.push([ASSET.childSignature(i + 1), newest("signature", String(c.id))?.id]);
+    allImages.push([ASSET.childPhoto(i + 1), newest("photo", String(c.id))?.id]);
+    allImages.push([ASSET.childSignature(i + 1), newest("signature", String(c.id))?.id]);
   });
   const payer = str(p, "bill_payer");
   const accountSignature =
     payer === "Guardian / Parent" ? app.guardian_account_signature_file_id : payer === "Spouse / Partner" ? app.spouse_signature_file_id : app.signature_file_id;
-  images.push([ASSET.accountSignature, accountSignature]);
+  allImages.push([ASSET.accountSignature, accountSignature]);
 
   const day = app.submitted_at.slice(0, 10);
-  const minor = isUnderEighteen(str(p, "date_of_birth"), day);
-  if (minor) images.push([ASSET.guardianSignature, app.guardian_signature_file_id]);
+  const minor = which === "application" && isUnderEighteen(str(p, "date_of_birth"), day);
+  if (minor) allImages.push([ASSET.guardianSignature, app.guardian_signature_file_id]);
+  const images = which === "levy" ? allImages.filter(([name]) => name === ASSET.signature) : allImages;
 
   for (const [name, fileId] of images) {
     if (!fileId) continue;
@@ -196,7 +228,7 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
   const leftOut: string[] = [];
   const supporting: SupportingDocument[] = [];
   const addDoc = async (file: FileRow | null, caption: string) => {
-    if (!file) return;
+    if (!file || which === "levy") return;
     const kind = pageKind(file.content_type);
     if (!kind) {
       leftOut.push(caption);
@@ -295,65 +327,106 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
   };
   if (minor) assets[ASSET.u18] = await templateAsset(env, "u18-registration");
 
-  const rendered = await renderPdf(env, applicationSpec(facts), assets);
+  const rendered = await renderPdf(env, which === "levy" ? levySpec(facts) : applicationSpec(facts), assets);
   if (rendered.warnings.length) console.warn(`Application ${personApiId}: ${rendered.warnings.join("; ")}`);
-  const filename = documentFilename("HKFC Membership Application", name);
-  const fileId = await storeDocument(env, rendered.pdf, { kind: "application_form", filename, personId });
+  const filename = documentFilename(which === "levy" ? "HKFC Section Membership Application" : "HKFC Membership Application", name);
+  const fileId = await storeDocument(env, rendered.pdf, { kind: which === "levy" ? "section_membership_form" : "application_form", filename, personId });
+  await d.update("applications", `id=${eq(app.id)}`, { pdf_file_id: fileId });
   return { fileId, filename, leftOut };
 }
 
-/** "Name <address>" from CLUB_MEMBERSHIP_EMAIL, as its address. */
+/** "Name <address>" as its address. */
 const addressOf = (v: string) => v.match(/<([^>]+)>/)?.[1] ?? v.trim();
 
+/** Where an application's PDF goes: a new member's to the Club's membership office, an existing member's levy form to the front desk. */
+export function recipientFor(env: Env, applicationType: string): { to: string | null; greeting: string; label: string } {
+  return pdfFor(applicationType) === "application"
+    ? { to: env.CLUB_MEMBERSHIP_EMAIL ? addressOf(env.CLUB_MEMBERSHIP_EMAIL) : null, greeting: env.CLUB_MEMBERSHIP_CONTACT || "Membership Services", label: "the Club's membership office" }
+    : { to: env.FRONT_DESK_EMAIL ? addressOf(env.FRONT_DESK_EMAIL) : null, greeting: "Front Desk", label: "the front desk" };
+}
+
+/** Officers may send any application: the application's own Membership Officer, or another standing in. */
+const isMembershipOfficer = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "membershipOfficer");
+
 /**
- * After the Membership Officer signs: makes the PDF and sends it to the
- * Club's membership office in the officer's name, with a copy to them.
+ * The Membership Officer has checked the PDF and sends it: to the Club's
+ * membership office (a new member), or to the front desk (an existing
+ * member, who is then accepted). Sending again needs `again`.
  */
-export async function sendApplicationToClub(env: Env, personApiId: string): Promise<void> {
-  const made = await makeApplicationPdf(env, personApiId);
-  if (!made) return;
+export async function sendApplication(env: Env, user: AuthorizedUser, personApiId: string, again = false): Promise<{ sentAt: string; sentTo: string }> {
+  if (!isMembershipOfficer(user)) throw new HttpError("Only a Membership Officer sends applications on.", 403, "FORBIDDEN");
   const d = db(env);
-  const p = await d.one<{ preferred_name: string | null; given_names: string | null; surname: string | null; sponsored_by_officer_id: string | null; sponsored_by_sponsor_id: string | null; sponsored_by_chair_id: string | null }>(
+  const p = await d.one<{ id: string; preferred_name: string | null; given_names: string | null; surname: string | null; applicant_stage: string | null; sponsored_by_sponsor_id: string | null; sponsored_by_chair_id: string | null }>(
     "people",
-    `select=preferred_name,given_names,surname,sponsored_by_officer_id,sponsored_by_sponsor_id,sponsored_by_chair_id&api_id=${eq(personApiId)}`,
+    `select=id,preferred_name,given_names,surname,applicant_stage,sponsored_by_sponsor_id,sponsored_by_chair_id&api_id=${eq(personApiId)}`,
   );
-  if (!p) return;
-  const ids = [p.sponsored_by_officer_id, p.sponsored_by_sponsor_id, p.sponsored_by_chair_id].filter((x): x is string => !!x);
-  const offices = ids.length
-    ? await d.select<OfficeRow>("offices", `select=id,designation,office_email,people!offices_person_id_fkey(id,preferred_name,given_names,surname,email,membership_no)&id=${inList(ids)}`)
-    : [];
-  const officer = offices.find((o) => o.id === p.sponsored_by_officer_id);
-  const sponsor = offices.find((o) => o.id === p.sponsored_by_sponsor_id);
-  const chair = offices.find((o) => o.id === p.sponsored_by_chair_id);
-  const to = env.CLUB_MEMBERSHIP_EMAIL;
-  if (!to || !officer?.people) {
-    console.warn(`Application ${personApiId}: PDF kept, but not sent (${to ? "no Membership Officer" : "CLUB_MEMBERSHIP_EMAIL is not set"})`);
-    return;
-  }
+  if (!p) throw new HttpError("Application not found.", 404, "NOT_FOUND");
+  const app = await d.one<{ id: string; application_type: string; officer_signed_at: string | null; pdf_file_id: string | null; sent_at: string | null }>(
+    "applications",
+    `select=id,application_type,officer_signed_at,pdf_file_id,sent_at&person_id=${eq(p.id)}&order=submitted_at.desc&limit=1`,
+  );
+  if (!app) throw new HttpError("They haven't submitted an application yet.", 404, "NOT_FOUND");
+  const which = pdfFor(app.application_type);
+  if (which === "application" && !app.officer_signed_at) throw new HttpError("The Membership Officer signs it before it is sent.", 409, "NOT_READY");
+  if (!app.pdf_file_id) throw new HttpError("The PDF isn't ready yet. Make it, check it, then send it.", 409, "NOT_READY");
+  if (app.sent_at && !again) throw new HttpError("It has been sent already.", 409, "ALREADY_SENT");
+  const { to, greeting, label } = recipientFor(env, app.application_type);
+  if (!to) throw new HttpError(`Eddy has no address for ${label}.`, 500, "SERVER_MISCONFIGURED");
+
+  // The sender: the officer pressing Send, in their office's name.
+  const me = await d.one<{ id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null }>(
+    "people",
+    `select=id,preferred_name,given_names,surname,email&api_id=${eq(user.personId)}`,
+  );
+  if (!me) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  const myOffice = await d.one<{ designation: string | null; office_email: string | null }>(
+    "offices",
+    `select=designation,office_email&person_id=${eq(me.id)}&role=eq.membership_officer&status=eq.Active&limit=1`,
+  );
+  const officerName = holderName(me as OfficeRow["people"]);
+  const mailbox = myOffice?.office_email || me.email;
   const name = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
-  const officerName = holderName(officer.people);
-  const officerMailbox = officer.office_email || officer.people.email;
-  const text = [
-    `Dear ${env.CLUB_MEMBERSHIP_CONTACT || "Membership Services"},`,
-    "",
-    `Please find attached ${name}'s application for Sports Associate Membership, with their Section Membership Application (Hockey), the Hockey Section Commitment Pledge, and their supporting documents.`,
-    "",
-    `It has been signed by their sponsor${sponsor?.people ? ` (${holderName(sponsor.people)})` : ""}, the Hockey Section Chairman${chair?.people ? ` (${holderName(chair.people)})` : ""} and me as Membership Officer.`,
-    ...(made.leftOut.length ? ["", `Not included because of their file type, so I'll send these separately: ${made.leftOut.join("; ")}.`] : []),
-    "",
-    "Best regards,",
-    officerName,
-    `${officer.designation || "Membership Officer"} – HKFC Hockey Section`,
-  ].join("\n");
+  const file = await d.one<{ filename: string | null }>("files", `select=filename&id=${eq(app.pdf_file_id)}`);
+
+  let body: string[];
+  if (which === "application") {
+    const ids = [p.sponsored_by_sponsor_id, p.sponsored_by_chair_id].filter((x): x is string => !!x);
+    const offices = ids.length ? await d.select<OfficeRow>("offices", `select=id,designation,office_email,people!offices_person_id_fkey(id,preferred_name,given_names,surname,email,membership_no)&id=${inList(ids)}`) : [];
+    const sponsor = offices.find((o) => o.id === p.sponsored_by_sponsor_id);
+    const chair = offices.find((o) => o.id === p.sponsored_by_chair_id);
+    body = [
+      `Please find attached ${name}'s application for Sports Associate Membership, with their Section Membership Application (Hockey), the Hockey Section Commitment Pledge, and their supporting documents.`,
+      "",
+      `It has been signed by their sponsor${sponsor?.people ? ` (${holderName(sponsor.people)})` : ""}, the Hockey Section Chairman${chair?.people ? ` (${holderName(chair.people)})` : ""} and me as Membership Officer.`,
+    ];
+  } else {
+    body = [`Please find attached ${name}'s Section Membership Application to join the Hockey Section. They are an existing member of the Club; please apply the Hockey Section levy to their account.`];
+  }
   await sendEmail(env, {
-    toPersonId: officer.people.id,
-    to: addressOf(to),
-    subject: `Sports Associate Membership application: ${name}`,
-    text,
-    template: "application-to-club",
+    toPersonId: me.id,
+    to,
+    subject: which === "application" ? `Sports Associate Membership application: ${name}` : `Hockey Section levy application: ${name}`,
+    text: [`Dear ${greeting},`, "", ...body, "", "Best regards,", officerName, `${myOffice?.designation || "Membership Officer"} – HKFC Hockey Section`].join("\n"),
+    template: which === "application" ? "application-to-club" : "levy-to-front-desk",
     // In the officer's name (they get a blind copy); replies go to them.
-    from: officerMailbox ? `${officerName} <${officerMailbox}>` : env.REVIEW_EMAIL_FROM || undefined,
-    replyTo: officerMailbox ?? undefined,
-    attachments: [{ filename: made.filename, path: await fileLink(env, made.fileId) }],
+    from: mailbox ? `${officerName} <${mailbox}>` : env.REVIEW_EMAIL_FROM || undefined,
+    replyTo: mailbox ?? undefined,
+    attachments: [{ filename: file?.filename || "Application.pdf", path: await fileLink(env, app.pdf_file_id) }],
   });
+  const sentAt = new Date().toISOString();
+  await d.update("applications", `id=${eq(app.id)}`, { sent_at: sentAt, sent_by: me.id, sent_to: to });
+
+  // An existing member is accepted once their levy form is with the front desk (as Make did).
+  if (which === "levy" && p.applicant_stage !== ACCEPTED_STAGE) {
+    await peopleData(env).update(personApiId, { status: "Member", applicantStage: ACCEPTED_STAGE, active: true });
+    await recordMembershipEvent(env, user, {
+      eventType: "Approved",
+      personId: personApiId,
+      previousStage: p.applicant_stage ?? undefined,
+      newStage: ACCEPTED_STAGE,
+      notes: "Existing HKFC member: levy form sent to the front desk",
+    });
+    await invalidateForTables(env, [TABLES.player]);
+  }
+  return { sentAt, sentTo: to };
 }

@@ -77,8 +77,24 @@ export interface SigningView {
   drafts: { sportsBackground: string | null; trainingComments: string | null };
   savedSignatureUrl: string | null;
   /**
-   * Once the Membership Officer has signed: the consolidated application PDF
-   * sent to the Club's membership office, or null while it is being made.
+   * Once the application is ready to go on (a new member's signed by all
+   * three, an existing member's submitted): the PDF to check and where it
+   * goes. The Membership Officer checks it, then sends it.
    */
-  applicationPdfUrl?: string | null;
+  sending?: ApplicationSending;
+}
+
+export interface ApplicationSending {
+  /** The PDF, or null while it is being made. */
+  pdfUrl: string | null;
+  /** What it is: the whole application, or an existing member's levy form. */
+  document: "application" | "levy";
+  /** "the Club's membership office" / "the front desk", and its address. */
+  recipient: string;
+  to: string | null;
+  sentAt: string | null;
+  sentBy: string | null;
+  sentTo: string | null;
+  /** The viewer may make it again and send it (a Membership Officer). */
+  canSend: boolean;
 }

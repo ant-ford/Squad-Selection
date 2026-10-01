@@ -25,6 +25,8 @@ export function taskTitle(task: MyTask): string {
       return task.role === 'Sponsor'
         ? `Support ${who}'s membership application`
         : `Sign ${who}'s membership application as ${as(task.role)}`;
+    case 'send':
+      return `Check and send ${who}'s application`;
     case 'accept':
       return `Accept ${who} as a member`;
     case 'review':
