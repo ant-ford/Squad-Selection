@@ -4,6 +4,10 @@ import type { Env } from "./env";
 import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type OfficerRole } from "./reference";
 import { getCached } from "./cache";
 import { backendFor } from "./data/backend";
+import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
+
+/** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
+const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
 
 // One definition for the whole app, browser included - see the module for
 // why every store in this system disagrees about case.
@@ -89,7 +93,14 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   const isCoach = isTeamCoach || isSectionCaptain;
   const officerRoles = officers.rolesByPersonId[player.id] ?? [];
 
-  if (!isActive && !isCoach && officerRoles.length === 0) {
+  // Applicants in the New Joiner process sign in to fill in their application
+  // (Supabase backend: the form is Eddy's own screen there).
+  const isApplicant =
+    backendFor(env, "people") === "supabase" &&
+    player.status === "Applicant" &&
+    (APPLICANT_SIGN_IN_STAGES as readonly string[]).includes(player.applicantStage ?? "");
+
+  if (!isActive && !isCoach && officerRoles.length === 0 && !isApplicant) {
     // Logged with the matched record id: the commonest cause of a surprise
     // denial is a second People record sharing the email, so the record the
     // administrator is looking at is not the one that was matched.

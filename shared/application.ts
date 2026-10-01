@@ -27,7 +27,7 @@ export const MAX_RELATIVES = 3;
 export const MAX_CLUBS = 4;
 export const MAX_TRIALS = 5;
 
-/** HKFC's own documents shown with the agreements. TODO: copy into Eddy before Fillout is cancelled. */
+/** HKFC's own documents shown with the agreements (public/docs; from the owner, 2026-10-01). */
 export const AGREEMENT_PDFS = {
   samTerms: "/docs/hkfc-sports-associate-membership-terms.pdf",
   pledge: "/docs/hkfc-hockey-commitment-pledge-2026-04.pdf",
