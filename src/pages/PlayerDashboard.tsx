@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
+import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
+import { otherGamesThatDay, needsSameDayPrompt } from '@/lib/sameDayGames';
 import { SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
@@ -30,11 +32,33 @@ type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
 const dateKey = (d: string) => hkDateKey(d);
 
+// "Keep as is" on the same-day prompt is remembered per fixture on this
+// device, so a player who really is free for the support game later that day
+// is not asked again every visit.
+const promptDismissedKey = (fixtureId: string) => `sameDayPrompt.dismissed.${fixtureId}`;
+
+function isPromptDismissed(fixtureId: string): boolean {
+  try {
+    return localStorage.getItem(promptDismissedKey(fixtureId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setPromptDismissed(fixtureId: string, dismissed: boolean): void {
+  try {
+    if (dismissed) localStorage.setItem(promptDismissedKey(fixtureId), '1');
+    else localStorage.removeItem(promptDismissedKey(fixtureId));
+  } catch {
+    // Storage unavailable: the prompt just comes back next visit.
+  }
+}
+
 /**
- * One-tap availability for a whole day. Shown to the goalkeeper cohort for
- * every date, and to everyone else on dates where they have more than one
- * fixture in play (own team, play-up or support) - the case where setting
- * each card individually is the most tedious.
+ * One-tap availability for a whole day, for the goalkeeper cohort, who see
+ * every HKFC fixture grouped by date. Everyone else is asked about the rest
+ * of the day when they say No to their own team's game (SameDayGamesPrompt),
+ * which replaced this control on their list.
  */
 function DayAvailabilityControl({
   date,
@@ -111,8 +135,22 @@ export default function PlayerDashboard() {
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
+  // Same-day prompts the player has started answering stay open (even once
+  // every game reads No) until they press Done, so rows don't vanish under
+  // their thumb. `dismissTick` re-renders after a dismissal is stored.
+  const [promptsOpen, setPromptsOpen] = useState<Set<string>>(() => new Set());
+  const [, setDismissTick] = useState(0);
+  const keepPromptOpen = (fixtureId: string, open: boolean) =>
+    setPromptsOpen((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(fixtureId);
+      else next.delete(fixtureId);
+      return next;
+    });
 
   const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus) => {
+    // A fresh "No" is a new moment to ask about the rest of the day.
+    if (status === 'Unavailable') setPromptDismissed(fixtureId, false);
     quickAvailability.mutate(
       { fixtureId, status },
       {
@@ -170,23 +208,11 @@ export default function PlayerDashboard() {
     return Array.from(map.entries());
   }, [data]);
 
-  // How many fixtures the player could act on per date, across all three
-  // lists. Drives whether a day is worth a one-tap control: on a date with a
-  // single fixture the card's own buttons already do the job.
-  const relevantCountByDate = useMemo(() => {
-    const counts = new Map<string, number>();
-    if (!data) return counts;
-    const all = [
-      ...data.fixtures,
-      ...(data.playUpOpportunities ?? []),
-      ...(data.supportFixtures ?? []),
-    ];
-    for (const f of all) {
-      const key = dateKey(f.date);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }, [data]);
+  // Every fixture the player can answer, for the same-day prompt.
+  const allFixtures = useMemo(
+    () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
+    [data],
+  );
 
   // Back from a player's full stats (or the coach screens) lands where the
   // player left off rather than at the top.
@@ -207,6 +233,36 @@ export default function PlayerDashboard() {
       onAvailabilityChange={(status) => handleQuickAvailability(f.id, status)}
     />
   );
+
+  // Under a My Team card the player is out for, while they still read as in
+  // for another game that day.
+  const renderSameDayPrompt = (f: MyFixture) => {
+    const others = otherGamesThatDay(f, allFixtures);
+    const open = promptsOpen.has(f.id);
+    if (!open && (!needsSameDayPrompt(f, others) || isPromptDismissed(f.id))) return null;
+    if (others.length === 0) return null;
+    const key = dateKey(f.date);
+    return (
+      <SameDayGamesPrompt
+        fixture={f}
+        others={others}
+        busy={bulkBusy !== null}
+        onSet={(id, status) => {
+          keepPromptOpen(f.id, true);
+          handleQuickAvailability(id, status);
+        }}
+        onOutAllDay={() => {
+          keepPromptOpen(f.id, false);
+          handleBulkAvailability(key, 'Unavailable');
+        }}
+        onClose={() => {
+          keepPromptOpen(f.id, false);
+          if (others.some((o) => o.availabilityStatus !== 'Unavailable')) setPromptDismissed(f.id, true);
+          setDismissTick((t) => t + 1);
+        }}
+      />
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -346,24 +402,12 @@ export default function PlayerDashboard() {
               </div>
             ) : (
               <div className="space-y-2">
-                {data.fixtures.map((f, i) => {
-                  const key = dateKey(f.date);
-                  const isFirstOfDate =
-                    data.fixtures.findIndex((x) => dateKey(x.date) === key) === i;
-                  const worthADayControl = (relevantCountByDate.get(key) ?? 0) > 1;
-                  return (
-                    <Fragment key={`${f.id}-${f.hkfcTeam}`}>
-                      {isFirstOfDate && worthADayControl && (
-                        <DayAvailabilityControl
-                          date={key}
-                          busy={bulkBusy}
-                          onSet={handleBulkAvailability}
-                        />
-                      )}
-                      {renderCard(f)}
-                    </Fragment>
-                  );
-                })}
+                {data.fixtures.map((f) => (
+                  <Fragment key={`${f.id}-${f.hkfcTeam}`}>
+                    {renderCard(f)}
+                    {renderSameDayPrompt(f)}
+                  </Fragment>
+                ))}
               </div>
             )}
 
@@ -436,6 +480,7 @@ export default function PlayerDashboard() {
           conflictHint={conflictHint ?? undefined}
           onClose={() => setSelectedFixture(null)}
           onSaved={() => {
+            setPromptDismissed(selectedFixture.id, false);
             setSelectedFixture(null);
             queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
           }}
