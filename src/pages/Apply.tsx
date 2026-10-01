@@ -149,10 +149,6 @@ export default function ApplyPage() {
         </button>
       </AppHeader>
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Thank you for applying to join HKFC Hockey. Each screen saves as you go, so you can stop and come back. Questions? Contact the Membership Officer at
-          mensmembership@hkfchockey.com.
-        </p>
         {body()}
       </main>
       <AppFooter />
