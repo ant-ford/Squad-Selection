@@ -51,7 +51,9 @@ export async function savedSignature(env: Env, personApiId: string): Promise<str
   const d = db(env);
   const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
   if (!person) return null;
-  const rows = await d.select<{ id: string }>("files", `select=id&person_id=${eq(person.id)}&kind=eq.signature&order=created_at.desc`);
+  // Their own: a spouse's or child's signature is filed on the applicant's
+  // People row too, with family_member_id set.
+  const rows = await d.select<{ id: string }>("files", `select=id&person_id=${eq(person.id)}&family_member_id=is.null&kind=eq.signature&order=created_at.desc`);
   return rows[0]?.id ?? null;
 }
 

@@ -12,6 +12,10 @@
  *  - sign_application (migrations 20261001200000, 20261001210000) checks
  *    the turn, records it and moves the stage on; at stage 6 the
  *    Membership Officer has the accept task for the New Joiner board.
+ *  - The Membership Officer's signature makes the consolidated application
+ *    PDF; they check it here, then send it to the Club's membership office
+ *    (pdf/application.ts). An existing HKFC member's levy form, made when
+ *    they submit, is checked and sent to the front desk the same way.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -24,10 +28,14 @@ import { invalidateForTables } from "./airtableWebhook";
 import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
+import { inBackground } from "./requestContext";
+import { pdfsEnabled } from "./pdf/render";
+import { makeApplicationPdf, pdfFor, recipientFor, sendApplication } from "./pdf/application";
 import { TABLES } from "../../shared/schema/tableNames";
 import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
 
 const SIGNING_STAGES = Object.keys(TURN_BY_STAGE);
+const SUBMITTED_STAGE = "3. Club Application (Signed)";
 const READY_STAGE = "6. Membership Officer (Signed)";
 const NEW_MEMBER = "New HKFC Member";
 
@@ -86,9 +94,16 @@ interface ApplicationRow {
   chair_signature_file_id: string | null;
   officer_signed_at: string | null;
   officer_signature_file_id: string | null;
+  pdf_file_id: string | null;
+  sent_at: string | null;
+  sent_by: string | null;
+  sent_to: string | null;
 }
 const APPLICATION_COLUMNS =
-  "id,person_id,application_type,submitted_at,sponsor_signed_at,sponsor_signature_file_id,chair_signed_at,chair_signature_file_id,officer_signed_at,officer_signature_file_id";
+  "id,person_id,application_type,submitted_at,sponsor_signed_at,sponsor_signature_file_id,chair_signed_at,chair_signature_file_id,officer_signed_at,officer_signature_file_id,pdf_file_id,sent_at,sent_by,sent_to";
+
+/** A new member's application goes on once all three have signed; an existing member's once submitted. */
+const readyToSend = (app: ApplicationRow) => app.application_type !== NEW_MEMBER || !!app.officer_signed_at;
 
 interface Holder {
   officeId: string;
@@ -165,6 +180,21 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     signatures[r] = { name: holderOf(r)?.name ?? null, signedAt: signedAt(app, r), signatureUrl: file ? await fileLink(env, file) : null };
   }
   const saved = myRoles.length ? await savedSignature(env, user.personId) : null;
+  let sending: SigningView["sending"];
+  if (readyToSend(app)) {
+    const { to, label } = recipientFor(env, app.application_type);
+    const sender = app.sent_by ? await d.one<{ preferred_name: string | null; given_names: string | null; surname: string | null }>("people", `select=preferred_name,given_names,surname&id=${eq(app.sent_by)}`) : null;
+    sending = {
+      pdfUrl: app.pdf_file_id ? await fileLink(env, app.pdf_file_id) : null,
+      document: pdfFor(app.application_type),
+      recipient: label,
+      to,
+      sentAt: app.sent_at,
+      sentBy: sender ? nameOf(sender) : null,
+      sentTo: app.sent_to,
+      canSend: isMembershipOfficer(user),
+    };
+  }
   return {
     id: p.api_id,
     name: nameOf(p),
@@ -191,7 +221,28 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     myRoles,
     drafts: { sportsBackground: p.sports_background_draft, trainingComments: p.training_comments_draft },
     savedSignatureUrl: saved ? await fileLink(env, saved) : null,
+    sending,
   };
+}
+
+const isMembershipOfficer = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "membershipOfficer");
+
+/** A Membership Officer makes the PDF (again, after a correction), and waits for it. */
+export async function remakeApplicationPdf(env: Env, user: AuthorizedUser, apiId: string): Promise<SigningView> {
+  requireSupabase(env);
+  if (!isMembershipOfficer(user)) throw new HttpError("Only a Membership Officer makes the PDF.", 403, "FORBIDDEN");
+  const { app } = await loadApplication(env, apiId);
+  if (!readyToSend(app)) throw new HttpError("The Membership Officer signs it before the PDF is made.", 409, "NOT_READY");
+  if (!pdfsEnabled(env)) throw new HttpError("Eddy isn't making PDFs yet.", 503, "PDFS_OFF");
+  await makeApplicationPdf(env, apiId);
+  return getSigningView(env, user, apiId);
+}
+
+/** A Membership Officer has checked the PDF and sends it on. */
+export async function sendApplicationOn(env: Env, user: AuthorizedUser, apiId: string, body: Record<string, unknown>): Promise<SigningView> {
+  requireSupabase(env);
+  await sendApplication(env, user, apiId, body.again === true);
+  return getSigningView(env, user, apiId);
 }
 
 // The Airtable AI fields' prompts ("Sports Background / Achievement of the
@@ -270,6 +321,9 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
     throw err;
   }
   await invalidateForTables(env, [TABLES.player]);
+  // The last signature: the application, as one PDF, for the Membership
+  // Officer to check and send. After the response; a slow render never holds it up.
+  if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, apiId));
   const next = TURN_BY_STAGE[stage];
   if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
   return { stage };
@@ -324,10 +378,18 @@ export async function signingTasks(env: Env): Promise<Record<string, MyTask[]>> 
   };
   for (const x of people) {
     const app = apps.find((a) => a.person_id === x.id);
-    if (!app || app.application_type !== NEW_MEMBER) continue;
+    if (!app) continue;
     const subject = nameOf(x);
+    const officer = who[x.sponsored_by_officer_id ?? ""]?.apiId;
+    // Ready to go on: the Membership Officer checks the PDF and sends it; a
+    // new member is then accepted once the Club confirms their number.
+    const sendTask: MyTask = { id: `send:${x.api_id}`, key: "send", subject, url: `/sign-application/${x.api_id}` };
+    if (app.application_type !== NEW_MEMBER) {
+      if (x.applicant_stage === SUBMITTED_STAGE && !app.sent_at) add(officer, sendTask);
+      continue;
+    }
     if (x.applicant_stage === READY_STAGE) {
-      add(who[x.sponsored_by_officer_id ?? ""]?.apiId, { id: `accept:${x.api_id}`, key: "accept", subject, url: "/membership" });
+      add(officer, app.sent_at ? { id: `accept:${x.api_id}`, key: "accept", subject, url: "/membership" } : sendTask);
       continue;
     }
     const r = TURN_BY_STAGE[x.applicant_stage ?? ""];

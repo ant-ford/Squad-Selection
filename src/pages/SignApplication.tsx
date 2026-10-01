@@ -10,7 +10,7 @@ import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
-import { getSigningView, getSponsorDrafts, signApplication } from '@/api/signing';
+import { getSigningView, getSponsorDrafts, remakeApplicationPdf, sendApplication, signApplication } from '@/api/signing';
 import { JOINER_POSITIONS, JOINER_TEAMS } from '@shared/joiners';
 import { ROLE_LABEL, SIGN_ROLES, SPONSOR_LEVELS, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from '@shared/signing';
 
@@ -35,7 +35,9 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 /**
  * A new HKFC member's application for its sponsor, Chairman and Membership
  * Officer to sign, in that order (replacing Fillout forms 4 and 5). The
- * sponsor adds their assessment, starting from AI drafts.
+ * sponsor adds their assessment, starting from AI drafts. Once signed (or,
+ * for an existing HKFC member, once submitted), the Membership Officer
+ * checks the PDF here and sends it on.
  */
 export default function SignApplicationPage() {
   const { id = '' } = useParams();
@@ -77,6 +79,7 @@ function Application({ v }: { v: SigningView }) {
   // Theirs to sign now; a later signer sees whose turn it is.
   const mine = turn && v.myRoles.includes(turn) ? turn : null;
   const waiting = !mine && turn ? v.myRoles.find((r) => !v.signatures[r].signedAt) : undefined;
+  const existing = v.applicationType !== 'New HKFC Member';
   return (
     <>
       <section className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
@@ -126,7 +129,7 @@ function Application({ v }: { v: SigningView }) {
         </Block>
       )}
 
-      <Block title="Signatures">
+      {!existing && <Block title="Signatures">
         <ul className="space-y-2">
           {SIGN_ROLES.map((r) => {
             const s = v.signatures[r];
@@ -152,17 +155,118 @@ function Application({ v }: { v: SigningView }) {
             );
           })}
         </ul>
-        <p className="text-xs text-muted-foreground">The sponsor signs first, then the Chairman, then the Membership Officer, who sends it to the Club's membership office.</p>
+        <p className="text-xs text-muted-foreground">
+          The sponsor signs first, then the Chairman, then the Membership Officer, who checks the application and sends it to the Club's membership office.
+        </p>
         {waiting && (
           <p className="text-xs text-foreground rounded-md border border-border bg-muted/40 p-2">
             You can sign as {ROLE_LABEL[waiting]} once the {turn === 'sponsor' ? 'sponsor' : ROLE_LABEL[turn!]} has signed. You'll get an email when it's your turn.
           </p>
         )}
-      </Block>
+      </Block>}
 
+      {v.sending && <SendBlock v={v} sending={v.sending} />}
       {mine === 'sponsor' && <SponsorSign v={v} />}
       {(mine === 'chair' || mine === 'officer') && <OfficerSign v={v} role={mine} />}
     </>
+  );
+}
+
+/** The PDF to check, and (for a Membership Officer) the buttons to make it again and send it on. */
+function SendBlock({ v, sending }: { v: SigningView; sending: NonNullable<SigningView['sending']> }) {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const done = (view: SigningView) => {
+    queryClient.setQueryData(['signing', v.id], view);
+    void queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    void queryClient.invalidateQueries({ queryKey: ['membershipBoard'] });
+  };
+  const remake = useMutation({
+    mutationFn: () => remakeApplicationPdf(v.id),
+    onSuccess: (view) => {
+      toast.success('PDF made again');
+      done(view);
+    },
+    onError: (err) => setProblem(errorText(err)),
+  });
+  const send = useMutation({
+    mutationFn: () => sendApplication(v.id, !!sending.sentAt),
+    onSuccess: (view) => {
+      toast.success(`Sent to ${sending.recipient}`);
+      setConfirming(false);
+      done(view);
+    },
+    onError: (err) => setProblem(errorText(err)),
+  });
+  const what = sending.document === 'levy' ? 'Section Membership (levy) form' : 'application';
+  const busy = remake.isPending || send.isPending;
+  return (
+    <Block title={sending.document === 'levy' ? 'Levy form for the front desk' : 'Application for the Club'}>
+      {sending.pdfUrl ? (
+        <a href={sending.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary underline">
+          Open the {what} (PDF)
+        </a>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          No PDF yet. It is made just after {sending.document === 'levy' ? 'they submit' : 'the Membership Officer signs'}; reload in a minute
+          {sending.canSend ? ', or make it now.' : '.'}
+        </p>
+      )}
+      {sending.sentAt ? (
+        <p className="text-xs flex items-center gap-1 text-primary">
+          <Check className="h-3.5 w-3.5" /> Sent to {sending.recipient} ({sending.sentTo}) on {safeFormat(sending.sentAt, 'd MMM yyyy')}
+          {sending.sentBy ? ` by ${sending.sentBy}` : ''}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {sending.canSend
+            ? `Check every page, then send it to ${sending.recipient} (${sending.to ?? 'no address set'}). It goes in your name, with a copy to you.`
+            : `A Membership Officer checks it and sends it to ${sending.recipient}.`}
+          {sending.canSend && sending.document === 'levy' ? ' Sending it accepts them as a member of the section.' : ''}
+        </p>
+      )}
+      {problem && (
+        <p role="alert" className="text-xs text-destructive">
+          {problem}
+        </p>
+      )}
+      {sending.canSend && (
+        <div className="flex flex-wrap justify-end gap-2 pt-4 border-t border-border">
+          <button
+            className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted disabled:opacity-50"
+            disabled={busy}
+            onClick={() => {
+              setProblem(null);
+              remake.mutate();
+            }}
+          >
+            {remake.isPending ? 'Making it…' : sending.pdfUrl ? 'Make the PDF again' : 'Make the PDF'}
+          </button>
+          {confirming ? (
+            <>
+              <button className="text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted" disabled={busy} onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+              <button
+                className={primary}
+                disabled={busy}
+                onClick={() => {
+                  setProblem(null);
+                  send.mutate();
+                }}
+              >
+                {send.isPending ? 'Sending…' : `Yes, send it${sending.sentAt ? ' again' : ''}`}
+              </button>
+            </>
+          ) : (
+            <button className={primary} disabled={busy || !sending.pdfUrl || !sending.to} onClick={() => setConfirming(true)}>
+              {sending.sentAt ? 'Send again' : `Send to ${sending.recipient}`}
+            </button>
+          )}
+        </div>
+      )}
+    </Block>
   );
 }
 

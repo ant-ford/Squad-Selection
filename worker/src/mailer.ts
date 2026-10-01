@@ -7,7 +7,11 @@
  *  - Every send is logged in email_log by recipient record, not address.
  *  - Resend's free plan allows 100 a day; Eddy stops at DAILY_LIMIT so a
  *    burst cannot cost the next day's sign-in codes (they share the account).
- *  - Emails carry links, never documents (no attachments here at all).
+ *  - Emails carry links, not documents. The one exception is a filled PDF
+ *    for someone who passes it on outside Eddy (the Club's membership office,
+ *    the front desk, the Hockey Convenor for HockeyHK; owner, 1 Oct 2026).
+ *    Resend fetches it from a signed file link (`path`), so the Worker never
+ *    base64-encodes megabytes inside its 10 ms of CPU.
  *  - An email sent in the captain's name (`from`) comes from his address
  *    with a blind copy to it, so he keeps what went out. Resend sends from
  *    hkfchockey.com only once that domain is verified there; until then it
@@ -32,6 +36,8 @@ export interface Email {
   replyTo?: string;
   /** Send in someone's name, e.g. "Anthony Ford <menscaptain@hkfchockey.com>"; they get a blind copy. */
   from?: string;
+  /** Filled PDFs only (see above): a filename and a signed file link Resend fetches. */
+  attachments?: { filename: string; path: string }[];
 }
 
 const addressOf = (from: string) => from.match(/<([^>]+)>/)?.[1] ?? from.trim();
@@ -50,13 +56,15 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
 
   const redirect = env.MAIL_REDIRECT_TO;
   const bcc = email.from ? [addressOf(email.from)] : undefined;
+  const attachments = email.attachments?.length ? email.attachments : undefined;
   const message = redirect
     ? {
+        attachments,
         to: [redirect],
         subject: `[PREVIEW] ${email.subject}`,
         text: `Preview: this would have gone to person ${email.toPersonId}${email.cc?.length ? ` (with ${email.cc.length} cc)` : ""}${bcc ? " (and a blind copy to the sender)" : ""}.\n\n${email.text}`,
       }
-    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, bcc, subject: email.subject, text: email.text };
+    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, bcc, subject: email.subject, text: email.text, attachments };
 
   const post = (from: string, replyTo?: string) =>
     fetch("https://api.resend.com/emails", {

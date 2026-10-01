@@ -108,14 +108,26 @@ describe("signing a new member's application", () => {
     expect(resend(calls)).toHaveLength(0);
   });
 
-  it("gives the task to whoever's turn it is, then the Membership Officer an accept task", async () => {
+  it("gives the task to whoever's turn it is, then the Membership Officer a send task, then an accept task", async () => {
     fake();
     expect(await signingTasks(env)).toEqual({
       recSPONSOR: [{ id: "application:recAPPLICANT", key: "application", subject: "Sam Lee", role: "Sponsor", url: "/sign-application/recAPPLICANT" }],
     });
     fake({ people: [{ ...applicant, applicant_stage: "4. Sponsor (Signed)" }], app: application({ sponsor_signed_at: "2026-10-01T02:00:00Z" }) });
     expect(Object.keys(await signingTasks(env))).toEqual(["recCHAIR"]);
+    // Signed by all three: the Membership Officer checks the PDF and sends it to the Club...
     fake({ people: [{ ...applicant, applicant_stage: "6. Membership Officer (Signed)" }] });
+    expect(await signingTasks(env)).toEqual({ recMO: [{ id: "send:recAPPLICANT", key: "send", subject: "Sam Lee", url: "/sign-application/recAPPLICANT" }] });
+    // ...then accepts them once the Club confirms their number.
+    fake({ people: [{ ...applicant, applicant_stage: "6. Membership Officer (Signed)" }], app: application({ sent_at: "2026-10-02T02:00:00Z" }) });
     expect(await signingTasks(env)).toEqual({ recMO: [{ id: "accept:recAPPLICANT", key: "accept", subject: "Sam Lee", url: "/membership" }] });
+  });
+
+  it("asks the Membership Officer to check and send an existing member's levy form until it is sent", async () => {
+    const existing = { people: [{ ...applicant, applicant_stage: "3. Club Application (Signed)" }] };
+    fake({ ...existing, app: application({ application_type: "Existing HKFC Member" }) });
+    expect(await signingTasks(env)).toEqual({ recMO: [{ id: "send:recAPPLICANT", key: "send", subject: "Sam Lee", url: "/sign-application/recAPPLICANT" }] });
+    fake({ ...existing, app: application({ application_type: "Existing HKFC Member", sent_at: "2026-10-02T02:00:00Z" }) });
+    expect(await signingTasks(env)).toEqual({});
   });
 });

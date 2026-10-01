@@ -44,7 +44,7 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "accept" | "review" | "kit" | "registration";
+export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -196,7 +196,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, accept: 5, review: 6, kit: 7, registration: 8 };
+const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
