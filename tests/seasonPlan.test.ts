@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { getMySeasonPlan, getSeasonPlanBoard, parseSeasonPlan, planTeamsFor, submitSeasonPlan } from "../worker/src/seasonPlan";
+import { canSeeSeasonPlans, getMySeasonPlan, getSeasonPlanBoard, parseSeasonPlan, planTeamsFor, submitSeasonPlan } from "../worker/src/seasonPlan";
 import { PLAYING_PREFERENCES, seasonPlanMissing, EMPTY_SEASON_PLAN } from "../shared/seasonPlan";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -66,6 +66,12 @@ describe("season plan", () => {
     expect(planTeamsFor(env, captain)).toBe("all");
     expect(planTeamsFor(env, coach)).toEqual(["HKFC C"]);
     expect(planTeamsFor(env, player)).toEqual([]);
+
+    // The Officers menu item, in both the profile and the fixtures payloads.
+    expect(canSeeSeasonPlans(env, captain)).toBe(true);
+    expect(canSeeSeasonPlans(env, coach)).toBe(true);
+    expect(canSeeSeasonPlans(env, player)).toBe(false);
+    expect(canSeeSeasonPlans({ ...env, DATA_BACKEND: "airtable" } as Env, coach)).toBe(false);
 
     fake({ current_season: "2026-2027", people, season_plans_v: plans });
     const all = await getSeasonPlanBoard(env, captain);

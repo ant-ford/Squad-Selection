@@ -15,6 +15,7 @@ import { evaluatePlayerEligibility } from "./eligibility";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
+import { canSeeSeasonPlans } from "./seasonPlan";
 import { backendFor } from "./data/backend";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
@@ -178,6 +179,7 @@ export async function getMyFixtures(
     isSectionCaptain: authUser.isSectionCaptain,
     // Officers' sections, for the dashboard's header buttons.
     sections: sectionsFor(authUser, env),
+    seasonPlans: canSeeSeasonPlans(env, authUser),
     volunteers: await canSeeVolunteers(env, authUser),
     // Their details are Eddy's own screens on Supabase ("My details").
     eddyProfile: backendFor(env, "people") === "supabase",
