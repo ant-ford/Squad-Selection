@@ -88,6 +88,8 @@ export interface GetMyFixturesOutput {
   isSectionCaptain: boolean;
   /** Officers' sections this person may open, decided by the Worker. */
   sections?: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  /** Whether the Season plans screen has anything for them (coaches, Section Captains). */
+  seasonPlans?: boolean;
   /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
   volunteers?: boolean;
   /** Whether their details are kept in Eddy (the Supabase backend): shows "My details". */

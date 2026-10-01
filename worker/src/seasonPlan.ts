@@ -120,6 +120,18 @@ export function planTeamsFor(env: Env, user: AuthorizedUser): "all" | string[] {
   return user.coachTeams;
 }
 
+/**
+ * Whether the Season plans screen has anything for them, for the Officers
+ * menu: Section Captains every team, coaches their own. Supabase backend
+ * only. Sent with both /api/my-profile and /api/my-fixtures, since the
+ * coach header reads one and the player header the other.
+ */
+export function canSeeSeasonPlans(env: Env, user: AuthorizedUser): boolean {
+  if (backendFor(env, "people") !== "supabase") return false;
+  const teams = planTeamsFor(env, user);
+  return teams === "all" || teams.length > 0;
+}
+
 const personName = (p: PersonRow) => [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos || p.registered_team || "";
 
