@@ -11,7 +11,7 @@ import { OFFICER_FIELDS } from "../../../shared/schema/fieldMaps";
  * Sponsors share the shape; a sponsor row names who signs an application
  * (contacts.ts) and grants no section access.
  */
-export type Office = "membershipOfficer" | "sectionChair" | "sectionCaptain" | "sponsor" | "kitConvenor";
+export type Office = "membershipOfficer" | "sectionChair" | "sectionCaptain" | "sponsor" | "kitConvenor" | "hockeyConvenor";
 
 export const OFFICE_TABLES: Record<Office, string> = {
   membershipOfficer: TABLES.membershipOfficer,
@@ -21,6 +21,9 @@ export const OFFICE_TABLES: Record<Office, string> = {
   // Read on the Supabase backend only (reference.ts getOfficerLinks): the kit
   // screens don't exist on Airtable.
   kitConvenor: "Kit Convenor",
+  // Supabase only too: it lets the Hockey Convenor sign in to open league
+  // registration requests (joiners.ts). It opens no officer section.
+  hockeyConvenor: "Hockey Convenor",
 };
 
 /** One office row: who holds it (People ids) and its Designation. */

@@ -8,7 +8,7 @@ export interface ProfileData {
   isSectionCaptain: boolean;
   /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
   officerRoles: {
-    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor';
+    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor';
     designation: string;
   }[];
   /** Officers' sections this person may open, decided by the Worker. */

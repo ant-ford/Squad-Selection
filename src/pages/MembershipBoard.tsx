@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Search, User, AlertTriangle } from 'lucide-react';
+import { Download, Search, User, UserPlus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -31,6 +31,8 @@ export default function MembershipBoard() {
   const navigate = useNavigate();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.sections?.includes('membership') ?? false;
+  // Section Captains propose new joiners (the planning section is that office, Supabase only).
+  const canPropose = profile?.sections?.includes('planning') ?? false;
   const [params, setParams] = useSearchParams();
   const tab: Tab = TABS.find((t) => t.key !== 'board' && t.key === params.get('view'))?.key ?? 'board';
   const { data: board, isLoading, isError, refetch } = useMembershipBoard(allowed && tab === 'board');
@@ -186,6 +188,14 @@ export default function MembershipBoard() {
           >
             {showParked ? 'Hide' : 'Show'} parked ({parkedCount})
           </button>
+          {canPropose && (
+            <button
+              onClick={() => navigate('/joiners/new')}
+              className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium inline-flex items-center gap-1.5"
+            >
+              <UserPlus className="h-4 w-4" /> Propose a new joiner
+            </button>
+          )}
         </div>
 
         {board && !board.hasStageDates && (

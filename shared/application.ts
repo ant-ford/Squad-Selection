@@ -34,6 +34,13 @@ export const AGREEMENT_PDFS = {
   pledge: "/docs/hkfc-hockey-commitment-pledge-2026-04.pdf",
 } as const;
 
+/**
+ * The New Members Info Sheet the invitation links to (the Make scenario
+ * attached it from Google Drive). Null until the club gives Eddy a copy;
+ * the invitation then leaves the line out.
+ */
+export const NEW_MEMBERS_INFO_SHEET: string | null = null;
+
 export interface AgreementItem {
   key: string;
   title: string;

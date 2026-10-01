@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { FileText, MessageCircle } from 'lucide-react';
+import { FileText, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { getNumberHolders, type ApplicantCard, type NumberHolder } from '@/api/membership';
 import { ApiError } from '@/lib/apiClient';
-import { useApproveApplicant } from '@/lib/queries';
+import { Link } from 'react-router-dom';
+import { useApproveApplicant, useMyProfile } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { hkDateKey } from '@shared/hkDateKey';
@@ -45,6 +46,8 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
   const whatsApp = applicantWhatsApp(card);
   const chase = chaseWhatsApp(card);
   const age = ageLabel(card);
+  // Section Captains (the planning section is that office, Supabase only).
+  const canPropose = useMyProfile().data?.sections?.includes('planning') ?? false;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -120,6 +123,14 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
           <TextBlock label="Selection Comments / Coach Requests" text={card.selectionComments} />
         </div>
 
+        {canPropose && (
+          <Link
+            to={`/joiners/${card.id}`}
+            className="mb-4 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
+          >
+            <Mail className="h-3.5 w-3.5" /> Details, invitation, kit and registration
+          </Link>
+        )}
         {card.canApprove && <ApproveForm card={card} onDone={onClose} />}
       </SheetContent>
     </Sheet>

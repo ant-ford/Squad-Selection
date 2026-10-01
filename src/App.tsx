@@ -29,6 +29,8 @@ const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 const MyDetails = lazy(() => import('./pages/MyDetails'));
 // The new joiner (applicant) form.
 const Apply = lazy(() => import('./pages/Apply'));
+const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
+const JoinerTask = lazy(() => import('./pages/JoinerTask'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -114,6 +116,30 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <MembershipBoard />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/joiners/new',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/joiners/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/joiner-task/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <JoinerTask />
           </Suspense>
         ),
       },

@@ -26,6 +26,17 @@ import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volun
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
+  completeJoinerTask,
+  createJoiner,
+  getJoiner,
+  getJoinerOptions,
+  getJoinerTask,
+  inviteJoiner,
+  requestKit,
+  requestRegistration,
+  updateJoiner,
+} from "./joiners";
+import {
   allocateSpare,
   confirmKit,
   editSizes,
@@ -709,6 +720,29 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const family = pathname.match(/^\/api\/apply\/family\/([0-9a-f-]{36})\/files\/([a-z_]+)$/);
         if (family) return json(await uploadApplicantFile(env, user, family[1], family[2], body), 200, origin);
       }
+    }
+
+    // ── New joiners: the Section Captain's screens and the convenors' tasks
+    // (Supabase backend; worker/src/joiners.ts checks who may do what).
+    if (pathname.startsWith("/api/joiners")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/joiners/options") return json(await getJoinerOptions(env, user), 200, origin);
+      const one = pathname.match(/^\/api\/joiners\/([A-Za-z0-9-]{3,40})(?:\/(invite|kit|registration))?$/);
+      if (method === "GET" && one && !one[2]) return json(await getJoiner(env, user, one[1]), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/joiners") return json(await createJoiner(env, user, body), 200, origin);
+        if (one && !one[2]) return json(await updateJoiner(env, user, one[1], body), 200, origin);
+        if (one?.[2] === "invite") return json(await inviteJoiner(env, user, one[1]), 200, origin);
+        if (one?.[2] === "kit") return json(await requestKit(env, user, one[1], body), 200, origin);
+        if (one?.[2] === "registration") return json(await requestRegistration(env, user, one[1], body), 200, origin);
+      }
+    }
+    if (pathname.startsWith("/api/joiner-tasks/")) {
+      const user = await requireAuthorizedUser(request, env);
+      const task = pathname.match(/^\/api\/joiner-tasks\/([0-9a-f-]{36})(\/done)?$/);
+      if (task && method === "GET" && !task[2]) return json(await getJoinerTask(env, user, task[1]), 200, origin);
+      if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
     }
 
     // ── Volunteering (Supabase backend; src/volunteering.ts) ──────────────
