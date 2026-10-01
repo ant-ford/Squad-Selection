@@ -246,7 +246,7 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
       {confirmInactive && (
         <ConfirmDialog
           title="Not playing this season?"
-          message="You'll be marked as not active straight away: you won't be picked for squads or shown in the team lists until you're made active again."
+          message="You'll be marked as not active straight away so won't be picked for squads or shown in the team lists."
           confirmLabel="Yes, not this season"
           onCancel={() => setConfirmInactive(false)}
           onConfirm={() => {
