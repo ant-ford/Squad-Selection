@@ -26,6 +26,7 @@ import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volun
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import {
   allocateSpare,
+  confirmKit,
   editSizes,
   getKitBoard,
   getMyKit,
@@ -717,6 +718,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireAuthorizedUser(request, env);
       const body = (await readJsonBody(request)) as Record<string, unknown>;
       return json(await moveKit(env, user, body ?? {}), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/kit/confirm") {
+      const user = await requireAuthorizedUser(request, env);
+      const body = (await readJsonBody(request)) as Record<string, unknown>;
+      return json(await confirmKit(env, user, body ?? {}), 200, origin);
     }
     if (pathname.startsWith("/api/kit/")) {
       const user = await requireSection(request, env, "kit");

@@ -40,6 +40,10 @@ function moveLine(m: KitMove): string {
       return `Made a spare: ${m.from ?? 'the owner'} gave up the number`;
     case 'edited':
       return `Sizes corrected${m.note ? `: ${m.note}` : ''}`;
+    case 'offered':
+      return `${m.from ?? 'Someone'} says they gave it to ${m.to}`;
+    case 'declined':
+      return `${m.to} hasn't got it yet`;
   }
 }
 
