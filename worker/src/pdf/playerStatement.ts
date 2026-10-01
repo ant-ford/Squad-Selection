@@ -222,7 +222,6 @@ export async function makePlayerStatement(env: Env, reviewApiId: string): Promis
         "HKFC Hockey Section",
       ].join("\n"),
       template: "player-statement-complete",
-      cc: env.REVIEW_EMAIL_CC ? env.REVIEW_EMAIL_CC.split(",").map((x) => x.trim()).filter(Boolean) : undefined,
       from: env.REVIEW_EMAIL_FROM || undefined,
       attachments: [{ filename, path: await fileLink(env, fileId) }],
     });

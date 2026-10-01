@@ -56,6 +56,14 @@ export default function AccessNotActive({ message }: { message: string }) {
           {retrying ? 'Checking…' : 'Try again'}
         </button>
 
+        {/* Someone with no record yet may be here to join, not a lapsed member. */}
+        <p className="mt-4 text-sm text-muted-foreground">
+          Not a member yet?{' '}
+          <a href="/join" className="text-primary underline">
+            Register your interest in joining
+          </a>
+        </p>
+
         <p className="mt-2 text-xs text-muted-foreground">
           Just been activated? Give it a minute before trying, then tap above.
         </p>

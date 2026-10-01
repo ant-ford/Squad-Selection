@@ -414,7 +414,6 @@ async function notifyNext(env: Env, reviewApiId: string, next: NextStep | undefi
       text: text.join("\n"),
       template: kind === "sponsor" ? "commitment-sponsor-review" : "commitment-officer-review",
       stepId: next.step_id ?? undefined,
-      cc: env.REVIEW_EMAIL_CC ? env.REVIEW_EMAIL_CC.split(",").map((x) => x.trim()).filter(Boolean) : undefined,
       from: env.REVIEW_EMAIL_FROM || undefined,
     });
     return true;

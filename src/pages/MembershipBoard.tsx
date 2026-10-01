@@ -213,8 +213,8 @@ export default function MembershipBoard() {
           <div className="mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10">
             <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              {broken.length} {broken.length === 1 ? 'record has' : 'records have'} an Applicant Stage that needs fixing in
-              Airtable
+              {broken.length} {broken.length === 1 ? 'record has' : 'records have'} an Applicant Stage that needs fixing (ask the
+              Section Captain)
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               {broken.map((c) => `${c.name} (${c.stage})`).join(', ')}

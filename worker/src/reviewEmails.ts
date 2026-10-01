@@ -55,7 +55,6 @@ export async function startReview(env: Env, commitmentId: string): Promise<boole
       text,
       template: "commitment-review-request",
       stepId: s.step_id,
-      cc: env.REVIEW_EMAIL_CC ? env.REVIEW_EMAIL_CC.split(",").map((x) => x.trim()).filter(Boolean) : undefined,
       // Sent in the captain's name (owner decision, 2026-09-29).
       from: env.REVIEW_EMAIL_FROM || undefined,
     });
@@ -66,9 +65,17 @@ export async function startReview(env: Env, commitmentId: string): Promise<boole
   }
 }
 
-/** The daily run: every review due its email. Counts only in the log. */
+/**
+ * At most this many a run. Each email takes four outside calls (claim, the
+ * day's count, Resend, the log) and a free-plan Worker run may make 50, so
+ * a long list could claim a review and then fail to send or undo it. The
+ * rest wait for the next day's run, soonest period end first.
+ */
+export const MAX_PER_RUN = 10;
+
+/** The daily run: the reviews due their email, up to MAX_PER_RUN. Counts only in the log. */
 export async function sendDueReviewEmails(env: Env): Promise<{ sent: number; failed: number }> {
-  const due = await db(env).select<{ id: string }>("reviews_due_v", "select=id&order=period_end");
+  const due = await db(env).select<{ id: string }>("reviews_due_v", `select=id&order=period_end&limit=${MAX_PER_RUN}`);
   let sent = 0;
   let failed = 0;
   for (const { id } of due) {

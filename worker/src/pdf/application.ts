@@ -25,7 +25,7 @@ import { ACCEPTED_STAGE } from "../../../shared/membershipStages";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
-import { documentFilename, fileAsset, renderPdf, storeDocument, templateAsset, type Asset } from "./render";
+import { documentFilename, fileAssets, renderPdf, storeDocument, templateAsset, type Asset } from "./render";
 import { ASSET, applicationSpec, levySpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
 import { isUnderEighteen } from "../declarations";
 import { BANKS } from "../../../shared/profile";
@@ -217,35 +217,35 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
   if (minor) allImages.push([ASSET.guardianSignature, app.guardian_signature_file_id]);
   const images = which === "levy" ? allImages.filter(([name]) => name === ASSET.signature) : allImages;
 
-  for (const [name, fileId] of images) {
-    if (!fileId) continue;
-    const a = await fileAsset(env, fileId);
-    // Drawn images must be PNG or JPEG; anything else is left off.
-    if (a.type === "image/png" || a.type === "image/jpeg") assets[name] = a;
-  }
-
-  // Supporting documents, in the checklist's order.
+  // Supporting documents, in the checklist's order: chosen first, so every
+  // image and document is fetched together below.
   const leftOut: string[] = [];
-  const supporting: SupportingDocument[] = [];
-  const addDoc = async (file: FileRow | null, caption: string) => {
+  const supporting: (SupportingDocument & { fileId: string })[] = [];
+  const addDoc = (file: FileRow | null, caption: string) => {
     if (!file || which === "levy") return;
     const kind = pageKind(file.content_type);
     if (!kind) {
       leftOut.push(caption);
       return;
     }
-    const asset = `doc-${supporting.length + 1}`;
-    assets[asset] = await fileAsset(env, file.id);
-    supporting.push({ asset, caption, kind });
+    supporting.push({ asset: `doc-${supporting.length + 1}`, caption, kind, fileId: file.id });
   };
   const name = [str(p, "preferred_name") || str(p, "given_names"), str(p, "surname")].filter(Boolean).join(" ");
-  await addDoc(newest("hkid") ?? newest("passport"), `${name}: ${newest("hkid") ? "HKID" : "passport"}`);
-  await addDoc(newest("marriage_certificate"), `${name}: marriage certificate`);
-  if (spouseRow) await addDoc(newest("hkid", String(spouseRow.id)), "Spouse / partner: HKID");
+  addDoc(newest("hkid") ?? newest("passport"), `${name}: ${newest("hkid") ? "HKID" : "passport"}`);
+  addDoc(newest("marriage_certificate"), `${name}: marriage certificate`);
+  if (spouseRow) addDoc(newest("hkid", String(spouseRow.id)), "Spouse / partner: HKID");
   for (const [i, c] of childRows.entries()) {
-    await addDoc(newest("birth_certificate", String(c.id)), `Child ${i + 1}: birth certificate`);
-    await addDoc(newest("hkid", String(c.id)), `Child ${i + 1}: HKID`);
+    addDoc(newest("birth_certificate", String(c.id)), `Child ${i + 1}: birth certificate`);
+    addDoc(newest("hkid", String(c.id)), `Child ${i + 1}: HKID`);
   }
+
+  const fetched = await fileAssets(env, [...images.map(([, id]) => id ?? ""), ...supporting.map((s) => s.fileId)]);
+  for (const [assetName, fileId] of images) {
+    const a = fileId ? fetched.get(fileId) : undefined;
+    // Drawn images must be PNG or JPEG; anything else is left off.
+    if (a && (a.type === "image/png" || a.type === "image/jpeg")) assets[assetName] = a;
+  }
+  for (const s of supporting) assets[s.asset] = fetched.get(s.fileId)!;
 
   const bankName = str(p, "bank_name");
   const accountName =
@@ -323,7 +323,7 @@ export async function makeApplicationPdf(env: Env, personApiId: string): Promise
         }
       : null,
     assets: Object.keys(assets),
-    supporting,
+    supporting: supporting.map(({ fileId: _fileId, ...doc }) => doc),
   };
   if (minor) assets[ASSET.u18] = await templateAsset(env, "u18-registration");
 
@@ -356,9 +356,19 @@ const isMembershipOfficer = (user: AuthorizedUser) => user.officerRoles.some((r)
 export async function sendApplication(env: Env, user: AuthorizedUser, personApiId: string, again = false): Promise<{ sentAt: string; sentTo: string }> {
   if (!isMembershipOfficer(user)) throw new HttpError("Only a Membership Officer sends applications on.", 403, "FORBIDDEN");
   const d = db(env);
-  const p = await d.one<{ id: string; preferred_name: string | null; given_names: string | null; surname: string | null; applicant_stage: string | null; sponsored_by_sponsor_id: string | null; sponsored_by_chair_id: string | null }>(
+  const p = await d.one<{
+    id: string;
+    email: string | null;
+    guardian_email: string | null;
+    preferred_name: string | null;
+    given_names: string | null;
+    surname: string | null;
+    applicant_stage: string | null;
+    sponsored_by_sponsor_id: string | null;
+    sponsored_by_chair_id: string | null;
+  }>(
     "people",
-    `select=id,preferred_name,given_names,surname,applicant_stage,sponsored_by_sponsor_id,sponsored_by_chair_id&api_id=${eq(personApiId)}`,
+    `select=id,email,guardian_email,preferred_name,given_names,surname,applicant_stage,sponsored_by_sponsor_id,sponsored_by_chair_id&api_id=${eq(personApiId)}`,
   );
   if (!p) throw new HttpError("Application not found.", 404, "NOT_FOUND");
   const app = await d.one<{ id: string; application_type: string; officer_signed_at: string | null; pdf_file_id: string | null; sent_at: string | null }>(
@@ -408,7 +418,9 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     subject: which === "application" ? `Sports Associate Membership application: ${name}` : `Hockey Section levy application: ${name}`,
     text: [`Dear ${greeting},`, "", ...body, "", "Best regards,", officerName, `${myOffice?.designation || "Membership Officer"} – HKFC Hockey Section`].join("\n"),
     template: which === "application" ? "application-to-club" : "levy-to-front-desk",
-    // In the officer's name (they get a blind copy); replies go to them.
+    // An existing member's levy form copies them and any parent or guardian (owner, 2 Oct 2026).
+    cc: which === "levy" ? [...new Set([p.email, p.guardian_email].filter((e): e is string => !!e && e.includes("@")))] : undefined,
+    // In the officer's name; replies go to them.
     from: mailbox ? `${officerName} <${mailbox}>` : env.REVIEW_EMAIL_FROM || undefined,
     replyTo: mailbox ?? undefined,
     attachments: [{ filename: file?.filename || "Application.pdf", path: await fileLink(env, app.pdf_file_id) }],

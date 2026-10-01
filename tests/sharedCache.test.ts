@@ -301,3 +301,15 @@ describe("when KV itself misbehaves", () => {
     await expect(invalidateShared({ CACHE: kv }, ["k"])).resolves.toBeUndefined();
   });
 });
+
+describe("cache clearing on the Supabase backend", () => {
+  // Only the Stats summaries are read from KV there (getShared), so clearing
+  // anything else would just spend the free plan's 1,000 deletes and writes a day.
+  it("touches KV only for the Stats summaries", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv, DATA_BACKEND: "supabase" };
+    await invalidateShared(env, ["scheduled-matches", "player-by-email:a@b.c", "stats-summary:current"], ["exceptions:"]);
+    expect(kv.deletes).toEqual(["stats-summary:current"]);
+    expect(kv.writes).toEqual([]);
+  });
+});

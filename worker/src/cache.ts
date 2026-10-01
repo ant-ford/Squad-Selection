@@ -347,7 +347,7 @@ export async function getShared<T>(
  * at most a handful of re-reads, and it is always correct.
  */
 export async function invalidateShared(
-  env: { CACHE?: CacheKv },
+  env: { CACHE?: CacheKv; DATA_BACKEND?: string },
   keys: string[],
   prefixes: SharedPrefix[] = [],
 ): Promise<void> {
@@ -363,6 +363,18 @@ export async function invalidateShared(
 
   const kv = env.CACHE;
   if (!kv) return;
+  // On Supabase nothing but the Stats summaries is read from KV (getShared),
+  // so clearing anything else only spends the free plan's 1,000 deletes and
+  // writes a day.
+  if (env.DATA_BACKEND === "supabase") {
+    const stats = plainKeys.filter((key) => ALWAYS_SHARED_PREFIXES.some((p) => key.startsWith(p)));
+    try {
+      await Promise.all(stats.map((key) => kv.delete(key)));
+    } catch (err) {
+      console.error("KV cache invalidation failed:", err);
+    }
+    return;
+  }
   try {
     await Promise.all(plainKeys.map((key) => kv.delete(key)));
   } catch (err) {

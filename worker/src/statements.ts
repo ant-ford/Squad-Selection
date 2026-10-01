@@ -318,14 +318,14 @@ export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commit
     throw new HttpError(`This review is already at "${stage || "no stage"}".`, 409, "NOT_NOTIFIABLE");
   }
   if (!personId) {
-    throw new HttpError("This row has no member linked, so there is no one to email. Fix the People link in Airtable.", 409, "NOT_LINKED");
+    throw new HttpError("This row has no member linked, so there is no one to email. Ask the Section Captain to link the member.", 409, "NOT_LINKED");
   }
   if (row.notifyNow === true) {
-    throw new HttpError("The email has already been requested; Airtable will send it shortly.", 409, "ALREADY_REQUESTED");
+    throw new HttpError("The email has already been requested; it goes shortly.", 409, "ALREADY_REQUESTED");
   }
   if (inAutoWindow(dateOnly(row.periodEnd), today)) {
     throw new HttpError(
-      `The period ends within ${AUTO_NOTICE_DAYS} days, so the automation should already have sent this email. Check its run history in Airtable.`,
+      `The period ends within ${AUTO_NOTICE_DAYS} days, so the automatic email should already have gone. If it hasn't arrived, ask the Section Captain to check.`,
       409,
       "IN_AUTOMATION_WINDOW",
     );

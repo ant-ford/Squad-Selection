@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import { sendEmail, DAILY_LIMIT, MailerError } from "../worker/src/mailer";
-import { sendDueReviewEmails, startReview } from "../worker/src/reviewEmails";
+import { MAX_PER_RUN, sendDueReviewEmails, startReview } from "../worker/src/reviewEmails";
 import { commitments } from "../worker/src/data/commitments";
 
 const base = {
@@ -72,11 +72,24 @@ describe("mailer", () => {
     expect(resendCalls(calls)).toHaveLength(0);
   });
 
-  it("sends in the captain's name with a blind copy to him", async () => {
+  it("sends in the captain's name, with no blind copy back to him", async () => {
     const calls = fakeServices();
     await sendEmail(base, { toPersonId: "p", to: "member@x.com", subject: "s", text: "t", template: "t", from: "Anthony Ford <menscaptain@hkfchockey.com>" });
-    expect(resendCalls(calls)[0].body).toMatchObject({ from: "Anthony Ford <menscaptain@hkfchockey.com>", bcc: ["menscaptain@hkfchockey.com"] });
-    expect(logRows(calls)[0].sender).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
+    const body = resendCalls(calls)[0].body;
+    expect(body.from).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
+    expect(body.bcc).toBeUndefined();
+    expect(logRows(calls)[0]).toMatchObject({ sender: "Anthony Ford <menscaptain@hkfchockey.com>", recipients: 1 });
+  });
+
+  it("counts every address against the day's limit, as Resend does", async () => {
+    let calls = fakeServices();
+    await sendEmail(base, { toPersonId: "p", to: "a@b.c", cc: ["c@d.e", "f@g.h"], subject: "s", text: "t", template: "t" });
+    expect(logRows(calls)[0].recipients).toBe(3);
+    // Two addresses left today: a message to three doesn't go.
+    calls = fakeServices({ sentToday: DAILY_LIMIT - 2 });
+    await expect(sendEmail(base, { toPersonId: "p", to: "a@b.c", cc: ["c@d.e", "f@g.h"], subject: "s", text: "t", template: "t" })).rejects.toThrow(/Daily email limit/);
+    expect(resendCalls(calls)).toHaveLength(0);
+    expect(DAILY_LIMIT).toBeLessThanOrEqual(70);
   });
 
   it("falls back to Eddy's address, replies to the captain, while his domain is unverified in Resend", async () => {
@@ -85,7 +98,8 @@ describe("mailer", () => {
     await sendEmail(base, { toPersonId: "p", to: "member@x.com", subject: "s", text: "t", template: "t", from: "Anthony Ford <menscaptain@hkfchockey.com>" });
     const [first, second] = resendCalls(calls).map((c) => c.body);
     expect(first.from).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
-    expect(second).toMatchObject({ from: "Eddy <notifications@eddy.global>", reply_to: "menscaptain@hkfchockey.com", bcc: ["menscaptain@hkfchockey.com"] });
+    expect(second).toMatchObject({ from: "Eddy <notifications@eddy.global>", reply_to: "menscaptain@hkfchockey.com" });
+    expect(second.bcc).toBeUndefined();
     expect(logRows(calls)[0]).toMatchObject({ status: "sent", sender: "Eddy <notifications@eddy.global>" });
   });
 
@@ -97,15 +111,15 @@ describe("mailer", () => {
 });
 
 describe("commitment review emails", () => {
-  it("claims the review, then emails the member in the captain's name, copying the membership inbox", async () => {
+  it("claims the review, then emails the member in the captain's name, with no copies", async () => {
     const calls = fakeServices({ started: [started] });
-    const env = { ...base, REVIEW_EMAIL_FROM: "Anthony Ford <menscaptain@hkfchockey.com>", REVIEW_EMAIL_CC: "mensmembership@hkfchockey.com" } as Env;
+    const env = { ...base, REVIEW_EMAIL_FROM: "Anthony Ford <menscaptain@hkfchockey.com>" } as Env;
     expect(await startReview(env, "recC1")).toBe(true);
     expect(calls.find((c) => c.url.pathname.endsWith("/rpc/start_review"))!.body).toEqual({ p_commitment: "recC1" });
     const email = resendCalls(calls)[0].body;
     expect(email.to).toEqual(["member@x.com"]);
     expect(email.from).toBe("Anthony Ford <menscaptain@hkfchockey.com>");
-    expect(email.cc).toEqual(["mensmembership@hkfchockey.com"]);
+    expect(email.cc).toBeUndefined();
     expect(email.subject).toContain("Year 2");
     expect(email.text).toContain("Hi Sam,");
     expect(email.text).toContain("https://app.eddy.global");
@@ -127,8 +141,11 @@ describe("commitment review emails", () => {
   it("the daily run emails every due review and stops at the daily limit", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    fakeServices({ started: [started], due: ["recA", "recB"] });
+    const first = fakeServices({ started: [started], due: ["recA", "recB"] });
     expect(await sendDueReviewEmails(base)).toEqual({ sent: 2, failed: 0 });
+    // At most MAX_PER_RUN a run (a free-plan run allows 50 outside calls; each email takes 4).
+    const query = first.find((c) => c.url.pathname.endsWith("/reviews_due_v"))!.url;
+    expect(query.searchParams.get("limit")).toBe(String(MAX_PER_RUN));
     const calls = fakeServices({ started: [started], due: ["recA", "recB"], sentToday: DAILY_LIMIT });
     expect(await sendDueReviewEmails(base)).toEqual({ sent: 0, failed: 1 });
     expect(calls.filter((c) => c.url.pathname.endsWith("/rpc/start_review"))).toHaveLength(1);

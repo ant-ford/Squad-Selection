@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { ExternalLink, FileText, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,7 +35,7 @@ export default function StatementSheet({
   const status = statementStatus(card, today);
   const whatsApp = memberWhatsApp(card);
   const chase = sponsorWhatsApp(card);
-  const officerForm = card.stage === SPONSOR_SUBMITTED ? card.officerFormUrl : undefined;
+  const officerForm = card.stage === SPONSOR_SUBMITTED ? (card.officerFormUrl ?? `/review/${card.id}`) : undefined;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -69,11 +70,16 @@ export default function StatementSheet({
                 <span className="truncate">WhatsApp {card.chase.name} (Sponsor)</span>
               </a>
             )}
-            {officerForm && (
-              <a href={officerForm} target="_blank" rel="noreferrer" className={linkClass}>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
-              </a>
-            )}
+            {officerForm &&
+              (officerForm.startsWith('/') ? (
+                <Link to={officerForm} className={linkClass}>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
+                </Link>
+              ) : (
+                <a href={officerForm} target="_blank" rel="noreferrer" className={linkClass}>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
+                </a>
+              ))}
             {card.playerStatement.map((f) => (
               <a key={f.url} href={f.url} target="_blank" rel="noreferrer" className={linkClass} title="Player Statement">
                 <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
@@ -121,7 +127,7 @@ export default function StatementSheet({
 }
 
 /**
- * The board's one action: ask Airtable to send the review email now rather
+ * The board's one action: send the review email now rather
  * than on the automatic date. The app ticks Notify Now and the same
  * automation sends the email and moves the review on; everything is checked
  * again on the Worker.
@@ -135,7 +141,7 @@ function NotifySection({ card, today, onDone }: { card: StatementCard; today: st
     setConfirming(false);
     notify.mutate(card.id, {
       onSuccess: () => {
-        toast.success(`Email requested for ${card.name}. Airtable sends it within a minute or two.`);
+        toast.success(`Email requested for ${card.name}. It goes within a minute or two.`);
         onDone();
       },
       onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not request the email. Please try again.'),
@@ -144,11 +150,11 @@ function NotifySection({ card, today, onDone }: { card: StatementCard; today: st
 
   let note: string;
   if (card.notifyRequested) {
-    note = 'The email has been requested. It moves to Notified Member once Airtable has sent it.';
+    note = 'The email has been requested. It moves to Notified Member once it has been sent.';
   } else if (card.inAutoWindow) {
-    note = `The period ends within ${AUTO_NOTICE_DAYS} days, so the automatic email should already have gone. If ${first} has not received it, check the automation's run history in Airtable.`;
+    note = `The period ends within ${AUTO_NOTICE_DAYS} days, so the automatic email should already have gone. If ${first} has not received it, ask the Section Captain to check.`;
   } else if (!card.personId) {
-    note = 'No member is linked to this row, so there is no one to email. Fix the People link in Airtable.';
+    note = 'No member is linked to this row, so there is no one to email. Ask the Section Captain to link the member.';
   } else if (card.periodEnd && card.periodEnd < today) {
     note = `The period has ended, so the automatic email will not go. Send it now to start ${first}'s review.`;
   } else if (card.autoNoticeOn) {
@@ -173,7 +179,7 @@ function NotifySection({ card, today, onDone }: { card: StatementCard; today: st
       {confirming && (
         <ConfirmDialog
           title={`Email ${card.name} now?`}
-          message={`Airtable sends the Commitment Review email to ${first}, copying the Membership Officer, and moves this review to Notified Member.`}
+          message={`${first} is sent the Commitment Review email, and this review moves to Notified Member.`}
           confirmLabel="Send email"
           onConfirm={submit}
           onCancel={() => setConfirming(false)}

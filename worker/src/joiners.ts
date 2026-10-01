@@ -314,7 +314,8 @@ export async function inviteJoiner(env: Env, actor: AuthorizedUser, apiId: strin
     termsUrl: `${app}${AGREEMENT_PDFS.samTerms}`,
     sender,
   });
-  const cc = [...new Set([...vcs.map(officeEmail), officeEmail(officer), newMember ? sponsor?.people?.email : null].filter((e): e is string => !!e))];
+  // The vice captains, and a new member's sponsor; not the membership inbox (owner, 2 Oct 2026).
+  const cc = [...new Set([...vcs.map(officeEmail), newMember ? sponsor?.people?.email : null].filter((e): e is string => !!e))];
   await sendEmail(env, { toPersonId: p.id, to: p.email, subject, text: body, template: "joiner-invitation", cc, from });
   await db(env).update("people", `id=${eq(p.id)}`, { status: "Applicant", applicant_stage: INVITED_STAGE });
   await log(env, actor, "invite", apiId, ["applicant_stage"]);
