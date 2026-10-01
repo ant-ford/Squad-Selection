@@ -42,12 +42,11 @@ function useDocumentVisible(): boolean {
 
 // ── Profile & Fixtures ───────────────────────────────────────────────────
 
-export function useMyProfile(enabled = true) {
+export function useMyProfile() {
   return useQuery({
     queryKey: ['myProfile'],
     queryFn: () => apiGet<ProfileData>('/api/my-profile'),
     staleTime: Infinity,
-    enabled,
   });
 }
 
