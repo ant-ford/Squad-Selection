@@ -27,6 +27,10 @@ export function taskTitle(task: MyTask): string {
         : `Sign ${who}'s membership application as ${as(task.role)}`;
     case 'review':
       return `Complete ${who}'s Player Statement as ${as(task.role)}`;
+    case 'kit':
+      return `Kit for ${task.subject ?? 'a new joiner'}`;
+    case 'registration':
+      return `Register ${task.subject ?? 'a new joiner'} with HockeyHK`;
   }
 }
 
