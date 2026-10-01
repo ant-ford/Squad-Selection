@@ -179,6 +179,13 @@ export async function apiGet<T>(path: string, params?: QueryParams): Promise<T> 
   return parseResponse(response) as Promise<T>;
 }
 
+/** A file from the API (e.g. a club document behind sign-in), as a Blob. */
+export async function apiGetBlob(path: string): Promise<Blob> {
+  const response = await authorisedFetch('GET', path, (headers) => ({ headers }));
+  if (!response.ok) await parseResponse(response);
+  return response.blob();
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await authorisedFetch('POST', path, (headers) => ({
     method: 'POST',

@@ -35,11 +35,18 @@ export const AGREEMENT_PDFS = {
 } as const;
 
 /**
- * The New Members Info Sheet the invitation links to (the Make scenario
- * attached it from Google Drive). Null until the club gives Eddy a copy;
- * the invitation then leaves the line out.
+ * Club documents kept in Eddy's private file storage, not /docs: they list
+ * officers' personal mobile numbers and the repository is public (owner,
+ * 2026-10-01). Each opens at /club-docs/<name> for anyone signed in;
+ * applicants can sign in. Uploaded with scripts/upload-club-doc.mjs.
  */
-export const NEW_MEMBERS_INFO_SHEET: string | null = null;
+export const CLUB_DOCS = {
+  "new-members-info-sheet": { title: "New Members Info Sheet", key: "club/new-members-info-sheet.pdf" },
+} as const;
+export type ClubDoc = keyof typeof CLUB_DOCS;
+
+/** The New Members Info Sheet the invitation links to (the Make scenario attached it from Google Drive). */
+export const NEW_MEMBERS_INFO_SHEET: string | null = "/club-docs/new-members-info-sheet";
 
 export interface AgreementItem {
   key: string;

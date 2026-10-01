@@ -192,7 +192,10 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const [hkid, setHkid] = useState(details.hasHkidCopy);
   const [passport, setPassport] = useState(details.hasPassportCopy);
   // Which ID they have: an HKID card, or a passport if they don't (owner, 2026-10-01).
-  const [idKind, setIdKind] = useState<'hkid' | 'passport'>(details.hasPassportCopy && !details.hasHkidCopy ? 'passport' : 'hkid');
+  // HKID unless they've already said they have none (a passport and no HKID).
+  const [idKind, setIdKind] = useState<'hkid' | 'passport'>(
+    !details.values.hkidNo && (details.values.passportNo || (details.hasPassportCopy && !details.hasHkidCopy)) ? 'passport' : 'hkid',
+  );
   const [suggested, setSuggested] = useState<Record<string, string> | null>(null);
   const read = useMutation({
     mutationFn: ({ kind, dataUrl }: { kind: 'hkid' | 'passport'; dataUrl: string }) => readIdDocument(kind, dataUrl),
@@ -223,7 +226,16 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             .filter(Boolean)
             .join(' and ')
         : '';
-    const bad = fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ?? sectionProblem(section.key, values) ?? (uploads ? `Upload ${uploads}.` : null);
+    const idNumber =
+      section.key !== 'personal' ? null
+      : idKind === 'hkid' && !values.hkidNo ? 'Give your HKID number.'
+      : idKind === 'passport' && !values.passportNo ? 'Give your passport number.'
+      : null;
+    const bad =
+      fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ??
+      idNumber ??
+      sectionProblem(section.key, values) ??
+      (uploads ? `Upload ${uploads}.` : null);
     setProblem(bad ?? null);
     if (bad) return;
     if (section.key === 'hockey' && who === 'member' && values.active === false && details.values.active !== false) setConfirmInactive(true);
@@ -264,6 +276,11 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
                 </label>
               ))}
             </div>
+            {idKind === 'passport' && (
+              <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-foreground">
+                Players give their HKID. Only choose a passport if you don't have an HKID: without one you'll be classed as a visiting player, which has restrictions.
+              </p>
+            )}
           </fieldset>
           <FileUpload
             key={idKind}

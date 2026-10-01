@@ -9,6 +9,8 @@
 import type { Env } from "./env";
 import { db, eq } from "./data/supabase";
 import { verifyFileLink } from "./data/supabase/files";
+import { corsHeaders, json } from "./http";
+import { CLUB_DOCS } from "../../shared/application";
 
 const notFound = () => new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
 
@@ -16,6 +18,22 @@ const notFound = () => new Response("Not found", { status: 404, headers: { "Cach
 function headerFilename(name: string | null): string {
   const safe = (name ?? "file").normalize("NFKD").replace(/[^\x20-\x7e]/g, "").replace(/["\\\r\n]/g, "").trim();
   return safe || "file";
+}
+
+/** A club document (CLUB_DOCS) to a signed-in person; the caller checks the sign-in. */
+export async function serveClubDoc(env: Env, name: string, origin: string): Promise<Response> {
+  const doc = (CLUB_DOCS as Record<string, { title: string; key: string }>)[name];
+  const object = doc && env.FILES ? await env.FILES.get(doc.key) : null;
+  if (!doc || !object) return json({ error: "That document isn't in Eddy yet.", code: "NOT_FOUND" }, 404, origin);
+  return new Response(object.body, {
+    headers: {
+      ...corsHeaders(origin),
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${headerFilename(`${doc.title}.pdf`)}"`,
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 export async function handleFileRequest(env: Env, id: string, url: URL): Promise<Response> {

@@ -193,7 +193,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
         column: "hkid_no",
         label: "HKID no.",
         type: "hkid",
-        hint: "As on the card, with the digit in brackets: A123456(7). No HKID? Give your passport number instead.",
+        hint: "As on the card, with the digit in brackets: A123456(7).",
       },
       { key: "passportNo", column: "passport_no", label: "Passport no.", type: "text" },
       { key: "nationality", column: "nationality", label: "Nationality", type: "suggest", options: NATIONALITIES, required: true },
@@ -331,8 +331,10 @@ export function fieldsFor(section: SectionSpec, who: Audience): FieldSpec[] {
 /** Rules across fields that the field list can't say on its own. */
 export function sectionProblem(key: SectionKey, v: ProfileValues): string | null {
   const given = (k: string) => typeof v[k] === "string" && (v[k] as string).trim() !== "";
+  // Everyone gives their HKID; only someone without one gives a passport
+  // instead, and is then a visiting player (owner, 2026-10-01).
   if (key === "personal" && !given("hkidNo") && !given("passportNo")) {
-    return "Give your HKID number or, if you don't have an HKID, your passport number.";
+    return "Give your HKID number. Only if you don't have an HKID, choose Passport under Your ID and give your passport number.";
   }
   if (key === "billing") {
     const amount = v.bankPaymentLimitAmount;

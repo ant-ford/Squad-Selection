@@ -404,6 +404,8 @@ async function registrationRows(env: Env, p: JoinerRow): Promise<[string, string
     ["Nationality", p.nationality],
     ["Email", p.email],
     ["Tel.", p.mobile_no],
+    // Without an HKID a player is a visiting player, with restrictions (owner, 2026-10-01).
+    ...(!p.hkid_no && p.passport_no ? ([["Note", "No HKID: a visiting player"]] as [string, string][]) : []),
   ];
 }
 
