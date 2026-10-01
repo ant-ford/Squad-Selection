@@ -116,4 +116,10 @@ export interface ReviewView {
    * count them. Pre-fills "Players available".
    */
   teamActivePlayers?: number;
+  /**
+   * For the Membership Officers and the membership section, once the review
+   * is complete: the signed Player Statement PDF (the newest), or null while
+   * it is still being made.
+   */
+  statementPdfUrl?: string | null;
 }

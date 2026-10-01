@@ -384,6 +384,13 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Fills PDF templates for the Worker. Called with the shared
+# PDF_RENDER_SECRET, not a Supabase JWT (the Worker holds a secret API key,
+# which is not a JWT), so the gateway's JWT check is off and the function
+# checks the secret itself.
+[functions.render-pdf]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

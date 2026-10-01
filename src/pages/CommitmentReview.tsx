@@ -449,6 +449,17 @@ function OfficerReviewView({ review }: { review: ReviewView }) {
           <img src={r.signatureUrl} alt="Membership Officer's signature" className="h-16 rounded bg-white object-contain" />
         </div>
       )}
+      {review.statementPdfUrl !== undefined && (
+        <p className="py-2 text-sm">
+          {review.statementPdfUrl ? (
+            <a href={review.statementPdfUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+              Signed Player Statement (PDF)
+            </a>
+          ) : (
+            <span className="text-muted-foreground">The signed Player Statement PDF is being made. Reload in a minute to see it.</span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

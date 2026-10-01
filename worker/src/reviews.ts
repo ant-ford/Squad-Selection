@@ -28,6 +28,8 @@ import { MailerError, sendEmail } from "./mailer";
 import { invalidateForTables } from "./airtableWebhook";
 import { draftNextStep } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
+import { inBackground } from "./requestContext";
+import { makePlayerStatement } from "./pdf/playerStatement";
 
 export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
@@ -239,6 +241,13 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
         : null,
   };
 
+  if (seesOfficer && row.officer_submitted_at) {
+    const commitment = await db(env).one<{ id: string }>("commitments", `select=id&api_id=${eq(id)}`);
+    const statement = commitment
+      ? await db(env).one<{ id: string }>("files", `select=id&commitment_id=${eq(commitment.id)}&kind=eq.player_statement&order=created_at.desc&limit=1`)
+      : null;
+    view.statementPdfUrl = statement ? await fileLink(env, statement.id) : null;
+  }
   if (canDo === "member") {
     const offices = await db(env).select<{ id: string; role: string; preferred_name: string | null; surname: string | null; designation: string | null }>(
       "api_review_offices",
@@ -467,6 +476,9 @@ export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId:
       .catch(submissionError);
     at("cache");
     await invalidateForTables(env, [TABLES.commitment]);
+    // The signed Player Statement, to the Membership Officer: after the
+    // response, so a slow render never holds up the submission.
+    if (env.PDF_RENDER_SECRET) void inBackground(() => makePlayerStatement(env, id));
     return { ok: true };
   });
 }

@@ -16,6 +16,8 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { invalidateForTables } from "./airtableWebhook";
 import { storeSignature, signatureBytes } from "./signatures";
 import { waiversDoneThisSeason } from "./myTasks";
+import { inBackground } from "./requestContext";
+import { makeU18Registration } from "./pdf/u18Registration";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
@@ -127,5 +129,7 @@ export async function submitDeclarations(env: Env, user: AuthorizedUser, body: R
   }
   // My Tasks reads waivers_signed_at through the People caches.
   await invalidateForTables(env, [TABLES.player]);
+  // HockeyHK's under-18 form, to the Hockey Convenor: after the response.
+  if (minor && env.PDF_RENDER_SECRET) void inBackground(() => makeU18Registration(env, p.id));
   return { ok: true, underEighteen: minor };
 }
