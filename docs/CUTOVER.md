@@ -131,9 +131,7 @@ These stay manual after the switch-over, until they are built:
 
 | What | Until it is built |
 |---|---|
-| Existing HKFC member joining hockey: the "Accepted" email and the front desk levy PDF (the Make scenario did both) | The Membership Officer sends them by hand. Needs the PDF Edge Function. |
-| Membership Officer "send to the Club's membership office" after signing | By hand; the office's address is still to come. Needs the same PDF. |
-| Player Statement PDF, U18 registration PDF | By hand. |
+| Existing HKFC member joining hockey: the "Accepted" email and the front desk levy PDF (the Make scenario did both) | The Membership Officer sends them by hand. The levy form is filled already (inside the new member's application PDF); it needs the front desk's address and its own trigger. |
 | Trials registration, Hockey Rules quizzes | "Flag an officer". Rebuilt later from the saved Fillout forms. |
 | WhatsApp mail merge (People "Send WhatsApp" button: template → personalised message → WhatsApp, logged) | Templates and the message log are imported (`message_templates`, `message_log`); the screen is not built. |
 | HockeyHK registration Google Form (pre-filled from Airtable) | Dropped this season. |

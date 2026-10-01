@@ -76,4 +76,9 @@ export interface SigningView {
   /** The AI drafts for the sponsor, once made. */
   drafts: { sportsBackground: string | null; trainingComments: string | null };
   savedSignatureUrl: string | null;
+  /**
+   * Once the Membership Officer has signed: the consolidated application PDF
+   * sent to the Club's membership office, or null while it is being made.
+   */
+  applicationPdfUrl?: string | null;
 }

@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { renderDocument, RenderError, drawable } from "../supabase/functions/_shared/pdf";
-import { ddmmyyyy, monthYear, playerStatementSpec, type PlayerStatementFacts } from "../worker/src/pdf/playerStatement";
+import { CJK_FONT, renderDocument, RenderError, drawable } from "../supabase/functions/_shared/pdf";
+import { ddmmyyyy, playerStatementSpec, type PlayerStatementFacts } from "../worker/src/pdf/playerStatement";
 import { CLUB_NAME, u18Spec, type U18Facts } from "../worker/src/pdf/u18Registration";
-import { documentFilename } from "../worker/src/pdf/render";
+import { documentFilename, needsCjkFont } from "../worker/src/pdf/render";
+
+// Noto Sans TC cut down to a few characters (tests/fixtures, SIL Open Font License).
+const TEST_FONT = new Uint8Array(readFileSync(new URL("./fixtures/noto-sans-tc-test.ttf", import.meta.url)));
 
 // A 1x1 PNG, standing in for a signature or a photo.
 const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
@@ -78,6 +82,33 @@ describe("renderDocument", () => {
     expect(warnings.join(" ")).not.toContain("Chan");
   });
 
+  it("draws Chinese in the Chinese font when it is sent, in fields and overlaid text", async () => {
+    const { pdf, warnings } = await renderDocument(
+      {
+        title: "T",
+        parts: [{
+          kind: "template",
+          asset: "t",
+          fields: { name: "陳大文 Chan Tai Man" },
+          text: [{ page: 1, x: 50, y: 50, text: "香港足球會" }],
+        }],
+      },
+      { t: await template(1), [CJK_FONT]: TEST_FONT },
+    );
+    expect(warnings).toEqual([]);
+    // Only the characters used are embedded: the PDF stays small.
+    expect(pdf.length).toBeLessThan(20_000);
+    expect((await PDFDocument.load(pdf)).getForm().getFields()).toHaveLength(0);
+  });
+
+  it("reports characters even the Chinese font lacks", async () => {
+    const { warnings } = await renderDocument(
+      { title: "T", parts: [{ kind: "template", asset: "t", text: [{ page: 1, x: 50, y: 50, text: "陳大文 龍" }] }] },
+      { t: await template(1), [CJK_FONT]: TEST_FONT },
+    );
+    expect(warnings).toEqual(["t text on page 1: 1 character(s) the font cannot draw were left out"]);
+  });
+
   it("turns typographic punctuation into plain characters", async () => {
     const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
     const warnings: string[] = [];
@@ -96,9 +127,7 @@ describe("renderDocument", () => {
 
 const statement: PlayerStatementFacts = {
   candidateName: "Testy McTestface",
-  membershipNo: "T1234",
   joinDate: "2024-09-01",
-  periodEnd: "2026-09-30",
   teamsPlayed: ["Men's 3", "Men's 4"],
   currentTeam: "Men's 3",
   position: "Midfield",
@@ -126,9 +155,7 @@ describe("playerStatementSpec", () => {
   it("maps the review onto the form's fields", () => {
     expect(part.fields).toMatchObject({
       date_joined: "01/09/2024",
-      interview_month_year: "Sep 2026",
       candidate_name: "Testy McTestface",
-      tp_no: "T1234",
       sec_hockey: true,
       teams_played: "Men's 3, Men's 4",
       not_available: "2",
@@ -143,6 +170,11 @@ describe("playerStatementSpec", () => {
       committee_reason: "Yes\n\nGood umpire",
       committee_date: "28/09/2026",
     });
+  });
+
+  it("leaves the office-use fields blank", () => {
+    expect(part.fields).not.toHaveProperty("tp_no");
+    expect(part.fields).not.toHaveProperty("interview_month_year");
   });
 
   it("draws only the signatures there are", () => {
@@ -195,7 +227,12 @@ describe("helpers", () => {
   it("formats dates the club's way", () => {
     expect(ddmmyyyy("2026-09-28T10:00:00Z")).toBe("28/09/2026");
     expect(ddmmyyyy(null)).toBe("");
-    expect(monthYear("2026-12-01")).toBe("Dec 2026");
+  });
+
+  it("asks for the Chinese font only when some text needs it", () => {
+    const spec = (text: string) => ({ title: "T", parts: [{ kind: "template" as const, asset: "t", fields: { a: text } }] });
+    expect(needsCjkFont(spec("Zoë O’Brien – “Coach”…"))).toBe(false);
+    expect(needsCjkFont(spec("陳大文"))).toBe(true);
   });
 
   it("makes plain filenames", () => {

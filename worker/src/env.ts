@@ -65,12 +65,12 @@ export interface Env {
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
   FILES?: R2Bucket;
-  /**
-   * Shared with the render-pdf Edge Function on the DATA project, as a Worker
-   * secret: the function fills PDF templates only for a caller holding it
-   * (src/pdf/render.ts). Unset: no PDFs are made.
-   */
-  PDF_RENDER_SECRET?: string;
+  /** "on" once the render-pdf Edge Function is deployed to the data project (src/pdf/render.ts). */
+  PDFS?: string;
+  /** The Club's membership office, "Name <address>": gets each signed application as a PDF (src/pdf/application.ts). */
+  CLUB_MEMBERSHIP_EMAIL?: string;
+  /** Who the application email greets there, e.g. "Caren". */
+  CLUB_MEMBERSHIP_CONTACT?: string;
   /** Resend API key, as a Worker secret (src/mailer.ts). */
   RESEND_API_KEY?: string;
   /** Sender for Eddy's own email, e.g. "Eddy <notifications@eddy.global>". */

@@ -7,6 +7,8 @@
  *
  * The template is a fillable form; the two signatures go beside each
  * signer's Name / Designation / Date row, the only free space on it.
+ * "For Interview in" and "TP No." are for the club's office and stay blank
+ * (owner, 1 Oct 2026).
  */
 import type { Env } from "../env";
 import type { RenderSpec } from "./render";
@@ -27,9 +29,7 @@ export interface Signer {
 
 export interface PlayerStatementFacts {
   candidateName: string;
-  membershipNo: string | null;
   joinDate: string | null;
-  periodEnd: string | null;
   teamsPlayed: string[];
   currentTeam: string | null;
   position: string | null;
@@ -50,18 +50,10 @@ export interface PlayerStatementFacts {
   officer: Signer;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** dd/mm/yyyy, the club's way of writing a date. */
 export function ddmmyyyy(value: string | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
-}
-
-/** "Sep 2026". */
-export function monthYear(value: string | null): string {
-  const m = /^(\d{4})-(\d{2})/.exec(value ?? "");
-  return m ? `${MONTHS[Number(m[2]) - 1]} ${m[1]}` : "";
 }
 
 const count = (n: number | null) => (n === null || n === undefined ? "" : String(n));
@@ -75,9 +67,7 @@ export function playerStatementSpec(f: PlayerStatementFacts): RenderSpec {
   const committeeReason = [f.isPlayerNeeded, f.otherComments].map((s) => s.trim()).filter(Boolean).join("\n\n");
   const fields: Record<string, string | boolean> = {
     date_joined: ddmmyyyy(f.joinDate),
-    interview_month_year: monthYear(f.periodEnd),
     candidate_name: f.candidateName,
-    tp_no: f.membershipNo ?? "",
     sec_hockey: true,
     teams_played: f.teamsPlayed.join(", "),
     current_team: f.currentTeam ?? "",
@@ -120,7 +110,6 @@ interface StatementRow {
   id: string;
   person_id: string;
   year_no: number | null;
-  period_end: string | null;
   sponsor_office_id: string | null;
   membership_officer_office_id: string | null;
   sponsor_submitted_at: string | null;
@@ -131,7 +120,6 @@ interface StatementRow {
 interface ReviewViewRow {
   full_name: string | null;
   preferred_name: string | null;
-  membership_no: string | null;
   team: string | null;
   playing_position: string | null;
   matches_played: number | null;
@@ -172,7 +160,7 @@ export async function makePlayerStatement(env: Env, reviewApiId: string): Promis
   const d = db(env);
   const c = await d.one<StatementRow>(
     "commitments",
-    `select=id,person_id,year_no,period_end,sponsor_office_id,membership_officer_office_id,sponsor_submitted_at,officer_submitted_at,officer_signature_file_id&api_id=${eq(reviewApiId)}`,
+    `select=id,person_id,year_no,sponsor_office_id,membership_officer_office_id,sponsor_submitted_at,officer_submitted_at,officer_signature_file_id&api_id=${eq(reviewApiId)}`,
   );
   if (!c?.officer_submitted_at) return null;
   const [r, person, offices] = await Promise.all([
@@ -189,9 +177,7 @@ export async function makePlayerStatement(env: Env, reviewApiId: string): Promis
 
   const facts: PlayerStatementFacts = {
     candidateName: r.full_name ?? r.preferred_name ?? "",
-    membershipNo: r.membership_no,
     joinDate: person?.join_date ?? null,
-    periodEnd: c.period_end,
     teamsPlayed: r.teams_played ?? [],
     currentTeam: r.team,
     position: r.playing_position,

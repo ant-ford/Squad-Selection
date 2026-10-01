@@ -30,6 +30,7 @@ import { draftNextStep } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { inBackground } from "./requestContext";
 import { makePlayerStatement } from "./pdf/playerStatement";
+import { pdfsEnabled } from "./pdf/render";
 
 export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
@@ -478,7 +479,7 @@ export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId:
     await invalidateForTables(env, [TABLES.commitment]);
     // The signed Player Statement, to the Membership Officer: after the
     // response, so a slow render never holds up the submission.
-    if (env.PDF_RENDER_SECRET) void inBackground(() => makePlayerStatement(env, id));
+    if (pdfsEnabled(env)) void inBackground(() => makePlayerStatement(env, id));
     return { ok: true };
   });
 }

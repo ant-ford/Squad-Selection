@@ -10,13 +10,22 @@
 import type { Env } from "../env";
 import type { RenderSpec } from "../../../supabase/functions/_shared/pdf";
 import { db, eq } from "../data/supabase";
-import { PDF_TEMPLATES, type PdfTemplate } from "./templates";
+import { CJK_FONT_KEY, PDF_TEMPLATES, type PdfTemplate } from "./templates";
 
-export type { RenderSpec } from "../../../supabase/functions/_shared/pdf";
+/** The renderer's name for the Chinese font asset (CJK_FONT in _shared/pdf.ts, which the Worker does not bundle). */
+const CJK_FONT = "cjk-font";
+
+export type { DocumentPart, ImageItem, RenderSpec, TextItem } from "../../../supabase/functions/_shared/pdf";
 
 export class PdfError extends Error {
   override name = "PdfError";
 }
+
+/**
+ * Whether this Worker makes PDFs: the render-pdf function is deployed to
+ * its data project (PDFS = "on" in wrangler.toml, set once CI deploys it).
+ */
+export const pdfsEnabled = (env: Env) => env.PDFS === "on" && !!env.DATA_SUPABASE_SECRET_KEY && !!env.FILES;
 
 export interface Asset {
   bytes: ArrayBuffer;
@@ -44,6 +53,14 @@ export async function fileAsset(env: Env, fileId: string): Promise<Asset> {
   return { bytes: await object.arrayBuffer(), type: row.content_type ?? "application/octet-stream" };
 }
 
+/**
+ * Whether any text in the spec is beyond Latin-1 and the punctuation the
+ * renderer turns into plain characters, so the Chinese font must go too.
+ */
+export function needsCjkFont(spec: RenderSpec): boolean {
+  return /[^\u0000-\u00ff\u2013\u2014\u2018\u2019\u201b\u201c\u201d\u2026]/.test(JSON.stringify(spec));
+}
+
 export interface RenderResult {
   pdf: ArrayBuffer;
   pages: number;
@@ -52,13 +69,19 @@ export interface RenderResult {
 
 /** Has the render-pdf function fill a document. */
 export async function renderPdf(env: Env, spec: RenderSpec, assets: Record<string, Asset>): Promise<RenderResult> {
-  if (!env.DATA_SUPABASE_URL || !env.PDF_RENDER_SECRET) throw new PdfError("PDF rendering is not configured (DATA_SUPABASE_URL / PDF_RENDER_SECRET)");
+  if (!env.DATA_SUPABASE_URL || !env.DATA_SUPABASE_SECRET_KEY) throw new PdfError("PDF rendering is not configured (DATA_SUPABASE_URL / DATA_SUPABASE_SECRET_KEY)");
+  if (needsCjkFont(spec) && !assets[CJK_FONT]) {
+    const font = await files(env).get(CJK_FONT_KEY);
+    if (font) assets = { ...assets, [CJK_FONT]: { bytes: await font.arrayBuffer(), type: "font/ttf" } };
+    else console.warn("The Chinese font is not in the file store; Chinese text is left out");
+  }
   const form = new FormData();
   form.append("spec", JSON.stringify(spec));
   for (const [name, a] of Object.entries(assets)) form.append(name, new Blob([a.bytes], { type: a.type }), name);
   const res = await fetch(`${env.DATA_SUPABASE_URL.replace(/\/+$/, "")}/functions/v1/render-pdf`, {
     method: "POST",
-    headers: { "X-Render-Secret": env.PDF_RENDER_SECRET },
+    // The function checks this is the project's secret key (render-pdf/index.ts).
+    headers: { "X-Render-Key": env.DATA_SUPABASE_SECRET_KEY },
     body: form,
   });
   if (!res.ok) {

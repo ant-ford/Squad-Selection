@@ -11,11 +11,17 @@
  * Self-contained, with no relative imports, so Deno (the function) and
  * Node (the tests, and the Worker's types) both load it as it is.
  *
- * Text is drawn in Helvetica, whose WinAnsi encoding has no Chinese
- * characters; anything it cannot draw is left out and reported in
- * `warnings`, never a failure.
+ * Text is drawn in Helvetica. Text Helvetica cannot draw (Chinese names
+ * and addresses) is drawn in the Chinese font when the request carries one
+ * (the CJK_FONT asset: Noto Sans TC, Hong Kong's Big5-HKSCS characters),
+ * embedded with only the characters used. Anything neither can draw is
+ * left out and reported in `warnings`, never a failure.
  */
-import { PDFCheckBox, PDFDocument, PDFRadioGroup, PDFTextField, StandardFonts, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import { PDFCheckBox, PDFDocument, PDFRadioGroup, PDFTextField, StandardFonts, type PDFField, type PDFFont, type PDFForm, type PDFImage, type PDFPage } from "pdf-lib";
+
+/** The asset name of the optional Chinese font (a TrueType file). */
+export const CJK_FONT = "cjk-font";
 
 /** Text placed at a spot on a flat template (PDF points, origin bottom left). */
 export interface TextItem {
@@ -79,32 +85,81 @@ export class RenderError extends Error {
 const A4 = { width: 595.28, height: 841.89 };
 const MARGIN = 36;
 
-/** Keeps the characters the font can draw; reports how many were dropped. */
-export function drawable(font: PDFFont, text: string, warnings: string[], where: string): string {
-  // Typographic punctuation people type or paste, as plain equivalents.
-  const plain = text
+/** Typographic punctuation people type or paste, as plain equivalents. */
+function normalise(text: string): string {
+  return text
     .replace(/[‘’‛]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...")
     .replace(/ /g, " ")
     .replace(/\r\n?/g, "\n");
+}
+
+function canDraw(font: PDFFont, ch: string): boolean {
+  try {
+    font.encodeText(ch);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Keeps the characters `has` accepts (and line breaks); reports how many were dropped. */
+function keep(text: string, has: (ch: string) => boolean, warnings: string[], where: string): string {
   let out = "";
   let dropped = 0;
-  for (const ch of plain) {
-    if (ch === "\n") {
-      out += ch;
-      continue;
-    }
-    try {
-      font.encodeText(ch);
-      out += ch;
-    } catch {
-      dropped++;
-    }
+  for (const ch of text) {
+    if (ch === "\n" || has(ch)) out += ch;
+    else dropped++;
   }
   if (dropped) warnings.push(`${where}: ${dropped} character(s) the font cannot draw were left out`);
   return out;
+}
+
+/** Keeps the characters a standard font can draw; reports how many were dropped. */
+export function drawable(font: PDFFont, text: string, warnings: string[], where: string): string {
+  return keep(normalise(text), (ch) => canDraw(font, ch), warnings, where);
+}
+
+/** A document's fonts: Helvetica, and the Chinese font embedded only when some text needs it. */
+interface CjkFont {
+  font: PDFFont;
+  /** Whether the font has a glyph for the character (an embedded font draws a blank box for one it lacks). */
+  has: (ch: string) => boolean;
+}
+
+interface Fonts {
+  latin: PDFFont;
+  cjk: () => Promise<CjkFont | null>;
+}
+
+async function fontsFor(doc: PDFDocument, assets: Record<string, Uint8Array>, bold = false): Promise<Fonts> {
+  const latin = await doc.embedFont(bold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica);
+  let cjk: Promise<CjkFont> | null = null;
+  return {
+    latin,
+    cjk: () => {
+      const bytes = assets[CJK_FONT];
+      if (!bytes) return Promise.resolve(null);
+      cjk ??= (async () => {
+        doc.registerFontkit(fontkit);
+        const font = await doc.embedFont(bytes, { subset: true });
+        const face = fontkit.create(bytes);
+        return { font, has: (ch: string) => face.hasGlyphForCodePoint(ch.codePointAt(0) ?? 0) };
+      })();
+      return cjk;
+    },
+  };
+}
+
+/** The font to draw `text` in, and the text as that font can draw it. */
+async function pick(fonts: Fonts, text: string, warnings: string[], where: string): Promise<{ font: PDFFont; text: string }> {
+  const plain = normalise(text);
+  if ([...plain].every((ch) => ch === "\n" || canDraw(fonts.latin, ch))) return { font: fonts.latin, text: plain };
+  const cjk = await fonts.cjk();
+  if (!cjk) return { font: fonts.latin, text: drawable(fonts.latin, plain, warnings, where) };
+  return { font: cjk.font, text: keep(plain, cjk.has, warnings, where) };
 }
 
 function asset(assets: Record<string, Uint8Array>, name: string): Uint8Array {
@@ -137,22 +192,73 @@ function pageOf(doc: PDFDocument, n: number, where: string): PDFPage {
   return pages[n - 1];
 }
 
+/**
+ * Takes a field off the form. pdf-lib's own removal looks up each box's
+ * appearance and fails on boxes that have none (some of the club's
+ * signature boxes), so those are unhooked from their pages by hand.
+ */
+function removeField(doc: PDFDocument, form: PDFForm, field: PDFField) {
+  try {
+    form.removeField(field);
+    return;
+  } catch {
+    // fall through
+  }
+  for (const widget of field.acroField.getWidgets()) {
+    const ref = doc.context.getObjectRef(widget.dict);
+    if (ref) for (const page of doc.getPages()) page.node.removeAnnot(ref);
+  }
+  form.acroForm.removeField(field.acroField);
+}
+
+/** The size an auto-sized field (font size 0) starts from: pdf-lib would fill the box's height. */
+const AUTO_SIZE = 10;
+
+/**
+ * A one-line field gets a smaller font when the text would run past its
+ * box: from its own size (many of the club's are 12 pt), or for auto-sized
+ * fields from 10 pt, so text in neighbouring boxes looks alike.
+ */
+function shrinkToFit(field: PDFTextField, font: PDFFont, text: string) {
+  if (!text) return;
+  const da = field.acroField.getDefaultAppearance();
+  // A few of the club's fields have no default appearance; give them one to size.
+  if (!da) field.acroField.setDefaultAppearance("/Helv 0 Tf 0 g");
+  const own = Number(/(\d+(?:\.\d+)?)\s+Tf/.exec(da ?? "")?.[1] ?? 0);
+  // Multi-line boxes wrap; an auto-sized one would fill its height with one line.
+  if (field.isMultiline()) {
+    if (!own) field.setFontSize(AUTO_SIZE);
+    return;
+  }
+  const rect = field.acroField.getWidgets()[0]?.getRectangle();
+  if (!rect?.width) return;
+  const size = own || Math.min(AUTO_SIZE, Math.max(6, rect.height - 4));
+  let fitted = size;
+  while (fitted > 6 && font.widthOfTextAtSize(text, fitted) > rect.width - 4) fitted -= 0.5;
+  if (fitted !== own) field.setFontSize(fitted);
+}
+
 async function renderTemplate(
   part: Extract<DocumentPart, { kind: "template" }>,
   assets: Record<string, Uint8Array>,
   warnings: string[],
 ): Promise<PDFDocument> {
   const doc = await PDFDocument.load(asset(assets, part.asset));
-  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const fonts = await fontsFor(doc, assets);
+  const font = fonts.latin;
   const form = doc.getForm();
 
   for (const [name, value] of Object.entries(part.fields ?? {})) {
     const field = form.getFieldMaybe(name);
     if (!field) throw new RenderError(`${part.asset}: no field "${name}"`);
     if (field instanceof PDFTextField) {
-      const text = drawable(font, typeof value === "string" ? value : value ? "Yes" : "", warnings, `${part.asset} "${name}"`);
+      const picked = await pick(fonts, typeof value === "string" ? value : value ? "Yes" : "", warnings, `${part.asset} "${name}"`);
       const max = field.getMaxLength();
-      field.setText(max !== undefined && text.length > max ? text.slice(0, max) : text);
+      const text = max !== undefined && picked.text.length > max ? picked.text.slice(0, max) : picked.text;
+      field.setText(text);
+      shrinkToFit(field, picked.font, text);
+      // Drawn now in the font it needs; the rest are drawn in Helvetica below.
+      if (picked.font !== font) field.updateAppearances(picked.font);
     } else if (field instanceof PDFCheckBox) {
       if (value === true) field.check();
       else field.uncheck();
@@ -178,15 +284,16 @@ async function renderTemplate(
     const bytes = asset(assets, assetName);
     const embedded = await embedImage(doc, bytes, assetName);
     drawFitted(doc.getPages()[pageIndex], embedded, widget.getRectangle());
-    form.removeField(field);
+    removeField(doc, form, field);
   }
 
   for (const item of part.text ?? []) {
     const page = pageOf(doc, item.page, part.asset);
-    const text = drawable(font, item.text, warnings, `${part.asset} text on page ${item.page}`).replace(/\n+/g, " ");
+    const picked = await pick(fonts, item.text, warnings, `${part.asset} text on page ${item.page}`);
+    const text = picked.text.replace(/\n+/g, " ");
     let size = item.size ?? 9;
-    if (item.maxWidth) while (size > 5 && font.widthOfTextAtSize(text, size) > item.maxWidth) size -= 0.5;
-    page.drawText(text, { x: item.x, y: item.y, size, font });
+    if (item.maxWidth) while (size > 5 && picked.font.widthOfTextAtSize(text, size) > item.maxWidth) size -= 0.5;
+    page.drawText(text, { x: item.x, y: item.y, size, font: picked.font });
   }
 
   for (const item of part.images ?? []) {
@@ -197,7 +304,7 @@ async function renderTemplate(
 
   // Signature and button fields left unfilled cannot be flattened either.
   for (const field of form.getFields()) {
-    if (!(field instanceof PDFTextField || field instanceof PDFCheckBox || field instanceof PDFRadioGroup)) form.removeField(field);
+    if (!(field instanceof PDFTextField || field instanceof PDFCheckBox || field instanceof PDFRadioGroup)) removeField(doc, form, field);
   }
   form.updateFieldAppearances(font);
   form.flatten();
@@ -205,14 +312,14 @@ async function renderTemplate(
 }
 
 /** One A4 page with an image (an ID card, a certificate) fitted under its caption. */
-async function imagePage(out: PDFDocument, bytes: Uint8Array, name: string, caption: string | undefined, warnings: string[]) {
+async function imagePage(out: PDFDocument, assets: Record<string, Uint8Array>, name: string, caption: string | undefined, warnings: string[]) {
+  const bytes = asset(assets, name);
   const page = out.addPage([A4.width, A4.height]);
   const embedded = await embedImage(out, bytes, name);
   let top = A4.height - MARGIN;
   if (caption) {
-    const font = await out.embedFont(StandardFonts.HelveticaBold);
-    const text = drawable(font, caption, warnings, `caption of ${name}`);
-    page.drawText(text, { x: MARGIN, y: top - 12, size: 12, font });
+    const { font, text } = await pick(await fontsFor(out, assets, true), caption, warnings, `caption of ${name}`);
+    page.drawText(text.replace(/\n+/g, " "), { x: MARGIN, y: top - 12, size: 12, font });
     top -= 28;
   }
   drawFitted(page, embedded, { x: MARGIN, y: MARGIN, width: A4.width - 2 * MARGIN, height: top - MARGIN });
@@ -230,6 +337,9 @@ export async function renderDocument(spec: RenderSpec, assets: Record<string, Ui
   for (const part of spec.parts) {
     if (part.kind === "template") {
       const filled = await renderTemplate(part, assets, warnings);
+      // Fonts and images are written into a document only when it is saved;
+      // its pages are copied out instead, so write them now.
+      await filled.flush();
       const all = filled.getPageIndices();
       const keep = part.pages ? part.pages.map((n) => {
         if (!all.includes(n - 1)) throw new RenderError(`${part.asset}: no page ${n}`);
@@ -237,7 +347,7 @@ export async function renderDocument(spec: RenderSpec, assets: Record<string, Ui
       }) : all;
       for (const page of await out.copyPages(filled, keep)) out.addPage(page);
     } else if (part.kind === "image") {
-      await imagePage(out, asset(assets, part.asset), part.asset, part.caption, warnings);
+      await imagePage(out, assets, part.asset, part.caption, warnings);
     } else if (part.kind === "pdf") {
       const bytes = asset(assets, part.asset);
       if (!isPdf(bytes)) throw new RenderError(`Asset "${part.asset}" is not a PDF`);

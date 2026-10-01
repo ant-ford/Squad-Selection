@@ -12,6 +12,8 @@
  *  - sign_application (migrations 20261001200000, 20261001210000) checks
  *    the turn, records it and moves the stage on; at stage 6 the
  *    Membership Officer has the accept task for the New Joiner board.
+ *  - The Membership Officer's signature makes the consolidated application
+ *    PDF and sends it to the Club's membership office (pdf/application.ts).
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -24,6 +26,9 @@ import { invalidateForTables } from "./airtableWebhook";
 import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
+import { inBackground } from "./requestContext";
+import { pdfsEnabled } from "./pdf/render";
+import { sendApplicationToClub } from "./pdf/application";
 import { TABLES } from "../../shared/schema/tableNames";
 import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
 
@@ -165,6 +170,11 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     signatures[r] = { name: holderOf(r)?.name ?? null, signedAt: signedAt(app, r), signatureUrl: file ? await fileLink(env, file) : null };
   }
   const saved = myRoles.length ? await savedSignature(env, user.personId) : null;
+  let applicationPdfUrl: string | null | undefined;
+  if (app.officer_signed_at) {
+    const pdf = await d.one<{ id: string }>("files", `select=id&person_id=${eq(p.id)}&kind=eq.application_form&created_at=gte.${encodeURIComponent(app.officer_signed_at)}&order=created_at.desc&limit=1`);
+    applicationPdfUrl = pdf ? await fileLink(env, pdf.id) : null;
+  }
   return {
     id: p.api_id,
     name: nameOf(p),
@@ -191,6 +201,7 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     myRoles,
     drafts: { sportsBackground: p.sports_background_draft, trainingComments: p.training_comments_draft },
     savedSignatureUrl: saved ? await fileLink(env, saved) : null,
+    applicationPdfUrl,
   };
 }
 
@@ -270,6 +281,9 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
     throw err;
   }
   await invalidateForTables(env, [TABLES.player]);
+  // The last signature: the application, as one PDF, to the Club's
+  // membership office. After the response; a slow render never holds it up.
+  if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => sendApplicationToClub(env, apiId));
   const next = TURN_BY_STAGE[stage];
   if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
   return { stage };

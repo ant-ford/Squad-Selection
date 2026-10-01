@@ -1,9 +1,12 @@
 /**
  * POST /functions/v1/render-pdf - fills a PDF template for the Worker
  * (../_shared/pdf.ts). Only the Worker calls it: the request must carry
- * the shared PDF_RENDER_SECRET, and anything else is a bare 403. It reads
- * no database and holds no storage keys; everything it draws arrives in
- * the request.
+ * this project's secret API key (X-Render-Key, the Worker's
+ * DATA_SUPABASE_SECRET_KEY), and anything else is a bare 403. The key is
+ * checked by asking the project's Data API for a table only the secret key
+ * may read, so no extra secret is shared. Beyond that check it reads no
+ * data and holds no storage keys; everything it draws arrives in the
+ * request.
  *
  * Request: multipart/form-data with `spec` (RenderSpec as JSON) and one
  * file part per asset, named as the spec names it.
@@ -12,21 +15,36 @@
  */
 import { renderDocument, RenderError, type RenderSpec } from "../_shared/pdf.ts";
 
-/** Compares two secrets without leaking where they differ. */
-function sameSecret(a: string, b: string): boolean {
-  const x = new TextEncoder().encode(a);
-  const y = new TextEncoder().encode(b);
-  let diff = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
-  return diff === 0;
+/** Hashes of keys already shown to be this project's secret key, for this instance's life. */
+const verified = new Set<string>();
+
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * True when `key` is this project's secret key: only that key may read
+ * public.files (no rows are asked for). A publishable key, a wrong key or
+ * an outage all answer no.
+ */
+async function isSecretKey(key: string): Promise<boolean> {
+  const url = Deno.env.get("SUPABASE_URL");
+  if (!key || key.length < 20 || !url) return false;
+  const hash = await sha256(key);
+  if (verified.has(hash)) return true;
+  const res = await fetch(`${url}/rest/v1/files?select=id&limit=0`, { headers: { apikey: key } });
+  await res.body?.cancel();
+  if (!res.ok) return false;
+  verified.add(hash);
+  return true;
 }
 
 const MAX_REQUEST_BYTES = 40_000_000;
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
-  const secret = Deno.env.get("PDF_RENDER_SECRET");
-  if (!secret || !sameSecret(req.headers.get("x-render-secret") ?? "", secret)) return new Response("Forbidden", { status: 403 });
+  if (!(await isSecretKey(req.headers.get("x-render-key") ?? ""))) return new Response("Forbidden", { status: 403 });
   if (Number(req.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) return Response.json({ error: "Request too large" }, { status: 413 });
 
   let spec: RenderSpec;

@@ -153,6 +153,17 @@ function Application({ v }: { v: SigningView }) {
           })}
         </ul>
         <p className="text-xs text-muted-foreground">The sponsor signs first, then the Chairman, then the Membership Officer, who sends it to the Club's membership office.</p>
+        {v.applicationPdfUrl !== undefined && (
+          <p className="text-sm">
+            {v.applicationPdfUrl ? (
+              <a href={v.applicationPdfUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                The application as sent to the Club (PDF)
+              </a>
+            ) : (
+              <span className="text-muted-foreground">The application PDF for the Club is being made. Reload in a minute to see it.</span>
+            )}
+          </p>
+        )}
         {waiting && (
           <p className="text-xs text-foreground rounded-md border border-border bg-muted/40 p-2">
             You can sign as {ROLE_LABEL[waiting]} once the {turn === 'sponsor' ? 'sponsor' : ROLE_LABEL[turn!]} has signed. You'll get an email when it's your turn.

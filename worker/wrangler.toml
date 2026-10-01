@@ -70,6 +70,13 @@ DATA_BACKEND_OVERRIDES = ""
 DATA_SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 # This Worker's public origin, for the links it hands out (signed file links).
 API_ORIGIN = "https://api.eddy.global"
+# Filled PDFs (src/pdf/), made by the render-pdf Edge Function that CI
+# deploys to the data project. "off" stops making them.
+PDFS = "on"
+# The Club's membership office: each new member's signed application goes
+# there as one PDF, from the Membership Officer (src/pdf/application.ts).
+CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
+CLUB_MEMBERSHIP_CONTACT = "Caren"
 # Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
 # the RESEND_API_KEY secret, installed by the CI deploy.
 MAIL_FROM = "Eddy <notifications@eddy.global>"
@@ -142,6 +149,10 @@ DATA_BACKEND_OVERRIDES = ""
 # .github/workflows/preview.yml.
 DATA_SUPABASE_URL = "https://zlqzpzmqjqnrppmtevbv.supabase.co"
 API_ORIGIN = "https://hkfc-api-preview.ant-ford.workers.dev"
+PDFS = "on"
+# Redirected to MAIL_REDIRECT_TO like all preview mail.
+CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
+CLUB_MEMBERSHIP_CONTACT = "Caren"
 # Preview never emails anyone real: everything goes to the captain, [PREVIEW].
 MAIL_FROM = "Eddy <notifications@eddy.global>"
 MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
