@@ -77,7 +77,6 @@ PDFS = "on"
 # there as one PDF, from the Membership Officer (src/pdf/application.ts).
 CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
 CLUB_MEMBERSHIP_CONTACT = "Caren"
-FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
 # An existing member's levy form goes to the front desk.
 FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
 # Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
@@ -156,6 +155,7 @@ PDFS = "on"
 # Redirected to MAIL_REDIRECT_TO like all preview mail.
 CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
 CLUB_MEMBERSHIP_CONTACT = "Caren"
+FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
 # Preview never emails anyone real: everything goes to the captain, [PREVIEW].
 MAIL_FROM = "Eddy <notifications@eddy.global>"
 MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
