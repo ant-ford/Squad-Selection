@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { notifySigners, signApplication, signingTasks } from "../worker/src/applicationSigning";
+import { notifySigner, signApplication, signingTasks } from "../worker/src/applicationSigning";
 import { sponsorProblem } from "../shared/signing";
 
 const env = {
@@ -74,7 +74,10 @@ describe("signing a new member's application", () => {
     const calls = fake();
     expect(await signApplication(env, as("recSPONSOR"), "recAPPLICANT", { role: "sponsor", answers })).toEqual({ stage: "4. Sponsor (Signed)" });
     expect(rpc(calls)!.body).toEqual({ p_person: "recAPPLICANT", p_actor: "recSPONSOR", p_role: "sponsor", p: answers, p_signature: U(900) });
-    expect(resend(calls)).toHaveLength(0);
+    // Then it's the Chairman's turn: one email to them.
+    const [mail] = resend(calls);
+    expect(mail.to).toEqual(["paul@x.com"]);
+    expect(mail.text).toContain("sponsor has given their support");
   });
 
   it("needs a signature: a saved one, or one drawn now", async () => {
@@ -82,33 +85,36 @@ describe("signing a new member's application", () => {
     await expect(signApplication(env, as("recCHAIR"), "recAPPLICANT", { role: "chair" })).rejects.toThrow(/Sign the application/);
   });
 
-  it("tells the Membership Officer once all three have signed", async () => {
-    const calls = fake({ stage: "6. Membership Officer (Signed)" });
-    await signApplication(env, as("recMO"), "recAPPLICANT", { role: "officer" });
+  it("asks the Membership Officer once the Chairman has signed, and nobody after the Membership Officer", async () => {
+    let calls = fake({ stage: "5. Chairman (Signed)", people: [{ ...applicant, applicant_stage: "4. Sponsor (Signed)" }] });
+    await signApplication(env, as("recCHAIR"), "recAPPLICANT", { role: "chair" });
     const [mail] = resend(calls);
     expect(mail.to).toEqual(["daniel@x.com"]);
-    expect(mail.subject).toBe("Sam Lee's application is signed");
-    expect(mail.text).toContain("https://app.eddy.global/membership");
-  });
-
-  it("emails each of the three when a new member's application comes in, and nobody for an existing member", async () => {
-    let calls = fake();
-    await notifySigners(env, "recAPPLICANT");
-    const mails = resend(calls);
-    expect(mails.map((m) => m.to[0])).toEqual(["chris@x.com", "paul@x.com", "daniel@x.com"]);
-    expect(mails[0].text).toContain("add your support");
-    expect(mails[1].text).toContain("you're their Chairman");
-    expect(mails[0].text).toContain("https://app.eddy.global/sign-application/recAPPLICANT");
-    calls = fake({ app: application({ application_type: "Existing HKFC Member" }) });
-    await notifySigners(env, "recAPPLICANT");
+    expect(mail.text).toContain("send it to the Club's membership office");
+    calls = fake({ stage: "6. Membership Officer (Signed)" });
+    await signApplication(env, as("recMO"), "recAPPLICANT", { role: "officer" });
     expect(resend(calls)).toHaveLength(0);
   });
 
-  it("gives a task to each signer who hasn't signed, then the Membership Officer an accept task", async () => {
-    fake({ app: application({ chair_signed_at: "2026-10-01T02:00:00Z" }) });
-    const tasks = await signingTasks(env);
-    expect(Object.keys(tasks).sort()).toEqual(["recMO", "recSPONSOR"]);
-    expect(tasks.recSPONSOR[0]).toMatchObject({ key: "application", role: "Sponsor", subject: "Sam Lee", url: "/sign-application/recAPPLICANT" });
+  it("emails the sponsor when a new member's application comes in, and nobody for an existing member", async () => {
+    let calls = fake();
+    await notifySigner(env, "recAPPLICANT", "sponsor");
+    const mails = resend(calls);
+    expect(mails.map((m) => m.to[0])).toEqual(["chris@x.com"]);
+    expect(mails[0].text).toContain("add your support");
+    expect(mails[0].text).toContain("https://app.eddy.global/sign-application/recAPPLICANT");
+    calls = fake({ app: application({ application_type: "Existing HKFC Member" }) });
+    await notifySigner(env, "recAPPLICANT", "sponsor");
+    expect(resend(calls)).toHaveLength(0);
+  });
+
+  it("gives the task to whoever's turn it is, then the Membership Officer an accept task", async () => {
+    fake();
+    expect(await signingTasks(env)).toEqual({
+      recSPONSOR: [{ id: "application:recAPPLICANT", key: "application", subject: "Sam Lee", role: "Sponsor", url: "/sign-application/recAPPLICANT" }],
+    });
+    fake({ people: [{ ...applicant, applicant_stage: "4. Sponsor (Signed)" }], app: application({ sponsor_signed_at: "2026-10-01T02:00:00Z" }) });
+    expect(Object.keys(await signingTasks(env))).toEqual(["recCHAIR"]);
     fake({ people: [{ ...applicant, applicant_stage: "6. Membership Officer (Signed)" }] });
     expect(await signingTasks(env)).toEqual({ recMO: [{ id: "accept:recAPPLICANT", key: "accept", subject: "Sam Lee", url: "/membership" }] });
   });

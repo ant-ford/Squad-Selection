@@ -20,9 +20,9 @@
  *    applicant's Sponsored By links.
  *  - review: a statement at Member Submitted waits on its sponsor, at
  *    Sponsor Submitted on its membership officer.
- *  - On Supabase the three sign in any order (applicationSigning.ts): each
- *    who hasn't signed has an application line, and once all three have,
- *    the membership officer has an accept line.
+ *  - On Supabase the same three sign in Eddy (applicationSigning.ts), in
+ *    that order; once all three have, the membership officer has an
+ *    accept line.
  *  - kit / registration (Supabase): a Section Captain's request to the Kit
  *    Convenor or the Hockey Convenor for a new joiner, until they mark it
  *    done (joiners.ts).

@@ -16,7 +16,7 @@ import { isUnderEighteen } from "./declarations";
 import { signatureBytes } from "./signatures";
 import { uploadBytes } from "./details";
 import { cleanDraft, complete } from "./reviewDrafts";
-import { notifySigners } from "./applicationSigning";
+import { notifySigner } from "./applicationSigning";
 import { joinPhone, normaliseHkid, splitPhone } from "../../shared/phone";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -399,7 +399,7 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
     throw err;
   }
   await invalidateForTables(env, [TABLES.player]);
-  // A new HKFC member's application now waits on the sponsor, Chairman and Membership Officer.
-  if (who === "new") await notifySigners(env, p.api_id).catch((err) => console.error("Signing emails not sent:", err instanceof Error ? err.message : err));
+  // A new HKFC member's application now waits on their sponsor (then the Chairman, then the Membership Officer).
+  if (who === "new") await notifySigner(env, p.api_id, "sponsor").catch((err) => console.error("Sponsor's email not sent:", err instanceof Error ? err.message : err));
   return { ok: true };
 }

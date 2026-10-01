@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
 import { getSigningView, getSponsorDrafts, signApplication } from '@/api/signing';
 import { JOINER_POSITIONS, JOINER_TEAMS } from '@shared/joiners';
-import { ROLE_LABEL, SIGN_ROLES, SPONSOR_LEVELS, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from '@shared/signing';
+import { ROLE_LABEL, SIGN_ROLES, SPONSOR_LEVELS, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from '@shared/signing';
 
 function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -34,7 +34,7 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 
 /**
  * A new HKFC member's application for its sponsor, Chairman and Membership
- * Officer to sign, in any order (replacing Fillout forms 4 and 5). The
+ * Officer to sign, in that order (replacing Fillout forms 4 and 5). The
  * sponsor adds their assessment, starting from AI drafts.
  */
 export default function SignApplicationPage() {
@@ -73,7 +73,10 @@ export default function SignApplicationPage() {
 
 function Application({ v }: { v: SigningView }) {
   const a = v.applicant;
-  const toSign = v.myRoles.filter((r) => !v.signatures[r].signedAt);
+  const turn = TURN_BY_STAGE[v.stage ?? ''];
+  // Theirs to sign now; a later signer sees whose turn it is.
+  const mine = turn && v.myRoles.includes(turn) ? turn : null;
+  const waiting = !mine && turn ? v.myRoles.find((r) => !v.signatures[r].signedAt) : undefined;
   return (
     <>
       <section className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
@@ -149,10 +152,16 @@ function Application({ v }: { v: SigningView }) {
             );
           })}
         </ul>
-        <p className="text-xs text-muted-foreground">The sponsor, Chairman and Membership Officer can sign in any order.</p>
+        <p className="text-xs text-muted-foreground">The sponsor signs first, then the Chairman, then the Membership Officer, who sends it to the Club's membership office.</p>
+        {waiting && (
+          <p className="text-xs text-foreground rounded-md border border-border bg-muted/40 p-2">
+            You can sign as {ROLE_LABEL[waiting]} once the {turn === 'sponsor' ? 'sponsor' : ROLE_LABEL[turn!]} has signed. You'll get an email when it's your turn.
+          </p>
+        )}
       </Block>
 
-      {toSign.map((r) => (r === 'sponsor' ? <SponsorSign key={r} v={v} /> : <OfficerSign key={r} v={v} role={r} />))}
+      {mine === 'sponsor' && <SponsorSign v={v} />}
+      {(mine === 'chair' || mine === 'officer') && <OfficerSign v={v} role={mine} />}
     </>
   );
 }

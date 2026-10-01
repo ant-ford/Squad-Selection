@@ -3,14 +3,15 @@
  * application (Supabase backend), replacing Fillout forms 4 and 5, Page 7
  * and the Make routes that moved the stage and emailed the next signer.
  *
- *  - When the application is submitted, each of the three gets one email
- *    and a My Tasks line; they sign in any order (owner decision).
- *  - The sponsor reviews the application and gives their assessment, with
- *    AI drafts from the Airtable fields' own prompts to start from.
+ *  - They sign in order (owner, 2026-10-01): the sponsor gives their
+ *    support (with AI drafts from the Airtable fields' own prompts to start
+ *    from), then the Chairman reviews it and signs, then the Membership
+ *    Officer signs and sends the application to the Club's membership
+ *    office. Each gets one email and a My Tasks line when it's their turn.
  *  - Each signs with their saved signature, or draws one that is kept.
- *  - sign_application (migration 20261001200000) records it and sets the
- *    stage; when all three have signed, the Membership Officer is told it's
- *    ready to accept on the New Joiner board.
+ *  - sign_application (migrations 20261001200000, 20261001210000) checks
+ *    the turn, records it and moves the stage on; at stage 6 the
+ *    Membership Officer has the accept task for the New Joiner board.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -24,9 +25,9 @@ import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { TABLES } from "../../shared/schema/tableNames";
-import { ROLE_LABEL, SIGN_ROLES, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
+import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
 
-const SIGNING_STAGES = ["3. Club Application (Signed)", "4. Sponsor (Signed)", "5. Chairman (Signed)"];
+const SIGNING_STAGES = Object.keys(TURN_BY_STAGE);
 const READY_STAGE = "6. Membership Officer (Signed)";
 const NEW_MEMBER = "New HKFC Member";
 
@@ -269,74 +270,44 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
     throw err;
   }
   await invalidateForTables(env, [TABLES.player]);
-  if (stage === READY_STAGE) {
-    await notifyReady(env, p, holderOf("officer")).catch((err) => console.error("Ready email not sent:", err instanceof Error ? err.message : err));
-  }
+  const next = TURN_BY_STAGE[stage];
+  if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
   return { stage };
 }
 
-/** Each signer's one email when the application comes in (from apply.ts submit). */
-export async function notifySigners(env: Env, personApiId: string): Promise<void> {
+/** What each signer is asked to do, after the opening line. */
+const ASK: Record<SignRole, (name: string) => string[]> = {
+  sponsor: (name) => [`${name} has submitted their application to join the Club, and you're their sponsor. Please review it, add your support and sign it in Eddy:`],
+  chair: (name) => [`${name}'s sponsor has given their support for ${name}'s application to join the Club. Please review it and sign it as Chairman in Eddy:`],
+  officer: (name) => [
+    `The sponsor and the Chairman have signed ${name}'s application to join the Club. Please review it and sign it as Membership Officer in Eddy, then send it to the Club's membership office:`,
+  ],
+};
+
+/** The one email to whoever's turn it is: the sponsor on submit (apply.ts), then the Chairman, then the Membership Officer. */
+export async function notifySigner(env: Env, personApiId: string, role: SignRole): Promise<void> {
   const { p, app, holderOf } = await loadApplication(env, personApiId);
   if (app.application_type !== NEW_MEMBER) return;
-  const name = nameOf(p);
-  const link = `${appOrigin(env)}/sign-application/${p.api_id}`;
-  for (const role of SIGN_ROLES) {
-    const h = holderOf(role);
-    if (!h?.email) {
-      console.error(`No ${role} with an email on application ${app.id}`);
-      continue;
-    }
-    const ask = role === "sponsor" ? "review it, add your support and sign it" : "review and sign it";
-    try {
-      await sendEmail(env, {
-        toPersonId: h.personId,
-        to: h.email,
-        subject: `Please sign ${name}'s membership application`,
-        text: [
-          `Dear ${h.firstName ?? ROLE_LABEL[role]},`,
-          "",
-          `${name} has submitted their application to join the Club, and you're their ${role === "sponsor" ? "sponsor" : ROLE_LABEL[role]}. Please ${ask} in Eddy:`,
-          link,
-          "",
-          "The sponsor, Chairman and Membership Officer can sign in any order.",
-          "",
-          "Many thanks,",
-          "HKFC Hockey Section",
-        ].join("\n"),
-        template: `application-sign-${role}`,
-        from: env.REVIEW_EMAIL_FROM || undefined,
-      });
-    } catch (err) {
-      console.error(`Signing email to the ${role} not sent:`, err instanceof Error ? err.message : err);
-    }
+  const h = holderOf(role);
+  if (!h?.email) {
+    console.error(`No ${role} with an email on application ${app.id}`);
+    return;
   }
-}
-
-async function notifyReady(env: Env, p: ApplicantRow, officer: Holder | undefined): Promise<void> {
-  if (!officer?.email) return;
   const name = nameOf(p);
   await sendEmail(env, {
-    toPersonId: officer.personId,
-    to: officer.email,
-    subject: `${name}'s application is signed`,
-    text: [
-      `Dear ${officer.firstName ?? "Membership Officer"},`,
-      "",
-      `The sponsor, Chairman and you have all signed ${name}'s membership application. Once the Club confirms, you can accept them on the New Joiner board:`,
-      `${appOrigin(env)}/membership`,
-      "",
-      "HKFC Hockey Section",
-    ].join("\n"),
-    template: "application-ready",
+    toPersonId: h.personId,
+    to: h.email,
+    subject: `Please sign ${name}'s membership application`,
+    text: [`Dear ${h.firstName ?? ROLE_LABEL[role]},`, "", ...ASK[role](name), `${appOrigin(env)}/sign-application/${p.api_id}`, "", "Many thanks,", "HKFC Hockey Section"].join("\n"),
+    template: `application-sign-${role}`,
     from: env.REVIEW_EMAIL_FROM || undefined,
   });
 }
 
 /**
- * The My Tasks lines for applications waiting on signatures (one for each
- * of the three who hasn't signed yet) and ready to accept (the Membership
- * Officer), by the signer's People id.
+ * The My Tasks lines for applications waiting on a signature (whoever's
+ * turn it is) and ready to accept (the Membership Officer), by the
+ * signer's People id.
  */
 export async function signingTasks(env: Env): Promise<Record<string, MyTask[]>> {
   const d = db(env);
@@ -359,9 +330,9 @@ export async function signingTasks(env: Env): Promise<Record<string, MyTask[]>> 
       add(who[x.sponsored_by_officer_id ?? ""]?.apiId, { id: `accept:${x.api_id}`, key: "accept", subject, url: "/membership" });
       continue;
     }
-    for (const r of SIGN_ROLES) {
-      if (signedAt(app, r)) continue;
-      add(who[x[OFFICE_COLUMN[r]] ?? ""]?.apiId, { id: `application:${x.api_id}:${r}`, key: "application", subject, role: TASK_ROLE[r], url: `/sign-application/${x.api_id}` });
+    const r = TURN_BY_STAGE[x.applicant_stage ?? ""];
+    if (r && !signedAt(app, r)) {
+      add(who[x[OFFICE_COLUMN[r]] ?? ""]?.apiId, { id: `application:${x.api_id}`, key: "application", subject, role: TASK_ROLE[r], url: `/sign-application/${x.api_id}` });
     }
   }
   return out;

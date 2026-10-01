@@ -1,13 +1,22 @@
 /**
  * The sponsor, Chairman and Membership Officer signing a new HKFC member's
  * application (worker/src/applicationSigning.ts, replacing Fillout forms 4
- * and 5). They sign in any order; the sponsor also gives their assessment.
+ * and 5). They sign in that order (owner, 2026-10-01): the sponsor gives
+ * their support, the Chairman reviews it, and the Membership Officer signs
+ * last and sends the application to the Club's membership office.
  */
 import { JOINER_POSITIONS, JOINER_TEAMS } from "./joiners";
 
 export type SignRole = "sponsor" | "chair" | "officer";
 export const SIGN_ROLES: SignRole[] = ["sponsor", "chair", "officer"];
 export const ROLE_LABEL: Record<SignRole, string> = { sponsor: "Sponsor", chair: "Chairman", officer: "Membership Officer" };
+
+/** Whose turn it is to sign, by the applicant's stage. */
+export const TURN_BY_STAGE: Record<string, SignRole> = {
+  "3. Club Application (Signed)": "sponsor",
+  "4. Sponsor (Signed)": "chair",
+  "5. Chairman (Signed)": "officer",
+};
 
 /** The Fillout form's choices for "the applicant presently has the ability to play/coach at…". */
 export const SPONSOR_LEVELS = ["Premier League", "Division 1", "Division 2", "Division 3", "Division 4", "Division 5"] as const;
