@@ -29,7 +29,7 @@ GATE C, decided on Friday:
 - [ ] **The three applications part-way through signing** (owner, 2 Oct): the Chairman has signed two, now stage 5 (waiting on the Membership Officer). If the MO signs them in Fillout before the freeze they reach stage 6 and are approved on the board; if not, `backfill-applications.mjs` moves them into Eddy with the stage-3 one and the MO signs there. The stage-3 one (waiting on its sponsor) moves to Eddy after the import either way. Stage 6 (10 people) is fine: approve them on the board. Stage 2 (1 person): after the flip, the Section Captain re-sends the invitation from Eddy.
 - [x] **Supabase egress checked** (2 Oct): at most ~260 KB a day across both projects while preview was in use (28 Sep–2 Oct), far below the free plan's 5 GB a month. No week-1 fixes needed up front; keep watching Usage → Egress daily for the first week.
 - [x] **The kit order CSV** is at `C:\Users\anthony.ford\Downloads\2026-27 Kukri Kit Order 1 (2026.08.17).csv` (it has names, so it stays out of the repo). Dry run on 2 Oct: 179 sets, 174 matched to a person, 10 goalkeeper sets.
-- [x] Quizzes (owner, 2 Oct): the Hockey Rules quizzes are in Eddy (`/quizzes`), and the Fillout quizzes close with the rest. Past scores come with the import (scores above 0; Airtable's 0 meant never taken). The questions and answer keys are loaded after the import from `C:\dev\eddy-quizzes.json`, which stays out of the repository.
+- [x] Quizzes (owner, 2 Oct): the Hockey Rules quizzes are in Eddy (`/quizzes`), and the Fillout quizzes close with the rest. Past scores come with the import (scores above 0; Airtable's 0 meant never taken). The questions and answer keys were loaded into production on 2 Oct from `C:\dev\eddy-quizzes.json`, which stays out of the repository.
 
 ## 1. Freeze (owner, about 30 minutes)
 
@@ -90,7 +90,7 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
   node backfill-applications.mjs --apply --target=production --i-understand-this-writes-production
   ```
 
-- Load the Hockey Rules quizzes (upserts, so a re-run is safe):
+- The Hockey Rules quizzes are already loaded on production (2 Oct; the import doesn't touch them). Only if their questions change, load them again (upserts, so a re-run is safe):
 
   ```bash
   node load-quizzes.mjs --file="C:\dev\eddy-quizzes.json" --apply --target=production --i-understand-this-writes-production
