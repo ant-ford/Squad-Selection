@@ -65,6 +65,11 @@ export interface Env {
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
   FILES?: R2Bucket;
+  /**
+   * "remove": the daily retention job removes the personal details of people
+   * inactive for 13 months (src/retention.ts). Anything else: it only counts them.
+   */
+  RETENTION_MODE?: string;
   /** "on" once the render-pdf Edge Function is deployed to the data project (src/pdf/render.ts). */
   PDFS?: string;
   /** The Club's membership office, "Name <address>": gets each signed application as a PDF (src/pdf/application.ts). */

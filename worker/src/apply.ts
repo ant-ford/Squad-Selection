@@ -55,6 +55,7 @@ interface PersonRow {
   marital_status: string | null;
   bill_payer: string | null;
   participation_details: string | null;
+  hkid_hidden?: boolean;
   [column: string]: unknown;
 }
 
@@ -327,11 +328,12 @@ export function applicationGaps(p: PersonRow, view: ApplyView, who: Audience, ha
       fieldsFor(s, who)
         .filter((f) => isShown(f, values))
         .map((f) => checkValue(f, values[f.key], who))
-        .find(Boolean) ?? sectionProblem(s.key, values);
+        .find(Boolean) ?? sectionProblem(s.key, values, { idHidden: p.hkid_hidden === true });
     if (bad) gaps.push(`${s.title}: ${bad}`);
   }
   if (!hasPhoto) gaps.push("Personal details: upload your photo.");
-  if (!hasHkid) gaps.push("Personal details: upload a copy of your HKID, or your passport if you don't have one.");
+  // Their ID isn't asked for (people.hkid_hidden).
+  if (!hasHkid && !p.hkid_hidden) gaps.push("Personal details: upload a copy of your HKID, or your passport if you don't have one.");
   if (p.marital_status === "Married" && !view.hasMarriageCertificate) gaps.push("Family: upload your marriage certificate.");
   if (view.spouse) {
     if (!view.spouse.files.photo) gaps.push("Family: upload your spouse or partner's photo.");
