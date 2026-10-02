@@ -37,7 +37,7 @@ export default function DeleteProfile() {
       {asking && (
         <ConfirmDialog
           title="Delete your profile?"
-          message="This removes your contact, ID and bank details, family, photos, documents, availability and sign-in straight away, and ends any officer, coach or captain role. Your name stays in past results and stats. It can't be undone."
+          message="This removes your contact, ID and bank details, family, photos, documents, availability and sign-in straight away, and ends any officer, coach or captain role. It can't be undone."
           confirmLabel={remove.isPending ? 'Deleting…' : 'Delete my profile'}
           destructive
           typeToConfirm="DELETE"
