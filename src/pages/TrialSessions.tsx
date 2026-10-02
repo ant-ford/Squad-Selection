@@ -108,7 +108,7 @@ export default function TrialSessionsPage() {
         </section>
         <section className="rounded-xl border border-border bg-card p-4 space-y-2">
           <h2 className="text-base font-semibold text-foreground">The registration link</h2>
-          <p className="text-xs text-muted-foreground">Every member also has their own on their player page, which tells you who sent them.</p>
+          <p className="text-xs text-muted-foreground">Share this with anyone who'd like to come to a trial. Members can also send their own link from “Invite someone to join” in the menu, so you can see who invited each person.</p>
           <button
             className="inline-flex items-center gap-1.5 text-sm text-primary underline"
             onClick={() => void navigator.clipboard.writeText(link).then(() => toast.success('Link copied'))}
