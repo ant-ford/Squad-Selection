@@ -28,6 +28,7 @@ import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
 import HelpLink from '@/components/HelpLink';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -330,23 +331,13 @@ export default function PlayerDashboard() {
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center">
-              {data.photo ? (
-                <img
-                  src={data.photo}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                  // A stale Airtable attachment URL would otherwise leave a
-                  // broken-image glyph where the initial used to be.
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <span className="text-lg font-bold text-primary">
-                  {(data.playerName || '?')[0].toUpperCase()}
-                </span>
-              )}
+              <img
+                src={data.photo || DEFAULT_PHOTO}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+                onError={fallBackToDefaultPhoto}
+              />
             </div>
             <div className="flex-1">
               <p className="font-semibold text-foreground">{data.playerName}</p>

@@ -124,7 +124,7 @@ export default function MyDetailsPage() {
         {step.key === 'plan' && <SeasonPlanStep {...props} />}
         {step.key === 'volunteering' && <VolunteeringStep {...props} initial={volunteering.data} />}
         {step.key === 'done' && <DoneStep {...props} onFinished={finished} />}
-        <DeleteProfile />
+        {step.key === 'membership' && <DeleteProfile />}
       </>
     );
   };
