@@ -1,6 +1,6 @@
 # Switch-over: Airtable → Supabase
 
-**Updated 2 Oct 2026**, after the readiness check (database, settings, import, replacements and free-plan limits).
+**Switched 2 Oct 2026, about 17:05 HKT** (brought forward from Saturday). Import and parity clean (730 files), kit order loaded, the stage-3 application moved into Eddy, production backed up, #116 merged, hkha-sync on production. Never run `import-airtable.mjs` again.
 
 - **When:** Saturday 3 Oct 2026 (Sunday 4 Oct in reserve), with the owner present throughout.
 - **Go/no-go:** Friday 2 Oct. Every box under [Before Saturday](#before-saturday) must be ticked, or the switch-over moves.
@@ -106,7 +106,7 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
 
 1. **Re-run the import** (`import-airtable.mjs --apply --target=production --i-understand-this-writes-production`), so anything written to Airtable through the app since the first run comes across. It is safe until the flip, never after.
 2. Merge the switch PR (ready as a draft): it sets `DATA_BACKEND = "supabase"` (exactly that, lowercase, not through `DATA_BACKEND_OVERRIDES`) in the production `[vars]` of `worker/wrangler.toml`, and bumps the Stats summary version so the first stats are built from Supabase. CI deploys it in about 2 minutes.
-3. Point hkha-sync at production only, re-enable it, and run it once by hand:
+3. Point hkha-sync at production only, re-enable it, and run it once by hand. Scheduled runs follow `SYNC_TARGETS`, but a run started by hand uses its own `target` input, which defaults to `airtable`: always pass `-f target=supabase-production`.
 
    ```bash
    gh variable set SYNC_TARGETS --repo ant-ford/hkha-sync --body '["supabase-production"]'
@@ -117,7 +117,7 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
    ```
 
    ```bash
-   gh workflow run "HKHA Sync" --repo ant-ford/hkha-sync
+   gh workflow run "HKHA Sync" --repo ant-ford/hkha-sync -f target=supabase-production
    ```
 
 4. Check that `/health?deep=1` answers, and that the request log shows `dbCalls` and no `airtableCalls` for data routes.
