@@ -43,6 +43,7 @@ import {
   type Relative,
   type TrialAttended,
 } from "../../shared/application";
+import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 import { PROFILE_SECTIONS, audienceOf, checkValue, fieldsFor, isShown, sectionFor, sectionProblem, type Audience, type ProfileValues } from "../../shared/profile";
 
 interface PersonRow {
@@ -359,6 +360,11 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
     throw new HttpError("The wording has changed since this page was opened. Reload to read the current version.", 409, "WORDING_CHANGED");
   }
   const p = await loadApplicant(env, user.personId);
+  // Sent already (in Eddy, or in Fillout before the switch-over): a second
+  // submission would start the signing over and email the sponsor again.
+  if (SUBMITTED_STAGES.includes(p.applicant_stage ?? "")) {
+    throw new HttpError("Your application has already been sent to the club.", 409, "ALREADY_SUBMITTED");
+  }
   const who = audienceOf(p.status, p.applicant_type);
   const day = today();
   const view = await getApply(env, user);

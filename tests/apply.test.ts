@@ -105,4 +105,13 @@ describe("the new joiner application", () => {
     expect(put).toHaveBeenCalledTimes(1);
     await expect(submitApplication({ ...env, FILES: files } as Env, user, { version: "old", accepted: ["hockey_notes"] })).rejects.toMatchObject({ status: 409 });
   });
+
+  it("refuses a second submission from someone whose application was already sent (in Fillout before the switch-over)", async () => {
+    const files = { put: vi.fn(), delete: vi.fn() } as unknown as R2Bucket;
+    const calls = fake({ people: [{ ...complete, applicant_stage: "6. Membership Officer (Signed)" }], submit_application: {} });
+    await expect(
+      submitApplication({ ...env, FILES: files } as Env, user, { version: APPLICATION_VERSION, accepted: ["hockey_notes"], signatures: { applicant: PNG } }),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/already been sent/) });
+    expect(calls.some((c) => c.url.pathname.endsWith("/rpc/submit_application"))).toBe(false);
+  });
 });
