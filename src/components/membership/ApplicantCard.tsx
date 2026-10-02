@@ -1,6 +1,7 @@
 import { MessageCircle } from 'lucide-react';
 import type { ApplicantCard as Card, Chase } from '@/api/membership';
 import { toWhatsAppNumber, whatsAppLink } from '@/lib/whatsapp';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 /** Amber from two weeks in one stage, red from a month. */
 export function ageTone(days: number | null): string {
@@ -41,20 +42,7 @@ export function chaseWhatsApp(card: Card): string | null {
 export function Avatar({ card, size = 'h-10 w-10' }: { card: { name: string; photo?: string }; size?: string }) {
   return (
     <div className={`${size} shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center`}>
-      {card.photo ? (
-        <img
-          src={card.photo}
-          alt=""
-          className="h-full w-full object-cover"
-          loading="lazy"
-          // Airtable attachment URLs expire; fall back to the initial.
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : (
-        <span className="text-sm font-bold text-primary">{(card.name || '?')[0].toUpperCase()}</span>
-      )}
+      <img src={card.photo || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" loading="lazy" onError={fallBackToDefaultPhoto} />
     </div>
   );
 }

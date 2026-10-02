@@ -26,9 +26,10 @@ import { emptyConfig, computeAbilityAssignment } from '@shared/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@shared/schema/domainTypes';
 import type { RankingChange } from '@/lib/queries';
-import { POS_SHORT, initials } from '@/lib/format';
+import { POS_SHORT } from '@/lib/format';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { coachDashboardPath } from '@/lib/scrollMemory';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 const ALL_POSITIONS = Object.keys(POS_SHORT);
 const GROUP_COLORS: Record<string, string> = {
@@ -72,10 +73,6 @@ function nameOf(p: Player | InactiveRankingEntry): string {
   if (b) return b;
   if (c) return c;
   return 'Unknown';
-}
-
-function initialsOf(p: Player): string {
-  return initials(nameOf(p));
 }
 
 function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGroupBoundaries>) {
@@ -787,13 +784,12 @@ function RankingRowInner(props: {
         className="shrink-0 rounded-full overflow-hidden border border-border"
         title={player.photo ? 'View photo' : undefined}
       >
-        {player.photo ? (
-          <img src={player.photo} alt={nameOf(player)} className="h-9 w-9 rounded-full object-cover" />
-        ) : (
-          <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-            {initialsOf(player)}
-          </div>
-        )}
+        <img
+          src={player.photo || DEFAULT_PHOTO}
+          alt={nameOf(player)}
+          className="h-9 w-9 rounded-full object-cover"
+          onError={fallBackToDefaultPhoto}
+        />
       </button>
 
       <div className="w-7 text-center shrink-0">

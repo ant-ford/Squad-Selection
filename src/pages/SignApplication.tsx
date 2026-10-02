@@ -13,6 +13,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { getSigningView, getSponsorDrafts, remakeApplicationPdf, sendApplication, signApplication } from '@/api/signing';
 import { JOINER_POSITIONS, JOINER_TEAMS } from '@shared/joiners';
 import { ROLE_LABEL, SIGN_ROLES, SPONSOR_LEVELS, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from '@shared/signing';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 function Block({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -84,7 +85,7 @@ function Application({ v }: { v: SigningView }) {
     <>
       <section className="rounded-xl border border-border bg-card p-4 flex items-center gap-3">
         <div className="h-16 w-16 shrink-0 rounded-full bg-muted overflow-hidden">
-          {v.photoUrl && <img src={v.photoUrl} alt="" className="h-full w-full object-cover" />}
+          <img src={v.photoUrl || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" onError={fallBackToDefaultPhoto} />
         </div>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold text-foreground">{v.name}</h1>

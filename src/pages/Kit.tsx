@@ -146,7 +146,7 @@ export default function Kit() {
               onClick={() => setParam('view', v === 'sets' ? null : v)}
               className={`px-3 py-2 text-sm -mb-px border-b-2 ${view === v ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground'}`}
             >
-              {v === 'sets' ? `Sets (${board.sets.length})` : `Needs kit (${board.people.filter((p) => !p.hasSet).length})`}
+              {v === 'sets' ? `Sets (${board.sets.length})` : `Needs kit (${board.people.filter((p) => p.active && !p.hasSet).length})`}
             </button>
           ))}
         </div>

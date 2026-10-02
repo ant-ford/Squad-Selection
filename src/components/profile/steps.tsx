@@ -121,7 +121,6 @@ export function MembershipStep({ details, ...nav }: StepProps) {
           </div>
         ))}
       </dl>
-      <p className="text-xs text-muted-foreground">These are kept by the Membership Officer. If anything's wrong, let them know.</p>
     </StepShell>
   );
 }

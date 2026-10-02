@@ -9,7 +9,8 @@ import { ApiError } from '@/lib/apiClient';
 /**
  * "Delete my profile" (owner, 2026-10-02): removes their personal details,
  * files and sign-in now, the same as the 13-month retention removal. Their
- * name and playing record stay. Typing DELETE guards against a slip.
+ * name and playing record stay. Typing DELETE guards against a slip. Shown
+ * only at the bottom of the Membership step, as a red button.
  */
 export default function DeleteProfile() {
   const [asking, setAsking] = useState(false);
@@ -26,20 +27,17 @@ export default function DeleteProfile() {
     },
   });
   return (
-    <section className="mt-8 border-t border-border pt-4 space-y-2">
-      <p className="text-sm font-medium text-foreground">Delete my profile</p>
-      <p className="text-xs text-muted-foreground">
-        Removes your contact, ID and bank details, family, photos and documents, availability and sign-in straight away. Your name stays
-        in past match results and stats. If you've had enough of hockey for now, you can instead say you're not playing this season
-        under Hockey.
-      </p>
-      <button onClick={() => setAsking(true)} className="text-sm text-destructive underline">
+    <section className="flex justify-end pt-2">
+      <button
+        onClick={() => setAsking(true)}
+        className="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90"
+      >
         Delete my profile
       </button>
       {asking && (
         <ConfirmDialog
           title="Delete your profile?"
-          message="This can't be undone. You'll be signed out, and if you come back to the club you'll need to fill in your details again. Any role you hold as an officer, coach or captain ends."
+          message="This removes your contact, ID and bank details, family, photos, documents, availability and sign-in straight away, and ends any officer, coach or captain role. Your name stays in past results and stats. It can't be undone."
           confirmLabel={remove.isPending ? 'Deleting…' : 'Delete my profile'}
           destructive
           typeToConfirm="DELETE"
