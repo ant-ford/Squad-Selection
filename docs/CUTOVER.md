@@ -25,10 +25,10 @@ GATE C, decided on Friday:
 - [x] The October forms are in Eddy: commitment reviews, waivers, member details, new joiner (propose, apply, sign in order, PDF to the Club), and trials registration (`/join`). The gaps that stay manual are under [Not in Eddy yet](#not-in-eddy-yet).
 - [x] The two PDFs Fillout hosts (SAM terms pages 11-12, Commitment Pledge) are in Eddy; the New Members Info Sheet is on eddy-files (private, behind sign-in).
 - [x] The production Worker has every secret, binding and the render-pdf Edge Function it needs (checked 2 Oct); hkha-sync has its production key.
-- [ ] **#114 is merged** and its migration `20261002120000_email_recipients` applied to eddy-production first (no blind copies or membership-inbox copies; Eddy counts every address against 70 a day, leaving Resend's last ~30 for sign-in codes; review cron at most 10 a run; KV only for Stats on Supabase).
-- [ ] **The three applications part-way through signing** (1 waiting on its sponsor, 2 on the Chairman, in Airtable on 2 Oct) are settled (owner, 2 Oct): the two waiting on the Chairman are finished in Fillout before the freeze; the one waiting on its sponsor moves to Eddy after the import (`backfill-applications.mjs`, tested on preview), so its sponsor signs in Eddy. Stage 6 (10 people) is fine: approve them on the board. Stage 2 (1 person): after the flip, the Section Captain re-sends the invitation from Eddy.
-- [ ] **Supabase egress checked**: the organisation's Usage → Egress for 30 Sep–2 Oct (preview has run on Supabase since 30 Sep). Production and preview share the free plan's 5 GB a month. If it's billed uncompressed, the week-1 fixes under [Watch](#6-watch-in-week-1) go in first thing.
-- [ ] **A copy of the kit order CSV** (`2026-27 Kukri Kit Order 1 (2026.08.17).csv`) is on the owner's machine. It is not in the repo (it has names).
+- [x] **#114 is merged**, with its migration `20261002120000_email_recipients` applied to eddy-production first (2 Oct): no blind copies or membership-inbox copies; Eddy counts every address against 70 a day, leaving Resend's last ~30 for sign-in codes; review cron at most 10 a run; KV only for Stats on Supabase. The quizzes migration is on production too.
+- [ ] **The three applications part-way through signing** (owner, 2 Oct): the Chairman has signed two, now stage 5 (waiting on the Membership Officer). If the MO signs them in Fillout before the freeze they reach stage 6 and are approved on the board; if not, `backfill-applications.mjs` moves them into Eddy with the stage-3 one and the MO signs there. The stage-3 one (waiting on its sponsor) moves to Eddy after the import either way. Stage 6 (10 people) is fine: approve them on the board. Stage 2 (1 person): after the flip, the Section Captain re-sends the invitation from Eddy.
+- [x] **Supabase egress checked** (2 Oct): at most ~260 KB a day across both projects while preview was in use (28 Sep–2 Oct), far below the free plan's 5 GB a month. No week-1 fixes needed up front; keep watching Usage → Egress daily for the first week.
+- [x] **The kit order CSV** is at `C:\Users\anthony.ford\Downloads\2026-27 Kukri Kit Order 1 (2026.08.17).csv` (it has names, so it stays out of the repo). Dry run on 2 Oct: 179 sets, 174 matched to a person, 10 goalkeeper sets.
 - [x] Quizzes (owner, 2 Oct): the Hockey Rules quizzes are in Eddy (`/quizzes`), and the Fillout quizzes close with the rest. Past scores come with the import (scores above 0; Airtable's 0 meant never taken). The questions and answer keys are loaded after the import from `C:\dev\eddy-quizzes.json`, which stays out of the repository.
 
 ## 1. Freeze (owner, about 30 minutes)
@@ -81,10 +81,10 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
 - Then load the kit order (179 sets, idempotent), and check the count matches preview:
 
   ```bash
-  node import-kit-order.mjs --file="2026-27 Kukri Kit Order 1 (2026.08.17).csv" --name="2026-27 Kukri order 1" --supplier=Kukri --ordered-on=2026-08-17 --apply --target=production --i-understand-this-writes-production
+  node import-kit-order.mjs --file="C:\Users\anthony.ford\Downloads\2026-27 Kukri Kit Order 1 (2026.08.17).csv" --name="2026-27 Kukri order 1" --supplier=Kukri --ordered-on=2026-08-17 --apply --target=production --i-understand-this-writes-production
   ```
 
-- Move any application still mid-signing into Eddy (owner, 2 Oct: the one waiting on its sponsor; the two waiting on the Chairman are finished in Fillout first). It's a dry run without `--apply`, and touches only stage 3–5 new members with no Eddy application. Then tell the sponsor it's in their My Tasks (no email is sent):
+- Move any application still mid-signing into Eddy (owner, 2 Oct: the one waiting on its sponsor; the two waiting on the Chairman are finished in Fillout first). It's a dry run without `--apply`, and touches only stage 3–5 new members with no Eddy application. Then tell each next signer (the sponsor; the MO for any still at stage 5) it's in their My Tasks (no email is sent):
 
   ```bash
   node backfill-applications.mjs --apply --target=production --i-understand-this-writes-production
