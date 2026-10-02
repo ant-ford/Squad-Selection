@@ -59,9 +59,10 @@ SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
 # Where the Worker reads and writes club data: "airtable" or "supabase", with
 # per-module exceptions in DATA_BACKEND_OVERRIDES ("people=supabase,...").
-# See worker/src/data/backend.ts. Airtable until the October 2026 switch-over;
-# rolling back is setting this back to "airtable" and deploying.
-DATA_BACKEND = "airtable"
+# See worker/src/data/backend.ts. Supabase from the October 2026 switch-over;
+# rolling back is setting this back to "airtable" and deploying (only on the
+# day: writes after the switch exist only in Supabase; docs/CUTOVER.md).
+DATA_BACKEND = "supabase"
 DATA_BACKEND_OVERRIDES = ""
 # eddy-production, which holds the data once DATA_BACKEND is supabase (the
 # same project as sign-in, SUPABASE_URL above). Its secret key is the
