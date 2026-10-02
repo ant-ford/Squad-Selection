@@ -36,15 +36,17 @@ export function officerItems(p: {
 /**
  * One header button for the officers' screens, so an officer who also
  * coaches doesn't get a row of buttons that pushes the title off a phone.
- * A single screen is a plain button; two or more open a menu. An action
- * (inviting someone to join, for every member) goes last in the menu, or
- * is a single icon for someone with no officers' screens.
+ * A single screen is a plain button; two or more open a menu. Screens for
+ * everyone (`extras`, the Hockey Rules quizzes) and an action (inviting
+ * someone to join) follow the officers' ones; for someone with no officers'
+ * screens the menu is "More", or a single icon when it's only the action.
  */
-export default function OfficersMenu({ items, action }: { items: Item[]; action?: MenuAction }) {
+export default function OfficersMenu({ items: officer, extras = [], action }: { items: Item[]; extras?: Item[]; action?: MenuAction }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const items = [...officer, ...extras];
   const here = items.some((i) => location.pathname === i.to);
 
   useEffect(() => {
@@ -90,15 +92,15 @@ export default function OfficersMenu({ items, action }: { items: Item[]; action?
         className={headerNavClass(here)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Officers' screens"
+        aria-label={officer.length ? "Officers' screens" : 'More'}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Officers</span>
+        <span className="hidden sm:inline">{officer.length ? 'Officers' : 'More'}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
         <div role="menu" className="absolute right-0 mt-1 w-56 rounded-md border border-border bg-card shadow-lg z-50 py-1">
-          {items.map((i) => {
+          {items.map((i, n) => {
             const Icon = i.icon;
             return (
               <button
@@ -108,7 +110,7 @@ export default function OfficersMenu({ items, action }: { items: Item[]; action?
                   setOpen(false);
                   navigate(i.to);
                 }}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted ${location.pathname === i.to ? 'text-primary font-medium' : 'text-foreground'}`}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted ${location.pathname === i.to ? 'text-primary font-medium' : 'text-foreground'} ${officer.length > 0 && n === officer.length ? 'border-t border-border mt-1' : ''}`}
               >
                 <Icon className="h-4 w-4" />
                 {i.label}

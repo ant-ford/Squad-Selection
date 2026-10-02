@@ -471,11 +471,16 @@ export function applicantTrialRows(f) {
   return rows;
 }
 
+/**
+ * Quiz scores. Airtable shows 0 for everyone who never took a quiz (228 of
+ * 250 for Quiz 1.0 on 2 Oct), so only scores above 0 are imported; Eddy then
+ * shows those people "not taken yet" rather than 0/20.
+ */
 export function quizRows(f) {
   const rows = [];
   for (const quiz of ["Hockey Rules Quiz 1.0", "Hockey Rules Quiz 2.0", "Hockey Rules Quiz 3.0"]) {
     const score = num(f[quiz]);
-    if (score !== null) rows.push({ quiz, score });
+    if (score !== null && score > 0) rows.push({ quiz, score });
   }
   return rows;
 }
