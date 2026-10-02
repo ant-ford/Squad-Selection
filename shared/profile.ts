@@ -328,11 +328,12 @@ export function fieldsFor(section: SectionSpec, who: Audience): FieldSpec[] {
 }
 
 /** Rules across fields that the field list can't say on its own. */
-export function sectionProblem(key: SectionKey, v: ProfileValues): string | null {
+export function sectionProblem(key: SectionKey, v: ProfileValues, opts: { idHidden?: boolean } = {}): string | null {
   const given = (k: string) => typeof v[k] === "string" && (v[k] as string).trim() !== "";
   // Everyone gives their HKID; only someone without one gives a passport
-  // instead, and is then a visiting player (owner, 2026-10-01).
-  if (key === "personal" && !given("hkidNo") && !given("passportNo")) {
+  // instead, and is then a visiting player (owner, 2026-10-01). Not asked
+  // at all of a member whose ID is hidden (owner, 2026-10-02).
+  if (key === "personal" && !opts.idHidden && !given("hkidNo") && !given("passportNo")) {
     return "Give your HKID number. Only if you don't have an HKID, choose Passport under Your ID and give your passport number.";
   }
   if (key === "billing") {
@@ -386,6 +387,11 @@ export interface MyDetails {
   hasHkidCopy: boolean;
   /** A copy of their passport, for someone without an HKID. */
   hasPassportCopy: boolean;
+  /**
+   * Their HKID and passport are neither shown nor asked for (set by the
+   * owner for members who ask; what is held stays held).
+   */
+  idHidden: boolean;
   kit: DetailsKit | null;
   /** When they last confirmed their details (the start-of-season check). */
   checkedAt: string | null;

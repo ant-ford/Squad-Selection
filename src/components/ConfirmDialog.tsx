@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet } from '@/components/ui/sheet';
 
@@ -7,6 +8,9 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** A word they must type before the confirm button works, for what can't be undone. */
+  typeToConfirm?: string;
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -22,9 +26,13 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  typeToConfirm,
+  busy = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const [typed, setTyped] = useState('');
+  const ready = !busy && (!typeToConfirm || typed.trim().toUpperCase() === typeToConfirm.toUpperCase());
   return (
     <Sheet open raised onOpenChange={(next) => !next && onCancel()}>
       <div
@@ -35,6 +43,18 @@ export default function ConfirmDialog({
         <div className="bg-background rounded-t-2xl sm:rounded-lg p-4 w-full sm:max-w-sm mx-0 sm:mx-4 shadow-lg pointer-events-auto">
           <p className="text-foreground font-medium mb-2">{title}</p>
           <p className="text-sm text-muted-foreground mb-4">{message}</p>
+          {typeToConfirm && (
+            <label className="block mb-4 text-sm text-foreground">
+              Type <span className="font-semibold">{typeToConfirm}</span> to confirm
+              <input
+                autoFocus
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                autoComplete="off"
+                className="mt-1 block w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+          )}
           <div className="flex gap-2">
             <Button className="flex-1 h-10" onClick={onCancel}>
               {cancelLabel}
@@ -46,6 +66,7 @@ export default function ConfirmDialog({
                   : 'bg-primary text-primary-foreground'
               }`}
               onClick={onConfirm}
+              disabled={!ready}
             >
               {confirmLabel}
             </Button>

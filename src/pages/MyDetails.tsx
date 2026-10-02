@@ -21,6 +21,7 @@ import {
   VolunteeringStep,
   type StepProps,
 } from '@/components/profile/steps';
+import DeleteProfile from '@/components/profile/DeleteProfile';
 
 type StepKey = 'membership' | SectionSpec['key'] | 'kit' | 'plan' | 'volunteering' | 'done';
 
@@ -123,6 +124,7 @@ export default function MyDetailsPage() {
         {step.key === 'plan' && <SeasonPlanStep {...props} />}
         {step.key === 'volunteering' && <VolunteeringStep {...props} initial={volunteering.data} />}
         {step.key === 'done' && <DoneStep {...props} onFinished={finished} />}
+        <DeleteProfile />
       </>
     );
   };

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { getMyDetails, parseSection, saveKitSizes, saveSection, uploadBytes } from "../worker/src/details";
+import { deleteMyProfile, getMyDetails, parseSection, saveKitSizes, saveSection, uploadBytes, uploadFile } from "../worker/src/details";
 import { checkedThisSeason, checkValue, formatHkAddress, PROFILE_SECTIONS, regionOfDistrict } from "../shared/profile";
 import { joinPhone, normaliseHkid, splitPhone } from "../shared/phone";
 
@@ -171,5 +171,56 @@ describe("HKID or passport", () => {
     expect(sectionProblem("personal", { hkidNo: "A123456(3)", passportNo: null })).toBeNull();
     expect(uploadBytes("passport", "data:application/pdf;base64,AAAA").type).toBe("application/pdf");
     expect(() => uploadBytes("passport", "data:text/plain;base64,AAAA")).toThrow(/passport/);
+  });
+});
+
+describe("ID hidden (people.hkid_hidden)", () => {
+  it("neither shows nor asks for their HKID or passport, and leaves what is held alone", async () => {
+    const { sectionProblem } = await import("../shared/profile");
+    expect(sectionProblem("personal", { hkidNo: "", passportNo: "" }, { idHidden: true })).toBeNull();
+    const { hkidNo: _left, ...noId } = personal;
+    const patch = parseSection("personal", { values: { ...noId, hkidNo: null, passportNo: null } }, "member", { idHidden: true });
+    expect(patch).not.toHaveProperty("hkid_no");
+    expect(patch).not.toHaveProperty("passport_no");
+    expect(patch).toMatchObject({ surname: "Lee" });
+  });
+
+  it("reads back no ID number or copies", async () => {
+    fake({
+      people: [{ id: "u1", api_id: "recME", status: "Member", email: "p@x.com", date_of_birth: "1990-01-01", hkid_hidden: true, hkid_no: "A123456(3)", passport_no: "K1" }],
+      current_season: "2026-2027",
+      files: [{ id: "f1", kind: "hkid" }, { id: "f2", kind: "passport" }],
+    });
+    const d = await getMyDetails(env, user);
+    expect(d).toMatchObject({ idHidden: true, hasHkidCopy: false, hasPassportCopy: false });
+    expect(d.values).toMatchObject({ hkidNo: null, passportNo: null });
+  });
+
+  it("refuses an ID upload, which would replace the copy held", async () => {
+    fake({ people: [{ id: "u1", api_id: "recME", hkid_hidden: true }] });
+    await expect(
+      uploadFile({ ...env, FILES: {} } as unknown as Env, user, "hkid", { dataUrl: "data:application/pdf;base64,AAAA" }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("delete my profile", () => {
+  it("needs DELETE typed, then removes their data and deletes the queued files at once", async () => {
+    const deleted: string[][] = [];
+    const files = { delete: vi.fn(async (keys: string[]) => void deleted.push(keys)) };
+    const calls = fake({ people: [{ id: "u1", api_id: "recME" }], r2_deletions: [{ r2_key: "people/u1/photo/a.jpg" }] });
+    const e = { ...env, FILES: files } as unknown as Env;
+    await expect(deleteMyProfile(e, user, {})).rejects.toMatchObject({ status: 400 });
+    expect(calls.some((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))).toBe(false);
+    await deleteMyProfile(e, user, { confirm: "DELETE" });
+    expect(calls.find((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))?.body).toEqual({ p_person: "u1" });
+    expect(deleted).toEqual([["people/u1/photo/a.jpg"]]);
+  });
+
+  it("still succeeds when the file delete fails: the files stay queued for the nightly run", async () => {
+    const files = { delete: vi.fn(async () => { throw new Error("R2 down"); }) };
+    const calls = fake({ people: [{ id: "u1", api_id: "recME" }], r2_deletions: [{ r2_key: "k" }] });
+    await expect(deleteMyProfile({ ...env, FILES: files } as unknown as Env, user, { confirm: "DELETE" })).resolves.toEqual({ ok: true });
+    expect(calls.some((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "DELETE")).toBe(false);
   });
 });

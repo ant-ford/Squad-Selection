@@ -13,6 +13,7 @@ import { fileLink } from "./data/supabase/files";
 import { invalidateForTables } from "./airtableWebhook";
 import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
+import { deleteQueuedFiles } from "./retention";
 import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
@@ -35,7 +36,7 @@ import {
 const ALL_FIELDS = PROFILE_SECTIONS.flatMap((s) => s.fields);
 
 const PERSON_COLUMNS = [
-  "id,api_id,status,applicant_type,applicant_stage,email,playing_position,shirt_number_id,profile_updated_at",
+  "id,api_id,status,applicant_type,applicant_stage,email,playing_position,shirt_number_id,profile_updated_at,hkid_hidden",
   "member_type,category_type,player_coach,membership_no,join_date,commitment_end_date",
   ...ALL_FIELDS.map((f) => f.column),
 ].join(",");
@@ -50,7 +51,11 @@ type PersonRow = Record<string, unknown> & {
   playing_position: string | null;
   shirt_number_id: string | null;
   profile_updated_at: string | null;
+  hkid_hidden: boolean;
 };
+
+/** The ID questions a member with hkid_hidden is neither shown nor asked (owner, 2026-10-02). */
+const HIDDEN_ID_COLUMNS = new Set(["hkid_no", "passport_no"]);
 
 function requireSupabase(env: Env): void {
   if (backendFor(env, "people") !== "supabase") {
@@ -121,6 +126,10 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
   ]);
   const values: ProfileValues = {};
   for (const f of ALL_FIELDS) {
+    if (p.hkid_hidden && HIDDEN_ID_COLUMNS.has(f.column)) {
+      values[f.key] = null;
+      continue;
+    }
     const v = p[f.column];
     values[f.key] =
       f.type === "multi" ? (Array.isArray(v) ? (v as string[]) : [])
@@ -145,8 +154,9 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
       commitmentEndDate: (p.commitment_end_date as string) ?? null,
     },
     photoUrl: photo ? await fileLink(env, photo.id) : null,
-    hasHkidCopy: files.some((f) => f.kind === "hkid"),
-    hasPassportCopy: files.some((f) => f.kind === "passport"),
+    hasHkidCopy: !p.hkid_hidden && files.some((f) => f.kind === "hkid"),
+    hasPassportCopy: !p.hkid_hidden && files.some((f) => f.kind === "passport"),
+    idHidden: p.hkid_hidden,
     kit,
     checkedAt: p.profile_updated_at,
   };
@@ -157,7 +167,7 @@ export function parseSection(
   key: string,
   body: Record<string, unknown>,
   saved: Audience,
-  opts: { trialist?: boolean } = {},
+  opts: { trialist?: boolean; idHidden?: boolean } = {},
 ): Record<string, string | string[] | number | boolean | null> {
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
   if (!section) throw new HttpError("Unknown section.", 404, "NOT_FOUND");
@@ -171,6 +181,8 @@ export function parseSection(
   if (key === "hockey" && who === "member" && values.active === false) return { active: false };
   const patch: Record<string, string | string[] | number | boolean | null> = {};
   for (const f of cv ? section.fields : fieldsFor(section, who)) {
+    // Not asked, so what is held is left as it is.
+    if (opts.idHidden && HIDDEN_ID_COLUMNS.has(f.column)) continue;
     if (!isShown(f, values as ProfileValues)) {
       patch[f.column] = f.type === "multi" ? [] : null;
       continue;
@@ -184,7 +196,7 @@ export function parseSection(
       : f.type === "number" ? (v === null || v === undefined || v === "" ? null : Number(v))
       : typeof v === "string" && v.trim() ? normaliseValue(f, v.trim()) : null;
   }
-  const across = sectionProblem(section.key, values as ProfileValues);
+  const across = sectionProblem(section.key, values as ProfileValues, { idHidden: opts.idHidden });
   if (across) throw new HttpError(across, 400, "INVALID_INPUT");
   return patch;
 }
@@ -197,7 +209,7 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   if (section?.underEighteenOnly && !isUnderEighteen(p.date_of_birth, today())) {
     throw new HttpError("Only under-18s give a parent or guardian's details.", 400, "INVALID_INPUT");
   }
-  const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p) });
+  const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p), idHidden: p.hkid_hidden });
   await db(env).update("people", `id=${eq(p.id)}`, patch);
   await invalidateForTables(env, [TABLES.player]);
   return { ok: true };
@@ -232,6 +244,29 @@ export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<
   if (drop.length) {
     await d.remove("kit_sizes", `person_id=${eq(p.id)}&supplier=${eq(kit.supplier)}&item=in.(${drop.map((k) => KIT_ITEM_COLUMN[k]).join(",")})`);
   }
+  return { ok: true };
+}
+
+/**
+ * "Delete my profile": removes the signed-in person's personal details,
+ * files and sign-in at once, the same removal as the 13-month retention job
+ * (delete_own_profile, migration 20261002160000). Their name and playing
+ * record stay. The app asks them to type DELETE first; so does this.
+ */
+export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+  requireSupabase(env);
+  if (body.confirm !== "DELETE") throw new HttpError("Type DELETE to confirm.", 400, "INVALID_INPUT");
+  const p = await loadPerson(env, user.personId);
+  await db(env).rpc("delete_own_profile", { p_person: p.id });
+  // Their files go now rather than at the next nightly run; a failure is
+  // left queued for that run.
+  try {
+    await deleteQueuedFiles(env);
+  } catch (err) {
+    console.error("Delete my profile: files left queued:", err instanceof Error ? err.message : err);
+  }
+  invalidateCache(`my-details-check:${user.personId}`);
+  await invalidateForTables(env, [TABLES.player]);
   return { ok: true };
 }
 
@@ -278,6 +313,8 @@ export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, b
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const { bytes, type } = uploadBytes(kind, body.dataUrl);
   const p = await loadPerson(env, user.personId);
+  // Not asked for; and a new copy would replace the one held.
+  if (kind !== "photo" && p.hkid_hidden) throw new HttpError("Your ID isn't asked for.", 400, "INVALID_INPUT");
   const d = db(env);
   const old = await d.select<{ id: string; r2_key: string }>("files", `select=id,r2_key&person_id=${eq(p.id)}&kind=${eq(kind)}`);
   const key = `people/${p.id}/${kind}/${crypto.randomUUID()}.${EXT[type]}`;

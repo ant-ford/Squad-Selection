@@ -29,3 +29,8 @@ export function readIdDocument(kind: 'hkid' | 'passport', dataUrl: string): Prom
 export function confirmDetails(): Promise<{ ok: true }> {
   return apiPost('/api/details/confirm', {});
 }
+
+/** "Delete my profile": removes their personal details, files and sign-in. Can't be undone. */
+export function deleteMyProfile(): Promise<{ ok: true }> {
+  return apiPost('/api/details/delete-profile', { confirm: 'DELETE' });
+}

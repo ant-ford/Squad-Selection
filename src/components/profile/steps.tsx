@@ -183,7 +183,9 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const [values, setValues] = useState<ProfileValues>(() => Object.fromEntries(section.fields.map((f) => [f.key, details.values[f.key] ?? null])));
   // On the application step the questions follow the type of application chosen.
   const who: Audience = section.key === 'application' ? audienceOf('Applicant', values.applicantType as string | null) : details.audience;
-  const allFields = fieldsFor(section, who);
+  // A member whose ID is hidden is neither shown nor asked for it (owner, 2026-10-02).
+  const idHidden = details.idHidden;
+  const allFields = fieldsFor(section, who).filter((f) => !(idHidden && (f.key === 'hkidNo' || f.key === 'passportNo')));
   // Not playing this season: the rest of the hockey questions don't apply.
   const asked = section.key === 'hockey' && who === 'member' && values.active === false ? allFields.filter((f) => f.key === 'active') : allFields;
   const fields = asked.filter((f) => isShown(f, values));
@@ -222,19 +224,19 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const next = () => {
     const uploads =
       section.key === 'personal' && who !== 'member'
-        ? [!photoUrl && 'your photo', !(hkid || passport) && (idKind === 'passport' ? 'a copy of your passport' : 'a copy of your HKID')]
+        ? [!photoUrl && 'your photo', !idHidden && !(hkid || passport) && (idKind === 'passport' ? 'a copy of your passport' : 'a copy of your HKID')]
             .filter(Boolean)
             .join(' and ')
         : '';
     const idNumber =
-      section.key !== 'personal' ? null
+      section.key !== 'personal' || idHidden ? null
       : idKind === 'hkid' && !values.hkidNo ? 'Give your HKID number.'
       : idKind === 'passport' && !values.passportNo ? 'Give your passport number.'
       : null;
     const bad =
       fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ??
       idNumber ??
-      sectionProblem(section.key, values) ??
+      sectionProblem(section.key, values, { idHidden }) ??
       (uploads ? `Upload ${uploads}.` : null);
     setProblem(bad ?? null);
     if (bad) return;
@@ -266,31 +268,35 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
             hasFile={!!photoUrl}
             onUploaded={(url) => setPhotoUrl(url)}
           />
-          <fieldset className="space-y-1">
-            <legend className="text-xs font-medium text-foreground">Your ID</legend>
-            <div className="flex flex-wrap gap-4">
-              {(['hkid', 'passport'] as const).map((k) => (
-                <label key={k} className="flex gap-2 items-center text-sm text-foreground">
-                  <input type="radio" name="id-kind" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={idKind === k} onChange={() => setIdKind(k)} />
-                  {k === 'hkid' ? 'Hong Kong ID card' : "Passport (I don't have an HKID)"}
-                </label>
-              ))}
-            </div>
-            {idKind === 'passport' && (
-              <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-foreground">
-                Only choose a passport if you don't have an HKID: without one you'll be classed as a visiting player, which has restrictions.
-              </p>
-            )}
-          </fieldset>
-          <FileUpload
-            key={idKind}
-            kind={idKind}
-            label={idKind === 'hkid' ? 'Copy of your HKID' : 'Copy of your passport (the photo page)'}
-            hasFile={idKind === 'hkid' ? hkid : passport}
-            onUploaded={() => (idKind === 'hkid' ? setHkid(true) : setPassport(true))}
-            onSaved={(dataUrl) => readable(dataUrl) && read.mutate({ kind: idKind, dataUrl })}
-          />
-          {read.isPending && <p className="text-xs text-muted-foreground">Reading your {idKind === 'hkid' ? 'HKID' : 'passport'}…</p>}
+          {!idHidden && (
+            <>
+              <fieldset className="space-y-1">
+                <legend className="text-xs font-medium text-foreground">Your ID</legend>
+                <div className="flex flex-wrap gap-4">
+                  {(['hkid', 'passport'] as const).map((k) => (
+                    <label key={k} className="flex gap-2 items-center text-sm text-foreground">
+                      <input type="radio" name="id-kind" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={idKind === k} onChange={() => setIdKind(k)} />
+                      {k === 'hkid' ? 'Hong Kong ID card' : "Passport (I don't have an HKID)"}
+                    </label>
+                  ))}
+                </div>
+                {idKind === 'passport' && (
+                  <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-foreground">
+                    Only choose a passport if you don't have an HKID: without one you'll be classed as a visiting player, which has restrictions.
+                  </p>
+                )}
+              </fieldset>
+              <FileUpload
+                key={idKind}
+                kind={idKind}
+                label={idKind === 'hkid' ? 'Copy of your HKID' : 'Copy of your passport (the photo page)'}
+                hasFile={idKind === 'hkid' ? hkid : passport}
+                onUploaded={() => (idKind === 'hkid' ? setHkid(true) : setPassport(true))}
+                onSaved={(dataUrl) => readable(dataUrl) && read.mutate({ kind: idKind, dataUrl })}
+              />
+              {read.isPending && <p className="text-xs text-muted-foreground">Reading your {idKind === 'hkid' ? 'HKID' : 'passport'}…</p>}
+            </>
+          )}
           {suggested && (
             <IdSuggestionsPanel
               suggestions={suggested}
