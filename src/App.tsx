@@ -34,6 +34,8 @@ const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 const SignApplication = lazy(() => import('./pages/SignApplication'));
+const Quizzes = lazy(() => import('./pages/Quizzes'));
+const QuizTake = lazy(() => import('./pages/QuizTake'));
 const Join = lazy(() => import('./pages/Join'));
 const TrialSessions = lazy(() => import('./pages/TrialSessions'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
@@ -165,6 +167,22 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <JoinerEdit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/quizzes',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Quizzes />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/quizzes/:key',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <QuizTake />
           </Suspense>
         ),
       },

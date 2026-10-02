@@ -53,6 +53,9 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Worker enforces, so the app never keeps its own copy of it.
     sections: sectionsFor(authUser, env),
 
+    // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
+    quizzes: backendFor(env, "people") === "supabase",
+
     // Applicants (and people registering to join) belong on their
     // application, not the player page.
     applicant: user.status === "Applicant",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error - plain JavaScript import script
-import { seasonPlanRow } from "../scripts/migration/mapping.mjs";
+import { quizRows, seasonPlanRow } from "../scripts/migration/mapping.mjs";
 
 const answers = { "Playing Availability": ["Available for all matches (90%+)"], "Playing Preference": "Play in the highest team I am selected for." };
 
@@ -14,5 +14,12 @@ describe("importing season plans", () => {
     expect(seasonPlanRow({ ...answers, Status: "Applicant", "Applicant Stage": "4. Sponsor (Signed)" })).not.toBeNull();
     expect(seasonPlanRow({ ...answers, Status: "Applicant", "Applicant Stage": "Rejected" })).toBeNull();
     expect(seasonPlanRow({ "Last Submission: Profile Update": "2026-08-01T00:00:00.000Z" })).toBeNull();
+  });
+});
+
+describe("importing quiz scores", () => {
+  it("brings across real scores only: Airtable's 0 means never taken", () => {
+    expect(quizRows({ "Hockey Rules Quiz 1.0": 18, "Hockey Rules Quiz 2.0": 0 })).toEqual([{ quiz: "Hockey Rules Quiz 1.0", score: 18 }]);
+    expect(quizRows({})).toEqual([]);
   });
 });

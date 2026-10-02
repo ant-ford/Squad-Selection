@@ -7,7 +7,7 @@ import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability 
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy, UserPlus } from 'lucide-react';
+import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy, UserPlus, BookOpenCheck } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
@@ -134,7 +134,9 @@ export default function PlayerDashboard() {
   const [showInvite, setShowInvite] = useState(false);
   // Members' own link for inviting someone to join (my-profile; Supabase only),
   // on whichever address the app is open at.
-  const profileInvite = useMyProfile().data?.inviteLink;
+  const myProfile = useMyProfile().data;
+  const profileInvite = myProfile?.inviteLink;
+  const quizzesOn = myProfile?.quizzes ?? false;
   const inviteLink = profileInvite ? `${window.location.origin}/join${new URL(profileInvite).search}` : null;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
@@ -279,6 +281,7 @@ export default function PlayerDashboard() {
         </button>
         <OfficersMenu
           items={officerItems(data)}
+          extras={quizzesOn ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []}
           action={inviteLink ? { label: 'Invite someone to join', icon: UserPlus, onSelect: () => setShowInvite(true) } : undefined}
         />
         {(data.isCoach || data.isSectionCaptain) && (

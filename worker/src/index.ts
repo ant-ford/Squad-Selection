@@ -26,6 +26,7 @@ import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volun
 import { confirmDetails, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
+import { getQuiz, listQuizzes, quizScoreBoard, submitQuiz } from "./quizzes";
 import {
   addSession,
   declineRegistration,
@@ -754,6 +755,22 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2] === "decline") return json(await declineRegistration(env, user, one[1]), 200, origin);
       }
     }
+    // ── Hockey Rules quizzes (Supabase; quizzes.ts) ───────────────────────
+    if (pathname === "/api/quizzes" || pathname.startsWith("/api/quizzes/")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/quizzes") return json(await listQuizzes(env, user), 200, origin);
+      if (method === "GET" && pathname === "/api/quizzes/scores") return json(await quizScoreBoard(env, user), 200, origin);
+      const quiz = pathname.match(/^\/api\/quizzes\/([^/]{1,80})$/);
+      if (quiz) {
+        const key = decodeURIComponent(quiz[1]);
+        if (method === "GET") return json(await getQuiz(env, user, key), 200, origin);
+        if (method === "POST") {
+          const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+          return json(await submitQuiz(env, user, key, body), 200, origin);
+        }
+      }
+    }
+
     // ── Registering to join (Supabase; trials.ts) ─────────────────────────
     // Signing up works off the confirmed email alone: there's no People record yet.
     if (method === "POST" && pathname === "/api/join/register") {
