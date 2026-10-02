@@ -29,13 +29,13 @@ GATE C, decided on Friday:
 - [ ] **The three applications part-way through signing** (1 waiting on its sponsor, 2 on the Chairman, in Airtable on 2 Oct) are settled: either finished in Fillout before the freeze, or (owner's choice) given an Eddy application record by Claude after the import, tested on preview first, so their signing carries on in Eddy. The import alone makes no Eddy application for them. Stage 6 (10 people) is fine: approve them on the board. Stage 2 (1 person): after the flip, the Section Captain re-sends the invitation from Eddy.
 - [ ] **Supabase egress checked**: the organisation's Usage → Egress for 30 Sep–2 Oct (preview has run on Supabase since 30 Sep). Production and preview share the free plan's 5 GB a month. If it's billed uncompressed, the week-1 fixes under [Watch](#6-watch-in-week-1) go in first thing.
 - [ ] **A copy of the kit order CSV** (`2026-27 Kukri Kit Order 1 (2026.08.17).csv`) is on the owner's machine. It is not in the repo (it has names).
-- [ ] Quizzes: decided whether the four Fillout quizzes close with the rest (scores stop until Eddy has a quiz) or stay open until 20 Oct with scores copied across by hand.
+- [x] Quizzes (owner, 2 Oct): the Hockey Rules quizzes are in Eddy (`/quizzes`), and the Fillout quizzes close with the rest. Past scores come with the import (scores above 0; Airtable's 0 meant never taken). The questions and answer keys are loaded after the import from `C:\dev\eddy-quizzes.json`, which stays out of the repository.
 
 ## 1. Freeze (owner, about 30 minutes)
 
 Nothing may write to Airtable after this point, or it is lost.
 
-1. **Close every Fillout form**, all 17, and the **Zite trials form**. Set each closed message to "This form has moved to Eddy: https://app.eddy.global" (not eddy.global, which is the public website), because emails sent before today still link to them. For the trials forms use https://app.eddy.global/join. For the quizzes (if closed), name who to contact:
+1. **Close every Fillout form**, all 17, and the **Zite trials form**. Set each closed message to "This form has moved to Eddy: https://app.eddy.global" (not eddy.global, which is the public website), because emails sent before today still link to them. For the trials forms use https://app.eddy.global/join; for the quizzes, https://app.eddy.global/quizzes:
    - Section Captain New Joiner (Create), Section Captain New Joiner (Update);
    - Applicant New Joiner Form, Sponsor New Joiner Form, Signatures New Joiner Form;
    - Trials Registration Login, Trials Registration;
@@ -84,6 +84,12 @@ node parity.mjs --target=production --i-understand-this-writes-production --file
   node import-kit-order.mjs --file="2026-27 Kukri Kit Order 1 (2026.08.17).csv" --name="2026-27 Kukri order 1" --supplier=Kukri --ordered-on=2026-08-17 --apply --target=production --i-understand-this-writes-production
   ```
 
+- Load the Hockey Rules quizzes (upserts, so a re-run is safe):
+
+  ```bash
+  node load-quizzes.mjs --file="C:\dev\eddy-quizzes.json" --apply --target=production --i-understand-this-writes-production
+  ```
+
 - Upload the New Members Info Sheet to production if it is not there yet (done 1 Oct): `node upload-club-doc.mjs --target=production --i-understand-this-writes-production`.
 - Claude checks, read-only: the PDF templates and the Chinese font are in eddy-files under `templates/`; how many reviews the first 11:00 HKT run will email (`select count(*) from reviews_due_v`, about 1 expected; at most 10 go a day); the in-flight applicants by stage.
 - Then back up eddy-production (**Actions → Database backup → Run workflow**), so the starting point is kept.
@@ -121,6 +127,7 @@ Signed in as a player, a coach, the Section Captain and an officer. **Production
 - **Officer:** membership board and Insights, Statements board and Notify Now, email lists and CSV, active-member export, sign an application and approve an applicant (test applicant only).
 - **October forms:** commitment report and reviews (with AI drafts), waivers, member details, new joiner application, `/join` with a test email of yours (then delete that test person).
 - **Stats:** club, teams, players, umpires.
+- **Quizzes:** `/quizzes` lists the three with your score; take one (as yourself, it only stores your score); a Section Captain sees everyone's.
 
 Watch Workers Logs for an hour for errors, 5xx responses and slow requests. Then delete any test people made on production.
 
@@ -151,7 +158,6 @@ These stay manual after the switch-over, until they are built:
 | What | Until it is built |
 |---|---|
 | Existing HKFC member joining hockey: an "Accepted" email to the member | The levy form goes to the front desk from Eddy when the MO presses Send, copying the member and any parent or guardian; sending it accepts them. A separate welcome is by hand. |
-| Hockey Rules quizzes | Not built, and no fallback screen: see the quiz decision under Before Saturday. Rebuilt later from the saved Fillout forms. |
 | Applications part-way through signing in Fillout at the freeze | Finished in Fillout first, or given an Eddy application record after the import (Before Saturday). |
 | A junior already a Member moving to Junior / Sports Preferred Associate (Make's "Child/Junior" route) | By hand: Eddy's new joiner screen refuses people who are already Members. |
 | The HockeyHK U18 form for a new under-18 joiner | It comes with their waivers, not with the application, so the Hockey Convenor's registration task shows it only once they've signed waivers. |

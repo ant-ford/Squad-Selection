@@ -13,6 +13,8 @@ export interface ProfileData {
   }[];
   /** Officers' sections this person may open, decided by the Worker. */
   sections: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  /** Whether the Hockey Rules quizzes are in Eddy yet (Supabase backend). */
+  quizzes?: boolean;
   /** An applicant or someone registering to join: their home is the application page. */
   applicant?: boolean;
   /** Their link for inviting someone to register to join; members only, on Supabase. */
