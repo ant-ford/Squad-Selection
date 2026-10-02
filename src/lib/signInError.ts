@@ -13,9 +13,34 @@
  * not.
  */
 export function signInErrorMessage(err: unknown): string {
+  if (isNetworkError(err)) return NETWORK_MESSAGE;
   const raw = err instanceof Error ? err.message : '';
   if (/expired|invalid/i.test(raw)) {
     return 'That code has already been used or has expired. Tap Resend email and use the code from the newest one.';
   }
   return raw || 'Could not sign you in. Please try again.';
+}
+
+/** Wording for a failed request to send the sign-in email. */
+export function sendEmailErrorMessage(err: unknown): string {
+  if (isNetworkError(err)) return NETWORK_MESSAGE;
+  const raw = err instanceof Error ? err.message : '';
+  return raw || 'Could not send the email. Please try again.';
+}
+
+// The browser never reached Supabase: the phone is offline, or an ad
+// blocker, VPN, private DNS or filtered Wi-Fi is blocking supabase.co.
+// Nothing reaches the auth logs, so the player is the only one who can fix
+// it - and "Failed to fetch" tells them nothing.
+const NETWORK_MESSAGE =
+  "Couldn't reach the sign-in service. Check you're online, then try mobile data instead of Wi-Fi, or turn off any ad blocker, VPN or Private DNS.";
+
+/**
+ * Each browser words a blocked fetch differently: Chrome "Failed to fetch",
+ * Firefox "NetworkError when attempting to fetch resource", Safari "Load
+ * failed". Supabase passes the message through on an AuthRetryableFetchError.
+ */
+function isNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(err.message);
 }
