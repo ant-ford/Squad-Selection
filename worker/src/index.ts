@@ -61,6 +61,7 @@ import {
   giveNewNumber,
   moveKit,
   releaseSet,
+  setOrderExpected,
   setOrderReceived,
   swapItem,
   topUpCsv,
@@ -879,8 +880,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/kit/release") return json(await releaseSet(env, user, body), 200, origin);
         if (pathname === "/api/kit/swap") return json(await swapItem(env, user, body), 200, origin);
         if (pathname === "/api/kit/new-number") return json(await giveNewNumber(env, user, body), 200, origin);
-        const orderMatch = pathname.match(/^\/api\/kit\/orders\/([^/]+)\/received$/);
-        if (orderMatch) return json(await setOrderReceived(env, orderMatch[1], body), 200, origin);
+        const orderMatch = pathname.match(/^\/api\/kit\/orders\/([^/]+)\/(received|expected)$/);
+        if (orderMatch?.[2] === "received") return json(await setOrderReceived(env, orderMatch[1], body), 200, origin);
+        if (orderMatch?.[2] === "expected") return json(await setOrderExpected(env, orderMatch[1], body), 200, origin);
       }
     }
 

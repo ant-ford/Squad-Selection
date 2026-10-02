@@ -113,6 +113,8 @@ export interface KitOrder {
   name: string;
   orderedOn: string | null;
   receivedOn: string | null;
+  /** When the supplier says it will arrive, for players waiting on it. */
+  expectedOn: string | null;
 }
 
 /** A person the kit screens can hand kit to or allocate a spare to. */
@@ -154,7 +156,7 @@ export interface KitMove {
 export interface MyKit {
   /** The player's own id, as the kit moves name people. */
   personId: string;
-  mine: (Pick<KitSet, "id" | "shirtNo" | "sizes" | "holder" | "heldSince" | "place" | "pendingTo"> & { supplier: string }) | null;
+  mine: (Pick<KitSet, "id" | "shirtNo" | "sizes" | "holder" | "heldSince" | "place" | "pendingTo"> & { supplier: string; expectedOn: string | null }) | null;
   holding: Pick<KitSet, "id" | "shirtNo" | "owner" | "heldSince" | "sizes" | "pendingTo">[];
   /** Sets someone says they've given them, waiting for them to confirm (their own, or one to pass on). */
   incoming: (Pick<KitSet, "id" | "shirtNo" | "owner" | "holder"> & { mine: boolean })[];

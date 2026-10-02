@@ -1,4 +1,4 @@
-import { Users, Zap } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
 import { availableLabel } from '@shared/availableLabel';
 import type { MyFixture } from '@/api/getMyFixtures';
@@ -47,16 +47,18 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       onClick={onTap}
       onKeyDown={handleKeyDown}
     >
-      {/* Play-up callout (only for fixtures ABOVE the displayed team) */}
-      {fixture.isPlayUp && (
-        <div className="mb-2 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-900 text-xs font-semibold">
-          <Zap className="h-3.5 w-3.5 text-amber-700 fill-amber-600" />
-          <span>
-            {isSelected
+      {/* Which list it's from, in plain words: a team above (play-up) or
+          below (support) the player's own. */}
+      {(fixture.isPlayUp || fixture.fixtureCategory === 'support') && (
+        <p className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+          {fixture.isPlayUp
+            ? isSelected
               ? `Selected to play up for ${fixture.selectionTeam || fixture.hkfcTeam}`
-              : `Higher team fixture — ${fixture.selectionTeam || fixture.hkfcTeam}`}
-          </span>
-        </div>
+              : `Play-up · ${fixture.selectionTeam || fixture.hkfcTeam}`
+            : isSelected
+            ? `Selected to support ${fixture.hkfcTeam}`
+            : `Support · ${fixture.hkfcTeam}`}
+        </p>
       )}
 
       {/* Top row: title + StatusBadge */}

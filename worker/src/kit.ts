@@ -50,6 +50,7 @@ interface SetRow {
   number_holder_active: boolean | null;
   pending_to_id: string | null;
   pending_to_name: string | null;
+  expected_on: string | null;
 }
 
 interface OrderRow {
@@ -58,6 +59,7 @@ interface OrderRow {
   name: string;
   ordered_on: string | null;
   received_on: string | null;
+  expected_on: string | null;
 }
 
 interface PersonRow {
@@ -75,7 +77,7 @@ interface PersonRow {
 }
 
 const SET_COLUMNS =
-  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active,pending_to_id,pending_to_name";
+  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active,pending_to_id,pending_to_name,expected_on";
 
 /** Kit sizes rows use the database's item names. */
 const ITEM_COLUMN: Record<keyof KitSizes, string> = {
@@ -146,13 +148,14 @@ const toOrder = (o: OrderRow): KitOrder => ({
   name: o.name,
   orderedOn: o.ordered_on,
   receivedOn: o.received_on,
+  expectedOn: o.expected_on,
 });
 
 export async function getKitBoard(env: Env, orderId: string | null): Promise<KitBoard> {
   requireSupabase(env);
   const d = db(env);
   const [orderRows, peopleRows, numbers] = await Promise.all([
-    d.select<OrderRow>("kit_orders", "select=id,supplier,name,ordered_on,received_on&order=ordered_on.desc.nullslast"),
+    d.select<OrderRow>("kit_orders", "select=id,supplier,name,ordered_on,received_on,expected_on&order=ordered_on.desc.nullslast"),
     d.select<PersonRow>(
       "people",
       "select=id,api_id,preferred_name,given_names,surname,status,active,registered_team,selected_team_sos,selected_team_eos,shirt_number_id",
@@ -262,6 +265,8 @@ export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
           id: own.id,
           shirtNo: own.shirt_no,
           supplier: own.supplier,
+          // Only while it is on order: once it has arrived the date is history.
+          expectedOn: own.received_on ? null : own.expected_on,
           sizes: sizesOf(own),
           holder: own.holder_id ? { id: own.holder_id, name: own.holder_name ?? "" } : null,
           heldSince: own.held_since,
@@ -413,6 +418,18 @@ export async function setOrderReceived(env: Env, orderId: string, body: Record<s
     throw new HttpError("Give the date the kit arrived.", 400, "INVALID_INPUT");
   }
   const rows = await db(env).update("kit_orders", `id=${eq(oneId(orderId))}`, { received_on: on });
+  if (rows.length === 0) throw new HttpError("That order was not found.", 404, "NOT_FOUND");
+  return { ok: true };
+}
+
+/** The delivery date the supplier gives, or null when none is known. */
+export async function setOrderExpected(env: Env, orderId: string, body: Record<string, unknown>) {
+  requireSupabase(env);
+  const on = body.expectedOn;
+  if (on !== null && !(typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on))) {
+    throw new HttpError("Give the date the kit is expected.", 400, "INVALID_INPUT");
+  }
+  const rows = await db(env).update("kit_orders", `id=${eq(oneId(orderId))}`, { expected_on: on });
   if (rows.length === 0) throw new HttpError("That order was not found.", 404, "NOT_FOUND");
   return { ok: true };
 }

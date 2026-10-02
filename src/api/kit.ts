@@ -53,6 +53,10 @@ export function setOrderReceived(orderId: string, receivedOn: string | null): Pr
   return apiPost(`/api/kit/orders/${encodeURIComponent(orderId)}/received`, { receivedOn });
 }
 
+export function setOrderExpected(orderId: string, expectedOn: string | null): Promise<{ ok: true }> {
+  return apiPost(`/api/kit/orders/${encodeURIComponent(orderId)}/expected`, { expectedOn });
+}
+
 /** Downloads who needs kit, in the order file's layout. Returns how many. */
 export async function downloadTopUp(orderId?: string | null): Promise<number> {
   const { filename, csv, count } = await apiGet<{ filename: string; csv: string; count: number }>(

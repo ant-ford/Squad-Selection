@@ -23,7 +23,7 @@ const first = (name?: string) => (name ?? '').split(' ')[0] || 'them';
 function mineLine(mine: NonNullable<MyKit['mine']>, convenors: string[]): string {
   switch (mine.place) {
     case 'on_order':
-      return `Your ${mine.supplier} kit (#${mine.shirtNo}) is on order.`;
+      return `Your ${mine.supplier} kit (#${mine.shirtNo}) is on order.${mine.expectedOn ? ` Delivery is expected ${safeFormat(mine.expectedOn, 'do MMMM')}.` : ''}`;
     case 'in_store':
       return `Your kit (#${mine.shirtNo}) is ready to collect${convenors.length ? ` from ${convenors.join(' or ')}` : ' from the Kit Convenor'}.`;
     case 'with_holder':
