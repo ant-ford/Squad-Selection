@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { normalizeEmail } from '@shared/normalizeEmail';
-import { signInErrorMessage } from '@/lib/signInError';
+import { sendEmailErrorMessage, signInErrorMessage } from '@/lib/signInError';
 
 const CODE_LENGTH = 6;
 
@@ -53,9 +53,8 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
       toast.success('Email sent! Use the link or enter the code below.');
       return true;
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to send email';
-      toast.error(message);
+      // Long enough to read: the network message asks the player to act.
+      toast.error(sendEmailErrorMessage(err), { duration: 10000 });
       return false;
     } finally {
       setSending(false);
