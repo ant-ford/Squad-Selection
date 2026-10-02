@@ -5,6 +5,20 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { backendFor } from "./data/backend";
+import { SUBMITTED_STAGES } from "../../shared/membershipStages";
+
+/**
+ * Whether signing in goes to the application rather than the player page:
+ * an applicant who still has their application to send (stages 1-2). Once
+ * it's sent, or for anyone holding an office or coaching (an officer can be
+ * applying for their own membership), it's the player page, so Active
+ * applicants keep their fixtures and availability.
+ */
+export function landsOnApplication(status: string | undefined, stage: string | undefined, authUser: AuthorizedUser): boolean {
+  if (status !== "Applicant") return false;
+  if (authUser.officerRoles.length > 0 || authUser.role === "coach") return false;
+  return !SUBMITTED_STAGES.includes(stage ?? "");
+}
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
   const user = await getPlayerByEmail(env, authUser.email);
@@ -56,9 +70,9 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
     quizzes: backendFor(env, "people") === "supabase",
 
-    // Applicants (and people registering to join) belong on their
-    // application, not the player page.
-    applicant: user.status === "Applicant",
+    // Applicants (and people registering to join) with an application still
+    // to fill in belong on it, not the player page.
+    applicant: landsOnApplication(user.status, user.applicantStage, authUser),
 
     // Their own link for inviting someone to register to join (trials.ts):
     // members only, once the app is on Supabase.
