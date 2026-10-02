@@ -91,13 +91,21 @@ describe("sending an application on", () => {
     const calls = fake({ app: application({ sent_at: "2026-10-02T00:00:00Z" }) });
     await sendApplication(env, officer, "recAPPLICANT", true);
     expect(resend(calls)).toHaveLength(1);
+    // A new member's application goes to the Club with no copies.
+    expect(resend(calls)[0].cc).toBeUndefined();
   });
 
   it("sends an existing member's levy form to the front desk and accepts them", async () => {
-    const calls = fake({ app: application({ application_type: "Existing HKFC Member", officer_signed_at: null }), person: { applicant_stage: "3. Club Application (Signed)" } });
+    const calls = fake({
+      app: application({ application_type: "Existing HKFC Member", officer_signed_at: null }),
+      person: { applicant_stage: "3. Club Application (Signed)", email: "sam@x.com", guardian_email: "parent@x.com" },
+    });
     await sendApplication(env, officer, "recAPPLICANT");
     const [email] = resend(calls);
     expect(email.to).toEqual(["frontdesk@hkfc.com"]);
+    // Copied to the applicant and their parent or guardian; no blind copy to the officer.
+    expect(email.cc).toEqual(["sam@x.com", "parent@x.com"]);
+    expect(email.bcc).toBeUndefined();
     expect(email.subject).toBe("Hockey Section levy application: Sam Lee");
     expect(email.text).toMatch(/^Dear Front Desk,/);
     const accepted = patches(calls, "people");

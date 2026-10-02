@@ -110,8 +110,8 @@ describe("the Section Captain's new joiner form", () => {
     const [mail] = resend(calls);
     expect(mail.from).toBe("Ant Ford <menscaptain@hkfchockey.com>");
     expect(mail.to).toEqual(["sam.lee@example.com"]);
-    // Vice captains' inbox once, the membership inbox, and the sponsor for a new HKFC member.
-    expect(mail.cc).toEqual(["mensvicecaptain@hkfchockey.com", "mensmembership@hkfchockey.com", "chris@x.com"]);
+    // The vice captains' inbox once, and the sponsor for a new HKFC member; not the membership inbox.
+    expect(mail.cc).toEqual(["mensvicecaptain@hkfchockey.com", "chris@x.com"]);
     expect(mail.text).toContain("https://app.eddy.global/apply");
     expect(mail.text).toContain("Gwen Laot and Ralph Giulianotti");
     expect(mail.text).toContain("I've also copied your sponsor, Chris Jones.");

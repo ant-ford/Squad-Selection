@@ -63,7 +63,7 @@ export default function StatementsBoard() {
         <div className="mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 space-y-1">
           <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            Commitments rows that need fixing in Airtable
+            Commitment reviews that need fixing (ask the Section Captain)
           </p>
           {broken.length > 0 && (
             <p className="text-xs text-muted-foreground">

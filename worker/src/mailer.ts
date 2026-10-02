@@ -4,24 +4,27 @@
  *  - Preview never mails anyone real: with MAIL_REDIRECT_TO set, every
  *    message goes there instead, subject prefixed [PREVIEW], and names its
  *    intended recipient only by record id.
- *  - Every send is logged in email_log by recipient record, not address.
- *  - Resend's free plan allows 100 a day; Eddy stops at DAILY_LIMIT so a
- *    burst cannot cost the next day's sign-in codes (they share the account).
+ *  - Every send is logged in email_log by recipient record, not address,
+ *    with how many addresses it went to.
+ *  - Resend's free plan allows 100 a day and counts every To, CC and BCC
+ *    address. Eddy adds up the addresses it has emailed today (UTC, as
+ *    Resend counts) and stops at DAILY_LIMIT, leaving the rest for the
+ *    sign-in codes Supabase Auth sends through the same account.
  *  - Emails carry links, not documents. The one exception is a filled PDF
  *    for someone who passes it on outside Eddy (the Club's membership office,
  *    the front desk, the Hockey Convenor for HockeyHK; owner, 1 Oct 2026).
  *    Resend fetches it from a signed file link (`path`), so the Worker never
  *    base64-encodes megabytes inside its 10 ms of CPU.
- *  - An email sent in the captain's name (`from`) comes from his address
- *    with a blind copy to it, so he keeps what went out. Resend sends from
- *    hkfchockey.com only once that domain is verified there; until then it
- *    goes from MAIL_FROM with the captain as Reply-To, so replies still
- *    reach him.
+ *  - An email sent in someone's name (`from`) comes from their address. No
+ *    blind copy goes back to them (owner, 2 Oct 2026): Resend keeps what
+ *    went out. If Resend refuses the sender's domain it goes from MAIL_FROM
+ *    with them as Reply-To, so replies still reach them.
  */
 import type { Env } from "./env";
 import { db } from "./data/supabase";
 
-export const DAILY_LIMIT = 90;
+/** Addresses a day: Resend allows 100, and about 30 are left for sign-in codes. */
+export const DAILY_LIMIT = 70;
 
 export interface Email {
   /** The recipient's people.id (uuid), for the log and the preview note. */
@@ -34,7 +37,7 @@ export interface Email {
   stepId?: string;
   cc?: string[];
   replyTo?: string;
-  /** Send in someone's name, e.g. "Anthony Ford <menscaptain@hkfchockey.com>"; they get a blind copy. */
+  /** Send in someone's name, e.g. "Anthony Ford <menscaptain@hkfchockey.com>". */
   from?: string;
   /** Filled PDFs only (see above): a filename and a signed file link Resend fetches. */
   attachments?: { filename: string; path: string }[];
@@ -51,20 +54,21 @@ export class MailerError extends Error {}
 export async function sendEmail(env: Env, email: Email): Promise<{ id: string }> {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) throw new MailerError("Email is not configured (RESEND_API_KEY / MAIL_FROM)");
   const d = db(env);
-  const sentToday = await d.rpc<number>("emails_sent_today", {});
-  if (sentToday >= DAILY_LIMIT) throw new MailerError(`Daily email limit (${DAILY_LIMIT}) reached; will try again tomorrow`);
-
   const redirect = env.MAIL_REDIRECT_TO;
-  const bcc = email.from ? [addressOf(email.from)] : undefined;
+  // What Resend will count: the one preview address, or the To and each CC.
+  const recipients = redirect ? 1 : 1 + (email.cc?.length ?? 0);
+  const sentToday = await d.rpc<number>("emails_sent_today", {});
+  if (sentToday + recipients > DAILY_LIMIT) throw new MailerError(`Daily email limit (${DAILY_LIMIT}) reached; will try again tomorrow`);
+
   const attachments = email.attachments?.length ? email.attachments : undefined;
   const message = redirect
     ? {
         attachments,
         to: [redirect],
         subject: `[PREVIEW] ${email.subject}`,
-        text: `Preview: this would have gone to person ${email.toPersonId}${email.cc?.length ? ` (with ${email.cc.length} cc)` : ""}${bcc ? " (and a blind copy to the sender)" : ""}.\n\n${email.text}`,
+        text: `Preview: this would have gone to person ${email.toPersonId}${email.cc?.length ? ` (with ${email.cc.length} cc)` : ""}.\n\n${email.text}`,
       }
-    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, bcc, subject: email.subject, text: email.text, attachments };
+    : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, subject: email.subject, text: email.text, attachments };
 
   const post = (from: string, replyTo?: string) =>
     fetch("https://api.resend.com/emails", {
@@ -90,6 +94,7 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
     step_id: email.stepId ?? null,
     provider_message_id: body.id ?? null,
     status: ok ? "sent" : "failed",
+    recipients,
     // Resend's error message describes the request, not the recipient.
     error: ok ? null : `${res.status} ${String(body.message ?? "").slice(0, 200)}`,
   }]).catch((err) => console.error("email_log write failed:", err instanceof Error ? err.message : err));

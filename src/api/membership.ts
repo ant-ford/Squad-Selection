@@ -170,7 +170,7 @@ export function getStatementBoard(): Promise<StatementBoard> {
   return apiGet<StatementBoard>('/api/membership/statements');
 }
 
-/** Ticks Notify Now; the Airtable automation sends the email and moves the row. */
+/** Notify Now: the review email goes now and the row moves to Notified Member. */
 export function requestReviewEmail(commitmentId: string): Promise<{ success: true }> {
   return apiPost('/api/membership/statements/notify', { commitmentId });
 }

@@ -492,7 +492,24 @@ export function kitRows(f) {
 
 /** The season the current planning answers were given for. */
 export const CURRENT_PLAN_SEASON = "2026-2027";
+/** 1 July 2026, 00:00 Hong Kong time: answers before it were for last season. */
+export const PLAN_SEASON_STARTS = Date.parse("2026-07-01T00:00:00+08:00");
+const PIPELINE = ["1. Trial Application", "2. Section Captain Invitation", "3. Club Application (Signed)", "4. Sponsor (Signed)", "5. Chairman (Signed)", "6. Membership Officer (Signed)"];
+
+/**
+ * Whether someone's planning answers are this season's (owner, 2 Oct 2026):
+ * they updated their details on or after 1 July (the questions are on that
+ * form), or they're applying now and answered on their application. Older
+ * answers aren't imported, so those players are asked afresh.
+ */
+export function answeredThisSeason(f) {
+  const updated = ts(f["Last Submission: Profile Update"]);
+  if (updated && Date.parse(updated) >= PLAN_SEASON_STARTS) return true;
+  return text(f["Status"]) === "Applicant" && PIPELINE.includes(text(f["Applicant Stage"]) ?? "");
+}
+
 export function seasonPlanRow(f) {
+  if (!answeredThisSeason(f)) return null;
   const r = {
     season: CURRENT_PLAN_SEASON,
     playing_availability: list(f["Playing Availability"]),

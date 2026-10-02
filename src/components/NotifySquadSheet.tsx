@@ -158,7 +158,7 @@ export default function NotifySquadSheet({
                 No usable number ({unreachable.length})
               </h3>
               <p className="text-xs text-muted-foreground mb-1.5">
-                Fix these in Airtable (People → Mobile No.) — a full international
+                Ask them to correct their mobile in My details: a full international
                 number, or a plain 8-digit Hong Kong one.
               </p>
               <div className="flex flex-wrap gap-1.5">

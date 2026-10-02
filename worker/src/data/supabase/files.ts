@@ -14,12 +14,28 @@ import type { Env } from "../../env";
 
 const HOUR = 60 * 60;
 
-async function signingKey(env: Env): Promise<CryptoKey> {
+/**
+ * Derived once per isolate and secret, not per link: a list of players signs
+ * a photo link each, and re-deriving it every time was most of that CPU.
+ */
+let cachedKey: { secret: string; key: Promise<CryptoKey> } | null = null;
+
+function signingKey(env: Env): Promise<CryptoKey> {
   const secret = env.DATA_SUPABASE_SECRET_KEY;
   if (!secret) throw new Error("DATA_SUPABASE_SECRET_KEY is not set");
-  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const derived = await crypto.subtle.sign("HMAC", base, new TextEncoder().encode("eddy:file-links:v1"));
-  return crypto.subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+  if (cachedKey?.secret !== secret) {
+    const key = (async () => {
+      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const derived = await crypto.subtle.sign("HMAC", base, new TextEncoder().encode("eddy:file-links:v1"));
+      return crypto.subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+    })();
+    // A failed derivation isn't kept.
+    key.catch(() => {
+      if (cachedKey?.key === key) cachedKey = null;
+    });
+    cachedKey = { secret, key };
+  }
+  return cachedKey.key;
 }
 
 const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");

@@ -9,7 +9,7 @@
  */
 import type { Env } from "../env";
 import type { RenderSpec } from "../../../supabase/functions/_shared/pdf";
-import { db, eq } from "../data/supabase";
+import { db, eq, inList } from "../data/supabase";
 import { CJK_FONT_KEY, PDF_TEMPLATES, type PdfTemplate } from "./templates";
 
 /** The renderer's name for the Chinese font asset (CJK_FONT in _shared/pdf.ts, which the Worker does not bundle). */
@@ -51,6 +51,28 @@ export async function fileAsset(env: Env, fileId: string): Promise<Asset> {
   const object = await files(env).get(row.r2_key);
   if (!object) throw new PdfError(`File ${fileId} is missing from the file store`);
   return { bytes: await object.arrayBuffer(), type: row.content_type ?? "application/octet-stream" };
+}
+
+/**
+ * Several stored files at once: one database call for all their keys, then
+ * a file-store read each (those don't count towards the Worker's 50 outside
+ * calls). A family's application has a dozen or more images and documents,
+ * and a lookup each took it over the limit.
+ */
+export async function fileAssets(env: Env, fileIds: string[]): Promise<Map<string, Asset>> {
+  const ids = [...new Set(fileIds.filter(Boolean))];
+  const out = new Map<string, Asset>();
+  if (!ids.length) return out;
+  const rows = await db(env).select<{ id: string; r2_key: string; content_type: string | null }>("files", `select=id,r2_key,content_type&id=${inList(ids)}`);
+  await Promise.all(
+    rows.map(async (row) => {
+      const object = await files(env).get(row.r2_key);
+      if (!object) throw new PdfError(`File ${row.id} is missing from the file store`);
+      out.set(row.id, { bytes: await object.arrayBuffer(), type: row.content_type ?? "application/octet-stream" });
+    }),
+  );
+  for (const id of ids) if (!out.has(id)) throw new PdfError(`File ${id} was not found`);
+  return out;
 }
 
 /**
