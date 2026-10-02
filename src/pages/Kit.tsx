@@ -15,7 +15,7 @@ import { PlaceBadge, inputClass, primaryButton, secondaryButton, sizesLine } fro
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
-import { getKitBoard, setOrderReceived } from '@/api/kit';
+import { getKitBoard, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
 
@@ -69,6 +69,15 @@ export default function Kit() {
   const arrived = useMutation({
     mutationFn: (on: string | null) => setOrderReceived(board!.order!.id, on),
     onSuccess: changed,
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Not saved. Try again.'),
+  });
+  // Players whose kit is on order see this date on their page.
+  const expected = useMutation({
+    mutationFn: (on: string | null) => setOrderExpected(board!.order!.id, on),
+    onSuccess: (_r, on) => {
+      toast.success(on ? `Players will see delivery expected ${safeFormat(on, 'do MMMM')}` : 'Expected date cleared');
+      changed();
+    },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Not saved. Try again.'),
   });
 
@@ -126,6 +135,23 @@ export default function Kit() {
               {order.orderedOn ? `Ordered ${safeFormat(order.orderedOn, 'd MMM yyyy')} · ` : ''}
               {order.receivedOn ? `Arrived ${safeFormat(order.receivedOn, 'd MMM yyyy')}` : 'Not arrived yet'}
             </p>
+            {!order.receivedOn && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                Expected delivery
+                <input
+                  // Keyed on the saved date so a refresh shows what was saved.
+                  key={order.expectedOn ?? ''}
+                  type="date"
+                  className={inputClass.replace('w-full', 'w-40')}
+                  defaultValue={order.expectedOn ?? ''}
+                  disabled={expected.isPending}
+                  onBlur={(e) => {
+                    const on = e.target.value || null;
+                    if (on !== order.expectedOn) expected.mutate(on);
+                  }}
+                />
+              </label>
+            )}
           </div>
           {!order.receivedOn && (
             <button className={secondaryButton} disabled={arrived.isPending} onClick={() => setConfirmArrived(true)}>

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
-import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, topUpCsv } from "../worker/src/kit";
+import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
 import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -140,5 +140,23 @@ describe("kit", () => {
     expect(calls[0].url.searchParams.get("or")).toBe('(owner_id.eq."recPLAYER",holder_id.eq."recPLAYER",pending_to_id.eq."recPLAYER")');
     // Nothing on Airtable, rather than an error on everyone's dashboard.
     expect(await getMyKit({ ...env, DATA_BACKEND: "airtable" }, player)).toMatchObject({ mine: null, holding: [] });
+  });
+
+  it("tells a player when kit on order is expected, and only while it's on order", async () => {
+    const row = { id: "k1", supplier: "Kukri", shirt_no: 92, owner_id: "recPLAYER", holder_id: null, expected_on: "2026-10-15" };
+    fake({ kit_sets_v: [{ ...row, received_on: null }] });
+    expect((await getMyKit(env, player)).mine).toMatchObject({ shirtNo: 92, place: "on_order", expectedOn: "2026-10-15" });
+    fake({ kit_sets_v: [{ ...row, received_on: "2026-10-14" }] });
+    expect((await getMyKit(env, player)).mine).toMatchObject({ place: "in_store", expectedOn: null });
+  });
+
+  it("saves or clears an order's expected delivery date", async () => {
+    const calls = fake({ kit_orders: [{ id: "o1" }] });
+    const id = "00000000-0000-0000-0000-00000000000a";
+    await setOrderExpected(env, id, { expectedOn: "2026-10-15" });
+    expect(calls.at(-1)).toMatchObject({ method: "PATCH", body: { expected_on: "2026-10-15" } });
+    await setOrderExpected(env, id, { expectedOn: null });
+    expect(calls.at(-1)!.body).toEqual({ expected_on: null });
+    await expect(setOrderExpected(env, id, { expectedOn: "15 Oct" })).rejects.toMatchObject({ status: 400 });
   });
 });
