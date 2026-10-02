@@ -22,6 +22,19 @@ export const PIPELINE_STAGES = [
 ] as const;
 
 /**
+ * Stages after the applicant has sent their application: in Eddy, or in
+ * Fillout before the October 2026 switch-over (those have no Eddy
+ * application record, but must not be asked to apply again).
+ */
+export const SUBMITTED_STAGES: readonly string[] = [
+  "3. Club Application (Signed)",
+  "4. Sponsor (Signed)",
+  "5. Chairman (Signed)",
+  APPROVABLE_STAGE,
+  ACCEPTED_STAGE,
+];
+
+/**
  * Off the pipeline. Temporary is a player registered with HKFC without the
  * membership process, usually a visiting player here for a few months.
  * (Pending and On Hold were retired from the base in September 2026.)

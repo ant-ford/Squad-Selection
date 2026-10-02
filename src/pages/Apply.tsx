@@ -18,11 +18,11 @@ import { AgreeStep, ClubsStep, FamilyStep, TrialsStep } from '@/components/apply
 import { RegisterStep, TrialDatesStep } from '@/components/apply/trialSteps';
 import { getMyTrial } from '@/api/trials';
 import { PROFILE_SECTIONS, sectionFor, type SectionKey } from '@shared/profile';
+import { SUBMITTED_STAGES } from '@shared/membershipStages';
 
 type StepKey = SectionKey | 'clubs' | 'trials' | 'family' | 'plan' | 'kit' | 'volunteering' | 'agree' | 'trialDates' | 'register';
 
 /** Stages after the applicant's own step: their application is in. */
-const SUBMITTED_STAGES = ['3. Club Application (Signed)', '4. Sponsor (Signed)', '5. Chairman (Signed)', '6. Membership Officer (Signed)', 'Accepted'];
 
 /**
  * The new joiner form (replacing Fillout form 3), one section per screen,
@@ -115,15 +115,16 @@ export default function ApplyPage() {
         </div>
       );
     }
-    if (view.data.submittedAt && SUBMITTED_STAGES.includes(view.data.stage ?? '')) {
+    // Applications sent through Fillout before the switch-over have no submitted date in Eddy.
+    if (SUBMITTED_STAGES.includes(view.data.stage ?? '')) {
       return (
         <section className="rounded-xl border border-border bg-card p-4 space-y-2">
           <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
             <Check className="h-5 w-5 text-primary" /> Application submitted
           </h2>
           <p className="text-sm text-foreground">
-            Thanks. You submitted it on {safeFormat(view.data.submittedAt, 'd MMM yyyy')}. Your sponsor, the Chairman and the Membership Officer sign next, and the
-            Membership Officer will let you know.
+            Thanks{view.data.submittedAt ? `. You submitted it on ${safeFormat(view.data.submittedAt, 'd MMM yyyy')}` : ', it is with the club'}. Your sponsor, the
+            Chairman and the Membership Officer sign it, and the Membership Officer will let you know.
           </p>
         </section>
       );
