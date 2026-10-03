@@ -115,23 +115,43 @@ export function effectiveAudience(audience: Selection, teamName: string | null):
 export interface EventQuestion {
   key: string;
   label: string;
+  /** Going and Maybe can't be saved without an answer. */
+  required?: boolean;
 }
 export const DIETARY: EventQuestion = { key: "dietary", label: "Dietary requirements" };
 export const MAX_OWN_QUESTIONS = 4;
 export const asksDietary = (questions: EventQuestion[]) => questions.some((q) => q.key === DIETARY.key);
 
-/** Dietary first if asked, then up to four of their own, renumbered q1..q4. */
+/** Dietary first if asked, then up to four of their own, renumbered q1..q4; each may be required. */
 export function cleanQuestions(raw: unknown): EventQuestion[] {
   if (!Array.isArray(raw)) return [];
   const items = raw.filter((q): q is Record<string, unknown> => !!q && typeof q === "object");
-  const dietary = items.some((q) => q.key === DIETARY.key) ? [DIETARY] : [];
+  const req = (q: Record<string, unknown> | undefined) => (q?.required === true ? { required: true } : {});
+  const dietaryItem = items.find((q) => q.key === DIETARY.key);
+  const dietary = dietaryItem ? [{ ...DIETARY, ...req(dietaryItem) }] : [];
   const own = items
     .filter((q) => q.key !== DIETARY.key)
-    .map((q) => (typeof q.label === "string" ? q.label.trim().slice(0, 100) : ""))
-    .filter(Boolean)
+    .map((q) => ({ label: typeof q.label === "string" ? q.label.trim().slice(0, 100) : "", q }))
+    .filter((x) => x.label)
     .slice(0, MAX_OWN_QUESTIONS)
-    .map((label, i) => ({ key: `q${i + 1}`, label }));
+    .map((x, i) => ({ key: `q${i + 1}`, label: x.label, ...req(x.q) }));
   return [...dietary, ...own];
+}
+
+/**
+ * The first required answer missing, as a message; null when all are given.
+ * A required dietary question needs an answer for each guest too ("None" will do).
+ */
+export function missingAnswer(questions: EventQuestion[], answers: Record<string, string>, guests: Guest[]): string | null {
+  for (const q of questions) {
+    if (!q.required) continue;
+    if (!answers[q.key]?.trim()) return q.key === DIETARY.key ? "Give your dietary requirements (write None if you have none)." : `Answer “${q.label}”.`;
+    if (q.key === DIETARY.key) {
+      const g = guests.find((x) => !x.dietary?.trim());
+      if (g) return `Give ${g.name || "each guest"}'s dietary requirements (None if they have none).`;
+    }
+  }
+  return null;
 }
 
 /** Only answers to the event's questions, each a short text. */

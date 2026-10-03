@@ -87,7 +87,8 @@ type Form = {
   guestChildPrice: string;
   helpNeeded: string;
   dietary: boolean;
-  ownQuestions: string[];
+  dietaryRequired: boolean;
+  ownQuestions: { label: string; required: boolean }[];
   audience: Selection;
 };
 
@@ -111,7 +112,8 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   guestChildPrice: num(e?.guestChildPrice ?? null),
   helpNeeded: e?.helpNeeded ?? '',
   dietary: e ? asksDietary(e.questions) : false,
-  ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => q.label) ?? [],
+  dietaryRequired: !!e?.questions.find((q) => q.key === DIETARY.key)?.required,
+  ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => ({ label: q.label, required: !!q.required })) ?? [],
   audience: e?.audience ?? DEFAULT_AUDIENCE,
 });
 
@@ -164,7 +166,10 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
         guestAdultPrice: priceOrNull(f.guestAdultPrice),
         guestChildPrice: priceOrNull(f.guestChildPrice),
         helpNeeded: f.helpNeeded,
-        questions: [...(f.dietary ? [DIETARY] : []), ...f.ownQuestions.filter((l) => l.trim()).map((label, i) => ({ key: `q${i + 1}`, label }))],
+        questions: [
+          ...(f.dietary ? [{ ...DIETARY, required: f.dietaryRequired }] : []),
+          ...f.ownQuestions.filter((q) => q.label.trim()).map((q, i) => ({ key: `q${i + 1}`, label: q.label, required: q.required })),
+        ],
         audience: f.audience,
       }),
     onSuccess: (r) => {
@@ -311,20 +316,38 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
 
           <div className="rounded-lg border border-border p-3 space-y-2">
             <p className="text-sm font-semibold text-foreground">Ask people for</p>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input type="checkbox" checked={f.dietary} onChange={(e) => set({ dietary: e.target.checked })} />
-              Dietary requirements {f.guestsAllowed && <span className="text-xs text-muted-foreground">(theirs and their guests')</span>}
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="flex-1 flex items-center gap-2 text-sm text-foreground">
+                <input type="checkbox" checked={f.dietary} onChange={(e) => set({ dietary: e.target.checked, dietaryRequired: e.target.checked && f.dietaryRequired })} />
+                Dietary requirements {f.guestsAllowed && <span className="text-xs text-muted-foreground">(theirs and their guests')</span>}
+              </label>
+              {f.dietary && (
+                <label className="flex items-center gap-1.5 text-xs text-foreground shrink-0">
+                  <input type="checkbox" checked={f.dietaryRequired} onChange={(e) => set({ dietaryRequired: e.target.checked })} />
+                  Required
+                </label>
+              )}
+            </div>
             {f.ownQuestions.map((q, i) => (
-              <div key={i} className="flex gap-2">
-                <input className={`${fieldInput} flex-1`} value={q} placeholder="Your question, e.g. T-shirt size" onChange={(e) => set({ ownQuestions: f.ownQuestions.map((x, j) => (j === i ? e.target.value : x)) })} aria-label={`Question ${i + 1}`} />
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  className={`${fieldInput} flex-1`}
+                  value={q.label}
+                  placeholder="Your question, e.g. T-shirt size"
+                  onChange={(e) => set({ ownQuestions: f.ownQuestions.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })}
+                  aria-label={`Question ${i + 1}`}
+                />
+                <label className="flex items-center gap-1.5 text-xs text-foreground shrink-0">
+                  <input type="checkbox" checked={q.required} onChange={(e) => set({ ownQuestions: f.ownQuestions.map((x, j) => (j === i ? { ...x, required: e.target.checked } : x)) })} />
+                  Required
+                </label>
                 <button className="p-2 rounded-md hover:bg-muted text-muted-foreground" aria-label={`Remove question ${i + 1}`} onClick={() => set({ ownQuestions: f.ownQuestions.filter((_, j) => j !== i) })}>
                   <X className="h-4 w-4" />
                 </button>
               </div>
             ))}
             {f.ownQuestions.length < MAX_OWN_QUESTIONS && (
-              <button className="inline-flex items-center gap-1 text-sm text-primary" onClick={() => set({ ownQuestions: [...f.ownQuestions, ''] })}>
+              <button className="inline-flex items-center gap-1 text-sm text-primary" onClick={() => set({ ownQuestions: [...f.ownQuestions, { label: '', required: false }] })}>
                 <Plus className="h-4 w-4" /> Add a question
               </button>
             )}
@@ -531,7 +554,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                     answering?.personId === r.personId ? (
                       <li key={r.personId} className="py-2 space-y-2">
                         <p className="text-sm font-medium text-foreground">{r.name}</p>
-                        <ResponseEditor event={e} initial={answering.initial} saving={answer.isPending} onSave={(d) => answer.mutate({ personId: r.personId, d })} onCancel={() => setAnswering(null)} />
+                        <ResponseEditor relaxed event={e} initial={answering.initial} saving={answer.isPending} onSave={(d) => answer.mutate({ personId: r.personId, d })} onCancel={() => setAnswering(null)} />
                       </li>
                     ) : (
                       <li key={r.personId} className="py-2">
@@ -570,7 +593,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                 {answering && !data.responses.some((r) => r.personId === answering.personId) ? (
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-foreground">Answer for {answering.name}</p>
-                    <ResponseEditor event={e} initial={answering.initial} saving={answer.isPending} onSave={(d) => answer.mutate({ personId: answering.personId, d })} onCancel={() => setAnswering(null)} />
+                    <ResponseEditor relaxed event={e} initial={answering.initial} saving={answer.isPending} onSave={(d) => answer.mutate({ personId: answering.personId, d })} onCancel={() => setAnswering(null)} />
                   </div>
                 ) : !adding ? (
                   <button className="inline-flex items-center gap-1.5 text-sm text-primary" onClick={() => setAdding(true)}>

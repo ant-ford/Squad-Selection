@@ -38,6 +38,7 @@ import {
   asksDietary,
   cleanAnswers,
   cleanQuestions,
+  missingAnswer,
   computeCharges,
   judgeProof,
   cleanAudience,
@@ -372,6 +373,10 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
   const questions = cleanQuestions(ev.questions);
   const guests = asksDietary(questions) ? checked : checked.map(({ name, age }) => ({ name, age }));
   const asManager = manager && body.asManager === true;
+  const answers = status === "not_going" ? {} : cleanAnswers(body.answers, questions);
+  // Required questions bind members; a social secretary answering on someone's behalf may not know.
+  const missing = status === "not_going" || asManager ? null : missingAnswer(questions, answers, guests);
+  if (missing) throw new HttpError(missing, 400, "ANSWER_REQUIRED");
   const signedUpBy = existing ? existing.signed_up_by_id : self || asManager ? null : rights.personUuid;
   await d.upsert(
     "event_responses",
@@ -382,7 +387,7 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
         status,
         guests,
         can_help: status !== "not_going" && !!ev.help_needed && body.canHelp === true,
-        answers: status === "not_going" ? {} : cleanAnswers(body.answers, questions),
+        answers,
         notes: text(body.notes, 300) || null,
         signed_up_by_id: signedUpBy,
       },

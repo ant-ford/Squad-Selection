@@ -8,7 +8,7 @@ import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
 import { respondToEvent, searchEventPeople } from '@/api/events';
-import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
+import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines } from './eventText';
 import BillBox from './BillBox';
 
@@ -44,6 +44,7 @@ export function ResponseEditor({
   saveLabel = 'Save',
   onSave,
   onCancel,
+  relaxed = false,
 }: {
   event: Pick<EventDetails, 'guestsAllowed' | 'maxGuests' | 'helpNeeded' | 'questions'>;
   initial: Draft;
@@ -51,11 +52,16 @@ export function ResponseEditor({
   saveLabel?: string;
   onSave: (d: Draft) => void;
   onCancel?: () => void;
+  /** A social secretary answering on someone's behalf: required questions may be left. */
+  relaxed?: boolean;
 }) {
   const [d, setD] = useState<Draft>(initial);
   const max = event.maxGuests ?? 1;
   const going = d.status && d.status !== 'not_going';
   const dietary = asksDietary(event.questions);
+  const dietaryRequired = !!event.questions.find((q) => q.key === 'dietary')?.required;
+  const missing = going && !relaxed ? missingAnswer(event.questions, d.answers, d.guests) : null;
+  const required = (on: boolean | undefined) => (on && !relaxed ? <span className="text-destructive"> *</span> : null);
   const setGuest = (i: number, g: Partial<Guest>) => setD({ ...d, guests: d.guests.map((x, j) => (j === i ? { ...x, ...g } : x)) });
   return (
     <div className="space-y-3">
@@ -90,7 +96,7 @@ export function ResponseEditor({
                 </button>
               </div>
               {dietary && (
-                <input className={fieldInput} placeholder="Dietary requirements (if any)" value={g.dietary ?? ''} onChange={(e) => setGuest(i, { dietary: e.target.value })} aria-label={`Guest ${i + 1} dietary requirements`} />
+                <input className={fieldInput} placeholder={dietaryRequired && !relaxed ? 'Dietary requirements (None if none)' : 'Dietary requirements (if any)'} value={g.dietary ?? ''} onChange={(e) => setGuest(i, { dietary: e.target.value })} aria-label={`Guest ${i + 1} dietary requirements`} />
               )}
             </div>
           ))}
@@ -105,10 +111,11 @@ export function ResponseEditor({
         event.questions.map((q) => (
           <label key={q.key} className="block space-y-1 text-xs font-medium text-foreground">
             {q.key === 'dietary' ? 'Your dietary requirements' : q.label}
+            {required(q.required)}
             <input
               className={fieldInput}
               value={d.answers[q.key] ?? ''}
-              placeholder={q.key === 'dietary' ? 'e.g. vegetarian, no nuts (leave blank if none)' : ''}
+              placeholder={q.key === 'dietary' ? (q.required && !relaxed ? 'e.g. vegetarian, no nuts, or None' : 'e.g. vegetarian, no nuts (leave blank if none)') : ''}
               onChange={(e) => setD({ ...d, answers: { ...d.answers, [q.key]: e.target.value } })}
             />
           </label>
@@ -122,13 +129,14 @@ export function ResponseEditor({
         </label>
       )}
       <input className={fieldInput} placeholder="Anything the organiser should know (optional)" value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} aria-label="Note for the organiser" />
+      {missing && <p className="text-xs text-muted-foreground text-right">{missing}</p>}
       <div className="flex justify-end gap-2">
         {onCancel && (
           <button className={secondary} onClick={onCancel}>
             Cancel
           </button>
         )}
-        <button className={primary} disabled={saving || !d.status} onClick={() => onSave(d)}>
+        <button className={primary} disabled={saving || !d.status || !!missing} onClick={() => onSave(d)}>
           {saving ? 'Saving…' : saveLabel}
         </button>
       </div>

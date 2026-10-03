@@ -10,7 +10,7 @@ import { eventTasks, getMyEvents, respondToEvent, saveEvent, uploadPaymentProof 
 import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { answersCsv, cleanAnswers, cleanQuestions, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
+import { answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -396,5 +396,35 @@ describe("questions an event asks", () => {
       "Dave Smith,Going,,Vegetarian,Yes,",
       "Jane,Guest (adult),Dave Smith,No nuts,,",
     ]);
+  });
+});
+
+describe("required questions", () => {
+  const qs = cleanQuestions([{ key: "dietary", required: true }, { label: "T-shirt size", required: true }, { label: "Arriving by" }]);
+
+  it("keeps the required tick, and says which answer is missing", () => {
+    expect(qs).toEqual([
+      { key: "dietary", label: "Dietary requirements", required: true },
+      { key: "q1", label: "T-shirt size", required: true },
+      { key: "q2", label: "Arriving by" },
+    ]);
+    expect(missingAnswer(qs, {}, [])).toMatch(/dietary requirements \(write None/);
+    expect(missingAnswer(qs, { dietary: "None" }, [])).toBe("Answer “T-shirt size”.");
+    expect(missingAnswer(qs, { dietary: "None", q1: "L" }, [{ name: "Jane", age: "adult" }])).toBe("Give Jane's dietary requirements (None if they have none).");
+    expect(missingAnswer(qs, { dietary: "None", q1: "L" }, [{ name: "Jane", age: "adult", dietary: "Vegan" }])).toBeNull();
+  });
+
+  it("won't save Going without them, but Not going and a social secretary's answer are fine", async () => {
+    const asks = event({ questions: qs });
+    fake({ events: [asks] });
+    await expect(respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going", answers: { dietary: "None" } })).rejects.toThrow(/T-shirt size/);
+    invalidateAll();
+    let calls = fake({ events: [asks] });
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "not_going" });
+    expect(upsertOf(calls)!.body[0]).toMatchObject({ status: "not_going", answers: {} });
+    invalidateAll();
+    calls = fake({ events: [asks], offices: { "uuid-sec": [{ id: "office" }] } });
+    await respondToEvent(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", status: "going", asManager: true });
+    expect(upsertOf(calls)!.body[0]).toMatchObject({ person_id: "uuid-dad", status: "going" });
   });
 });
