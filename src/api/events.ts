@@ -68,6 +68,10 @@ export function confirmPayment(id: string, personId: string, confirmed: boolean)
   return apiPost(`/api/events/${id}/confirm-payment`, { personId, confirmed });
 }
 
+export function markNoShow(id: string, personId: string, noShow: boolean): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/no-show`, { personId, noShow });
+}
+
 export function waiveCharge(id: string, personId: string, waived: boolean): Promise<{ ok: true }> {
   return apiPost(`/api/events/${id}/waive`, { personId, waived });
 }

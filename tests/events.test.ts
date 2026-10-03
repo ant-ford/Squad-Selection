@@ -6,7 +6,9 @@ import type { DirectoryPerson } from "../shared/emailLists";
 const DIR: DirectoryPerson[] = [];
 vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ people: DIR, generatedAt: "" }) }));
 
-import { eventTasks, getMyEvents, respondToEvent, saveEvent, uploadPaymentProof } from "../worker/src/events";
+import { eventTasks, getMyEvents, markNoShow, respondToEvent, saveEvent, uploadPaymentProof } from "../worker/src/events";
+import { attendedEvents } from "../worker/src/eventAttendance";
+import { recordedSocialFunctions } from "../shared/commitmentReview";
 import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
@@ -426,5 +428,42 @@ describe("required questions", () => {
     calls = fake({ events: [asks], offices: { "uuid-sec": [{ id: "office" }] } });
     await respondToEvent(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", status: "going", asManager: true });
     expect(upsertOf(calls)!.body[0]).toMatchObject({ person_id: "uuid-dad", status: "going" });
+  });
+});
+
+describe("attendance and the commitment review", () => {
+  it("ticks the social functions recorded, in the review's order", () => {
+    expect(
+      recordedSocialFunctions([
+        { id: "1", type: "social_function", title: "Xmas", startsAt: "2026-12-11T11:00:00Z", socialFunction: "Christmas Party" },
+        { id: "2", type: "team_social", title: "Curry", startsAt: "2026-11-01T11:00:00Z", socialFunction: null },
+        { id: "3", type: "social_function", title: "SOS", startsAt: "2026-09-01T11:00:00Z", socialFunction: "Start of Season" },
+      ]),
+    ).toEqual(["Start of Season", "Christmas Party"]);
+    expect(recordedSocialFunctions(undefined)).toEqual([]);
+  });
+
+  it("counts Going at published events in the period that have started, not no-shows", async () => {
+    const calls = fake({ responses: [{ person_id: "uuid-dad", event: { id: "e1", event_type: "social_function", title: "Xmas", starts_at: "2026-01-10T11:00:00Z", social_function: "Christmas Party" } }] });
+    const out = await attendedEvents(env, "recDAD", "2025-07-01", "2026-06-30");
+    expect(out).toEqual([{ id: "e1", type: "social_function", title: "Xmas", startsAt: "2026-01-10T11:00:00Z", socialFunction: "Christmas Party" }]);
+    const q = calls.find((c) => c.url.pathname.endsWith("/event_responses"))!.url.searchParams;
+    expect(q.get("status")).toBe("eq.going");
+    expect(q.get("no_show")).toBe("is.false");
+    expect(q.get("event.status")).toBe("eq.published");
+    expect(q.getAll("event.starts_at")[0]).toBe("gte.2025-07-01T00:00:00+08:00");
+    // No period, nothing to look up.
+    expect(await attendedEvents(env, "recDAD", null, "2026-06-30")).toEqual([]);
+  });
+
+  it("marks who didn't come only once the event has started", async () => {
+    fake({ events: [event()], offices: { "uuid-sec": [{ id: "office" }] } });
+    await expect(markNoShow(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", noShow: true })).rejects.toThrow(/once the event has started/);
+    invalidateAll();
+    const calls = fake({ events: [event({ starts_at: new Date(Date.now() - day).toISOString() })], offices: { "uuid-sec": [{ id: "office" }] } });
+    await markNoShow(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", noShow: true });
+    const write = calls.find((c) => c.url.pathname.endsWith("/event_responses") && c.method === "PATCH")!;
+    expect(write.body).toEqual({ no_show: true });
+    expect(write.url.searchParams.get("status")).toBe("eq.going");
   });
 });

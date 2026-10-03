@@ -25,6 +25,7 @@ import {
   setEventStatus,
   setSocialSecretaries,
   uploadPoster,
+  markNoShow,
   waiveCharge,
 } from '@/api/events';
 import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
@@ -445,6 +446,11 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
     },
     onError: (err) => toast.error(errorText(err)),
   });
+  const noShow = useMutation({
+    mutationFn: ({ personId, value }: { personId: string; value: boolean }) => markNoShow(id, personId, value),
+    onSuccess: refresh,
+    onError: (err) => toast.error(errorText(err)),
+  });
   const answer = useMutation({
     mutationFn: ({ personId, d }: { personId: string; d: Draft }) =>
       respondToEvent(id, { personId, status: d.status!, guests: d.guests, canHelp: d.canHelp, answers: d.answers, notes: d.notes, asManager: true }),
@@ -577,6 +583,14 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                           {r.status !== 'not_going' &&
                             e.questions.map((q) => (r.answers[q.key] ? <p key={q.key}>{q.label}: {r.answers[q.key]}</p> : null))}
                           {r.canHelp && <p>Can help</p>}
+                          {r.status === 'going' && Date.parse(e.startsAt) <= Date.now() && (
+                            <p>
+                              {r.noShow ? "Didn't come · " : ''}
+                              <button className="text-primary" disabled={noShow.isPending} onClick={() => noShow.mutate({ personId: r.personId, value: !r.noShow })}>
+                                {r.noShow ? 'Came after all' : "Didn't come"}
+                              </button>
+                            </p>
+                          )}
                           {e.paymentMode !== 'free' && r.status === 'going' && (
                             <p>
                               {r.waived ? 'Let off the charge · ' : ''}

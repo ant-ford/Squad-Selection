@@ -23,6 +23,23 @@ export function belowAttendance(played: number | null | undefined, teamPlayed: n
   return played / teamPlayed < MIN_MATCH_ATTENDANCE;
 }
 
+/** An event someone came to (Going, not a no-show), as the review lists it. */
+export interface AttendedEvent {
+  id: string;
+  /** shared/events.ts EventType. */
+  type: string;
+  title: string;
+  startsAt: string;
+  /** Which of SOCIAL_FUNCTIONS it counts as, if any. */
+  socialFunction: string | null;
+}
+
+/** The social functions recorded as attended, in SOCIAL_FUNCTIONS order: they start the member's form ticked. */
+export function recordedSocialFunctions(events: AttendedEvent[] | undefined): string[] {
+  const seen = new Set((events ?? []).map((e) => e.socialFunction).filter((s): s is string => !!s));
+  return SOCIAL_FUNCTIONS.filter((s) => seen.has(s));
+}
+
 export const RECOMMENDED_REDUCTIONS = ["None", "1 year", "1.5 years", "2 years"] as const;
 
 /** Who is looking at a review, and so what they see and may do. */
@@ -102,6 +119,8 @@ export interface ReviewView {
   officerReview: (Omit<OfficerReview, "signature"> & { submittedAt: string | null; signatureUrl: string | null }) | null;
   /** For the member's report: who they can pick, with their usual sponsor first. */
   options?: { sponsors: ReviewOffice[]; officers: ReviewOffice[]; usualSponsor: string | null };
+  /** Events recorded in Eddy as attended in the commitment period (worker/src/eventAttendance.ts). */
+  eventsAttended?: AttendedEvent[];
   /** For a signer: their saved signature, to sign with in one tap. */
   savedSignatureUrl?: string | null;
   /**

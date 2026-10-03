@@ -34,6 +34,7 @@ import { pdfsEnabled } from "./pdf/render";
 
 export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
+import { attendedEvents } from "./eventAttendance";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { TABLES } from "../../shared/schema/tableNames";
 import {
@@ -271,6 +272,13 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
     // -> Registered), which is how the review's own team is chosen too.
     const ref = await getReferenceData(env);
     view.teamActivePlayers = ref.players.filter((p) => (selectedDisplayTeam(p) || p.registeredTeam || "") === row.team).length;
+  }
+  // Events recorded as attended in the period: they tick the social functions and show everyone what was recorded.
+  if (row.person) {
+    view.eventsAttended = await attendedEvents(env, row.person, row.period_start, row.period_end).catch((err) => {
+      console.error("Events attended not read:", err instanceof Error ? err.message : err);
+      return [];
+    });
   }
   if (canDo === "sponsor" || canDo === "officer") {
     view.savedSignatureUrl = await signed(env, await savedSignature(env, user.personId));

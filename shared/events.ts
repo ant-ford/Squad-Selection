@@ -269,6 +269,8 @@ export interface ResponseDetails {
   signedUpBy: { id: string; name: string } | null;
   /** A social secretary let them off the charge. */
   waived: boolean;
+  /** Going, but didn't come (marked by a social secretary): still charged, not counted as attending. */
+  noShow: boolean;
 }
 
 /** GET /api/events/mine: one event on the player page. */

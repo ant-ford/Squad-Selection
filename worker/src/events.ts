@@ -114,6 +114,7 @@ interface ResponseRow {
   guests: Guest[] | null;
   can_help: boolean;
   charge_waived: boolean;
+  no_show: boolean;
   answers: Record<string, string> | null;
   notes: string | null;
   updated_at: string;
@@ -122,7 +123,7 @@ interface ResponseRow {
   signer: (NameParts & { api_id: string; membership_no: string | null }) | null;
 }
 const RESPONSE_COLS =
-  "event_id,person_id,status,guests,can_help,charge_waived,answers,notes,updated_at,signed_up_by_id," +
+  "event_id,person_id,status,guests,can_help,charge_waived,no_show,answers,notes,updated_at,signed_up_by_id," +
   "person:people!event_responses_person_id_fkey(api_id,preferred_name,given_names,surname,membership_no)," +
   "signer:people!event_responses_signed_up_by_id_fkey(api_id,preferred_name,given_names,surname,membership_no)";
 const RESPONSE_KEY = "event_id,person_id";
@@ -164,6 +165,7 @@ function toResponse(r: ResponseRow): ResponseDetails {
     notes: r.notes,
     signedUpBy: r.signed_up_by_id && r.signer ? { id: r.signer.api_id, name: nameOf(r.signer) } : null,
     waived: !!r.charge_waived,
+    noShow: !!r.no_show,
   };
 }
 
@@ -887,5 +889,17 @@ export async function waiveCharge(env: Env, user: AuthorizedUser, id: string, bo
   if (!person) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");
   const done = await d.update<{ event_id: string }>("event_responses", `event_id=${eq(event.id)}&person_id=${eq(person.id)}`, { charge_waived: body.waived === true });
   if (!done.length) throw new HttpError("They haven't answered.", 404, "NOT_FOUND");
+  return { ok: true };
+}
+
+/** Going, but didn't come (or did after all): once it has started. They're still charged; it's their commitment attendance. */
+export async function markNoShow(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true }> {
+  const { event } = await requireManages(env, user, id);
+  if (Date.parse(event.starts_at) > Date.now()) throw new HttpError("You can mark who didn't come once the event has started.", 409, "NOT_STARTED");
+  const d = db(env);
+  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(text(body.personId, 40))}`);
+  if (!person) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");
+  const done = await d.update<{ event_id: string }>("event_responses", `event_id=${eq(event.id)}&person_id=${eq(person.id)}&status=eq.going`, { no_show: body.noShow === true });
+  if (!done.length) throw new HttpError("Only someone who said Going can be marked.", 404, "NOT_FOUND");
   return { ok: true };
 }

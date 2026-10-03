@@ -46,6 +46,7 @@ import {
   findPeople,
   getCharges,
   markChargesSent,
+  markNoShow,
   uploadPaymentProof,
   waiveCharge,
   getEventResponses,
@@ -827,7 +828,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "GET" && pathname === "/api/events/mine") return json(await getMyEvents(env, user), 200, origin);
       if (method === "GET" && pathname === "/api/events/manage") return json(await getManageView(env, user), 200, origin);
       if (method === "GET" && pathname === "/api/events/find-people") return json(await findPeople(env, user, q), 200, origin);
-      const ev = pathname.match(/^\/api\/events\/([0-9a-f-]{36})\/(respond|people|responses|status|poster|delete|charges|charges-sent|payment-proof|confirm-payment|waive)$/);
+      const ev = pathname.match(/^\/api\/events\/([0-9a-f-]{36})\/(respond|people|responses|status|poster|delete|charges|charges-sent|payment-proof|confirm-payment|waive|no-show)$/);
       if (method === "GET" && ev?.[2] === "people") return json(await searchEventPeople(env, user, ev[1], q), 200, origin);
       if (method === "GET" && ev?.[2] === "responses") return json(await getEventResponses(env, user, ev[1]), 200, origin);
       if (method === "GET" && ev?.[2] === "charges") return json(await getCharges(env, user, ev[1]), 200, origin);
@@ -844,6 +845,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (ev?.[2] === "payment-proof") return json(await uploadPaymentProof(env, user, ev[1], body), 200, origin);
         if (ev?.[2] === "confirm-payment") return json(await confirmPayment(env, user, ev[1], body), 200, origin);
         if (ev?.[2] === "waive") return json(await waiveCharge(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "no-show") return json(await markNoShow(env, user, ev[1], body), 200, origin);
       }
     }
 
