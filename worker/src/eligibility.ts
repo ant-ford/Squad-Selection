@@ -404,10 +404,15 @@ function calculatePlayUpCount(
   player: Player,
   ctx: EvaluationContext,
 ): number {
-  // Single authoritative qualifying play-up definition (shared with the
-  // automatic re-registration service and the Play-Up Watch dashboard).
+  // Re-registration resets the count: only play-ups made from the player's
+  // current registered team count. A card keeps the team the player was
+  // registered to when it was played (`Player Team`), so play-ups from a
+  // lower team before moving up drop out. A card with no Player Team is
+  // still counted, so a missing value never frees up a play-up.
   return cardsForPlayer(player.id, ctx).filter(
-    (mc) => isQualifyingPlayUpCard(mc, ctx.currentSeason, ctx.matchesById),
+    (mc) =>
+      isQualifyingPlayUpCard(mc, ctx.currentSeason, ctx.matchesById) &&
+      (!mc.playerTeam || mc.playerTeam === player.registeredTeam),
   ).length;
 }
 

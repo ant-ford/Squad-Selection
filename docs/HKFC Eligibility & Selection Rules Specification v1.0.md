@@ -480,6 +480,8 @@ Cup appearances count toward the same play-up quota as league appearances.
 
 There is only one play-up count.
 
+Re-registration resets the count. Only appearances made from the player's current registered team count, meaning `Match Cards.Player Team` equals `People.Registered Team`. Play-ups made from a lower team before the player was re-registered no longer count. A card with no `Player Team` still counts.
+
 ---
 
 # 11. Goalkeeper Exemption
@@ -563,7 +565,7 @@ The play-up after the allowance was an automatic registration EVENT, not a manua
 - The Worker detects the 4th qualifying appearance from actual Match Cards (never from squad selections, availability or recommendations).
 - The player's `People.Registered Team` is automatically updated to the destination team (see 13.3).
 - The event is recorded exactly once per player per season in the Registration Events table (`auto_reregister`). It is never re-applied, so any later administrator override of `People.Registered Team` stands.
-- Historical Match Cards (including `Player Team` and `Team`) are never rewritten, and the season-cumulative play-up count is never reset.
+- Historical Match Cards (including `Player Team` and `Team`) are never rewritten. The play-up count starts again from the new registered team (§10), because the old cards keep the old `Player Team`.
 - Goalkeeper status is per Match Card: `Match Cards.Goalkeeper = true` appearances never count toward the threshold, while a goalkeeper-positioned player''s field-player play-ups (`Goalkeeper = false`) count normally.
 - Automatic re-registration never demotes: a qualifying play-up is an appearance for a team higher-ranked than the player''s current Registered Team; play-downs never count and non-upward cases are left for review.
 
@@ -587,7 +589,7 @@ Until an administrator has re-registered the player, selections for a team above
 
 `Play-up limit reached - re-registration required`
 
-After the event, selection for the (new) registered team is unaffected. The block continues to enforce the season-cumulative limit for any further play-ups above the new registration.
+Once re-registered, the player's play-up count is reset. Only play-ups made from the new registered team count (§10), and the same allowance applies to them: 3, or 8 for a U21.
 
 ---
 
