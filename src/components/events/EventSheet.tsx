@@ -87,8 +87,8 @@ export function ResponseEditor({
           {d.guests.map((g, i) => (
             <div key={i} className="rounded-md border border-border p-2 space-y-2">
               <div className="flex gap-2">
-                <input className={`${fieldInput} flex-1`} placeholder="Name" value={g.name} onChange={(e) => setGuest(i, { name: e.target.value })} aria-label={`Guest ${i + 1} name`} />
-                <select className={`${fieldInput} w-24`} value={g.age} onChange={(e) => setGuest(i, { age: e.target.value as Guest['age'] })} aria-label={`Guest ${i + 1} adult or child`}>
+                <input className={`${fieldInput} flex-1 min-w-0`} placeholder="Name" value={g.name} onChange={(e) => setGuest(i, { name: e.target.value })} aria-label={`Guest ${i + 1} name`} />
+                <select className={`${fieldInput.replace('w-full ', '')} w-24 shrink-0`} value={g.age} onChange={(e) => setGuest(i, { age: e.target.value as Guest['age'] })} aria-label={`Guest ${i + 1} adult or child`}>
                   <option value="adult">Adult</option>
                   <option value="child">Child</option>
                 </select>
