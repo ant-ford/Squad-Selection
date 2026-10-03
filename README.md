@@ -626,7 +626,7 @@ The app **displays** a player''s team as `People."Selected Team EOS"`, falling b
 
 Removed in the [Phase 1 cleanup commit](https://github.com/ant-ford/Squad-Selection/commit/b533df653810c749384849e9903ce8600bb1c2d5) (`b533df6`, "Delete dead routes, dormant features, and dead config"):
 
-- **Automatic re-registration service** (`worker/src/registration.ts` and its routes) - never enabled in production; the owner decision was to delete it outright rather than keep dead code around "in case it's needed later".
+- **Automatic re-registration service** (`worker/src/registration.ts` and its routes) - never enabled in production; the owner decision was to delete it outright rather than keep dead code around "in case it's needed later". Re-registration came back on 3 Oct 2026 as a database trigger on match cards (migration `20261003090000_auto_reregistration`; rules spec §13.2).
 - **Metrics/performance-snapshot endpoints and modules** (`worker/src/metrics.ts`, `worker/src/perf.ts`, and the routes that exposed them) - unused instrumentation with no consumer.
 - Thirteen other dead routes with no frontend caller, the Worker's `scheduled()` cron export (with the corresponding `[triggers]` block in `worker/wrangler.toml`), and the `tailwind.config.ts` file (Tailwind v4 reads tokens from `src/index.css`, not a JS config).
 
