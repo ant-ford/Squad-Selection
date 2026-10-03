@@ -70,7 +70,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {priceText(list.total) ?? 'HK$0'} from {owing.length} payer{owing.length === 1 ? '' : 's'}
-        {payme ? ` · ${priceText(confirmedTotal) ?? 'HK$0'} confirmed` : ''}. Everyone going is charged, including no-shows; let someone off from the answers list.
+        {payme ? ` · ${priceText(confirmedTotal) ?? 'HK$0'} confirmed` : ''}. No-shows are still charged; let someone off from the answers list.
       </p>
       {account && (
         <div className="rounded-md bg-muted p-2 space-y-1">

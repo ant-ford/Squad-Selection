@@ -42,7 +42,7 @@ export default function BillBox({ event }: { event: MyEvent }) {
       ) : (
         <p className="text-sm text-muted-foreground">Nothing to pay just now.</p>
       )}
-      <p className="text-xs text-muted-foreground">Everyone going when answers close is charged, even if they can't make it on the day.</p>
+      <p className="text-xs text-muted-foreground">No-shows are still charged.</p>
 
       {event.paymentMode === 'on_the_night' && bill.total > 0 && <p className="text-sm text-foreground">Bring {total} on the night.</p>}
       {event.paymentMode === 'account' && bill.total > 0 && <p className="text-sm text-foreground">{total} will be charged to your membership account.</p>}

@@ -28,6 +28,7 @@ import {
   waiveCharge,
 } from '@/api/events';
 import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
+import PosterImage from '@/components/events/PosterImage';
 import {
   DEFAULT_AUDIENCE,
   EVENT_GROUPS,
@@ -500,7 +501,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
               onUploaded={refresh}
               upload={(dataUrl) => uploadPoster(id, dataUrl)}
             />
-            {e.posterUrl && <img src={e.posterUrl} alt="Poster" className="w-full max-h-64 object-contain rounded-lg bg-muted" />}
+            {e.posterUrl && <PosterImage url={e.posterUrl} title={e.title} className="max-h-64" />}
 
             <div className="flex flex-wrap gap-2">
               <button className={secondary} onClick={() => onEdit(e)}>

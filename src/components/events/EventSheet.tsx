@@ -11,6 +11,7 @@ import { respondToEvent, searchEventPeople } from '@/api/events';
 import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines } from './eventText';
 import BillBox from './BillBox';
+import PosterImage from './PosterImage';
 
 const STATUSES: ResponseStatus[] = ['going', 'maybe', 'not_going'];
 
@@ -207,7 +208,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
           <SheetTitle>{event.title}</SheetTitle>
         </SheetHeader>
         <div className="space-y-4">
-          {event.posterUrl && <img src={event.posterUrl} alt={`${event.title} poster`} className="w-full max-h-[50vh] object-contain rounded-lg bg-muted" />}
+          {event.posterUrl && <PosterImage url={event.posterUrl} title={event.title} className="max-h-[50vh]" />}
           {cancelled && <p className="rounded-md bg-destructive/10 text-destructive text-sm font-medium p-2">This event has been cancelled.</p>}
           <div className="space-y-1 text-sm text-foreground">
             <p className="text-xs font-medium text-muted-foreground">
