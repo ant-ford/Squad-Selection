@@ -34,6 +34,8 @@ import {
   PAYMENT_LABEL,
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
+  audienceOptions,
+  describeAudience,
   type EventInput,
   type ManageView,
   type ManagedEvent,
@@ -101,6 +103,9 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   audience: e?.audience ?? DEFAULT_AUDIENCE,
 });
 
+/** A datetime-local value an hour later (read and written on the Hong Kong clock). */
+const plusHour = (v: string) => toLocalInput(new Date(Date.parse(fromLocalInput(v)!) + 3_600_000).toISOString());
+
 const priceOrNull = (v: string) => (v.trim() === '' ? null : Number(v));
 
 function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event: ManagedEvent | null; onClose: () => void; onSaved: (id: string) => void }) {
@@ -108,6 +113,15 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
   const [problem, setProblem] = useState<string | null>(null);
   const set = (patch: Partial<Form>) => setF((x) => ({ ...x, ...patch }));
   const [count, setCount] = useState<number | null>(null);
+  // The start the end was last defaulted from: picking the end after the start changes fills in an hour later.
+  const [endFrom, setEndFrom] = useState(f.startsAt);
+  const defaultEnd = () => {
+    if (!f.startsAt || endFrom === f.startsAt) return;
+    setEndFrom(f.startsAt);
+    set({ endsAt: plusHour(f.startsAt) });
+  };
+  const endBeforeStart = !!f.startsAt && !!f.endsAt && f.endsAt < f.startsAt;
+  const lateDeadline = !!f.respondBy && !!f.startsAt && f.respondBy > (f.endsAt || f.startsAt);
   // The invited count, a moment after the groups change.
   useEffect(() => {
     const t = setTimeout(() => {
@@ -209,13 +223,15 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
             </label>
             <label className={label}>
               Ends (optional)
-              <input type="datetime-local" className={fieldInput} value={f.endsAt} onChange={(e) => set({ endsAt: e.target.value })} />
+              <input type="datetime-local" className={fieldInput} value={f.endsAt} min={f.startsAt || undefined} onFocus={defaultEnd} onChange={(e) => set({ endsAt: e.target.value })} />
             </label>
             <label className={label}>
               Answer by (optional)
-              <input type="datetime-local" className={fieldInput} value={f.respondBy} onChange={(e) => set({ respondBy: e.target.value })} />
+              <input type="datetime-local" className={fieldInput} value={f.respondBy} max={f.startsAt || undefined} onChange={(e) => set({ respondBy: e.target.value })} />
             </label>
           </div>
+          {endBeforeStart && <p className="text-xs text-destructive">It can't end before it starts.</p>}
+          {lateDeadline && <p className="text-xs text-destructive">The answer-by date must be before the event ends.</p>}
           <label className={`block ${label}`}>
             Location
             <input className={fieldInput} value={f.location} onChange={(e) => set({ location: e.target.value })} placeholder="e.g. HKFC Members' Bar" />
@@ -276,15 +292,16 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
               <p className="text-sm font-semibold text-foreground">Who's invited</p>
               <p className="text-xs text-muted-foreground">{count == null ? '…' : `${count} people`}</p>
             </div>
-            <p className="text-xs text-muted-foreground">Nothing ticked in a group means anyone. {f.team ? `Only ${f.team} players are invited.` : ''}</p>
+            <p className="text-xs text-foreground">{describeAudience(f.audience, f.team || null)}</p>
+            <p className="text-xs text-muted-foreground">Within a group, any ticked option counts. When you tick in more than one group, people must match all of them. A group with nothing ticked doesn't narrow the list.</p>
             {EVENT_GROUPS.filter((g) => !(f.team && g.key === 'team')).map((g) => {
-              const options = view.groups[g.key] ?? [];
+              const options = audienceOptions(g.key, view.groups[g.key] ?? []);
               if (!options.length) return null;
               return (
                 <div key={g.key}>
                   <p className="text-xs font-medium text-foreground mb-1">{g.label}</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {options.map((o) => {
+                    {options.map(({ value: o, label: text }) => {
                       const on = f.audience[g.key]?.includes(o) ?? false;
                       return (
                         <button
@@ -293,7 +310,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
                           aria-pressed={on}
                           className={`text-xs px-2 py-1 rounded-full border ${on ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-foreground hover:bg-muted'}`}
                         >
-                          {o}
+                          {text}
                         </button>
                       );
                     })}
@@ -311,7 +328,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
             <button className={secondary} onClick={onClose}>
               Cancel
             </button>
-            <button className={primary} disabled={save.isPending || !f.title.trim() || !f.startsAt} onClick={() => save.mutate()}>
+            <button className={primary} disabled={save.isPending || !f.title.trim() || !f.startsAt || endBeforeStart || lateDeadline} onClick={() => save.mutate()}>
               {save.isPending ? 'Saving…' : event ? 'Save' : 'Save draft'}
             </button>
           </div>
@@ -394,6 +411,10 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
               {e.location && <p className="text-muted-foreground">{e.location}</p>}
               {priceLines(e).length > 0 && <p className="text-muted-foreground">{priceLines(e).join(' · ')}</p>}
               <p className="text-xs text-muted-foreground">{countsLine(e)}</p>
+              <p className="text-xs text-muted-foreground">Invited: {describeAudience(e.audience, e.team)}</p>
+              {e.includesMe === false && e.status !== 'cancelled' && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” below.</p>
+              )}
             </div>
 
             <FileUpload

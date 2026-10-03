@@ -9,7 +9,8 @@ vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ 
 import { eventTasks, getMyEvents, respondToEvent, saveEvent } from "../worker/src/events";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { answerRefusal, cleanAudience, cleanGuests, effectiveAudience, isOpen } from "../shared/events";
+import { answerRefusal, audienceOptions, cleanAudience, cleanGuests, describeAudience, effectiveAudience, isOpen } from "../shared/events";
+import { ANY } from "../shared/emailLists";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) =>
@@ -128,6 +129,15 @@ describe("event rules", () => {
   it("keeps only the event groups, and a team's event for that team", () => {
     expect(cleanAudience({ status: ["Member"], ageBand: ["U18"], team: "HKFC A" })).toEqual({ status: ["Member"] });
     expect(effectiveAudience({ team: ["HKFC A", "HKFC B"], status: ["Member"] }, "HKFC D")).toEqual({ team: ["HKFC D"], status: ["Member"] });
+  });
+
+  it("offers umpires as one option, never by grade, and says who's invited in a line", () => {
+    expect(audienceOptions("qualifiedUmpire", ["Level 1", "Level 2"])).toEqual([{ value: ANY, label: "Qualified umpires" }]);
+    expect(audienceOptions("tourInterest", ["Bangkok 11s"])).toEqual([{ value: ANY, label: "Any tour" }, { value: "Bangkok 11s", label: "Bangkok 11s" }]);
+    expect(audienceOptions("team", ["HKFC A"])).toEqual([{ value: "HKFC A", label: "HKFC A" }]);
+    expect(describeAudience({ status: ["Member"], active: ["Active player"], tourInterest: ["Bangkok 11s"] }, null)).toBe("Member · Active player · Tour interest: Bangkok 11s");
+    expect(describeAudience({ qualifiedUmpire: [ANY] }, "HKFC D")).toBe("HKFC D · Qualified umpire: Qualified umpires");
+    expect(describeAudience({}, null)).toBe("Everyone");
   });
 });
 

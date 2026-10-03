@@ -6,7 +6,7 @@
  * One definition for the Worker and the app: the types, who's invited, and
  * the checks on an answer.
  */
-import { GROUPS, type Selection } from "./emailLists";
+import { ANY, GROUPS, type Selection } from "./emailLists";
 import { SOCIAL_FUNCTIONS } from "./commitmentReview";
 
 export const EVENT_TYPES = ["social_function", "team_social", "tournament", "tour", "trial"] as const;
@@ -56,6 +56,40 @@ export const EVENT_GROUP_KEYS = [
   "qualifiedUmpire",
 ] as const;
 export const EVENT_GROUPS = GROUPS.filter((g) => (EVENT_GROUP_KEYS as readonly string[]).includes(g.key));
+
+/**
+ * The "anyone in it" option of a group that has one (committees, interests,
+ * umpires), as the form labels it. Umpires are invited as a whole, never by
+ * grade (owner, 3 Oct 2026), so that group offers only this.
+ */
+export const ANY_LABEL: Record<string, string> = {
+  hockeyCommittee: "Whole committee",
+  subCommittee: "Whole committee",
+  touringCommittee: "Whole committee",
+  easter5s: "Whole committee",
+  tourInterest: "Any tour",
+  tournamentInterest: "Any tournament",
+  qualifiedUmpire: "Qualified umpires",
+};
+export const ANY_ONLY: readonly string[] = ["qualifiedUmpire"];
+
+/** The options the form offers in a group: its "anyone" option first, then its values. */
+export function audienceOptions(key: string, values: string[]): { value: string; label: string }[] {
+  const any = ANY_LABEL[key] ? [{ value: ANY, label: ANY_LABEL[key] }] : [];
+  return ANY_ONLY.includes(key) ? any : [...any, ...values.map((v) => ({ value: v, label: v }))];
+}
+
+/** "Member · Active player · Tour interest: any tour", or "Everyone". */
+export function describeAudience(audience: Selection, teamName: string | null): string {
+  const a = effectiveAudience(audience, teamName);
+  const parts = EVENT_GROUPS.flatMap((g) => {
+    const picked = a[g.key];
+    if (!picked?.length) return [];
+    const values = picked.map((p) => (p === ANY ? ANY_LABEL[g.key] ?? "any" : p)).join(" or ");
+    return [g.key === "status" || g.key === "active" || g.key === "team" ? values : `${g.label}: ${values}`];
+  });
+  return parts.length ? parts.join(" · ") : "Everyone";
+}
 
 /** A new event goes to playing members unless the social secretary changes it. */
 export const DEFAULT_AUDIENCE: Selection = { status: ["Member"], active: ["Active player"] };
@@ -212,6 +246,8 @@ export interface EventPerson {
 export interface ManagedEvent extends EventDetails {
   audience: Selection;
   invited: number;
+  /** Whether the person looking is one of those invited. */
+  includesMe: boolean;
   counts: { going: number; maybe: number; notGoing: number; adultGuests: number; childGuests: number; canHelp: number };
 }
 

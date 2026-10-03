@@ -447,12 +447,16 @@ function counts(rs: { status: ResponseStatus; guests: Guest[] | null; can_help: 
   return c;
 }
 
-const toManaged = (r: EventRow & { event_responses?: ResponseRow[] }, poster: string | null, dir: DirectoryPerson[]): ManagedEvent => ({
-  ...toDetails(r, poster),
-  audience: cleanAudience(r.audience),
-  invited: invitedFrom(dir, r).length,
-  counts: counts(r.event_responses ?? []),
-});
+function toManaged(r: EventRow & { event_responses?: ResponseRow[] }, poster: string | null, dir: DirectoryPerson[], viewer: string): ManagedEvent {
+  const invited = invitedFrom(dir, r);
+  return {
+    ...toDetails(r, poster),
+    audience: cleanAudience(r.audience),
+    invited: invited.length,
+    includesMe: invited.some((p) => p.id === viewer),
+    counts: counts(r.event_responses ?? []),
+  };
+}
 
 async function activeTeams(env: Env): Promise<{ id: string; api_id: string; team_name: string }[]> {
   return db(env).select("teams", "select=id,api_id,team_name&active=eq.true&order=team_rank");
@@ -487,7 +491,7 @@ export async function getManageView(env: Env, user: AuthorizedUser): Promise<Man
     }));
   }
   return {
-    events: rows.map((r) => toManaged(r, posters[r.id] ?? null, dir)),
+    events: rows.map((r) => toManaged(r, posters[r.id] ?? null, dir, user.personId)),
     club: rights.club,
     teams: rights.club ? teams.map((t) => t.team_name) : rights.teams.map((t) => t.name),
     groups: pick(EVENT_GROUP_KEYS)(groupOptions(dir)),
@@ -641,7 +645,7 @@ export async function getEventResponses(env: Env, user: AuthorizedUser, id: stri
     .sort((a, b) => a.name.localeCompare(b.name));
   const answered = new Set(responses.map((r) => r.personId));
   const notAnswered = event.status === "draft" ? [] : invitedFrom(dir, event).filter((p) => !answered.has(p.id)).map((p) => ({ personId: p.id, name: p.name })).sort((a, b) => a.name.localeCompare(b.name));
-  return { event: toManaged({ ...event, event_responses: rows }, posters[event.id] ?? null, dir), responses, notAnswered };
+  return { event: toManaged({ ...event, event_responses: rows }, posters[event.id] ?? null, dir, user.personId), responses, notAnswered };
 }
 
 /** How many a set of groups invites, as the form changes. */
