@@ -4,13 +4,15 @@ import { apiGet } from '@/lib/apiClient';
 export interface MyTask {
   /** Unique within the list. */
   id: string;
-  key: 'joiner' | 'details' | 'statement' | 'waivers' | 'application' | 'send' | 'accept' | 'review' | 'kit' | 'registration';
+  key: 'joiner' | 'details' | 'statement' | 'waivers' | 'application' | 'send' | 'accept' | 'review' | 'kit' | 'registration' | 'event';
   /** The applicant or member the line is about; absent for the person's own forms. */
   subject?: string;
   /** The part the signed-in person plays for them. */
   role?: 'Sponsor' | 'Chairman' | 'Membership Officer';
   /** The form to open, when the base has a link. */
   url?: string;
+  /** An event: when answers close. */
+  due?: string;
 }
 
 export function getMyTasks(): Promise<{ tasks: MyTask[] }> {

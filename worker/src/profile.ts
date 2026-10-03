@@ -4,6 +4,7 @@ import { HttpError } from "./http";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
+import { canManageEvents } from "./eventAccess";
 import { backendFor } from "./data/backend";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 
@@ -86,6 +87,9 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Whether the Volunteers screen is theirs: officers, coaches, captains.
     volunteers: await canSeeVolunteers(env, authUser),
+
+    // Whether the Events screen is theirs: social secretaries and Section Captains.
+    events: await canManageEvents(env, authUser),
 
     captainTeams,
 

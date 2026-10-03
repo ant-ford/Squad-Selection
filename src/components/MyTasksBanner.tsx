@@ -2,6 +2,7 @@ import { ClipboardCheck, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { MyTask } from '@/api/getMyTasks';
 import { useMyTasks } from '@/lib/queries';
+import { safeFormat } from '@/lib/dateUtils';
 
 /** "sponsor" / "Chairman" / "Membership Officer", as said in a sentence. */
 const as = (role: MyTask['role']) => (role === 'Sponsor' ? 'sponsor' : role ?? '');
@@ -35,6 +36,8 @@ export function taskTitle(task: MyTask): string {
       return `Kit for ${task.subject ?? 'a new joiner'}`;
     case 'registration':
       return `Register ${task.subject ?? 'a new joiner'} with HockeyHK`;
+    case 'event':
+      return `${task.subject ?? 'An event'}: are you coming?`;
   }
 }
 
@@ -68,6 +71,7 @@ export default function MyTasksBanner() {
             <p className="text-sm font-semibold text-foreground">{taskTitle(task)}</p>
             {/* Only when there is no button to press. */}
             {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{noLinkHint(task)}</p>}
+            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, h:mm a')}</p>}
           </div>
           {task.url &&
             // Eddy's own screens open in place; the Fillout forms in a new tab.

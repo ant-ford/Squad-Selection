@@ -23,6 +23,8 @@ export interface ProfileData {
   seasonPlans?: boolean;
   /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
   volunteers?: boolean;
+  /** Whether the Events screen is theirs (social secretaries, Section Captains). */
+  events?: boolean;
   captainTeams: string[];
 
   coachTeams: {

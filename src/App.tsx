@@ -38,6 +38,7 @@ const Quizzes = lazy(() => import('./pages/Quizzes'));
 const QuizTake = lazy(() => import('./pages/QuizTake'));
 const Join = lazy(() => import('./pages/Join'));
 const TrialSessions = lazy(() => import('./pages/TrialSessions'));
+const ManageEvents = lazy(() => import('./pages/ManageEvents'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
@@ -183,6 +184,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <QuizTake />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/events/manage',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <ManageEvents />
           </Suspense>
         ),
       },

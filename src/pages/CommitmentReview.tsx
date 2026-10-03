@@ -17,6 +17,7 @@ import {
   PRACTICES,
   RECOMMENDED_REDUCTIONS,
   SOCIAL_FUNCTIONS,
+  recordedSocialFunctions,
   type MemberReport,
   type OfficerReview,
   type ReviewView,
@@ -151,7 +152,8 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
   const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, {
     gamesUmpired: '',
     practices: '',
-    socialFunctions: [],
+    // Ticked from the events Eddy recorded them at; they can change it.
+    socialFunctions: recordedSocialFunctions(review.eventsAttended),
     otherContributions: '',
     sectionService: '',
     hkfcService: '',
@@ -209,6 +211,9 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
             );
           })}
         </div>
+        {recordedSocialFunctions(review.eventsAttended).length > 0 && (
+          <p className="text-[11px] text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
+        )}
       </fieldset>
       <Field label="Other contributions" hint={HINTS.otherContributions}>
         <textarea className={area} value={form.otherContributions} onChange={(e) => set('otherContributions', e.target.value)} />
@@ -535,6 +540,11 @@ export default function CommitmentReview() {
               </div>
               {review.attendance.teamsPlayed.length > 0 && (
                 <p className="text-[11px] text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
+              )}
+              {!!review.eventsAttended?.length && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Events attended (recorded in Eddy): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
+                </p>
               )}
             </section>
 

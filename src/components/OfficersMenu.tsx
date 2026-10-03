@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, ClipboardList, HeartHandshake, LayoutGrid, Mail, Shirt, Users, type LucideIcon } from 'lucide-react';
+import { ChevronDown, ClipboardList, HeartHandshake, LayoutGrid, Mail, PartyPopper, Shirt, Users, type LucideIcon } from 'lucide-react';
 import { headerIconClass, headerNavClass } from '@/components/AppHeader';
 
 interface Item {
@@ -21,6 +21,7 @@ export function officerItems(p: {
   sections?: string[];
   seasonPlans?: boolean;
   volunteers?: boolean;
+  events?: boolean;
 }): Item[] {
   const s = p.sections ?? [];
   const all: (Item | false | undefined)[] = [
@@ -28,6 +29,7 @@ export function officerItems(p: {
     s.includes('chairman') && { to: '/chairman', label: 'Email lists', icon: Mail },
     (s.includes('planning') || p.seasonPlans) && { to: '/season-plans', label: 'Season plans', icon: ClipboardList },
     p.volunteers && { to: '/volunteers', label: 'Volunteers', icon: HeartHandshake },
+    p.events && { to: '/events/manage', label: 'Events', icon: PartyPopper },
     s.includes('kit') && { to: '/kit', label: 'Kit', icon: Shirt },
   ];
   return all.filter((i): i is Item => !!i);

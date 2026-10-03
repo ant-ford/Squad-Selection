@@ -8,6 +8,8 @@ import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { availableLabel } from "../../shared/availableLabel";
 import { currentSeason, previousSeason } from "./seasonContext";
 import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
+import { calendarEventsFor, type CalendarEvent } from "./events";
+import { EVENT_TYPE_LABEL, PAYMENT_LABEL, priceText } from "../../shared/events";
 
 const MATCH_DURATION_MINUTES = 90;
 
@@ -379,6 +381,46 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
   return lines.map(foldLine).join("\r\n");
 }
 
+/** An event without an end time is put down as three hours. */
+const EVENT_DEFAULT_HOURS = 3;
+
+/**
+ * A special event the player is Going or Maybe to (events.ts). Maybe is
+ * TENTATIVE; a cancelled event stays in the feed as CANCELLED so calendar
+ * apps take it out.
+ */
+export function formatEventVEvent(e: CalendarEvent, appOrigin: string, now = new Date()): string {
+  const start = new Date(e.startsAt);
+  const end = e.endsAt ? new Date(e.endsAt) : new Date(start.getTime() + EVENT_DEFAULT_HOURS * 3_600_000);
+  const cancelled = e.status === "cancelled";
+  const summary = `${cancelled ? "CANCELLED: " : ""}${e.title}${!cancelled && e.answer === "maybe" ? " (maybe)" : ""}`;
+  const price = priceText(e.memberPrice);
+  const guests = e.guests ? ` (+${e.guests} guest${e.guests === 1 ? "" : "s"})` : "";
+  const description = buildDescription([
+    { lines: [`${EVENT_TYPE_LABEL[e.type]}${e.team ? ` · ${e.team}` : ""}`, ...(e.description ? [e.description] : [])] },
+    {
+      lines: [
+        `Your answer: ${e.answer === "going" ? "Going" : "Maybe"}${guests}`,
+        ...(e.paymentMode !== "free" && price ? [`${price} · ${PAYMENT_LABEL[e.paymentMode]}`] : []),
+        `Change it in Eddy: ${appOrigin}/?event=${e.id}`,
+      ],
+    },
+  ]);
+  const lines = [
+    "BEGIN:VEVENT",
+    `UID:event-${e.id}@hkfc-squad-selection`,
+    `DTSTAMP:${formatIcsUtcTime(now)}`,
+    `DTSTART;TZID=Asia/Hong_Kong:${formatIcsLocalTime(start)}`,
+    `DTEND;TZID=Asia/Hong_Kong:${formatIcsLocalTime(end)}`,
+    `SUMMARY:${escapeIcsText(summary)}`,
+    `LOCATION:${escapeIcsText(e.location || "TBC")}`,
+    `DESCRIPTION:${escapeIcsText(description)}`,
+    `STATUS:${cancelled ? "CANCELLED" : e.answer === "maybe" ? "TENTATIVE" : "CONFIRMED"}`,
+    "END:VEVENT",
+  ];
+  return lines.map(foldLine).join("\r\n");
+}
+
 /**
  * Which of the dashboard's fixtures belong in a player's calendar.
  *
@@ -423,7 +465,13 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
   const { data: icsString } = await getCached(cacheKey, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
     const events = (await withTeamRecords(env, calendarWorthy(fixtures))).map((f: any) => formatVEvent(f, true));
-    return generateIcsPayload(events);
+    // Special events they're Going or Maybe to; the fixtures still come if this fails.
+    const appOrigin = (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
+    const specials = await calendarEventsFor(env, id).catch((err) => {
+      console.error("Calendar events not added:", err instanceof Error ? err.message : err);
+      return [] as CalendarEvent[];
+    });
+    return generateIcsPayload([...events, ...specials.map((e) => formatEventVEvent(e, appOrigin))]);
   }, 5 * 60 * 1000);
 
   return new Response(icsString, {

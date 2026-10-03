@@ -25,6 +25,7 @@ import MyTasksBanner from '@/components/MyTasksBanner';
 import InviteDialog from '@/components/InviteDialog';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
+import EventsSection from '@/components/events/EventsSection';
 import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
 import HelpLink from '@/components/HelpLink';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
@@ -359,6 +360,7 @@ export default function PlayerDashboard() {
         {!!data.teamBirthdays?.length && (
           <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
         )}
+        <EventsSection enabled={!!data.eddyProfile} />
       </div>
 
       <div className="container mx-auto px-4 pb-8">
