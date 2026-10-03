@@ -51,6 +51,9 @@ export function matchForCard(
  *
  * There must be exactly one definition of a qualifying play-up in the
  * codebase. Do NOT inline this filter anywhere else - import this helper.
+ * The one exception is the database: `auto_reregister()` (migration
+ * 20261003090000_auto_reregistration) repeats it in SQL to re-register
+ * players as match cards arrive. Change both together.
  */
 export function isQualifyingPlayUpCard(
   card: MatchCard,

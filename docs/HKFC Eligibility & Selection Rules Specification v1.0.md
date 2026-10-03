@@ -556,22 +556,20 @@ Reference: Bye-Law 7.2
 
 When a player's qualifying play-up appearances above their registered team (excluding goalkeeper appearances) pass their allowance, the player becomes unavailable for their registered team. The allowance is three, so the fourth play-up re-registers the player; for a U21 it is eight, so the ninth does (§12.2).
 
-## 13.2 Automatic Re-registration (removed)
+## 13.2 Automatic Re-registration
 
-**Removed.** The automatic re-registration service was never enabled in production and was deleted in the Phase 1 cleanup (see README, Removed Features). Re-registration is now an administrator update of `People.Registered Team`, and the fail-safe block in §13.4 is what the app enforces. The rest of this section and §13.3 describe what the removed service did and are kept only as guidance for administrators.
+Re-registration is automatic (owner, 3 Oct 2026). It is done in the database, by the `match_cards_auto_reregister` trigger and `auto_reregister()` (migration `20261003090000_auto_reregistration`), so it happens whichever system writes the match card:
 
-The play-up after the allowance was an automatic registration EVENT, not a manual administrator step:
-
-- The Worker detects the 4th qualifying appearance from actual Match Cards (never from squad selections, availability or recommendations).
-- The player's `People.Registered Team` is automatically updated to the destination team (see 13.3).
-- The event is recorded exactly once per player per season in the Registration Events table (`auto_reregister`). It is never re-applied, so any later administrator override of `People.Registered Team` stands.
+- It runs when a Match Card is written, and only from Match Cards (never from squad selections, availability or recommendations). Cards written by the Airtable import are skipped.
+- When the player's qualifying play-ups from his current registered team pass his allowance, `People.Registered Team` is updated to the destination team (§13.3).
+- Each outcome is recorded in `registration_events` once per player, season and team moved from. A later move up from the new team still happens. If an administrator puts the player back on the team he was moved from, the trigger does not overrule them.
 - Historical Match Cards (including `Player Team` and `Team`) are never rewritten. The play-up count starts again from the new registered team (§10), because the old cards keep the old `Player Team`.
-- Goalkeeper status is per Match Card: `Match Cards.Goalkeeper = true` appearances never count toward the threshold, while a goalkeeper-positioned player''s field-player play-ups (`Goalkeeper = false`) count normally.
-- Automatic re-registration never demotes: a qualifying play-up is an appearance for a team higher-ranked than the player''s current Registered Team; play-downs never count and non-upward cases are left for review.
+- Goalkeeper status is per Match Card: `Match Cards.Goalkeeper = true` appearances never count toward the threshold, while a goalkeeper-positioned player's field-player play-ups (`Goalkeeper = false`) count normally. Friendlies never count.
+- It never demotes. When the destination is not a move up, or a team involved has no `Team Rank`, nothing changes and the event is recorded with status `needs_review`.
 
 ## 13.3 Destination Algorithm
 
-The destination is the team with the highest frequency among the four qualifying play-up appearances. If the frequency is tied, the lowest-ranked team (the largest `Teams.Team Rank`) wins. Team names never determine hierarchy.
+The destination is the team with the highest frequency among the qualifying play-up appearances that used up the allowance plus the one after it, in match order: four appearances, or nine for a U21. If the frequency is tied, the lowest-ranked team (the largest `Teams.Team Rank`) wins. Team names never determine hierarchy.
 
 Examples (Team Rank: A = 1, B = 2, C = 3, D = 4, E = 5):
 
@@ -585,7 +583,7 @@ Examples (Team Rank: A = 1, B = 2, C = 3, D = 4, E = 5):
 
 ## 13.4 Fail-safe Block
 
-Until an administrator has re-registered the player, selections for a team above the player's registered team are blocked with:
+Until the player has been re-registered (normally at once, by §13.2; by an administrator for a `needs_review` event), selections for a team above the player's registered team are blocked with:
 
 `Play-up limit reached - re-registration required`
 
