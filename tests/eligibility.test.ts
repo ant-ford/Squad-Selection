@@ -659,6 +659,53 @@ describe("evaluatePlayerEligibility", () => {
       expect(r.playUpCount).toBe(0);
     });
 
+    it("resets the count once re-registered: play-ups from the old team drop out", () => {
+      // Four play-ups from HKFC E re-registered the player to HKFC D.
+      const fromOldTeam = Array.from({ length: 4 }, (_, i) =>
+        mc({ id: `old${i}`, player: ["p1"], team: "HKFC D", playerTeam: "HKFC E", playUp: true, goalkeeper: false }),
+      );
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC D" }),
+        m({ homeTeam: "HKFC C" }),
+        ctx({ matchCards: fromOldTeam })
+      );
+      expect(r.playUpCount).toBe(0);
+      expect(r.status).not.toBe("blocked");
+    });
+
+    it("counts play-ups from the new registered team towards a fresh allowance", () => {
+      const fromOldTeam = Array.from({ length: 4 }, (_, i) =>
+        mc({ id: `old${i}`, player: ["p1"], team: "HKFC D", playerTeam: "HKFC E", playUp: true, goalkeeper: false }),
+      );
+      const fromNewTeam = Array.from({ length: 4 }, (_, i) =>
+        mc({ id: `new${i}`, player: ["p1"], team: "HKFC C", playerTeam: "HKFC D", playUp: true, goalkeeper: false }),
+      );
+      const three = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC D" }),
+        m({ homeTeam: "HKFC C" }),
+        ctx({ matchCards: [...fromOldTeam, ...fromNewTeam.slice(0, 3)] })
+      );
+      expect(three.playUpCount).toBe(3);
+      expect(three.status).not.toBe("blocked");
+      const four = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC D" }),
+        m({ homeTeam: "HKFC C" }),
+        ctx({ matchCards: [...fromOldTeam, ...fromNewTeam] })
+      );
+      expect(four.playUpCount).toBe(4);
+      expect(four.reason).toBe("Play-up limit reached — re-registration required");
+    });
+
+    it("still counts a play-up card with no Player Team", () => {
+      const matchCards = [mc({ player: ["p1"], team: "HKFC B", playUp: true, goalkeeper: false })];
+      const r = evaluatePlayerEligibility(
+        p({ registeredTeam: "HKFC C" }),
+        m({ homeTeam: "HKFC B" }),
+        ctx({ matchCards })
+      );
+      expect(r.playUpCount).toBe(1);
+    });
+
     it("same-team selection has playUpCount 0 (not a play-up)", () => {
       const r = evaluatePlayerEligibility(
         p({ registeredTeam: "HKFC C" }),
