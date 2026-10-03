@@ -39,6 +39,20 @@ import {
   saveMyTrial,
   submitRegistration,
 } from "./trials";
+import {
+  countAudience,
+  deleteEvent,
+  findPeople,
+  getEventResponses,
+  getManageView,
+  getMyEvents,
+  respondToEvent,
+  saveEvent,
+  searchEventPeople,
+  setEventStatus,
+  setSocialSecretaries,
+  uploadPoster,
+} from "./events";
 import { getApply, polishAnswer, saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from "./apply";
 import {
   completeJoinerTask,
@@ -798,6 +812,28 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/trials/me") return json(await saveMyTrial(env, user, body), 200, origin);
         if (pathname === "/api/trials/submit") return json(await submitRegistration(env, user), 200, origin);
         if (pathname === "/api/trials/sessions") return json(await addSession(env, user, body), 200, origin);
+      }
+    }
+
+    // ── Special events (Supabase; events.ts) ──────────────────────────────
+    if (pathname.startsWith("/api/events")) {
+      const user = await requireAuthorizedUser(request, env);
+      const q = url.searchParams.get("q") ?? "";
+      if (method === "GET" && pathname === "/api/events/mine") return json(await getMyEvents(env, user), 200, origin);
+      if (method === "GET" && pathname === "/api/events/manage") return json(await getManageView(env, user), 200, origin);
+      if (method === "GET" && pathname === "/api/events/find-people") return json(await findPeople(env, user, q), 200, origin);
+      const ev = pathname.match(/^\/api\/events\/([0-9a-f-]{36})\/(respond|people|responses|status|poster|delete)$/);
+      if (method === "GET" && ev?.[2] === "people") return json(await searchEventPeople(env, user, ev[1], q), 200, origin);
+      if (method === "GET" && ev?.[2] === "responses") return json(await getEventResponses(env, user, ev[1]), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/events") return json(await saveEvent(env, user, body), 200, origin);
+        if (pathname === "/api/events/audience") return json(await countAudience(env, user, body), 200, origin);
+        if (pathname === "/api/events/social-secretaries") return json(await setSocialSecretaries(env, user, body), 200, origin);
+        if (ev?.[2] === "respond") return json(await respondToEvent(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "status") return json(await setEventStatus(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "poster") return json(await uploadPoster(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "delete") return json(await deleteEvent(env, user, ev[1]), 200, origin);
       }
     }
 

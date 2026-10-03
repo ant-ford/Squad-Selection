@@ -39,12 +39,13 @@ import { isRowId } from "./data/ids";
 import { db, eq } from "./data/supabase";
 import { openJoinerTasks } from "./joiners";
 import { signingTasks } from "./applicationSigning";
+import { eventTasks } from "./events";
 import { checkedThisSeason } from "../../shared/profile";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration";
+export type MyTaskKey = "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration" | "event";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -57,6 +58,8 @@ export interface MyTask {
   role?: TaskRole;
   /** The form to open, when the base has a link. */
   url?: string;
+  /** An event: when answers close. */
+  due?: string;
 }
 
 /*
@@ -196,7 +199,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9 };
+const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9, event: 10 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
@@ -230,6 +233,8 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, personId), MY_RECORD_TTL_MS);
     for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
   }
+  // Events they are invited to and have not answered (events.ts).
+  for (const e of await eventTasks(env, user).catch(() => [])) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
   return { tasks };
 }
