@@ -24,14 +24,13 @@ export type EventStatus = "draft" | "published" | "cancelled";
 export type ResponseStatus = "going" | "maybe" | "not_going";
 export const RESPONSE_LABEL: Record<ResponseStatus, string> = { going: "Going", maybe: "Maybe", not_going: "Not going" };
 
-/** Step 1 offers free and pay on the night; the column also allows PayMe/FPS and membership account. */
 export type PaymentMode = "free" | "on_the_night" | "payme_fps" | "account";
-export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night"];
+export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night", "payme_fps", "account"];
 export const PAYMENT_LABEL: Record<PaymentMode, string> = {
   free: "Free",
   on_the_night: "Pay on the night",
-  payme_fps: "PayMe or FPS",
-  account: "Charged to your membership account",
+  payme_fps: "PayMe or FPS in advance",
+  account: "Charged to membership accounts",
 };
 
 export { SOCIAL_FUNCTIONS };
@@ -191,6 +190,8 @@ export interface EventDetails {
   guestAdultPrice: number | null;
   guestChildPrice: number | null;
   paymentMode: PaymentMode;
+  /** The PayMe link or FPS ID to pay to (PayMe / FPS events). */
+  paymentDetails: string | null;
   guestsAllowed: boolean;
   maxGuests: number | null;
   helpNeeded: string | null;
@@ -208,6 +209,8 @@ export interface ResponseDetails {
   notes: string | null;
   /** Who signed them up (and pays), when it wasn't them. */
   signedUpBy: { id: string; name: string } | null;
+  /** A social secretary let them off the charge. */
+  waived: boolean;
 }
 
 /** GET /api/events/mine: one event on the player page. */
@@ -219,6 +222,8 @@ export interface MyEvent extends EventDetails {
   mine: ResponseDetails | null;
   /** The people they've signed up. */
   signedUp: ({ personId: string; name: string } & ResponseDetails)[];
+  /** What they owe, when they're a payer on a paid event. */
+  bill: { lines: ChargeLine[]; total: number; payment: PaymentInfo | null } | null;
 }
 
 /** POST /api/events/:id/respond. */
@@ -248,6 +253,8 @@ export interface ManagedEvent extends EventDetails {
   invited: number;
   /** Whether the person looking is one of those invited. */
   includesMe: boolean;
+  /** When the charge list went to the treasurer (membership account events). */
+  chargesSentAt: string | null;
   counts: { going: number; maybe: number; notGoing: number; adultGuests: number; childGuests: number; canHelp: number };
 }
 
@@ -277,6 +284,7 @@ export interface EventInput {
   guestAdultPrice?: number | null;
   guestChildPrice?: number | null;
   paymentMode?: PaymentMode;
+  paymentDetails?: string | null;
   guestsAllowed?: boolean;
   maxGuests?: number | null;
   helpNeeded?: string | null;
@@ -298,4 +306,107 @@ export interface EventResponses {
   responses: EventResponseRow[];
   /** Invited, no answer yet: for chasing on WhatsApp. */
   notAnswered: { personId: string; name: string }[];
+}
+
+// ── Paying (step 2) ──────────────────────────────────────────────────────
+
+export interface ChargeLine {
+  name: string;
+  what: "Member" | "Adult guest" | "Child guest";
+  amount: number;
+}
+
+/** One payer's bill: their own place, anyone they signed up, and the guests. */
+export interface PayerCharge {
+  payerId: string;
+  name: string;
+  membershipNo: string | null;
+  lines: ChargeLine[];
+  total: number;
+}
+
+/** One answer as charging needs it. */
+export interface ChargeInput {
+  name: string;
+  status: ResponseStatus;
+  guests: Guest[];
+  waived: boolean;
+  payer: { personId: string; name: string; membershipNo: string | null };
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Who owes what (owner, 3 Oct 2026): everyone Going is charged, no-shows
+ * included, to whoever signed them up, otherwise themselves; their guests
+ * go on the same bill. A waived answer costs nothing. With no guest price
+ * set, an adult guest pays the member price and a child the adult guest price.
+ */
+export function computeCharges(prices: Pick<EventDetails, "memberPrice" | "guestAdultPrice" | "guestChildPrice">, answers: ChargeInput[]): PayerCharge[] {
+  const member = prices.memberPrice ?? 0;
+  const adult = prices.guestAdultPrice ?? member;
+  const child = prices.guestChildPrice ?? adult;
+  const bills = new Map<string, PayerCharge>();
+  for (const a of answers) {
+    if (a.status !== "going" || a.waived) continue;
+    const bill = bills.get(a.payer.personId) ?? { payerId: a.payer.personId, name: a.payer.name, membershipNo: a.payer.membershipNo, lines: [], total: 0 };
+    bill.lines.push({ name: a.name, what: "Member", amount: member });
+    for (const g of a.guests) bill.lines.push({ name: g.name, what: g.age === "child" ? "Child guest" : "Adult guest", amount: g.age === "child" ? child : adult });
+    bill.total = cents(bill.lines.reduce((t, l) => t + l.amount, 0));
+    bills.set(a.payer.personId, bill);
+  }
+  return [...bills.values()].sort((x, y) => x.name.localeCompare(y.name));
+}
+
+export type ReadStatus = "matched" | "amount_differs" | "duplicate" | "unreadable";
+export const READ_STATUS_LABEL: Record<ReadStatus, string> = {
+  matched: "Amount matches",
+  amount_differs: "Amount differs",
+  duplicate: "Reference already used",
+  unreadable: "Couldn't read it",
+};
+
+/** What the screenshot shows against what they owe. A reference used before outranks everything. */
+export function judgeProof(read: { amount: number | null }, due: number, duplicate: boolean): ReadStatus {
+  if (duplicate) return "duplicate";
+  if (read.amount == null) return "unreadable";
+  return Math.abs(read.amount - due) < 0.01 ? "matched" : "amount_differs";
+}
+
+/** A payer's proof and what was read from it. */
+export interface PaymentInfo {
+  status: ReadStatus;
+  amountDue: number | null;
+  amountRead: number | null;
+  paidOn: string | null;
+  reference: string | null;
+  payee: string | null;
+  proofUrl: string | null;
+  uploadedAt: string;
+  /** The social secretary checked it against the real PayMe or bank record. */
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+}
+
+/** GET /api/events/:id/charges. */
+export interface ChargeList {
+  payers: (PayerCharge & { payment: PaymentInfo | null })[];
+  total: number;
+  sentAt: string | null;
+  /** Answers changed after the list went to the treasurer. */
+  changedSince: string[];
+}
+
+/** The treasurer's list: one line per payer, with what it's for. */
+export function chargesCsv(title: string, date: string, payers: PayerCharge[]): string {
+  const cell = (v: string | number | null) => {
+    const t = v == null ? "" : String(v);
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const rows = [["Name", "Membership no.", "Amount (HK$)", "For", "Event", "Date"]];
+  for (const p of payers.filter((x) => x.total > 0)) {
+    const what = p.lines.map((l) => (l.what === "Member" ? l.name : `${l.name} (${l.what.toLowerCase()})`)).join("; ");
+    rows.push([p.name, p.membershipNo ?? "", p.total.toFixed(2), what, title, date]);
+  }
+  return rows.map((r) => r.map(cell).join(",")).join("\r\n");
 }

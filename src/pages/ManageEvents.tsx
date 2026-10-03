@@ -25,7 +25,9 @@ import {
   setEventStatus,
   setSocialSecretaries,
   uploadPoster,
+  waiveCharge,
 } from '@/api/events';
+import PaymentsSection from '@/components/events/PaymentsSection';
 import {
   DEFAULT_AUDIENCE,
   EVENT_GROUPS,
@@ -73,6 +75,7 @@ type Form = {
   location: string;
   description: string;
   paymentMode: PaymentMode;
+  paymentDetails: string;
   memberPrice: string;
   guestsAllowed: boolean;
   maxGuests: string;
@@ -94,6 +97,7 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   location: e?.location ?? '',
   description: e?.description ?? '',
   paymentMode: e?.paymentMode ?? 'free',
+  paymentDetails: e?.paymentDetails ?? '',
   memberPrice: num(e?.memberPrice ?? null),
   guestsAllowed: e?.guestsAllowed ?? false,
   maxGuests: num(e?.maxGuests ?? 1),
@@ -145,6 +149,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
         location: f.location,
         description: f.description,
         paymentMode: f.paymentMode,
+        paymentDetails: f.paymentMode === 'payme_fps' ? f.paymentDetails : null,
         memberPrice: priceOrNull(f.memberPrice),
         guestsAllowed: f.guestsAllowed,
         maxGuests: f.guestsAllowed ? Number(f.maxGuests || 1) : null,
@@ -258,6 +263,14 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
               </label>
             )}
           </div>
+          {f.paymentMode === 'payme_fps' && (
+            <label className={`block ${label}`}>
+              PayMe link or FPS ID to pay to
+              <input className={fieldInput} value={f.paymentDetails} onChange={(e) => set({ paymentDetails: e.target.value })} placeholder="e.g. https://payme.hsbc/yourname, or FPS ID 1234567" />
+              <span className="block font-normal text-muted-foreground">Everyone invited sees this. Each payer uploads a screenshot of their payment, which Eddy reads for you to confirm.</span>
+            </label>
+          )}
+          {f.paymentMode === 'account' && <p className="text-xs text-muted-foreground">After answers close, download the list (name, membership no., amount) for the treasurer.</p>}
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input type="checkbox" checked={f.guestsAllowed} onChange={(e) => set({ guestsAllowed: e.target.checked })} />
             Members can bring guests
@@ -272,11 +285,11 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
                 <>
                   <label className={label}>
                     Adult guest (HK$)
-                    <input type="number" min={0} inputMode="decimal" className={fieldInput} value={f.guestAdultPrice} onChange={(e) => set({ guestAdultPrice: e.target.value })} />
+                    <input type="number" min={0} inputMode="decimal" className={fieldInput} value={f.guestAdultPrice} placeholder="Member price" onChange={(e) => set({ guestAdultPrice: e.target.value })} />
                   </label>
                   <label className={label}>
                     Child guest (HK$)
-                    <input type="number" min={0} inputMode="decimal" className={fieldInput} value={f.guestChildPrice} onChange={(e) => set({ guestChildPrice: e.target.value })} />
+                    <input type="number" min={0} inputMode="decimal" className={fieldInput} value={f.guestChildPrice} placeholder="Adult guest price" onChange={(e) => set({ guestChildPrice: e.target.value })} />
                   </label>
                 </>
               )}
@@ -328,7 +341,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
             <button className={secondary} onClick={onClose}>
               Cancel
             </button>
-            <button className={primary} disabled={save.isPending || !f.title.trim() || !f.startsAt || endBeforeStart || lateDeadline} onClick={() => save.mutate()}>
+            <button className={primary} disabled={save.isPending || !f.title.trim() || !f.startsAt || endBeforeStart || lateDeadline || (f.paymentMode === 'payme_fps' && !f.paymentDetails.trim())} onClick={() => save.mutate()}>
               {save.isPending ? 'Saving…' : event ? 'Save' : 'Save draft'}
             </button>
           </div>
@@ -366,6 +379,15 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
       toast.success('Draft deleted');
       void queryClient.invalidateQueries({ queryKey: ['manageEvents'] });
       onClose();
+    },
+    onError: (err) => toast.error(errorText(err)),
+  });
+  const waive = useMutation({
+    mutationFn: ({ personId, waived }: { personId: string; waived: boolean }) => waiveCharge(id, personId, waived),
+    onSuccess: (_r, v) => {
+      toast.success(v.waived ? 'Let off the charge' : 'Charged again');
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: ['eventCharges', id] });
     },
     onError: (err) => toast.error(errorText(err)),
   });
@@ -492,6 +514,14 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                               </p>
                             ))}
                           {r.canHelp && <p>Can help</p>}
+                          {e.paymentMode !== 'free' && r.status === 'going' && (
+                            <p>
+                              {r.waived ? 'Let off the charge · ' : ''}
+                              <button className="text-primary" disabled={waive.isPending} onClick={() => waive.mutate({ personId: r.personId, waived: !r.waived })}>
+                                {r.waived ? 'Charge again' : 'Let off the charge'}
+                              </button>
+                            </p>
+                          )}
                           {r.notes && <p>“{r.notes}”</p>}
                         </div>
                       </li>
@@ -530,6 +560,8 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                 )}
               </section>
             )}
+
+            {e.paymentMode !== 'free' && e.status !== 'draft' && <PaymentsSection event={e} />}
 
             {data.notAnswered.length > 0 && (
               <section className="space-y-1">

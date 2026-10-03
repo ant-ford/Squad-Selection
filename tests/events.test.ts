@@ -6,10 +6,11 @@ import type { DirectoryPerson } from "../shared/emailLists";
 const DIR: DirectoryPerson[] = [];
 vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ people: DIR, generatedAt: "" }) }));
 
-import { eventTasks, getMyEvents, respondToEvent, saveEvent } from "../worker/src/events";
+import { eventTasks, getMyEvents, respondToEvent, saveEvent, uploadPaymentProof } from "../worker/src/events";
+import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { answerRefusal, audienceOptions, cleanAudience, cleanGuests, describeAudience, effectiveAudience, isOpen } from "../shared/events";
+import { answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -56,7 +57,7 @@ const event = (over: Record<string, unknown> = {}) => ({
 
 type Call = { url: URL; method: string; body: any };
 /** A fake PostgREST: `events`, `responses` (rows for event_responses), offices and team_people per uuid. */
-function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[] } = {}) {
+function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
   const calls: Call[] = [];
   vi.stubGlobal(
     "fetch",
@@ -66,6 +67,7 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
       calls.push({ url, method, body: init.body ? JSON.parse(String(init.body)) : undefined });
       const table = url.pathname.split("/").pop()!;
       const reply = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+      if (url.host === "openrouter.ai") return reply({ choices: [{ message: { content: opts.ai ?? "{}" } }] });
       if (method !== "GET") return reply([{ id: "new-id" }]);
       const q = url.searchParams;
       const eqOf = (k: string) => q.get(k)?.replace(/^eq\./, "");
@@ -87,6 +89,8 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
           const pid = eqOf("person_id");
           return reply(pid ? rows.filter((r) => r.person_id === pid) : rows);
         }
+        case "event_payments":
+          return reply(q.get("reference") ? (opts.used ?? []) : (opts.payments ?? []));
         default:
           return reply([]);
       }
@@ -245,6 +249,7 @@ describe("events in the calendar feed", () => {
     guestAdultPrice: null,
     guestChildPrice: null,
     paymentMode: "on_the_night" as const,
+    paymentDetails: null,
     guestsAllowed: true,
     maxGuests: 2,
     helpNeeded: null,
@@ -270,5 +275,86 @@ describe("events in the calendar feed", () => {
   it("marks Maybe as tentative and a cancelled event as cancelled", () => {
     expect(unfold(formatEventVEvent({ ...base, answer: "maybe", guests: 0 }, "x"))).toMatch(/SUMMARY:Christmas Party \(maybe\)[\s\S]*STATUS:TENTATIVE/);
     expect(unfold(formatEventVEvent({ ...base, status: "cancelled", answer: "going", guests: 0 }, "x"))).toMatch(/SUMMARY:CANCELLED: Christmas Party[\s\S]*STATUS:CANCELLED/);
+  });
+});
+
+describe("paying for events", () => {
+  const dave = { personId: "recDAD", name: "Dave Smith", membershipNo: "M1" };
+  const answer = (over: Partial<ChargeInput>): ChargeInput => ({ name: "Dave Smith", status: "going", guests: [], waived: false, payer: dave, ...over });
+
+  it("bills whoever signed people up, with their guests, and skips Maybe, Not going and waived", () => {
+    const bills = computeCharges({ memberPrice: 350, guestAdultPrice: 400, guestChildPrice: null }, [
+      answer({ guests: [{ name: "Jane", age: "adult" }] }),
+      answer({ name: "Sam Smith", guests: [{ name: "Tom", age: "child" }] }),
+      answer({ name: "Ann Lee", status: "maybe", payer: { personId: "recANN", name: "Ann Lee", membershipNo: null } }),
+      answer({ name: "Bob Lee", waived: true, payer: { personId: "recBOB", name: "Bob Lee", membershipNo: null } }),
+    ]);
+    expect(bills).toHaveLength(1);
+    expect(bills[0]).toMatchObject({ payerId: "recDAD", membershipNo: "M1", total: 1500 });
+    // A child guest with no child price pays the adult guest price.
+    expect(bills[0].lines.map((l) => [l.name, l.what, l.amount])).toEqual([
+      ["Dave Smith", "Member", 350],
+      ["Jane", "Adult guest", 400],
+      ["Sam Smith", "Member", 350],
+      ["Tom", "Child guest", 400],
+    ]);
+    // With no guest prices at all, guests pay the member price.
+    expect(computeCharges({ memberPrice: 200, guestAdultPrice: null, guestChildPrice: null }, [answer({ guests: [{ name: "Jo", age: "child" }] })])[0].total).toBe(400);
+  });
+
+  it("judges a screenshot against the bill, a reused reference first", () => {
+    expect(judgeProof({ amount: 750 }, 750, false)).toBe("matched");
+    expect(judgeProof({ amount: 700 }, 750, false)).toBe("amount_differs");
+    expect(judgeProof({ amount: null }, 750, false)).toBe("unreadable");
+    expect(judgeProof({ amount: 750 }, 750, true)).toBe("duplicate");
+  });
+
+  it("makes the treasurer's list, one line per payer who owes something", () => {
+    const csv = chargesCsv("Christmas Party", "11 Dec 2026", [
+      { payerId: "recDAD", name: "Dave Smith", membershipNo: "M1", total: 750, lines: [{ name: "Dave Smith", what: "Member", amount: 350 }, { name: "Jane, Smith", what: "Adult guest", amount: 400 }] },
+      { payerId: "recX", name: "Nobody", membershipNo: null, total: 0, lines: [] },
+    ]);
+    expect(csv.split("\r\n")).toEqual([
+      "Name,Membership no.,Amount (HK$),For,Event,Date",
+      'Dave Smith,M1,750.00,"Dave Smith; Jane, Smith (adult guest)",Christmas Party,11 Dec 2026',
+    ]);
+  });
+
+  it("keeps only what it can trust from a screenshot", () => {
+    expect(toPaymentRead({ amount: "HK$750.00", currency: "HKD", date: "2026-12-01", reference: "FRN 2026 1201", payee: "Sue Sec", succeeded: true })).toEqual({ amount: 750, paidOn: "2026-12-01", reference: "FRN20261201", payee: "Sue Sec" });
+    expect(toPaymentRead({ amount: 750, currency: "USD" }).amount).toBeNull();
+    expect(toPaymentRead({ amount: 750, succeeded: false }).amount).toBeNull();
+    expect(toPaymentRead({ amount: 750, date: "1 Dec" }).paidOn).toBeNull();
+    expect(toPaymentRead(null)).toEqual({ amount: null, paidOn: null, reference: null, payee: null });
+  });
+
+  it("stores a payer's screenshot, reads it and flags a reference used before", async () => {
+    const files = { put: vi.fn(async () => undefined), delete: vi.fn(async () => undefined) };
+    const payEnv = { ...env, OPENROUTER_API_KEY: "or_test", FILES: files } as unknown as Env;
+    const paid = event({ payment_mode: "payme_fps", payment_details: "FPS 1234567" });
+    const daveRow = {
+      event_id: EVENT_ID, person_id: "uuid-dad", status: "going", guests: [{ name: "Jane", age: "adult" }], charge_waived: false, signed_up_by_id: null,
+      person: { api_id: "recDAD", preferred_name: "Dave", given_names: null, surname: "Smith", membership_no: "M1" }, signer: null,
+    };
+    const saved = {
+      event_id: EVENT_ID, payer_id: "uuid-dad", file_id: null, amount_due: 750, amount_read: 750, paid_on: null, reference: "R1", payee: null,
+      read_status: "matched", confirmed_at: null, created_at: "", updated_at: "2026-12-01T00:00:00Z", payer: { api_id: "recDAD" }, confirmer: null,
+    };
+    const img = "data:image/jpeg;base64,AAAA";
+    const writeOf = (calls: Call[]) => calls.find((c) => c.url.pathname.endsWith("/event_payments") && c.method === "POST")!;
+
+    let calls = fake({ events: [paid], responses: [daveRow], payments: [saved], ai: '{"amount": 750, "currency": "HKD", "reference": "R1", "succeeded": true}' });
+    await uploadPaymentProof(payEnv, userOf("recDAD"), EVENT_ID, { dataUrl: img });
+    expect(writeOf(calls).body[0]).toMatchObject({ payer_id: "uuid-dad", amount_due: 750, amount_read: 750, reference: "R1", read_status: "matched", confirmed_at: null });
+    expect(files.put).toHaveBeenCalledOnce();
+
+    invalidateAll();
+    calls = fake({ events: [paid], responses: [daveRow], payments: [saved], used: [{ event_id: "other-event", payer_id: "uuid-son" }], ai: '{"amount": 750, "reference": "R1"}' });
+    await uploadPaymentProof(payEnv, userOf("recDAD"), EVENT_ID, { dataUrl: img });
+    expect(writeOf(calls).body[0].read_status).toBe("duplicate");
+
+    invalidateAll();
+    fake({ events: [paid], responses: [] });
+    await expect(uploadPaymentProof(payEnv, userOf("recDAD"), EVENT_ID, { dataUrl: img })).rejects.toThrow(/nothing to pay/);
   });
 });

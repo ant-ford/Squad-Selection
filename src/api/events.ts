@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
-import type { EventInput, EventPerson, EventResponses, ManageView, MyEvent, RespondInput } from '@shared/events';
+import type { ChargeList, EventInput, EventPerson, EventResponses, ManageView, MyEvent, PaymentInfo, RespondInput } from '@shared/events';
 import type { Selection } from '@shared/emailLists';
 
 /** Special events (worker/src/events.ts). */
@@ -50,4 +50,24 @@ export function findPeople(q: string): Promise<{ people: { personId: string; nam
 
 export function setSocialSecretaries(team: string, personIds: string[]): Promise<{ ok: true }> {
   return apiPost('/api/events/social-secretaries', { team, personIds });
+}
+
+export function getCharges(id: string): Promise<ChargeList> {
+  return apiGet(`/api/events/${id}/charges`);
+}
+
+export function markChargesSent(id: string): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/charges-sent`, {});
+}
+
+export function uploadPaymentProof(id: string, dataUrl: string): Promise<PaymentInfo> {
+  return apiPost(`/api/events/${id}/payment-proof`, { dataUrl });
+}
+
+export function confirmPayment(id: string, personId: string, confirmed: boolean): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/confirm-payment`, { personId, confirmed });
+}
+
+export function waiveCharge(id: string, personId: string, waived: boolean): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/waive`, { personId, waived });
 }

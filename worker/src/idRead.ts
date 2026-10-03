@@ -9,7 +9,7 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
-import { DEFAULT_DRAFT_MODEL } from "./reviewDrafts";
+import { askAboutPicture, isPhotoDataUrl, parseReply } from "./vision";
 import { normaliseHkid } from "../../shared/phone";
 import { NATIONALITIES } from "../../shared/profile";
 
@@ -26,8 +26,6 @@ export interface IdSuggestions {
   passportNo?: string;
   nationality?: string;
 }
-
-const MAX_IMAGE_CHARS = 7_000_000; // a ~5 MB picture as base64
 
 const PROMPT: Record<IdKind, string> = {
   hkid: "This is a picture of a Hong Kong Identity Card.",
@@ -72,16 +70,7 @@ export function toSuggestions(raw: unknown): IdSuggestions {
   return out;
 }
 
-/** The first JSON object in the model's reply. */
-export function parseReply(reply: string): unknown {
-  const m = /\{[\s\S]*\}/.exec(reply);
-  if (!m) return null;
-  try {
-    return JSON.parse(m[0]);
-  } catch {
-    return null;
-  }
-}
+export { parseReply };
 
 export async function readIdDocument(env: Env, _user: AuthorizedUser, body: Record<string, unknown>): Promise<{ suggestions: IdSuggestions }> {
   if (backendFor(env, "people") !== "supabase") throw new HttpError("Not available yet.", 409, "NOT_YET");
@@ -90,35 +79,10 @@ export async function readIdDocument(env: Env, _user: AuthorizedUser, body: Reco
   const image = body.dataUrl;
   if (!kind) throw new HttpError("Unknown document.", 400, "INVALID_INPUT");
   // A PDF can't be read this way; the boxes are filled in by hand then.
-  if (typeof image !== "string" || !/^data:image\/(jpeg|png|webp);base64,/.test(image) || image.length > MAX_IMAGE_CHARS) {
+  if (!isPhotoDataUrl(image)) {
     throw new HttpError("Only a photo of the document can be read.", 400, "INVALID_INPUT");
   }
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, ""),
-      "X-Title": "Eddy",
-    },
-    body: JSON.stringify({
-      model: env.AI_DRAFT_MODEL || DEFAULT_DRAFT_MODEL,
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: [{ type: "text", text: PROMPT[kind] }, { type: "image_url", image_url: { url: image } }] },
-      ],
-      temperature: 0,
-      max_tokens: 400,
-      reasoning: { enabled: false },
-      // Only providers that neither keep nor train on what they're sent.
-      provider: { data_collection: "deny" },
-    }),
-  });
-  const out = (await res.json().catch(() => null)) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null;
-  const reply = out?.choices?.[0]?.message?.content;
-  if (!res.ok || !reply) {
-    console.error(`ID read failed: ${res.status} ${out?.error?.message?.slice(0, 160) ?? ""}`);
-    throw new HttpError("Couldn't read the document just now. Fill in the boxes yourself, or try again.", 502, "AI_FAILED");
-  }
+  const reply = await askAboutPicture(env, { system: SYSTEM, prompt: PROMPT[kind], image, maxTokens: 400, label: "ID read" });
+  if (!reply) throw new HttpError("Couldn't read the document just now. Fill in the boxes yourself, or try again.", 502, "AI_FAILED");
   return { suggestions: toSuggestions(parseReply(reply)) };
 }

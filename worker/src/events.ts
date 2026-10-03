@@ -26,6 +26,7 @@ import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
 import { eventRights, managesEvent, type EventRights } from "./eventAccess";
 import { getChairmanDirectory } from "./chairman";
 import { uploadBytes } from "./details";
+import { readPaymentProof } from "./paymentRead";
 import { groupOptions, matches, type DirectoryPerson, type Selection } from "../../shared/emailLists";
 import {
   DEFAULT_AUDIENCE,
@@ -34,10 +35,14 @@ import {
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
   answerRefusal,
+  computeCharges,
+  judgeProof,
   cleanAudience,
   cleanGuests,
   effectiveAudience,
   isOpen,
+  type ChargeInput,
+  type ChargeList,
   type EventDetails,
   type EventInput,
   type EventPerson,
@@ -49,7 +54,9 @@ import {
   type ManageView,
   type ManagedEvent,
   type MyEvent,
+  type PaymentInfo,
   type PaymentMode,
+  type ReadStatus,
   type ResponseDetails,
   type ResponseStatus,
   type SocialFunction,
@@ -81,6 +88,8 @@ interface EventRow {
   guest_adult_price: number | string | null;
   guest_child_price: number | string | null;
   payment_mode: PaymentMode;
+  payment_details: string | null;
+  charges_sent_at: string | null;
   guests_allowed: boolean;
   max_guests: number | null;
   help_needed: string | null;
@@ -91,7 +100,7 @@ interface EventRow {
   team: { team_name: string } | null;
 }
 const EVENT_COLS =
-  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,guests_allowed,max_guests,help_needed,social_function,team_id,audience,status,team:teams(team_name)";
+  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,charges_sent_at,guests_allowed,max_guests,help_needed,social_function,team_id,audience,status,team:teams(team_name)";
 
 interface ResponseRow {
   event_id: string;
@@ -99,16 +108,17 @@ interface ResponseRow {
   status: ResponseStatus;
   guests: Guest[] | null;
   can_help: boolean;
+  charge_waived: boolean;
   notes: string | null;
   updated_at: string;
   signed_up_by_id: string | null;
   person: (NameParts & { api_id: string; membership_no: string | null }) | null;
-  signer: (NameParts & { api_id: string }) | null;
+  signer: (NameParts & { api_id: string; membership_no: string | null }) | null;
 }
 const RESPONSE_COLS =
-  "event_id,person_id,status,guests,can_help,notes,updated_at,signed_up_by_id," +
+  "event_id,person_id,status,guests,can_help,charge_waived,notes,updated_at,signed_up_by_id," +
   "person:people!event_responses_person_id_fkey(api_id,preferred_name,given_names,surname,membership_no)," +
-  "signer:people!event_responses_signed_up_by_id_fkey(api_id,preferred_name,given_names,surname)";
+  "signer:people!event_responses_signed_up_by_id_fkey(api_id,preferred_name,given_names,surname,membership_no)";
 const RESPONSE_KEY = "event_id,person_id";
 
 const money = (v: number | string | null) => (v == null ? null : Number(v));
@@ -127,6 +137,7 @@ function toDetails(r: EventRow, posterUrl: string | null): EventDetails {
     guestAdultPrice: money(r.guest_adult_price),
     guestChildPrice: money(r.guest_child_price),
     paymentMode: r.payment_mode,
+    paymentDetails: r.payment_details,
     guestsAllowed: r.guests_allowed,
     maxGuests: r.max_guests,
     helpNeeded: r.help_needed,
@@ -144,6 +155,54 @@ function toResponse(r: ResponseRow): ResponseDetails {
     canHelp: r.can_help,
     notes: r.notes,
     signedUpBy: r.signed_up_by_id && r.signer ? { id: r.signer.api_id, name: nameOf(r.signer) } : null,
+    waived: !!r.charge_waived,
+  };
+}
+
+/** An answer as charging needs it: the payer is whoever signed them up, otherwise themselves. */
+function toChargeInput(r: ResponseRow): ChargeInput {
+  const payer = r.signed_up_by_id && r.signer ? r.signer : r.person;
+  return {
+    name: nameOf(r.person),
+    status: r.status,
+    guests: Array.isArray(r.guests) ? r.guests : [],
+    waived: !!r.charge_waived,
+    payer: { personId: payer?.api_id ?? "", name: nameOf(payer), membershipNo: payer?.membership_no ?? null },
+  };
+}
+
+interface PaymentRow {
+  event_id: string;
+  payer_id: string;
+  file_id: string | null;
+  amount_due: number | string | null;
+  amount_read: number | string | null;
+  paid_on: string | null;
+  reference: string | null;
+  payee: string | null;
+  read_status: ReadStatus;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  payer: { api_id: string } | null;
+  confirmer: NameParts | null;
+}
+const PAYMENT_COLS =
+  "event_id,payer_id,file_id,amount_due,amount_read,paid_on,reference,payee,read_status,confirmed_at,created_at,updated_at," +
+  "payer:people!event_payments_payer_id_fkey(api_id),confirmer:people!event_payments_confirmed_by_fkey(preferred_name,given_names,surname)";
+
+async function toPayment(env: Env, r: PaymentRow): Promise<PaymentInfo> {
+  return {
+    status: r.read_status,
+    amountDue: money(r.amount_due),
+    amountRead: money(r.amount_read),
+    paidOn: r.paid_on,
+    reference: r.reference,
+    payee: r.payee,
+    proofUrl: r.file_id ? await fileLink(env, r.file_id) : null,
+    uploadedAt: r.updated_at,
+    confirmedAt: r.confirmed_at,
+    confirmedBy: r.confirmer ? nameOf(r.confirmer) : null,
   };
 }
 
@@ -211,20 +270,24 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
   );
   if (!rows.length) return { events: [] };
   const ids = rows.map((r) => r.id);
-  const [responses, posters] = await Promise.all([
+  const [responses, posters, payments] = await Promise.all([
     d.select<ResponseRow>("event_responses", `select=${RESPONSE_COLS}&event_id=${inList(ids)}&or=(person_id.eq.${me},signed_up_by_id.eq.${me})`, RESPONSE_KEY),
     posterLinks(env, ids),
+    d.select<PaymentRow>("event_payments", `select=${PAYMENT_COLS}&payer_id=${eq(me)}&event_id=${inList(ids)}`),
   ]);
   const person = dir.find((p) => p.id === user.personId);
   const now = Date.now();
-  const events = rows.flatMap((r): MyEvent[] => {
+  const events = await Promise.all(rows.map(async (r): Promise<MyEvent | null> => {
     const invited = !!person && matches(person, audienceOf(r));
     const mine = responses.find((x) => x.event_id === r.id && x.person_id === me);
     const signedUp = responses.filter((x) => x.event_id === r.id && x.person_id !== me && x.signed_up_by_id === me);
-    if (!mine && !signedUp.length && (!invited || r.status === "cancelled")) return [];
+    if (!mine && !signedUp.length && (!invited || r.status === "cancelled")) return null;
     const details = toDetails(r, posters[r.id] ?? null);
-    return [
-      {
+    // Their bill: their own place unless someone else signed them up, and everyone they signed up.
+    const paying = [...(mine && !mine.signed_up_by_id ? [mine] : []), ...signedUp];
+    const charge = r.payment_mode === "free" ? undefined : computeCharges(details, paying.map(toChargeInput)).find((c) => c.payerId === user.personId);
+    const payment = payments.find((x) => x.event_id === r.id);
+    return {
         ...details,
         invited,
         open: isOpen(details, now),
@@ -233,10 +296,10 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
         signedUp: signedUp
           .map((x) => ({ personId: x.person?.api_id ?? "", name: nameOf(x.person), ...toResponse(x) }))
           .sort((a, b) => a.name.localeCompare(b.name)),
-      },
-    ];
-  });
-  return { events };
+        bill: charge || payment ? { lines: charge?.lines ?? [], total: charge?.total ?? 0, payment: payment ? await toPayment(env, payment) : null } : null,
+    };
+  }));
+  return { events: events.filter((e): e is MyEvent => !!e) };
 }
 
 const STATUSES: readonly ResponseStatus[] = ["going", "maybe", "not_going"];
@@ -454,6 +517,7 @@ function toManaged(r: EventRow & { event_responses?: ResponseRow[] }, poster: st
     audience: cleanAudience(r.audience),
     invited: invited.length,
     includesMe: invited.some((p) => p.id === viewer),
+    chargesSentAt: r.charges_sent_at,
     counts: counts(r.event_responses ?? []),
   };
 }
@@ -536,6 +600,8 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
   const socialFunction = type === "social_function" && body.socialFunction ? body.socialFunction : null;
   if (socialFunction && !(SOCIAL_FUNCTIONS as readonly string[]).includes(socialFunction)) throw new HttpError("Choose the social function from the list.", 400, "INVALID_INPUT");
   const free = paymentMode === "free";
+  const paymentDetails = paymentMode === "payme_fps" ? text(body.paymentDetails, 300) : "";
+  if (paymentMode === "payme_fps" && !paymentDetails) throw new HttpError("Give the PayMe link or FPS ID people should pay to.", 400, "INVALID_INPUT");
   return {
     event_type: type,
     title,
@@ -548,6 +614,7 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
     guest_adult_price: free || !guestsAllowed ? null : toPrice(body.guestAdultPrice),
     guest_child_price: free || !guestsAllowed ? null : toPrice(body.guestChildPrice),
     payment_mode: paymentMode,
+    payment_details: paymentDetails || null,
     guests_allowed: guestsAllowed,
     max_guests: max,
     help_needed: text(body.helpNeeded, 200) || null,
@@ -682,5 +749,127 @@ export async function setSocialSecretaries(env: Env, user: AuthorizedUser, body:
   if (ids.some((id) => !dir.some((p) => p.id === id))) throw new HttpError("Choose people from the search.", 400, "INVALID_INPUT");
   await d.rpc("set_team_people", { p_team: team.api_id, p_role: "social_secretary", p_people: ids });
   invalidateCachePrefix("event-rights:");
+  return { ok: true };
+}
+
+// ── Paying (step 2) ──────────────────────────────────────────────────────
+
+/**
+ * A payer's PayMe / FPS screenshot: stored (replacing any earlier one), read
+ * by Qwen, and compared with what they owe. A reference already used on
+ * another payment is flagged. The social secretary still confirms it.
+ */
+export async function uploadPaymentProof(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<PaymentInfo> {
+  requireSupabase(env);
+  if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
+  const [rights, ev] = await Promise.all([eventRights(env, user), loadEvent(env, id)]);
+  if (ev.payment_mode !== "payme_fps" || ev.status !== "published") throw new HttpError("This event isn't paid by PayMe or FPS.", 409, "NOT_PAYME");
+  const me = rights.personUuid;
+  const d = db(env);
+  const rows = await d.select<ResponseRow>(
+    "event_responses",
+    `select=${RESPONSE_COLS}&event_id=${eq(ev.id)}&or=(and(person_id.eq.${me},signed_up_by_id.is.null),signed_up_by_id.eq.${me})`,
+    RESPONSE_KEY,
+  );
+  const due = computeCharges(toDetails(ev, null), rows.map(toChargeInput)).find((c) => c.payerId === user.personId)?.total ?? 0;
+  if (due <= 0) throw new HttpError("You've nothing to pay for this event.", 409, "NOTHING_DUE");
+  const { bytes, type } = uploadBytes("photo", body.dataUrl);
+  const read = await readPaymentProof(env, body.dataUrl as string);
+  const used = read.reference
+    ? await d.select<{ event_id: string; payer_id: string }>("event_payments", `select=event_id,payer_id&reference=${eq(read.reference)}`)
+    : [];
+  const duplicate = used.some((u) => !(u.event_id === ev.id && u.payer_id === me));
+  const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
+  const key = `events/${ev.id}/payments/${crypto.randomUUID()}.${ext}`;
+  const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  await env.FILES.put(key, bytes, { httpMetadata: { contentType: type }, customMetadata: { sha256 } });
+  const [file] = await d.insert<{ id: string }>("files", [
+    { r2_key: key, kind: "payment_proof", event_id: ev.id, person_id: me, filename: `payment.${ext}`, content_type: type, bytes: bytes.length, sha256 },
+  ]);
+  const old = await d.one<{ file_id: string | null }>("event_payments", `select=file_id&event_id=${eq(ev.id)}&payer_id=${eq(me)}`);
+  await d.upsert(
+    "event_payments",
+    [
+      {
+        event_id: ev.id,
+        payer_id: me,
+        file_id: file.id,
+        amount_due: due,
+        amount_read: read.amount,
+        paid_on: read.paidOn,
+        reference: read.reference,
+        payee: read.payee,
+        read_status: judgeProof(read, due, duplicate),
+        // A new screenshot needs checking again.
+        confirmed_by: null,
+        confirmed_at: null,
+      },
+    ],
+    "event_id,payer_id",
+  );
+  if (old?.file_id) {
+    const f = await d.one<{ r2_key: string }>("files", `select=r2_key&id=${eq(old.file_id)}`);
+    await d.remove("files", `id=${eq(old.file_id)}`);
+    if (f) await env.FILES.delete(f.r2_key);
+  }
+  const saved = await d.one<PaymentRow>("event_payments", `select=${PAYMENT_COLS}&event_id=${eq(ev.id)}&payer_id=${eq(me)}`);
+  return toPayment(env, saved!);
+}
+
+/** Who owes what, with each payer's proof; and, once sent to the treasurer, what changed since. */
+export async function getCharges(env: Env, user: AuthorizedUser, id: string): Promise<ChargeList> {
+  const { event } = await requireManages(env, user, id);
+  const d = db(env);
+  const [rows, payments] = await Promise.all([
+    d.select<ResponseRow>("event_responses", `select=${RESPONSE_COLS}&event_id=${eq(event.id)}`, RESPONSE_KEY),
+    d.select<PaymentRow>("event_payments", `select=${PAYMENT_COLS}&event_id=${eq(event.id)}`),
+  ]);
+  const charges = computeCharges(toDetails(event, null), rows.map(toChargeInput));
+  const payers = await Promise.all(
+    charges.map(async (c) => {
+      const p = payments.find((x) => x.payer?.api_id === c.payerId);
+      return { ...c, payment: p ? await toPayment(env, p) : null };
+    }),
+  );
+  const sent = event.charges_sent_at;
+  return {
+    payers,
+    total: Math.round(charges.reduce((t, c) => t + c.total, 0) * 100) / 100,
+    sentAt: sent,
+    changedSince: sent ? rows.filter((r) => Date.parse(r.updated_at) > Date.parse(sent)).map((r) => nameOf(r.person)).sort() : [],
+  };
+}
+
+/** The charge list has gone to the treasurer (membership account events). */
+export async function markChargesSent(env: Env, user: AuthorizedUser, id: string): Promise<{ ok: true }> {
+  const { event } = await requireManages(env, user, id);
+  if (event.payment_mode !== "account") throw new HttpError("Only membership account events go to the treasurer.", 409, "NOT_ACCOUNT");
+  await db(env).update("events", `id=${eq(event.id)}`, { charges_sent_at: new Date().toISOString() });
+  return { ok: true };
+}
+
+/** The social secretary checked a payer's proof against the real PayMe or bank record (or takes that back). */
+export async function confirmPayment(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true }> {
+  const { rights, event } = await requireManages(env, user, id);
+  const d = db(env);
+  const payer = await d.one<{ id: string }>("people", `select=id&api_id=${eq(text(body.personId, 40))}`);
+  if (!payer) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");
+  const confirmed = body.confirmed === true;
+  const done = await d.update<{ event_id: string }>("event_payments", `event_id=${eq(event.id)}&payer_id=${eq(payer.id)}`, {
+    confirmed_by: confirmed ? rights.personUuid || null : null,
+    confirmed_at: confirmed ? new Date().toISOString() : null,
+  });
+  if (!done.length) throw new HttpError("They haven't uploaded a payment yet.", 404, "NOT_FOUND");
+  return { ok: true };
+}
+
+/** Lets someone off the charge, guests included (or charges them again). */
+export async function waiveCharge(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true }> {
+  const { event } = await requireManages(env, user, id);
+  const d = db(env);
+  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(text(body.personId, 40))}`);
+  if (!person) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");
+  const done = await d.update<{ event_id: string }>("event_responses", `event_id=${eq(event.id)}&person_id=${eq(person.id)}`, { charge_waived: body.waived === true });
+  if (!done.length) throw new HttpError("They haven't answered.", 404, "NOT_FOUND");
   return { ok: true };
 }

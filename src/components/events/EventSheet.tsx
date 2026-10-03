@@ -10,6 +10,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { respondToEvent, searchEventPeople } from '@/api/events';
 import { EVENT_TYPE_LABEL, RESPONSE_LABEL, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines } from './eventText';
+import BillBox from './BillBox';
 
 const STATUSES: ResponseStatus[] = ['going', 'maybe', 'not_going'];
 
@@ -237,6 +238,8 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               {!event.open && <p className="text-xs text-muted-foreground">To change anything now, ask the social secretary.</p>}
             </section>
           )}
+
+          {event.bill && event.paymentMode !== 'free' && !cancelled && <BillBox event={event} />}
 
           {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
             <section className="rounded-xl border border-border p-3 space-y-2">
