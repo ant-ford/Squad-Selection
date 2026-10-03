@@ -8,7 +8,7 @@ import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
 import { respondToEvent, searchEventPeople } from '@/api/events';
-import { EVENT_TYPE_LABEL, RESPONSE_LABEL, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
+import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines } from './eventText';
 import BillBox from './BillBox';
 
@@ -24,6 +24,7 @@ export interface Draft {
   status: ResponseStatus | null;
   guests: Guest[];
   canHelp: boolean;
+  answers: Record<string, string>;
   notes: string;
 }
 
@@ -31,10 +32,11 @@ export const draftOf = (r: ResponseDetails | null, fallback: ResponseStatus | nu
   status: r?.status ?? fallback,
   guests: r?.guests ?? [],
   canHelp: r?.canHelp ?? false,
+  answers: r?.answers ?? {},
   notes: r?.notes ?? '',
 });
 
-/** Going / Maybe / Not going, guests, "I can help" and a note, for one person. */
+/** Going / Maybe / Not going, guests, the event's questions, "I can help" and a note, for one person. */
 export function ResponseEditor({
   event,
   initial,
@@ -43,7 +45,7 @@ export function ResponseEditor({
   onSave,
   onCancel,
 }: {
-  event: Pick<EventDetails, 'guestsAllowed' | 'maxGuests' | 'helpNeeded'>;
+  event: Pick<EventDetails, 'guestsAllowed' | 'maxGuests' | 'helpNeeded' | 'questions'>;
   initial: Draft;
   saving: boolean;
   saveLabel?: string;
@@ -53,6 +55,7 @@ export function ResponseEditor({
   const [d, setD] = useState<Draft>(initial);
   const max = event.maxGuests ?? 1;
   const going = d.status && d.status !== 'not_going';
+  const dietary = asksDietary(event.questions);
   const setGuest = (i: number, g: Partial<Guest>) => setD({ ...d, guests: d.guests.map((x, j) => (j === i ? { ...x, ...g } : x)) });
   return (
     <div className="space-y-3">
@@ -86,7 +89,9 @@ export function ResponseEditor({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <input className={fieldInput} placeholder="Dietary needs (optional)" value={g.dietary ?? ''} onChange={(e) => setGuest(i, { dietary: e.target.value })} aria-label={`Guest ${i + 1} dietary needs`} />
+              {dietary && (
+                <input className={fieldInput} placeholder="Dietary requirements (if any)" value={g.dietary ?? ''} onChange={(e) => setGuest(i, { dietary: e.target.value })} aria-label={`Guest ${i + 1} dietary requirements`} />
+              )}
             </div>
           ))}
           {d.guests.length < max && (
@@ -96,6 +101,18 @@ export function ResponseEditor({
           )}
         </div>
       )}
+      {going &&
+        event.questions.map((q) => (
+          <label key={q.key} className="block space-y-1 text-xs font-medium text-foreground">
+            {q.key === 'dietary' ? 'Your dietary requirements' : q.label}
+            <input
+              className={fieldInput}
+              value={d.answers[q.key] ?? ''}
+              placeholder={q.key === 'dietary' ? 'e.g. vegetarian, no nuts (leave blank if none)' : ''}
+              onChange={(e) => setD({ ...d, answers: { ...d.answers, [q.key]: e.target.value } })}
+            />
+          </label>
+        ))}
       {going && event.helpNeeded && (
         <label className="flex items-start gap-2 text-sm text-foreground">
           <input type="checkbox" className="mt-1" checked={d.canHelp} onChange={(e) => setD({ ...d, canHelp: e.target.checked })} />
@@ -146,6 +163,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
         status: d.status!,
         guests: d.guests.map((g) => ({ ...g, name: g.name.trim() })),
         canHelp: d.canHelp,
+        answers: d.answers,
         notes: d.notes,
       }),
     onSuccess: (_r, v) => {

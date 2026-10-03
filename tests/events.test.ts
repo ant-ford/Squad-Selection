@@ -10,7 +10,7 @@ import { eventTasks, getMyEvents, respondToEvent, saveEvent, uploadPaymentProof 
 import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
+import { answersCsv, cleanAnswers, cleanQuestions, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -146,12 +146,27 @@ describe("event rules", () => {
 });
 
 describe("answering an event", () => {
-  it("saves your own answer with nobody else paying", async () => {
-    const calls = fake({ events: [event()] });
-    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going", guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }] });
+  it("saves your own answer with nobody else paying, and the event's questions", async () => {
+    const asks = event({ questions: [{ key: "dietary", label: "Dietary requirements" }, { key: "q1", label: "T-shirt size" }] });
+    const calls = fake({ events: [asks] });
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, {
+      status: "going",
+      guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }],
+      answers: { dietary: "Vegetarian", q1: "L", q9: "not asked" },
+    });
     const write = upsertOf(calls)!;
     expect(write.url.searchParams.get("on_conflict")).toBe("event_id,person_id");
-    expect(write.body[0]).toMatchObject({ event_id: EVENT_ID, person_id: "uuid-dad", status: "going", signed_up_by_id: null, guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }] });
+    expect(write.body[0]).toMatchObject({
+      event_id: EVENT_ID, person_id: "uuid-dad", status: "going", signed_up_by_id: null,
+      guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }],
+      answers: { dietary: "Vegetarian", q1: "L" },
+    });
+  });
+
+  it("drops guests' dietary needs and stray answers when the event doesn't ask", async () => {
+    const calls = fake({ events: [event()] });
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going", guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }], answers: { dietary: "Vegan" } });
+    expect(upsertOf(calls)!.body[0]).toMatchObject({ guests: [{ name: "Jane", age: "adult" }], answers: {} });
   });
 
   it("records whoever signs another player up as the payer", async () => {
@@ -253,6 +268,7 @@ describe("events in the calendar feed", () => {
     guestsAllowed: true,
     maxGuests: 2,
     helpNeeded: null,
+    questions: [],
     socialFunction: null,
     team: null,
     status: "published" as const,
@@ -356,5 +372,29 @@ describe("paying for events", () => {
     invalidateAll();
     fake({ events: [paid], responses: [] });
     await expect(uploadPaymentProof(payEnv, userOf("recDAD"), EVENT_ID, { dataUrl: img })).rejects.toThrow(/nothing to pay/);
+  });
+});
+
+describe("questions an event asks", () => {
+  it("keeps dietary first and renumbers up to four of the social secretary's own", () => {
+    expect(cleanQuestions([{ key: "q7", label: " T-shirt size " }, { key: "dietary" }, { label: "" }, { label: "Arriving by" }])).toEqual([
+      { key: "dietary", label: "Dietary requirements" },
+      { key: "q1", label: "T-shirt size" },
+      { key: "q2", label: "Arriving by" },
+    ]);
+    expect(cleanQuestions(["x", null, { label: "a" }, { label: "b" }, { label: "c" }, { label: "d" }, { label: "e" }]).map((q) => q.key)).toEqual(["q1", "q2", "q3", "q4"]);
+    expect(cleanAnswers({ q1: " L ", q2: 5, q3: "x" }, [{ key: "q1", label: "Size" }, { key: "q2", label: "Age" }])).toEqual({ q1: "L" });
+  });
+
+  it("lists everyone's answers for the caterer, guests under the member who brings them", () => {
+    const csv = answersCsv({ questions: [{ key: "dietary", label: "Dietary requirements" }] }, [
+      { name: "Dave Smith", status: "going", guests: [{ name: "Jane", age: "adult", dietary: "No nuts" }], answers: { dietary: "Vegetarian" }, canHelp: true, notes: null },
+      { name: "Ann Lee", status: "not_going", guests: [], answers: {}, canHelp: false, notes: null },
+    ]);
+    expect(csv.split("\r\n")).toEqual([
+      "Name,Answer,Guest of,Dietary requirements,Can help,Note",
+      "Dave Smith,Going,,Vegetarian,Yes,",
+      "Jane,Guest (adult),Dave Smith,No nuts,,",
+    ]);
   });
 });

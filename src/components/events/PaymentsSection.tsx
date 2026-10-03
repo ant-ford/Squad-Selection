@@ -13,7 +13,7 @@ const READ_CHIP: Record<ReadStatus, string> = {
   unreadable: 'bg-muted text-muted-foreground',
 };
 
-function download(name: string, text: string) {
+export function downloadCsv(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;
@@ -63,7 +63,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
         <button
           className="text-xs text-primary inline-flex items-center gap-1 disabled:opacity-50"
           disabled={!owing.length}
-          onClick={() => download(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
+          onClick={() => downloadCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
         >
           <Download className="h-3.5 w-3.5" /> Download list
         </button>

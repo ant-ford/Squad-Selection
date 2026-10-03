@@ -35,6 +35,9 @@ import {
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
   answerRefusal,
+  asksDietary,
+  cleanAnswers,
+  cleanQuestions,
   computeCharges,
   judgeProof,
   cleanAudience,
@@ -93,6 +96,7 @@ interface EventRow {
   guests_allowed: boolean;
   max_guests: number | null;
   help_needed: string | null;
+  questions: unknown;
   social_function: SocialFunction | null;
   team_id: string | null;
   audience: unknown;
@@ -100,7 +104,7 @@ interface EventRow {
   team: { team_name: string } | null;
 }
 const EVENT_COLS =
-  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,charges_sent_at,guests_allowed,max_guests,help_needed,social_function,team_id,audience,status,team:teams(team_name)";
+  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,charges_sent_at,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
 
 interface ResponseRow {
   event_id: string;
@@ -109,6 +113,7 @@ interface ResponseRow {
   guests: Guest[] | null;
   can_help: boolean;
   charge_waived: boolean;
+  answers: Record<string, string> | null;
   notes: string | null;
   updated_at: string;
   signed_up_by_id: string | null;
@@ -116,7 +121,7 @@ interface ResponseRow {
   signer: (NameParts & { api_id: string; membership_no: string | null }) | null;
 }
 const RESPONSE_COLS =
-  "event_id,person_id,status,guests,can_help,charge_waived,notes,updated_at,signed_up_by_id," +
+  "event_id,person_id,status,guests,can_help,charge_waived,answers,notes,updated_at,signed_up_by_id," +
   "person:people!event_responses_person_id_fkey(api_id,preferred_name,given_names,surname,membership_no)," +
   "signer:people!event_responses_signed_up_by_id_fkey(api_id,preferred_name,given_names,surname,membership_no)";
 const RESPONSE_KEY = "event_id,person_id";
@@ -141,6 +146,7 @@ function toDetails(r: EventRow, posterUrl: string | null): EventDetails {
     guestsAllowed: r.guests_allowed,
     maxGuests: r.max_guests,
     helpNeeded: r.help_needed,
+    questions: cleanQuestions(r.questions),
     socialFunction: r.social_function,
     team: r.team?.team_name ?? null,
     status: r.status,
@@ -153,6 +159,7 @@ function toResponse(r: ResponseRow): ResponseDetails {
     status: r.status,
     guests: Array.isArray(r.guests) ? r.guests : [],
     canHelp: r.can_help,
+    answers: r.answers && typeof r.answers === "object" ? r.answers : {},
     notes: r.notes,
     signedUpBy: r.signed_up_by_id && r.signer ? { id: r.signer.api_id, name: nameOf(r.signer) } : null,
     waived: !!r.charge_waived,
@@ -360,8 +367,10 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
 
   const status = body.status as ResponseStatus;
   if (!STATUSES.includes(status)) throw new HttpError("Choose Going, Maybe or Not going.", 400, "INVALID_INPUT");
-  const guests = status === "not_going" ? [] : cleanGuests(body.guests, ev.guests_allowed, ev.max_guests);
-  if (typeof guests === "string") throw new HttpError(guests, 400, "INVALID_INPUT");
+  const checked = status === "not_going" ? [] : cleanGuests(body.guests, ev.guests_allowed, ev.max_guests);
+  if (typeof checked === "string") throw new HttpError(checked, 400, "INVALID_INPUT");
+  const questions = cleanQuestions(ev.questions);
+  const guests = asksDietary(questions) ? checked : checked.map(({ name, age }) => ({ name, age }));
   const asManager = manager && body.asManager === true;
   const signedUpBy = existing ? existing.signed_up_by_id : self || asManager ? null : rights.personUuid;
   await d.upsert(
@@ -373,6 +382,7 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
         status,
         guests,
         can_help: status !== "not_going" && !!ev.help_needed && body.canHelp === true,
+        answers: status === "not_going" ? {} : cleanAnswers(body.answers, questions),
         notes: text(body.notes, 300) || null,
         signed_up_by_id: signedUpBy,
       },
@@ -618,6 +628,7 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
     guests_allowed: guestsAllowed,
     max_guests: max,
     help_needed: text(body.helpNeeded, 200) || null,
+    questions: cleanQuestions(body.questions),
     social_function: socialFunction,
     audience: body.audience === undefined ? DEFAULT_AUDIENCE : cleanAudience(body.audience),
   };

@@ -111,6 +111,40 @@ export function effectiveAudience(audience: Selection, teamName: string | null):
   return teamName ? { ...audience, team: [teamName] } : audience;
 }
 
+/** A question the event asks: "dietary" (dietary requirements) or one of the social secretary's own (q1..q4). */
+export interface EventQuestion {
+  key: string;
+  label: string;
+}
+export const DIETARY: EventQuestion = { key: "dietary", label: "Dietary requirements" };
+export const MAX_OWN_QUESTIONS = 4;
+export const asksDietary = (questions: EventQuestion[]) => questions.some((q) => q.key === DIETARY.key);
+
+/** Dietary first if asked, then up to four of their own, renumbered q1..q4. */
+export function cleanQuestions(raw: unknown): EventQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const items = raw.filter((q): q is Record<string, unknown> => !!q && typeof q === "object");
+  const dietary = items.some((q) => q.key === DIETARY.key) ? [DIETARY] : [];
+  const own = items
+    .filter((q) => q.key !== DIETARY.key)
+    .map((q) => (typeof q.label === "string" ? q.label.trim().slice(0, 100) : ""))
+    .filter(Boolean)
+    .slice(0, MAX_OWN_QUESTIONS)
+    .map((label, i) => ({ key: `q${i + 1}`, label }));
+  return [...dietary, ...own];
+}
+
+/** Only answers to the event's questions, each a short text. */
+export function cleanAnswers(raw: unknown, questions: EventQuestion[]): Record<string, string> {
+  const o = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const q of questions) {
+    const v = o[q.key];
+    if (typeof v === "string" && v.trim()) out[q.key] = v.trim().slice(0, 200);
+  }
+  return out;
+}
+
 export interface Guest {
   name: string;
   age: "adult" | "child";
@@ -195,6 +229,8 @@ export interface EventDetails {
   guestsAllowed: boolean;
   maxGuests: number | null;
   helpNeeded: string | null;
+  /** What it asks when people answer. */
+  questions: EventQuestion[];
   socialFunction: SocialFunction | null;
   /** The team's own event; null when club-wide. */
   team: string | null;
@@ -206,6 +242,8 @@ export interface ResponseDetails {
   status: ResponseStatus;
   guests: Guest[];
   canHelp: boolean;
+  /** Their answers to the event's questions. */
+  answers: Record<string, string>;
   notes: string | null;
   /** Who signed them up (and pays), when it wasn't them. */
   signedUpBy: { id: string; name: string } | null;
@@ -235,6 +273,7 @@ export interface RespondInput {
   remove?: boolean;
   guests?: Guest[];
   canHelp?: boolean;
+  answers?: Record<string, string>;
   notes?: string;
 }
 
@@ -288,6 +327,7 @@ export interface EventInput {
   guestsAllowed?: boolean;
   maxGuests?: number | null;
   helpNeeded?: string | null;
+  questions?: EventQuestion[];
   socialFunction?: SocialFunction | null;
   team?: string | null;
   audience?: Selection;
@@ -409,4 +449,19 @@ export function chargesCsv(title: string, date: string, payers: PayerCharge[]): 
     rows.push([p.name, p.membershipNo ?? "", p.total.toFixed(2), what, title, date]);
   }
   return rows.map((r) => r.map(cell).join(",")).join("\r\n");
+}
+
+/** Everyone's answers, for the caterer or the organiser: one line per person, then each guest. */
+export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name: string; status: ResponseStatus; guests: Guest[]; answers: Record<string, string>; canHelp: boolean; notes: string | null }[]): string {
+  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const dietary = asksDietary(event.questions);
+  const header = ["Name", "Answer", "Guest of", ...event.questions.map((q) => q.label), "Can help", "Note"];
+  const out = [header];
+  for (const r of rows.filter((x) => x.status !== "not_going")) {
+    out.push([r.name, RESPONSE_LABEL[r.status], "", ...event.questions.map((q) => r.answers[q.key] ?? ""), r.canHelp ? "Yes" : "", r.notes ?? ""]);
+    for (const g of r.guests) {
+      out.push([g.name, `Guest (${g.age})`, r.name, ...event.questions.map((q) => (q.key === DIETARY.key && dietary ? g.dietary ?? "" : "")), "", ""]);
+    }
+  }
+  return out.map((row) => row.map(cell).join(",")).join("\r\n");
 }

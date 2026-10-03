@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Copy, PartyPopper, Plus, Search, X } from 'lucide-react';
+import { ArrowLeft, Copy, Download, PartyPopper, Plus, Search, X } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -27,7 +27,7 @@ import {
   uploadPoster,
   waiveCharge,
 } from '@/api/events';
-import PaymentsSection from '@/components/events/PaymentsSection';
+import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
 import {
   DEFAULT_AUDIENCE,
   EVENT_GROUPS,
@@ -35,7 +35,11 @@ import {
   EVENT_TYPE_LABEL,
   PAYMENT_LABEL,
   PAYMENT_MODES_OFFERED,
+  DIETARY,
+  MAX_OWN_QUESTIONS,
   SOCIAL_FUNCTIONS,
+  answersCsv,
+  asksDietary,
   audienceOptions,
   describeAudience,
   type EventInput,
@@ -82,6 +86,8 @@ type Form = {
   guestAdultPrice: string;
   guestChildPrice: string;
   helpNeeded: string;
+  dietary: boolean;
+  ownQuestions: string[];
   audience: Selection;
 };
 
@@ -104,6 +110,8 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   guestAdultPrice: num(e?.guestAdultPrice ?? null),
   guestChildPrice: num(e?.guestChildPrice ?? null),
   helpNeeded: e?.helpNeeded ?? '',
+  dietary: e ? asksDietary(e.questions) : false,
+  ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => q.label) ?? [],
   audience: e?.audience ?? DEFAULT_AUDIENCE,
 });
 
@@ -156,6 +164,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
         guestAdultPrice: priceOrNull(f.guestAdultPrice),
         guestChildPrice: priceOrNull(f.guestChildPrice),
         helpNeeded: f.helpNeeded,
+        questions: [...(f.dietary ? [DIETARY] : []), ...f.ownQuestions.filter((l) => l.trim()).map((label, i) => ({ key: `q${i + 1}`, label }))],
         audience: f.audience,
       }),
     onSuccess: (r) => {
@@ -301,6 +310,27 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
           </label>
 
           <div className="rounded-lg border border-border p-3 space-y-2">
+            <p className="text-sm font-semibold text-foreground">Ask people for</p>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" checked={f.dietary} onChange={(e) => set({ dietary: e.target.checked })} />
+              Dietary requirements {f.guestsAllowed && <span className="text-xs text-muted-foreground">(theirs and their guests')</span>}
+            </label>
+            {f.ownQuestions.map((q, i) => (
+              <div key={i} className="flex gap-2">
+                <input className={`${fieldInput} flex-1`} value={q} placeholder="Your question, e.g. T-shirt size" onChange={(e) => set({ ownQuestions: f.ownQuestions.map((x, j) => (j === i ? e.target.value : x)) })} aria-label={`Question ${i + 1}`} />
+                <button className="p-2 rounded-md hover:bg-muted text-muted-foreground" aria-label={`Remove question ${i + 1}`} onClick={() => set({ ownQuestions: f.ownQuestions.filter((_, j) => j !== i) })}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            {f.ownQuestions.length < MAX_OWN_QUESTIONS && (
+              <button className="inline-flex items-center gap-1 text-sm text-primary" onClick={() => set({ ownQuestions: [...f.ownQuestions, ''] })}>
+                <Plus className="h-4 w-4" /> Add a question
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-border p-3 space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-foreground">Who's invited</p>
               <p className="text-xs text-muted-foreground">{count == null ? '…' : `${count} people`}</p>
@@ -393,7 +423,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
   });
   const answer = useMutation({
     mutationFn: ({ personId, d }: { personId: string; d: Draft }) =>
-      respondToEvent(id, { personId, status: d.status!, guests: d.guests, canHelp: d.canHelp, notes: d.notes, asManager: true }),
+      respondToEvent(id, { personId, status: d.status!, guests: d.guests, canHelp: d.canHelp, answers: d.answers, notes: d.notes, asManager: true }),
     onSuccess: () => {
       toast.success('Answer saved');
       setAnswering(null);
@@ -487,7 +517,14 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
 
             {e.status !== 'draft' && (
               <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Answers ({data.responses.length})</h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">Answers ({data.responses.length})</h3>
+                  {data.responses.some((r) => r.status !== 'not_going') && (
+                    <button className="text-xs text-primary inline-flex items-center gap-1" onClick={() => downloadCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}>
+                      <Download className="h-3.5 w-3.5" /> Download answers
+                    </button>
+                  )}
+                </div>
                 {data.responses.length === 0 && <p className="text-sm text-muted-foreground">Nobody yet.</p>}
                 <ul className="divide-y divide-border">
                   {data.responses.map((r) =>
@@ -513,6 +550,8 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                                 + {g.name} ({g.age}){g.dietary ? ` · ${g.dietary}` : ''}
                               </p>
                             ))}
+                          {r.status !== 'not_going' &&
+                            e.questions.map((q) => (r.answers[q.key] ? <p key={q.key}>{q.label}: {r.answers[q.key]}</p> : null))}
                           {r.canHelp && <p>Can help</p>}
                           {e.paymentMode !== 'free' && r.status === 'going' && (
                             <p>
