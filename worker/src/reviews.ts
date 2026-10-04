@@ -385,12 +385,26 @@ function appOrigin(env: Env): string {
   return (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 }
 
+/** The review's sponsor or Membership Officer office's own mailbox, if it has one. */
+async function officeMailbox(env: Env, commitmentId: string, kind: "sponsor" | "officer"): Promise<string | null> {
+  const column = kind === "sponsor" ? "sponsor_office_id" : "membership_officer_office_id";
+  const row = await db(env).one<{ office: { office_email: string | null } | null }>(
+    "commitments",
+    `select=office:offices!commitments_${column}_fkey(office_email)&id=${eq(commitmentId)}`,
+  );
+  return row?.office?.office_email || null;
+}
+
 /**
  * Tells the next person it is their turn. A failed email does not undo the
  * submission: the step is on their My Tasks either way.
  */
 async function notifyNext(env: Env, reviewApiId: string, next: NextStep | undefined, kind: "sponsor" | "officer"): Promise<boolean> {
-  if (!next?.email) return false;
+  if (!next) return false;
+  // Written to as the office: its own mailbox (e.g. mensmembership@hkfchockey.com) when it has one, else their email.
+  const mailbox = await officeMailbox(env, next.commitment_id, kind).catch(() => null);
+  const to = mailbox || next.email;
+  if (!to) return false;
   const year = next.year_no ? `Year ${next.year_no} ` : "";
   const who = next.member_name || "A member";
   const text = kind === "sponsor"
@@ -417,7 +431,7 @@ async function notifyNext(env: Env, reviewApiId: string, next: NextStep | undefi
   try {
     await sendEmail(env, {
       toPersonId: next.person_id,
-      to: next.email,
+      to,
       subject: `Player Statement to review: ${who}`,
       text: text.join("\n"),
       template: kind === "sponsor" ? "commitment-sponsor-review" : "commitment-officer-review",

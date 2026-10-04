@@ -111,6 +111,7 @@ interface Holder {
   apiId: string;
   firstName: string | null;
   name: string | null;
+  /** Where to write to them as this office: its own mailbox (e.g. chair@hkfchockey.com) when it has one, else their email. */
   email: string | null;
 }
 
@@ -123,8 +124,9 @@ async function holders(env: Env, officeIds: string[]): Promise<Record<string, Ho
   if (!ids.length) return {};
   const rows = await db(env).select<{
     id: string;
+    office_email: string | null;
     people: { id: string; api_id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null } | null;
-  }>("offices", `select=id,people!offices_person_id_fkey(id,api_id,preferred_name,given_names,surname,email)&id=${inList(ids)}`);
+  }>("offices", `select=id,office_email,people!offices_person_id_fkey(id,api_id,preferred_name,given_names,surname,email)&id=${inList(ids)}`);
   const out: Record<string, Holder> = {};
   for (const r of rows) {
     if (!r.people) continue;
@@ -134,7 +136,7 @@ async function holders(env: Env, officeIds: string[]): Promise<Record<string, Ho
       apiId: r.people.api_id,
       firstName: r.people.preferred_name || r.people.given_names,
       name: nameOf(r.people),
-      email: r.people.email,
+      email: r.office_email || r.people.email,
     };
   }
   return out;

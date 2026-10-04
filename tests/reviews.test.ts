@@ -54,7 +54,7 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 type Call = { url: URL; method: string; body: any };
-function fake(reviewRow: object | null, opts: { next?: object[]; rpcError?: { code: string; message: string } } = {}) {
+function fake(reviewRow: object | null, opts: { next?: object[]; rpcError?: { code: string; message: string }; mailbox?: string } = {}) {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
     const url = new URL(input);
@@ -64,6 +64,7 @@ function fake(reviewRow: object | null, opts: { next?: object[]; rpcError?: { co
     if (url.pathname.endsWith("/rpc/emails_sent_today")) return reply(0);
     if (url.pathname.includes("/rpc/submit_")) return opts.rpcError ? reply(opts.rpcError, 400) : reply(opts.next ?? []);
     if (url.pathname.endsWith("/api_reviews")) return reply(reviewRow ? [reviewRow] : []);
+    if (url.pathname.endsWith("/commitments")) return reply(opts.mailbox ? [{ office: { office_email: opts.mailbox } }] : []);
     if (url.pathname.endsWith("/api_players")) {
       // Two with HKFC D as their Selected Team (one registered elsewhere), one selected for C.
       return reply([
@@ -194,6 +195,16 @@ describe("submitting", () => {
     const email = calls.find((c) => c.url.host === "api.resend.com")!;
     expect(email.body.to).toEqual(["pat@x.com"]);
     expect(email.body.text).toContain(`https://app.test/review/${REVIEW}`);
+  });
+
+  it("writes to the office's own mailbox when it has one", async () => {
+    const next = [{ step_id: "s1", commitment_id: "c1", person_id: "p-sponsor", email: "pat@x.com", preferred_name: "Pat", member_name: "Sam Smith", year_no: 2 }];
+    const calls = fake(row(), { next, mailbox: "office@hkfchockey.com" });
+    await submitMemberReport(env, user("recMEMBER00000000"), REVIEW, report);
+    expect(calls.find((c) => c.url.host === "api.resend.com")!.body.to).toEqual(["office@hkfchockey.com"]);
+    const lookup = calls.find((c) => c.url.pathname.endsWith("/commitments"))!;
+    expect(lookup.url.searchParams.get("select")).toBe("office:offices!commitments_sponsor_office_id_fkey(office_email)");
+    expect(lookup.url.searchParams.get("id")).toBe("eq.c1");
   });
 
   it("turns the database's refusals into clear answers", async () => {
