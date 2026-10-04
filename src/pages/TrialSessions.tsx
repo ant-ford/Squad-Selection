@@ -15,15 +15,16 @@ import { addTrialSession, listTrialSessions, removeTrialSession } from '@/api/tr
 
 /**
  * The trial sessions people registering to join can choose from (Section
- * Captains). Only sessions still to come are offered; once they've all
- * passed, registrants are told the club will be in touch about a practice.
+ * Captains and the Assistant Director of Hockey). Only sessions still to
+ * come are offered; once they've all passed, registrants are told the club
+ * will be in touch about a practice.
  */
 export default function TrialSessionsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
-  // The planning section is the Section Captains office, on the Supabase backend only.
-  const allowed = profile?.sections?.includes('planning') ?? false;
+  // The trials section: the Section Captains and Assistant Director of Hockey offices, on the Supabase backend only.
+  const allowed = profile?.sections?.includes('trials') ?? false;
   const list = useQuery({ queryKey: ['trialSessions'], queryFn: listTrialSessions, enabled: allowed });
   const [startsAt, setStartsAt] = useState('');
   const [place, setPlace] = useState('HKFC pitch');
@@ -47,7 +48,7 @@ export default function TrialSessionsPage() {
 
   const body = () => {
     if (profileLoading || list.isLoading) return <Skeleton className="h-64 w-full" />;
-    if (!allowed) return <p className="text-sm text-muted-foreground">Trial sessions are kept by the Section Captains.</p>;
+    if (!allowed) return <p className="text-sm text-muted-foreground">Trial sessions are kept by the Section Captains and the Assistant Director of Hockey.</p>;
     const now = Date.now();
     return (
       <>
@@ -136,10 +137,12 @@ export default function TrialSessionsPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <AppHeader subtitle="Trial sessions">
-        <button onClick={() => navigate('/membership')} className={headerNavClass()}>
-          <Users className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Membership</span>
-        </button>
+        {profile?.sections?.includes('membership') && (
+          <button onClick={() => navigate('/membership')} className={headerNavClass()}>
+            <Users className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Membership</span>
+          </button>
+        )}
       </AppHeader>
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />

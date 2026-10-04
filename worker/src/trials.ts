@@ -15,7 +15,7 @@
  *    is told when to come), propose them as a new joiner, or not this time.
  */
 import type { Env } from "./env";
-import type { AuthorizedUser } from "./auth";
+import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
@@ -39,6 +39,14 @@ const isCaptain = (user: AuthorizedUser) => user.officerRoles.some((r) => r.offi
 function requireCaptain(env: Env, user: AuthorizedUser): void {
   requireSupabase(env);
   if (!isCaptain(user)) throw new HttpError("This is for Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
+}
+
+/** The trial sessions list: the Section Captains and the Assistant Director of Hockey (auth.ts). */
+function requireTrialSessions(env: Env, user: AuthorizedUser): void {
+  requireSupabase(env);
+  if (!sectionsFor(user, env).includes("trials")) {
+    throw new HttpError("This is for Section Captains and the Assistant Director of Hockey.", 403, "OFFICER_ACCESS_REQUIRED");
+  }
 }
 
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
@@ -216,10 +224,10 @@ async function tellCaptains(env: Env, t: TrialistRow, p: Record<string, unknown>
   });
 }
 
-// ── Section Captains ─────────────────────────────────────────────────────
+// ── Section Captains (and the Assistant Director of Hockey for the sessions) ──
 
 export async function listSessions(env: Env, user: AuthorizedUser): Promise<{ sessions: (TrialSession & { count: number })[] }> {
-  requireCaptain(env, user);
+  requireTrialSessions(env, user);
   const d = db(env);
   // This season's, from a month back.
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
@@ -231,7 +239,7 @@ export async function listSessions(env: Env, user: AuthorizedUser): Promise<{ se
 }
 
 export async function addSession(env: Env, user: AuthorizedUser, body: Record<string, unknown>): Promise<{ id: string }> {
-  requireCaptain(env, user);
+  requireTrialSessions(env, user);
   const startsAt = text(body.startsAt, 40);
   const place = text(body.place, 120);
   if (!startsAt || Number.isNaN(Date.parse(startsAt))) throw new HttpError("Give the date and time.", 400, "INVALID_INPUT");
@@ -245,7 +253,7 @@ export async function addSession(env: Env, user: AuthorizedUser, body: Record<st
 }
 
 export async function removeSession(env: Env, user: AuthorizedUser, id: string): Promise<{ ok: true }> {
-  requireCaptain(env, user);
+  requireTrialSessions(env, user);
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError("Session not found.", 404, "NOT_FOUND");
   await db(env).remove("trial_sessions", `id=${eq(id)}`);
   return { ok: true };

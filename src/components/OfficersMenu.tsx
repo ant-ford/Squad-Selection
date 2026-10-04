@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, ClipboardList, HeartHandshake, LayoutGrid, Mail, PartyPopper, Shirt, Users, type LucideIcon } from 'lucide-react';
+import { CalendarClock, ChevronDown, ClipboardList, HeartHandshake, LayoutGrid, Mail, PartyPopper, Shirt, Users, type LucideIcon } from 'lucide-react';
 import { headerIconClass, headerNavClass } from '@/components/AppHeader';
 
 interface Item {
@@ -29,6 +29,7 @@ export function officerItems(p: {
     s.includes('chairman') && { to: '/chairman', label: 'Email lists', icon: Mail },
     (s.includes('planning') || p.seasonPlans) && { to: '/season-plans', label: 'Season plans', icon: ClipboardList },
     p.volunteers && { to: '/volunteers', label: 'Volunteers', icon: HeartHandshake },
+    s.includes('trials') && { to: '/trial-sessions', label: 'Trial sessions', icon: CalendarClock },
     p.events && { to: '/events/manage', label: 'Events', icon: PartyPopper },
     s.includes('kit') && { to: '/kit', label: 'Kit', icon: Shirt },
   ];

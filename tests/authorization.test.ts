@@ -51,6 +51,7 @@ const officerLinks = {
     recChair: [{ office: "sectionChair", designation: "Chairman" }],
     recCoach: [{ office: "sectionChair", designation: "Men's Captain" }],
     recCaptainRow: [{ office: "sectionCaptain", designation: "Men's Vice Captain" }],
+    recAdh: [{ office: "assistantDirector", designation: "" }],
   },
 };
 
@@ -69,6 +70,8 @@ const people = {
   chairman: { id: "recChair", email: "chair@personal.com", active: false, playerCoach: [] },
   // A row in the Section Captains TABLE, not a Teams.Section Captain link.
   sectionCaptainRow: { id: "recCaptainRow", email: "vice@personal.com", active: false, playerCoach: [] },
+  // The Assistant Director of Hockey office: no Teams link at all.
+  assistantDirector: { id: "recAdh", email: "adh@hkfc.com", active: false, playerCoach: [] },
 };
 
 // ---------------------------------------------------------------------------
@@ -498,5 +501,47 @@ describe("officers' sections", () => {
 
     await expect(requireSection(authedRequest(), ENV, "membership")).resolves.toMatchObject({ personId: "recCaptainRow" });
     await expect(requireSection(authedRequest(), ENV, "chairman")).resolves.toMatchObject({ personId: "recCaptainRow" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The Assistant Director of Hockey (owner decision 2026-10-04): coach rights
+// for every team and the trial sessions, nothing else of the officers'.
+// ---------------------------------------------------------------------------
+
+describe("the Assistant Director of Hockey", () => {
+  const SUPABASE_ENV = { ...ENV, DATA_BACKEND: "supabase" };
+
+  it("coaches every team without a Teams link, as a Section Captain does", async () => {
+    supabaseReturns("adh@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.assistantDirector);
+
+    const user = await requireCoach(authedRequest(), ENV);
+
+    expect(user).toMatchObject({
+      role: "coach",
+      coachTeams: teamLinks.allTeamNames,
+      // Ranking configuration and events stay with the Section Captains.
+      isSectionCaptain: false,
+    });
+  });
+
+  it("opens only the trials section, and only on Supabase", async () => {
+    supabaseReturns("adh@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.assistantDirector);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["trials"]);
+    expect(sectionsFor(user, ENV)).toEqual([]);
+  });
+
+  it("leaves a Section Captains row its trials section", async () => {
+    supabaseReturns("vice@personal.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.sectionCaptainRow);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
   });
 });

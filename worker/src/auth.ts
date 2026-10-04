@@ -22,8 +22,9 @@ export interface AuthorizedUser {
   role: "player" | "coach";
   /**
    * Team names this person coaches (Teams.Coach link). A Section Captain's
-   * list is every team name, regardless of Active status - Section Captains
-   * see the whole section everywhere, the most permissive existing path.
+   * and the Assistant Director of Hockey's list is every team name,
+   * regardless of Active status - they see the whole section everywhere,
+   * the most permissive existing path.
    */
   coachTeams: string[];
   isSectionCaptain: boolean;
@@ -94,13 +95,16 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // entry when the team record has a non-empty Team Name, so deriving access
   // from it silently locked out anyone coaching a team whose name was blank.
   const isTeamCoach = links.coachIds.includes(player.id);
+  const officerRoles = officers.rolesByPersonId[player.id] ?? [];
+  // The Assistant Director of Hockey coaches every team, like a Section
+  // Captain's team link (owner decision, 2026-10-04).
+  const coachesAllTeams = isSectionCaptain || officerRoles.some((r) => r.office === "assistantDirector");
   // Section Captains see every team everywhere - the most permissive of the
   // paths this used to be computed on, now the single definition.
-  const coachTeams = isSectionCaptain
+  const coachTeams = coachesAllTeams
     ? links.allTeamNames
     : links.coachTeamNamesByPersonId[player.id] ?? [];
-  const isCoach = isTeamCoach || isSectionCaptain;
-  const officerRoles = officers.rolesByPersonId[player.id] ?? [];
+  const isCoach = isTeamCoach || coachesAllTeams;
 
   // Applicants in the New Joiner process sign in to fill in their application
   // (Supabase backend: the form is Eddy's own screen there).
@@ -156,16 +160,22 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *   planning   - every team's season plans: Section Captains (coaches see
  *                their own teams' through the coach screens). Supabase
  *                backend only.
+ *   trials     - the trial sessions people registering to join choose
+ *                from: Section Captains and the Assistant Director of
+ *                Hockey (owner decision, 2026-10-04). Deciding on a
+ *                registration stays with the Section Captains. Supabase
+ *                backend only.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
   chairman: ["sectionChair", "sectionCaptain"],
   kit: ["kitConvenor", "sectionCaptain"],
   planning: ["sectionCaptain"],
+  trials: ["sectionCaptain", "assistantDirector"],
 } as const satisfies Record<string, readonly Office[]>;
 
 /** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning"];
+const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials"];
 
 export type Section = keyof typeof SECTION_OFFICES;
 
