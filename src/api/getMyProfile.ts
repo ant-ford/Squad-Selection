@@ -8,11 +8,11 @@ export interface ProfileData {
   isSectionCaptain: boolean;
   /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
   officerRoles: {
-    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor';
+    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor' | 'assistantDirector';
     designation: string;
   }[];
   /** Officers' sections this person may open, decided by the Worker. */
-  sections: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  sections: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials')[];
   /** Whether the Hockey Rules quizzes are in Eddy yet (Supabase backend). */
   quizzes?: boolean;
   /** An applicant or someone registering to join: their home is the application page. */

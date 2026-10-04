@@ -73,7 +73,10 @@ export default function FixtureList() {
   }, [allFixtures, activeTab, showPast]);
 
   const coachTeams = profile?.coachTeams ?? [];
-  const isSectionCaptain = !!profile?.isSectionCaptain;
+  // Section Captains and the Assistant Director of Hockey coach every team
+  // (worker/src/auth.ts): a tab for each team that has fixtures.
+  const coachesAllTeams =
+    !!profile?.isSectionCaptain || !!profile?.officerRoles?.some((r) => r.office === 'assistantDirector');
 
   const allTeamNames = useMemo(() => {
     const names = new Set(allFixtures.map((f) => f.hkfcTeam).filter(Boolean));
@@ -82,7 +85,7 @@ export default function FixtureList() {
 
   const tabs = [
     { key: 'all', label: 'All' },
-    ...(isSectionCaptain
+    ...(coachesAllTeams
       ? allTeamNames.map((name) => ({ key: name, label: name }))
       : coachTeams.map((t) => ({ key: t.teamName, label: t.teamName }))
     ),

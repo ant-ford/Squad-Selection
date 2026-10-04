@@ -11,7 +11,14 @@ import { OFFICER_FIELDS } from "../../../shared/schema/fieldMaps";
  * Sponsors share the shape; a sponsor row names who signs an application
  * (contacts.ts) and grants no section access.
  */
-export type Office = "membershipOfficer" | "sectionChair" | "sectionCaptain" | "sponsor" | "kitConvenor" | "hockeyConvenor";
+export type Office =
+  | "membershipOfficer"
+  | "sectionChair"
+  | "sectionCaptain"
+  | "sponsor"
+  | "kitConvenor"
+  | "hockeyConvenor"
+  | "assistantDirector";
 
 export const OFFICE_TABLES: Record<Office, string> = {
   membershipOfficer: TABLES.membershipOfficer,
@@ -24,6 +31,9 @@ export const OFFICE_TABLES: Record<Office, string> = {
   // Supabase only too: it lets the Hockey Convenor sign in to open league
   // registration requests (joiners.ts). It opens no officer section.
   hockeyConvenor: "Hockey Convenor",
+  // Supabase only: coach rights for every team and the trial sessions
+  // (auth.ts).
+  assistantDirector: "Assistant Director of Hockey",
 };
 
 /** One office row: who holds it (People ids) and its Designation. */
