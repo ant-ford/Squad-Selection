@@ -103,7 +103,7 @@ import {
 } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
-import { getRecommendationsForMatch } from "./recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
 import {
   handleGetCalendarLink,
   handlePlayerCalendarFeed,
@@ -287,6 +287,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       await requireAuthorizedUser(request, env);
       const side = url.searchParams.get("side") as "home" | "away" | null;
       return json(await getSquadForMatch(env, matchSquadMatch[1], side ?? undefined), 200, origin);
+    }
+
+    // Also player-facing: the fixture sheet's selected / rest-of-team /
+    // suggestions lists. Names, positions and statuses only - see
+    // getTeamAvailabilityForMatch for what is left out and why.
+    const matchTeamAvailMatch = pathname.match(/^\/api\/match\/([^/]+)\/team-availability$/);
+    if (method === "GET" && matchTeamAvailMatch) {
+      await requireAuthorizedUser(request, env);
+      const side = url.searchParams.get("side") as "home" | "away" | null;
+      return json(await getTeamAvailabilityForMatch(env, matchTeamAvailMatch[1], side ?? undefined), 200, origin);
     }
 
     // The remaining match reads back the coach-only selection screens.
