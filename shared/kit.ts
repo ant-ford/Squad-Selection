@@ -230,3 +230,83 @@ export const KIT_SIZE_CHARTS: Record<string, { garment: string; columns: string[
     },
   ],
 };
+
+// ── Insights (owner, 6 Oct 2026): sizes for guessing a re-order, and where
+// the kit is. Worked out from the board the kit screen already has.
+
+/** The items a size count is kept for: the smock style isn't a size. */
+export const SIZE_ITEMS = KIT_ITEMS.filter((i) => i.key !== "goalieSmockStyle") as { key: Exclude<keyof KitSizes, "goalieSmockStyle">; label: string }[];
+
+export interface SizeCount {
+  size: string;
+  /** People in the group who wear this size. */
+  people: number;
+  /** Spare sets in this order in this size (no Active owner). */
+  spares: number;
+}
+
+/**
+ * How many people wear each size of one item, in the size chart's order
+ * (any size not on the chart goes last), with the spares in each size.
+ * `missing` is how many in the group have no size for it.
+ */
+export function sizeCounts(item: keyof KitSizes, people: Pick<KitPerson, "sizes">[], sets: Pick<KitSet, "owner" | "sizes">[]) {
+  const chart = KIT_SIZE_OPTIONS[item];
+  const byPeople = new Map<string, number>();
+  const bySpares = new Map<string, number>();
+  let missing = 0;
+  for (const p of people) {
+    const s = p.sizes[item];
+    if (s) byPeople.set(s, (byPeople.get(s) ?? 0) + 1);
+    else missing++;
+  }
+  for (const set of sets) {
+    const s = set.sizes[item];
+    if (!set.owner && s) bySpares.set(s, (bySpares.get(s) ?? 0) + 1);
+  }
+  const seen = [...new Set([...byPeople.keys(), ...bySpares.keys()])];
+  const order = [...chart.filter((s) => seen.includes(s)), ...seen.filter((s) => !chart.includes(s))];
+  const rows: SizeCount[] = order.map((size) => ({ size, people: byPeople.get(size) ?? 0, spares: bySpares.get(size) ?? 0 }));
+  return { rows, missing };
+}
+
+/**
+ * Splits an order of `total` across sizes in proportion to how many wear
+ * each (largest remainder, so the parts add up to the total exactly).
+ */
+export function splitOrder(counts: number[], total: number): number[] {
+  const sum = counts.reduce((a, b) => a + b, 0);
+  if (sum === 0 || total <= 0) return counts.map(() => 0);
+  const exact = counts.map((c) => (c * total) / sum);
+  const out = exact.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const byRemainder = exact.map((e, i) => [e - Math.floor(e), i] as const).sort((a, b) => b[0] - a[0] || counts[b[1]] - counts[a[1]]);
+  for (const [, i] of byRemainder) {
+    if (left <= 0) break;
+    out[i]++;
+    left--;
+  }
+  return out;
+}
+
+export interface KitHolder extends KitPersonRef {
+  /** Sets they have that belong to someone else, or are spares. */
+  sets: Pick<KitSet, "id" | "shirtNo" | "owner" | "heldSince" | "pendingTo">[];
+}
+
+/**
+ * Who has kit that isn't theirs (captains, friends collecting for others),
+ * most sets first. The kit store isn't a person, so it isn't listed.
+ */
+export function kitHolders(sets: KitSet[]): KitHolder[] {
+  const by = new Map<string, KitHolder>();
+  for (const s of sets) {
+    if (s.place !== "with_holder" || !s.holder) continue;
+    const h = by.get(s.holder.id) ?? { ...s.holder, sets: [] };
+    h.sets.push({ id: s.id, shirtNo: s.shirtNo, owner: s.owner, heldSince: s.heldSince, pendingTo: s.pendingTo });
+    by.set(s.holder.id, h);
+  }
+  return [...by.values()]
+    .map((h) => ({ ...h, sets: h.sets.sort((a, b) => a.shirtNo - b.shirtNo) }))
+    .sort((a, b) => b.sets.length - a.sets.length || a.name.localeCompare(b.name));
+}
