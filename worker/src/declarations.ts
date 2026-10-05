@@ -49,13 +49,9 @@ function requireSupabase(env: Env): void {
   }
 }
 
-/** Under 18 today, Hong Kong time: born less than 18 years before today. */
-export function isUnderEighteen(dateOfBirth: string | null, today: string): boolean {
-  if (!dateOfBirth) return false;
-  const [y, m, d] = today.split("-").map(Number);
-  const eighteenth = `${y - 18}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  return dateOfBirth.slice(0, 10) > eighteenth;
-}
+// Lives in shared/declarations.ts now (the registration screen uses it too).
+import { isUnderEighteen } from "../../shared/declarations";
+export { isUnderEighteen };
 
 async function loadPerson(env: Env, personApiId: string): Promise<PersonRow> {
   const row = await db(env).one<PersonRow>(

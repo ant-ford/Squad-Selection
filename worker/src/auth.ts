@@ -165,6 +165,10 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *                Hockey (owner decision, 2026-10-04). Deciding on a
  *                registration stays with the Section Captains. Supabase
  *                backend only.
+ *   registration - every Active player's HKHA registration details, HKID
+ *                and passport numbers included: the Hockey Convenor ONLY,
+ *                not the Section Captains (owner decision, 2026-10-06).
+ *                Supabase backend only.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -172,10 +176,11 @@ export const SECTION_OFFICES = {
   kit: ["kitConvenor", "sectionCaptain"],
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
+  registration: ["hockeyConvenor"],
 } as const satisfies Record<string, readonly Office[]>;
 
 /** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials"];
+const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration"];
 
 export type Section = keyof typeof SECTION_OFFICES;
 

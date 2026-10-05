@@ -87,7 +87,7 @@ export interface GetMyFixturesOutput {
   captainTeams: string[];
   isSectionCaptain: boolean;
   /** Officers' sections this person may open, decided by the Worker. */
-  sections?: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  sections?: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials' | 'registration')[];
   /** Whether the Season plans screen has anything for them (coaches, Section Captains). */
   seasonPlans?: boolean;
   /** Whether the Volunteers screen is theirs (officers, coaches, captains). */

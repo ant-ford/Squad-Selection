@@ -12,7 +12,7 @@ export interface ProfileData {
     designation: string;
   }[];
   /** Officers' sections this person may open, decided by the Worker. */
-  sections: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials')[];
+  sections: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials' | 'registration')[];
   /** Whether the Hockey Rules quizzes are in Eddy yet (Supabase backend). */
   quizzes?: boolean;
   /** An applicant or someone registering to join: their home is the application page. */
