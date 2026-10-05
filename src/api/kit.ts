@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
+import { saveCsv } from '@/lib/saveCsv';
 import type { KitBoard, KitMove, KitMoveResult, KitSizes, MyKit, SwappableItem } from '@shared/kit';
 
 /** Kit (worker/src/kit.ts). The board and its actions are the kit section's. */
@@ -63,16 +64,6 @@ export async function downloadTopUp(orderId?: string | null): Promise<number> {
     '/api/kit/top-up',
     orderId ? { order: orderId } : undefined,
   );
-  const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }));
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  saveCsv(filename, csv);
   return count;
 }

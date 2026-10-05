@@ -162,6 +162,17 @@ describe("the Section Captain's new joiner form", () => {
     const calls = fake({ steps: [step], people: [{ id: U(7) }] });
     await completeJoinerTask(env, player, U(800));
     expect(writes(calls, "steps", "PATCH")[0].body).toMatchObject({ done_by_person_id: U(7) });
+    // A kit task records no HKHA registration.
+    expect(writes(calls, "hkha_registrations", "POST")).toEqual([]);
+  });
+
+  it("ticks a new joiner off the Convenor's registration list when their registration task is done", async () => {
+    const step = { id: U(800), step: "registration", person_id: U(900), started_at: "2026-10-01T00:00:00Z", done_at: null, waiting_on_person_id: U(7) };
+    // The fake answers every people read alike: the convenor's lookup and the joiner's team.
+    const calls = fake({ steps: [step], people: [{ id: U(7), registered_team: "HKFC C" }], hkha_registrations: [] });
+    await completeJoinerTask(env, player, U(800));
+    expect(calls.some((c) => c.method === "GET" && c.url.pathname.endsWith("/people") && c.url.searchParams.get("id") === `in.(${U(900)})`)).toBe(true);
+    expect(writes(calls, "hkha_registrations", "POST")[0].body).toEqual([expect.objectContaining({ team: "HKFC C", registered_by_person_id: U(7) })]);
   });
 });
 
