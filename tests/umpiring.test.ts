@@ -274,6 +274,7 @@ describe("clashes with the umpire's own games", () => {
 
   it("allows for travel to another ground", () => {
     expect(clashingGame(at("10:45", "KP"), [game("12:30")])).toBeTruthy();
+    expect(clashingGame(at("10:45", "KP"), [game("12:45")])).toBeUndefined(); // two hours apart
     expect(clashingGame(at("10:45", "KP"), [game("13:30")])).toBeUndefined();
   });
 

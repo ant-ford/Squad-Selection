@@ -62,8 +62,8 @@ export interface OwnGame {
 
 /** Same ground: the next slot (1h45 later) is fine, anything closer overlaps. */
 const SAME_GROUND_MS = 105 * 60 * 1000;
-/** Another ground: time to get there too. */
-const OTHER_GROUND_MS = 150 * 60 * 1000;
+/** Another ground: a small margin for getting there (owner, 6 Oct 2026). */
+const OTHER_GROUND_MS = 120 * 60 * 1000;
 
 /** A TBC kick-off is stored as midnight HK time. */
 const isTbc = (iso: string) => hkTime(iso) === "00:00";
