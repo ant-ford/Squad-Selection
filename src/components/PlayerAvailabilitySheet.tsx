@@ -64,10 +64,9 @@ function PlayerList({
 }
 
 function Section({
-  title, hint, rows, empty, selected = false, viewerId,
+  title, rows, empty, selected = false, viewerId,
 }: {
   title: string;
-  hint?: string;
   /** null while loading. */
   rows: TeamAvailabilityRow[] | null;
   empty: string;
@@ -82,7 +81,6 @@ function Section({
           <span className="text-[11px] text-muted-foreground shrink-0">{tally(rows, selected)}</span>
         )}
       </div>
-      {hint && <p className="text-[11px] text-muted-foreground -mt-1 mb-2">{hint}</p>}
       {rows === null ? (
         <div className="space-y-1">
           <Skeleton className="h-4 w-full" />
@@ -152,7 +150,6 @@ export default function PlayerAvailabilitySheet({
             />
             <Section
               title="Recommended from other teams"
-              hint="The top five from the coaches' recommendations."
               rows={lists?.suggestions ?? null}
               empty="No recommendations right now"
               viewerId={viewerId}
