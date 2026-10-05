@@ -87,6 +87,7 @@ import {
   swapItem,
   topUpCsv,
 } from "./kit";
+import { getRegistrationBoard, markRegistered, registrationCsv, unmarkRegistered } from "./registration";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -887,6 +888,22 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const task = pathname.match(/^\/api\/joiner-tasks\/([0-9a-f-]{36})(\/done)?$/);
       if (task && method === "GET" && !task[2]) return json(await getJoinerTask(env, user, task[1]), 200, origin);
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
+    }
+
+    // ── HKHA registration (Supabase backend; src/registration.ts) ─────────
+    // HKID and passport numbers: the Hockey Convenor only.
+    if (pathname.startsWith("/api/registration/")) {
+      const user = await requireSection(request, env, "registration");
+      if (method === "GET" && pathname === "/api/registration/board") return json(await getRegistrationBoard(env), 200, origin);
+      if (method === "GET" && pathname === "/api/registration/export") {
+        const opts = { todo: url.searchParams.get("todo") === "1", team: url.searchParams.get("team") || null };
+        return json(await registrationCsv(env, user, opts), 200, origin);
+      }
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
+        if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
+      }
     }
 
     // ── Volunteering (Supabase backend; src/volunteering.ts) ──────────────

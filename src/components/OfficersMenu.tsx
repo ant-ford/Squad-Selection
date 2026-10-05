@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CalendarClock, ChevronDown, ClipboardList, Flag, HeartHandshake, LayoutGrid, Mail, PartyPopper, Shirt, Users, type LucideIcon } from 'lucide-react';
+import { CalendarClock, ChevronDown, ClipboardList, Flag, HeartHandshake, IdCard, LayoutGrid, Mail, PartyPopper, Shirt, Users, type LucideIcon } from 'lucide-react';
 import { headerIconClass, headerNavClass } from '@/components/AppHeader';
 
 interface Item {
@@ -33,6 +33,7 @@ export function officerItems(p: {
     s.includes('trials') && { to: '/trial-sessions', label: 'Trial sessions', icon: CalendarClock },
     p.events && { to: '/events/manage', label: 'Events', icon: PartyPopper },
     s.includes('kit') && { to: '/kit', label: 'Kit', icon: Shirt },
+    s.includes('registration') && { to: '/registration', label: 'HKHA registration', icon: IdCard },
     p.umpiring === 'coordinator' && { to: '/umpiring', label: 'Umpiring', icon: Flag },
   ];
   return all.filter((i): i is Item => !!i);
