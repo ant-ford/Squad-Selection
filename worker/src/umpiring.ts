@@ -137,8 +137,14 @@ async function personByApiId(env: Env, apiId: string): Promise<PersonRow> {
 export async function umpiringAccess(env: Env, user: AuthorizedUser): Promise<UmpiringAccess | null> {
   if (backendFor(env, "people") !== "supabase") return null;
   if (isCoordinator(user)) return "coordinator";
-  const pool = await umpirePool(env);
-  for (const p of pool.values()) if (p.api_id === user.personId) return "umpire";
+  // Asked on every player page: a failure here (a database without the
+  // umpiring tables yet) hides the screen, never the page.
+  try {
+    const pool = await umpirePool(env);
+    for (const p of pool.values()) if (p.api_id === user.personId) return "umpire";
+  } catch (err) {
+    console.error("Umpiring access not read:", err instanceof Error ? err.message : err);
+  }
   return null;
 }
 

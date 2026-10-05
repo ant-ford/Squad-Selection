@@ -138,6 +138,12 @@ describe("who sees the duties", () => {
     expect(await umpiringAccess({ ...env, DATA_BACKEND: "airtable" }, user("recANN"))).toBeNull();
   });
 
+  it("hides the screen, not the player page, when the umpiring tables can't be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fake({ people: people(), matches: [], umpire_assignments: () => new Response(JSON.stringify({ code: "42P01", message: "relation does not exist" }), { status: 404 }) });
+    expect(await umpiringAccess(env, user("recANN"))).toBeNull();
+  });
+
   it("includes anyone who umpired a game in Eddy this year", async () => {
     fake({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] });
     expect(await umpiringAccess(env, user("recCAT"))).toBe("umpire");
