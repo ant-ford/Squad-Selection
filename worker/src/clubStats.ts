@@ -33,6 +33,7 @@ import {
   addWDL,
   emptyWDL,
   isHkfcTeam,
+  type MatchResult,
   type PlayerSeason,
   type PlayerTeamLine,
   type SeasonSummary,
@@ -116,8 +117,21 @@ export interface SummaryInput {
 export function buildSeasonSummary(input: SummaryInput): StoredSummary {
   const { season, matches, cards, names, byFullName = {}, today } = input;
   const carded = new Set(cards.flatMap((c) => c.match ?? []));
-  const counted = matches.filter((m) => counts(m, carded, today));
+  const counted = matches
+    .filter((m) => counts(m, carded, today))
+    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || "") || a.id.localeCompare(b.id));
   const byId = new Map(counted.map((m) => [m.id, m]));
+  // Each game's place in `results`, which players' games point into.
+  const resultIndex = new Map(counted.map((m, i) => [m.id, i]));
+  const results: MatchResult[] = counted.map((m) => ({
+    date: hkDateKey(m.matchDate),
+    home: m.homeTeam,
+    away: m.awayTeam,
+    homeScore: m.homeTeamScore,
+    awayScore: m.awayTeamScore,
+    ...(m.division ? { division: m.division } : {}),
+    ...(m.venue ? { venue: m.venue } : {}),
+  }));
 
   // ── Teams ──
   const teams = new Map<string, TeamSeason>();
@@ -179,6 +193,7 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
     // eligibility count makes.
     if (c.playUp === true && c.goalkeeper !== true) line.playUps += 1;
     bump(line, result);
+    (p.played ??= []).push([resultIndex.get(matchId)!, c.goals ?? 0, byId.get(matchId)!.homeTeam === team ? 0 : 1]);
     players.set(key, p);
 
     for (const value of c.cards ?? []) {
@@ -189,6 +204,8 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
       cardsInMatch.set(matchId, (cardsInMatch.get(matchId) ?? 0) + card.quantity);
     }
   }
+
+  for (const p of players.values()) p.played?.sort((a, b) => a[0] - b[0]);
 
   // ── Umpires ──
   const teamNames = new Set(matches.flatMap((m) => [m.homeTeam, m.awayTeam]).filter(Boolean));
@@ -242,6 +259,7 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
       players: [...players.values()],
       umpires: [...umpires.values()],
       umpireSplits: splits,
+      results,
     },
     cardsByPlayer,
   };

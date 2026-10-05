@@ -9,6 +9,7 @@ import { recentSeasons, shortSeason } from '@/api/stats';
 import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import PlayersTab from '@/components/stats/PlayersTab';
 import { CharmsTab, UmpiresTab } from '@/components/stats/LuckTabs';
+import ResultsCard from '@/components/stats/ResultsCard';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
@@ -377,6 +378,8 @@ function ClubTab({
 
       <LeagueCard stats={stats} />
 
+      <ResultsCard key={stats.seasons.join()} results={stats.results} caption="Every team's games." multiSeason={allTime} />
+
       <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">
         <Leaders title="Most appearances" rows={leaders(stats.players, 'apps')} unit="appearances" split />
@@ -453,6 +456,13 @@ function TeamsTab({
       {summaries.length > 1 && <SeasonBySeason summaries={summaries} team={t.team} />}
 
       <LeagueCard stats={stats} team={t.team} />
+
+      <ResultsCard
+        key={`${t.team}|${stats.seasons.join()}`}
+        results={stats.results.filter((r) => r.home === t.team || r.away === t.team)}
+        team={t.team}
+        multiSeason={stats.seasons.length > 1}
+      />
 
       <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">

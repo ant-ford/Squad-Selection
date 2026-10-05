@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowLeft, Search } from 'lucide-react';
 import { Columns, ChartCard, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
 import { shortSeason, type SeasonStats } from '@/api/stats';
+import ResultsCard from '@/components/stats/ResultsCard';
 import {
   careerOf,
   playerRows,
@@ -321,6 +322,13 @@ function CareerView({
           />
         </ChartCard>
       </div>
+
+      <ResultsCard
+        key={`${player}|${season ?? 'all'}`}
+        results={career.results}
+        caption={season ? 'Their games this season.' : 'Their games, every season.'}
+        multiSeason={!season}
+      />
     </div>
   );
 }
