@@ -1,3 +1,5 @@
+-- Renumbered from 20261006120000, which clashed with 20261006120000_hkha_registrations.
+
 -- The register (owner, 6 Oct 2026): who came is ticked off, not who didn't.
 -- Spotting who's missing meant remembering everyone who said Going; a
 -- register is ticked at the door. Members can also tick themselves in by
