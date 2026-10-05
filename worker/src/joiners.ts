@@ -24,6 +24,7 @@ import { joinPhone, splitPhone } from "../../shared/phone";
 import { AGREEMENT_PDFS, NEW_MEMBERS_INFO_SHEET } from "../../shared/application";
 import { isUnderEighteen } from "./declarations";
 import { joinerTrial } from "./trials";
+import { recordRegistered } from "./registration";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -526,6 +527,8 @@ export async function getJoinerTask(env: Env, user: AuthorizedUser, stepId: stri
 export async function completeJoinerTask(env: Env, user: AuthorizedUser, stepId: string): Promise<{ ok: true }> {
   const { step, me } = await loadStep(env, user, stepId);
   if (!step.done_at) await db(env).update("steps", `id=${eq(step.id)}&done_at=is.null`, { done_at: new Date().toISOString(), done_by_person_id: me });
+  // Registered with HockeyHK: off the Convenor's "Needs registering" list too.
+  if (step.step === "registration") await recordRegistered(env, [step.person_id], me);
   invalidateCache(`joiner-tasks:${user.personId}`);
   return { ok: true };
 }

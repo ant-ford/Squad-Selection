@@ -111,3 +111,11 @@ export interface DeclarationsSubmission {
   /** The guardian's signature (PNG data URL); under-18s only. */
   signature?: string;
 }
+
+/** Under 18 today, Hong Kong time: born less than 18 years before today (YYYY-MM-DD). */
+export function isUnderEighteen(dateOfBirth: string | null, today: string): boolean {
+  if (!dateOfBirth) return false;
+  const [y, m, d] = today.split("-").map(Number);
+  const eighteenth = `${y - 18}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return dateOfBirth.slice(0, 10) > eighteenth;
+}

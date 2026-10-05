@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
+import { saveCsv } from '@/lib/saveCsv';
 import type { BoardColumn } from '@shared/membershipStages';
 import type { ReviewColumn } from '@shared/statementStages';
 import type { InsightFact, TeamSquad } from '@shared/membershipInsights';
@@ -177,23 +178,11 @@ export function requestReviewEmail(commitmentId: string): Promise<{ success: tru
 
 /**
  * Fetches the active-members CSV and hands it to the browser as a download.
- * A byte-order mark goes first so Excel reads the file as UTF-8.
  */
 export async function downloadActiveMembers(): Promise<number> {
   const { filename, csv, count } = await apiGet<{ filename: string; csv: string; count: number }>(
     '/api/membership/active-members',
   );
-  const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }));
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  } finally {
-    // After the click has been handled; revoking synchronously can cancel it.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  saveCsv(filename, csv);
   return count;
 }
