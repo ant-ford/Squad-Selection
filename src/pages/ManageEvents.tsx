@@ -708,7 +708,6 @@ function SocialSecretaries({ view }: { view: ManageView }) {
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-2">
       <h2 className="text-base font-semibold text-foreground">Team social secretaries</h2>
-      <p className="text-xs text-muted-foreground">They add and keep their own team's events. The overall Social Secretary is set as an office.</p>
       <ul className="divide-y divide-border">
         {view.socialSecretaries.map((t) => (
           <li key={t.teamId} className="py-2">
