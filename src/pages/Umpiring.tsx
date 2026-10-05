@@ -70,6 +70,9 @@ function Who({ a }: { a: DutyAssignment }) {
   );
 }
 
+/** The outside-umpire list's choice for typing a name not on it. */
+const NEW_NAME = '\u0000new';
+
 /** For the coordinator: "· playing 10:45" when a club umpire has a game then. */
 function Playing({ duty, personId }: { duty: UmpireDuty; personId: string | null }) {
   const at = personId ? duty.clashes?.[personId] : undefined;
@@ -140,6 +143,9 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   const [assigning, setAssigning] = useState(false);
   const [who, setWho] = useState('');
   const [outside, setOutside] = useState('');
+  // Typing a name not in the list (straight away when there's no list yet).
+  const known = board.externalNames ?? [];
+  const [typing, setTyping] = useState(known.length === 0);
   const [paid, setPaid] = useState(false);
   const taken = confirmedOf(duty);
   const offers = duty.assignments.filter((a) => a.status === 'offered');
@@ -214,19 +220,39 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
               </label>
               <label className="text-xs text-muted-foreground">
                 Outside umpire
-                <input
-                  className={input}
-                  list="outside-umpires"
-                  value={outside}
-                  maxLength={60}
-                  onChange={(e) => {
-                    setOutside(e.target.value);
-                    setWho('');
-                  }}
-                />
-                <datalist id="outside-umpires">
-                  {board.externalNames?.map((n) => <option key={n} value={n} />)}
-                </datalist>
+                {typing ? (
+                  <input
+                    className={input}
+                    value={outside}
+                    maxLength={60}
+                    autoFocus={known.length > 0}
+                    placeholder="Name"
+                    onChange={(e) => {
+                      setOutside(e.target.value);
+                      setWho('');
+                    }}
+                  />
+                ) : (
+                  <select
+                    className={input}
+                    value={outside}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_NAME) {
+                        setTyping(true);
+                        setOutside('');
+                      } else setOutside(e.target.value);
+                      setWho('');
+                    }}
+                  >
+                    <option value="">Choose…</option>
+                    {known.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                    <option value={NEW_NAME}>New name…</option>
+                  </select>
+                )}
               </label>
             </div>
             {who && !chosen?.onCommitment && (
