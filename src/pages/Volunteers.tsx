@@ -32,6 +32,20 @@ async function copyEmails(list: Volunteer[]) {
   }
 }
 
+const NO_TEAM = 'No team';
+
+/** People split by team (A first, no team last), alphabetical within each. */
+function byTeam(people: Volunteer[]): [string, Volunteer[]][] {
+  const teams = new Map<string, Volunteer[]>();
+  for (const v of people) {
+    const team = v.team || NO_TEAM;
+    teams.set(team, [...(teams.get(team) ?? []), v]);
+  }
+  return [...teams.entries()]
+    .sort(([a], [b]) => (a === NO_TEAM ? 1 : b === NO_TEAM ? -1 : a.localeCompare(b)))
+    .map(([team, list]) => [team, [...list].sort((a, b) => a.name.localeCompare(b.name))]);
+}
+
 function ByRole({ lists }: { lists: RoleList[] }) {
   const groups = [...new Set(lists.map((l) => l.group))];
   return (
@@ -55,9 +69,20 @@ function ByRole({ lists }: { lists: RoleList[] }) {
                     )}
                   </div>
                   {l.people.length > 0 ? (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {l.people.map((v) => `${v.name}${v.team ? ` (${v.team})` : ''}`).join(', ')}
-                    </p>
+                    <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
+                      {byTeam(l.people).map(([team, list]) => (
+                        <div key={team} className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{team}</p>
+                          <ul className="text-xs text-foreground">
+                            {list.map((v) => (
+                              <li key={v.id} className="truncate">
+                                {v.name}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <p className="text-xs text-muted-foreground mt-0.5">Nobody yet.</p>
                   )}
@@ -71,27 +96,38 @@ function ByRole({ lists }: { lists: RoleList[] }) {
 }
 
 function ByPerson({ people }: { people: Volunteer[] }) {
+  if (people.length === 0) {
+    return <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">Nobody matches.</p>;
+  }
   return (
-    <ul className="rounded-xl border border-border bg-card divide-y divide-border">
-      {people.map((v) => (
-        <li key={v.id} className="px-3 py-2">
-          <p className="text-sm text-foreground">
-            {v.name}
-            <span className="text-xs text-muted-foreground">
-              {' '}
-              {[v.team, v.status !== 'Member' ? v.status : '', v.active ? '' : 'not Active'].filter(Boolean).join(' · ')}
-            </span>
-          </p>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {VOLUNTEER_GROUPS.flatMap((g) => v.roles[g.key].map((r) => <span key={`${g.key}-${r}`} className={chip}>{r}</span>))}
-            {v.qualifiedCoach && <span className={`${chip} bg-primary/15 text-primary`}>Coach {v.qualifiedCoach}</span>}
-            {v.qualifiedUmpire && <span className={`${chip} bg-primary/15 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
-          </div>
-          {v.updatedAt && <p className="text-[11px] text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
-        </li>
+    <div className="space-y-4">
+      {byTeam(people).map(([team, list]) => (
+        <section key={team}>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+            {team} ({list.length})
+          </h2>
+          <ul className="rounded-xl border border-border bg-card divide-y divide-border">
+            {list.map((v) => (
+              <li key={v.id} className="px-3 py-2">
+                <p className="text-sm text-foreground">
+                  {v.name}
+                  <span className="text-xs text-muted-foreground">
+                    {' '}
+                    {[v.status !== 'Member' ? v.status : '', v.active ? '' : 'not Active'].filter(Boolean).join(' · ')}
+                  </span>
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {VOLUNTEER_GROUPS.flatMap((g) => v.roles[g.key].map((r) => <span key={`${g.key}-${r}`} className={chip}>{r}</span>))}
+                  {v.qualifiedCoach && <span className={`${chip} bg-primary/15 text-primary`}>Coach {v.qualifiedCoach}</span>}
+                  {v.qualifiedUmpire && <span className={`${chip} bg-primary/15 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
+                </div>
+                {v.updatedAt && <p className="text-[11px] text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
       ))}
-      {people.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nobody matches.</li>}
-    </ul>
+    </div>
   );
 }
 
