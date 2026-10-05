@@ -1,14 +1,13 @@
-import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import AppHeader, { headerIconClass } from '@/components/AppHeader';
 import { useAuth } from '@/lib/auth';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
-import { safeFormat } from '@/lib/dateUtils';
 import { getMyDetails } from '@/api/details';
 import { getApply } from '@/api/apply';
 import { getMySeasonPlan } from '@/api/seasonPlan';
@@ -34,6 +33,21 @@ type StepKey = SectionKey | 'clubs' | 'trials' | 'family' | 'plan' | 'kit' | 'vo
  * trial form's questions instead, ending with the trial sessions and Send;
  * if they're invited to apply, the answers carry over.
  */
+/**
+ * Leaves the application for the player page. The profile is fetched once per
+ * visit (staleTime Infinity), so a copy from while they were still applying
+ * would send Home straight back here: drop it first.
+ */
+function ToPlayerPage() {
+  const queryClient = useQueryClient();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    queryClient.removeQueries({ queryKey: ['myProfile'] });
+    setReady(true);
+  }, [queryClient]);
+  return ready ? <Navigate to="/" replace /> : <Skeleton className="h-96 w-full" />;
+}
+
 export default function ApplyPage() {
   const queryClient = useQueryClient();
   const { logout } = useAuth();
@@ -115,20 +129,11 @@ export default function ApplyPage() {
         </div>
       );
     }
-    // Applications sent through Fillout before the switch-over have no submitted date in Eddy.
-    if (SUBMITTED_STAGES.includes(view.data.stage ?? '')) {
-      return (
-        <section className="rounded-xl border border-border bg-card p-4 space-y-2">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Check className="h-5 w-5 text-primary" /> Application submitted
-          </h2>
-          <p className="text-sm text-foreground">
-            Thanks{view.data.submittedAt ? `. You submitted it on ${safeFormat(view.data.submittedAt, 'd MMM yyyy')}` : ', it is with the club'}. Your sponsor, the
-            Chairman and the Membership Officer sign it, and the Membership Officer will let you know.
-          </p>
-        </section>
-      );
-    }
+    // Sent already (in Eddy, or through Fillout before the switch-over): nothing
+    // to fill in, so it's the player page (App.tsx Home), e.g. an Active
+    // player whose club registration is still going through. A fresh
+    // submission is confirmed by the toast in finished().
+    if (SUBMITTED_STAGES.includes(view.data.stage ?? '')) return <ToPlayerPage />;
     const step = steps[index];
     const props: StepProps = {
       details: details.data,
