@@ -1,5 +1,5 @@
-import { useState, useMemo, Fragment } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
@@ -223,6 +223,26 @@ export default function PlayerDashboard() {
     () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
     [data],
   );
+
+  // A fixture link the coach shared on WhatsApp (?fixture=<match id>) opens
+  // that fixture's sheet once the list has loaded. A game that isn't on
+  // their page (already played, or not their team) just says so.
+  const [params, setParams] = useSearchParams();
+  const sharedFixtureId = params.get('fixture');
+  useEffect(() => {
+    if (!sharedFixtureId || !data) return;
+    const f = allFixtures.find((x) => x.id === sharedFixtureId);
+    if (f) openFixture(f);
+    else toast.info("That game isn't on your page any more");
+    setParams(
+      (p) => {
+        p.delete('fixture');
+        return p;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedFixtureId, data, allFixtures]);
 
   // Back from a player's full stats (or the coach screens) lands where the
   // player left off rather than at the top.
