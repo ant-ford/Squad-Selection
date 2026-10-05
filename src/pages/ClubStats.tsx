@@ -378,7 +378,7 @@ function ClubTab({
 
       <LeagueCard stats={stats} />
 
-      <ResultsCard key={stats.seasons.join()} results={stats.results} caption="Every team's games." multiSeason={allTime} />
+      <ResultsCard key={stats.seasons.join()} results={stats.results} multiSeason={allTime} />
 
       <PlayerDataNote stats={stats} />
       <div className="grid gap-3 lg:grid-cols-3">
