@@ -230,3 +230,82 @@ export async function getRecommendationsForMatch(
     recommendations,
   };
 }
+// ── Player-facing team availability ────────────────────────────────────
+
+export interface TeamAvailabilityRow {
+  id: string;
+  name: string;
+  shirtNo: string;
+  position: string;
+  status: string;
+}
+
+const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
+const STATUS_ORDER: Record<string, number> = { Available: 0, Maybe: 1, Unavailable: 2 };
+
+function byPositionThenName(a: TeamAvailabilityRow, b: TeamAvailabilityRow) {
+  const pos = (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99);
+  return pos !== 0 ? pos : a.name.localeCompare(b.name);
+}
+
+/**
+ * What a player sees when they open a fixture: who is selected, how the rest
+ * of the side stands, and the five players from other teams the coaches'
+ * recommendation list would put forward next.
+ *
+ * Any signed-in player may read it, so it carries name, shirt number,
+ * position and resolved status only. Notes, ability grades, scores, reasons,
+ * eligibility and mobile numbers stay on the coach-only routes. The lists are
+ * ordered by position and name, never ability, so the order does not leak the
+ * ranking either - except the suggestions, whose order is the point.
+ */
+export async function getTeamAvailabilityForMatch(env: Env, matchId: string, side?: "home" | "away") {
+  const playerData = await getPlayersForMatch(env, matchId, side);
+  if (!playerData?.match) throw new Error("Match environment data could not be computed.");
+  const team = playerData.match.hkfcTeam;
+  const players = playerData.players;
+
+  const row = (p: (typeof players)[number]): TeamAvailabilityRow => ({
+    id: p.id,
+    name: p.preferredName,
+    shirtNo: p.shirtNo || "",
+    position: p.playingPosition || "",
+    status: p.availabilityStatus,
+  });
+
+  const selected = players.filter((p) => p.selectionStatus === "Selected").map(row).sort(byPositionThenName);
+  // "The team" is the display team (Selected Team EOS -> SOS -> Registered
+  // Team), the same side the coach's screen groups them under.
+  const rest = players
+    .filter((p) => p.selectionStatus !== "Selected" && p.registeredTeam === team)
+    .map(row)
+    .sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) || byPositionThenName(a, b));
+
+  // An unranked team has no recommendation list on the coach's screen
+  // either (getRecommendationsForMatch refuses it), so it gets none here.
+  const ref = await getReferenceData(env);
+  const teamRankMap = ref.teamRankMap || {};
+  const targetTeamRank = teamRankMap[team];
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const suggestions =
+    targetTeamRank === undefined
+      ? []
+      : buildRecommendations(
+          players.filter((p) => p.registeredTeam !== team),
+          targetTeamRank,
+          teamRankMap,
+          { limit: 5 },
+        ).flatMap((r) => {
+          const p = byId.get(r.id);
+          return p ? [row(p)] : [];
+        });
+
+  return {
+    matchId,
+    team,
+    targetSquadSize: playerData.match.targetSquadSize,
+    selected,
+    restOfTeam: rest,
+    suggestions,
+  };
+}

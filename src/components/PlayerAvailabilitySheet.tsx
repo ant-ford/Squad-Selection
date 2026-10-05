@@ -1,66 +1,131 @@
-import { useState } from 'react';
 import { safeFormat, formatHkTime } from '@/lib/dateUtils';
-import { setMyAvailability } from '@/api/setMyAvailability';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CheckCircle2, HelpCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { POS_SHORT } from '@/lib/format';
 import { availableLabel } from '@shared/availableLabel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { useMatchSquad } from '@/lib/queries';
+import { useTeamAvailability, type TeamAvailabilityRow } from '@/lib/queries';
 
-const OPTIONS = [
-  // Label is overridden at render: it depends on whether this player has
-  // been selected, which the array cannot know.
-  { value: 'Available', label: 'Available', Icon: CheckCircle2, color: 'text-green-600' },
-  { value: 'Maybe', label: 'Maybe', Icon: HelpCircle, color: 'text-amber-600' },
-  { value: 'Unavailable', label: 'No', Icon: XCircle, color: 'text-red-600' },
-] as const;
+const STATUS_PILL: Record<string, string> = {
+  Available: 'bg-green-100 text-green-800',
+  Maybe: 'bg-amber-100 text-amber-800',
+  Unavailable: 'bg-red-100 text-red-800',
+};
 
+function statusLabel(status: string, selected: boolean) {
+  if (status === 'Available') return availableLabel(selected);
+  if (status === 'Unavailable') return 'No';
+  return status || '—';
+}
+
+/** "9 available · 1 maybe · 2 no", skipping the zeros; worded like the pills. */
+function tally(rows: TeamAvailabilityRow[], selected: boolean) {
+  const n = (s: string) => rows.filter(r => r.status === s).length;
+  return ([
+    [n('Available'), availableLabel(selected).toLowerCase()],
+    [n('Maybe'), 'maybe'],
+    [n('Unavailable'), 'no'],
+  ] as const)
+    .filter(([count]) => count > 0)
+    .map(([count, word]) => `${count} ${word}`)
+    .join(' · ');
+}
+
+function PlayerList({
+  rows, selected, viewerId,
+}: { rows: TeamAvailabilityRow[]; selected: boolean; viewerId?: string }) {
+  return (
+    <div className="space-y-1">
+      {rows.map(m => {
+        const isYou = m.id === viewerId;
+        return (
+          <div key={m.id} className="flex items-center gap-2 text-xs">
+            <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
+            {/* Shirt number in a fixed column so the names line up
+                whether or not everyone has one. */}
+            <span className="w-7 text-right tabular-nums text-muted-foreground">
+              {m.shirtNo ? `#${m.shirtNo}` : ''}
+            </span>
+            <span className={`flex-1 text-foreground truncate ${isYou ? 'font-semibold' : ''}`}>
+              {m.name}{isYou && ' (you)'}
+            </span>
+            <span
+              className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                STATUS_PILL[m.status] ?? 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {statusLabel(m.status, selected)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Section({
+  title, hint, rows, empty, selected = false, viewerId,
+}: {
+  title: string;
+  hint?: string;
+  /** null while loading. */
+  rows: TeamAvailabilityRow[] | null;
+  empty: string;
+  selected?: boolean;
+  viewerId?: string;
+}) {
+  return (
+    <div className="py-3 border-t border-border">
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        {rows && rows.length > 0 && (
+          <span className="text-[11px] text-muted-foreground shrink-0">{tally(rows, selected)}</span>
+        )}
+      </div>
+      {hint && <p className="text-[11px] text-muted-foreground -mt-1 mb-2">{hint}</p>}
+      {rows === null ? (
+        <div className="space-y-1">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">{empty}</p>
+      ) : (
+        <PlayerList rows={rows} selected={selected} viewerId={viewerId} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Opened by tapping a fixture card. The player's own Available / Maybe / No
+ * (and the note that goes with Maybe or No) is set on the card itself, so
+ * this sheet is for seeing how the side is shaping up: who is selected, how
+ * the rest of the team stands, and who from other teams the recommendations
+ * would put forward next.
+ */
 export default function PlayerAvailabilitySheet({
-  fixture, conflictHint, onClose, onSaved,
+  fixture, viewerId, onClose,
 }: {
   fixture: MyFixture;
-  /** Soft hint: the player is Available for their My Team fixture on this date. */
-  conflictHint?: string;
-  onClose: () => void; onSaved: () => void;
+  /** The signed-in player's People id, to mark their own row. */
+  viewerId?: string;
+  onClose: () => void;
 }) {
-  const [status, setStatus] = useState<string>(fixture.availabilityStatus);
-  const [notes, setNotes] = useState(fixture.playerNotes);
-  const [saving, setSaving] = useState(false);
-  const { data: squadData, isError: squadFailed } = useMatchSquad(fixture.id, fixture.isHome ? 'home' : 'away');
-  const squad = squadData?.players ?? (squadFailed ? [] : null);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await setMyAvailability(
-        fixture.id,
-        status as 'Available' | 'Maybe' | 'Unavailable',
-        notes
-      );
-      toast.success('Availability updated');
-      onSaved();
-    } catch {
-      toast.error('Failed to update');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { data, isError } = useTeamAvailability(fixture.id, fixture.isHome ? 'home' : 'away');
+  // A failed read falls through to the empty states, not endless skeletons.
+  const lists = data ?? (isError ? { selected: [], restOfTeam: [], suggestions: [] } : null);
+  const team = data?.team || fixture.hkfcTeam;
 
   return (
     <Sheet open onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
         <div className="px-4 py-6">
           <SheetHeader onClose={onClose}>
-            <SheetTitle>Update Availability</SheetTitle>
+            <SheetTitle>{fixture.homeTeam} vs {fixture.awayTeam}</SheetTitle>
           </SheetHeader>
 
           <div className="py-2">
-            <p className="text-sm font-medium text-foreground">{fixture.homeTeam} vs {fixture.awayTeam}</p>
             <p className="text-xs text-muted-foreground">
               {safeFormat(fixture.date, 'EEE d MMM')} • {formatHkTime(fixture.date)} • {fixture.venue}
             </p>
@@ -71,79 +136,28 @@ export default function PlayerAvailabilitySheet({
             )}
           </div>
 
-          {conflictHint && status === 'Unavailable' && (
-            <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>
-                You're available for your {conflictHint} fixture but unavailable for this support
-                fixture. Adding a note helps the coaches understand (optional).
-              </span>
-            </div>
-          )}
-
-          <div className="space-y-2 py-3">
-            {OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setStatus(opt.value)}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors text-left ${
-                  status === opt.value ? 'border-primary bg-primary/5' : 'border-border'
-                }`}
-              >
-                <opt.Icon className={`h-5 w-5 ${status === opt.value ? 'text-primary' : 'text-muted-foreground'}`} />
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {opt.value === 'Available'
-                      ? availableLabel(fixture.selectionStatus === 'Selected')
-                      : opt.label}
-                  </p>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="py-2 flex flex-col">
-            <label className="text-xs font-medium text-muted-foreground mb-1">Note (optional)</label>
-            <Textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder='e.g. "Arriving late from work"'
-              className="mt-0"
-              rows={2}
+          <div className="mt-2">
+            <Section
+              title={`Selected (${lists?.selected.length ?? 0}/${fixture.targetSquadSize})`}
+              rows={lists?.selected ?? null}
+              empty="Squad not yet announced"
+              selected
+              viewerId={viewerId}
+            />
+            <Section
+              title={`Rest of ${team}`}
+              rows={lists?.restOfTeam ?? null}
+              empty="Everyone in the team has been selected"
+              viewerId={viewerId}
+            />
+            <Section
+              title="Recommended from other teams"
+              hint="The top five from the coaches' recommendations."
+              rows={lists?.suggestions ?? null}
+              empty="No recommendations right now"
+              viewerId={viewerId}
             />
           </div>
-
-          {/* Squad section — full list, no expand/collapse */}
-          <div className="py-3 border-t border-border mt-2">
-            <h3 className="text-sm font-medium text-foreground mb-2">Squad ({squad?.length || 0} Selected)</h3>
-            {squad === null ? (
-              <div className="space-y-1">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-              </div>
-            ) : squad.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">Squad not yet announced</p>
-            ) : (
-              <div className="space-y-1">
-                {squad.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    <span className="w-8 text-muted-foreground">{POS_SHORT[m.position] || '?'}</span>
-                    {/* Shirt number in a fixed column so the names line up
-                        whether or not everyone has one. */}
-                    <span className="w-7 text-right tabular-nums text-muted-foreground">
-                      {m.shirtNo ? `#${m.shirtNo}` : ''}
-                    </span>
-                    <span className="flex-1 text-foreground truncate">{m.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <Button onClick={handleSave} disabled={saving} className="w-full mt-3">
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            Save
-          </Button>
         </div>
       </SheetContent>
     </Sheet>

@@ -136,14 +136,28 @@ export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   });
 }
 
-export function useMatchSquad(matchId: string, side: 'home' | 'away') {
+export interface TeamAvailabilityRow {
+  id: string;
+  name: string;
+  shirtNo: string;
+  position: string;
+  status: string;
+}
+
+export interface TeamAvailability {
+  matchId: string;
+  team: string;
+  targetSquadSize: number;
+  selected: TeamAvailabilityRow[];
+  restOfTeam: TeamAvailabilityRow[];
+  suggestions: TeamAvailabilityRow[];
+}
+
+/** Player-facing: the selected squad, the rest of the side, and the top five from elsewhere. */
+export function useTeamAvailability(matchId: string, side: 'home' | 'away') {
   return useQuery({
-    queryKey: ['matchSquad', matchId, side],
-    queryFn: () =>
-      apiGet<{ players: { id: string; name: string; shirtNo?: string; position: string }[] }>(
-        `/api/match/${matchId}/squad`,
-        { side },
-      ),
+    queryKey: ['teamAvailability', matchId, side],
+    queryFn: () => apiGet<TeamAvailability>(`/api/match/${matchId}/team-availability`, { side }),
     staleTime: 30_000,
   });
 }
@@ -225,17 +239,20 @@ function patchFixturesForDate(
 /**
  * Single-fixture availability. Optimistic: the tapped status shows
  * immediately, and a failure rolls back to the pre-tap snapshot.
+ *
+ * The write always replaces the note, so `notes` is what the fixture should
+ * carry afterwards: pass the current note to keep it, leave it out to clear.
  */
 export function useQuickAvailability() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ fixtureId, status }: { fixtureId: string; status: 'Available' | 'Maybe' | 'Unavailable' }) =>
-      setMyAvailability(fixtureId, status),
-    onMutate: async ({ fixtureId, status }) => {
+    mutationFn: ({ fixtureId, status, notes }: { fixtureId: string; status: 'Available' | 'Maybe' | 'Unavailable'; notes?: string }) =>
+      setMyAvailability(fixtureId, status, notes),
+    onMutate: async ({ fixtureId, status, notes }) => {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
       const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
-        patchFixture(old, fixtureId, { availabilityStatus: status }),
+        patchFixture(old, fixtureId, { availabilityStatus: status, playerNotes: notes ?? '' }),
       );
       return { previousData };
     },
@@ -243,6 +260,8 @@ export function useQuickAvailability() {
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixture(old, fixtureId, { availabilityExceptionId: result.exceptionId || '' }),
       );
+      // The fixture sheet lists this player too.
+      queryClient.invalidateQueries({ queryKey: ['teamAvailability', fixtureId] });
     },
     onError: (_err, _vars, context) => {
       for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);
@@ -275,6 +294,7 @@ export function useBulkAvailability() {
           return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || f.availabilityExceptionId };
         }),
       );
+      queryClient.invalidateQueries({ queryKey: ['teamAvailability'] });
     },
     onError: (_err, _vars, context) => {
       for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);

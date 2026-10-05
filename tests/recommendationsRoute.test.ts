@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../worker/src/squad", () => ({ getPlayersForMatch: mocks.getPlayersForMatch }));
 vi.mock("../worker/src/reference", () => ({ getReferenceData: mocks.getReferenceData }));
 
-import { getRecommendationsForMatch } from "../worker/src/recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "../worker/src/recommendations";
 
 const ENV = {} as any;
 
@@ -132,5 +132,80 @@ describe("getRecommendationsForMatch: ranking basis", () => {
     // ... and only the genuine play-up carries the play-up tag.
     expect(moved.reasons).not.toContain("Play-Up Capacity");
     expect(stayed.reasons).toContain("Play-Up Capacity");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTeamAvailabilityForMatch - the player-facing fixture sheet lists.
+//
+// Any signed-in player can read this, so besides the grouping it pins what
+// is LEFT OUT: notes, ability, scores and the rest of the coach payload.
+// ---------------------------------------------------------------------------
+describe("getTeamAvailabilityForMatch", () => {
+  function full(id: string, team: string, extra: Record<string, unknown> = {}) {
+    return {
+      ...player(id, team),
+      shirtNo: "7",
+      mobile: "+852 9000 0000",
+      playerNotes: "private note",
+      ...extra,
+    };
+  }
+
+  beforeEach(() => {
+    mocks.getReferenceData.mockResolvedValue({ teamRankMap: { "HKFC C": 3, "HKFC D": 4, "HKFC E": 5 } });
+  });
+
+  it("splits selected, rest of the team and the top five from other teams", async () => {
+    mocks.getPlayersForMatch.mockResolvedValue({
+      match: { hkfcTeam: "HKFC D", targetSquadSize: 16 },
+      players: [
+        full("sel-own", "HKFC D", { selectionStatus: "Selected", playingPosition: "Forward" }),
+        full("sel-up", "HKFC E", { selectionStatus: "Selected", playingPosition: "Goalkeeper" }),
+        full("own-no", "HKFC D", { availabilityStatus: "Unavailable" }),
+        full("own-yes", "HKFC D"),
+        full("own-maybe", "HKFC D", { availabilityStatus: "Maybe" }),
+        ...["e1", "e2", "e3", "e4", "e5", "e6"].map((id) => full(id, "HKFC E")),
+        full("e-out", "HKFC E", { availabilityStatus: "Unavailable", playingAbility: "A+" }),
+        full("e-blocked", "HKFC E", { eligibilityStatus: "blocked", playingAbility: "A+" }),
+      ],
+    });
+
+    const r = await getTeamAvailabilityForMatch(ENV, "recM1");
+
+    expect(r.team).toBe("HKFC D");
+    expect(r.targetSquadSize).toBe(16);
+    // Selected: whatever team they came from, by position.
+    expect(r.selected.map((p) => p.id)).toEqual(["sel-up", "sel-own"]);
+    // Rest of the team: Available, then Maybe, then No.
+    expect(r.restOfTeam.map((p) => p.id)).toEqual(["own-yes", "own-maybe", "own-no"]);
+    // Five suggestions, none from this team, none unavailable or blocked.
+    expect(r.suggestions).toHaveLength(5);
+    expect(r.suggestions.every((p) => p.id.startsWith("e") && !["e-out", "e-blocked"].includes(p.id))).toBe(true);
+  });
+
+  it("returns only name, shirt number, position and status", async () => {
+    mocks.getPlayersForMatch.mockResolvedValue({
+      match: { hkfcTeam: "HKFC D", targetSquadSize: 16 },
+      players: [full("own", "HKFC D"), full("sel", "HKFC D", { selectionStatus: "Selected" }), full("e", "HKFC E")],
+    });
+
+    const r = await getTeamAvailabilityForMatch(ENV, "recM1");
+
+    for (const row of [...r.selected, ...r.restOfTeam, ...r.suggestions]) {
+      expect(Object.keys(row).sort()).toEqual(["id", "name", "position", "shirtNo", "status"]);
+    }
+  });
+
+  it("gives no suggestions for an unranked team instead of failing the sheet", async () => {
+    mocks.getPlayersForMatch.mockResolvedValue({
+      match: { hkfcTeam: "Unlisted", targetSquadSize: 16 },
+      players: [full("own", "Unlisted"), full("e", "HKFC E")],
+    });
+
+    const r = await getTeamAvailabilityForMatch(ENV, "recM1");
+
+    expect(r.restOfTeam.map((p) => p.id)).toEqual(["own"]);
+    expect(r.suggestions).toEqual([]);
   });
 });
