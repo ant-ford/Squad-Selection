@@ -1,7 +1,7 @@
 /**
- * The events someone attended (migration 20261003190000; owner, 3 Oct
- * 2026): Going, not marked as a no-show, at a published event that has
- * started. For the commitment review, which ticks the social functions
+ * The events someone attended (migrations 20261003190000 and 20261006120000;
+ * owner): ticked on the register or checked in with the QR code, at a
+ * published event that has started. For the commitment review, which ticks the social functions
  * from it and lists the rest. Kept apart from events.ts so reviews.ts
  * loads only this.
  */
@@ -20,7 +20,7 @@ export async function attendedEvents(env: Env, personApiId: string, from: string
   const end = Math.min(Date.parse(`${to}T23:59:59+08:00`), Date.now());
   const rows = await d.select<{ event: { id: string; event_type: string; title: string; starts_at: string; social_function: string | null } | null }>(
     "event_responses",
-    `select=event:events!inner(id,event_type,title,starts_at,social_function)&person_id=${eq(p.id)}&status=eq.going&no_show=is.false` +
+    `select=event:events!inner(id,event_type,title,starts_at,social_function)&person_id=${eq(p.id)}&attended=is.true` +
       `&event.status=eq.published&event.starts_at=gte.${encodeURIComponent(`${from}T00:00:00+08:00`)}&event.starts_at=lte.${encodeURIComponent(new Date(end).toISOString())}`,
     "event_id,person_id",
   );

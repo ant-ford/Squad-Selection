@@ -201,6 +201,30 @@ export function isCurrent(e: { startsAt: string; endsAt: string | null }, now = 
   return Date.parse(e.endsAt ?? e.startsAt) + 86_400_000 > now;
 }
 
+const HOUR = 3_600_000;
+/** An event without an end time is taken to last three hours. */
+export const eventEnds = (e: { startsAt: string; endsAt: string | null }) => Date.parse(e.endsAt ?? e.startsAt) + (e.endsAt ? 0 : 3 * HOUR);
+
+/** The register opens an hour before the start and stays open for corrections. */
+export const registerOpen = (e: { startsAt: string }, now = Date.now()) => now >= Date.parse(e.startsAt) - HOUR;
+
+/** Members can check themselves in from an hour before the start until an hour after the end. */
+export function checkInOpen(e: { status: EventStatus; startsAt: string; endsAt: string | null }, now = Date.now()): boolean {
+  return e.status === "published" && registerOpen(e, now) && now <= eventEnds(e) + HOUR;
+}
+
+/** Over, and nobody has marked the register taken: a My Tasks line for whoever keeps it. */
+export function needsRegister(e: { status: EventStatus; startsAt: string; endsAt: string | null; registerTakenAt: string | null }, now = Date.now()): boolean {
+  return e.status === "published" && !e.registerTakenAt && now > eventEnds(e);
+}
+
+/** How many of a member's guests can be ticked as having come. */
+export const guestsCameOf = (raw: unknown, guests: number): number | null => {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) ? Math.max(0, Math.min(guests, n)) : null;
+};
+
 /**
  * Whether the person acting may answer for this person. Anyone may answer
  * for themselves; anyone may sign up someone who hasn't answered; after
@@ -269,8 +293,12 @@ export interface ResponseDetails {
   signedUpBy: { id: string; name: string } | null;
   /** A social secretary let them off the charge. */
   waived: boolean;
-  /** Going, but didn't come (marked by a social secretary): still charged, not counted as attending. */
-  noShow: boolean;
+  /** Ticked on the register, or checked themselves in: they came. */
+  attended: boolean;
+  /** How many of their guests came. */
+  guestsCame: number | null;
+  /** When they checked themselves in with the QR code. */
+  checkedInAt: string | null;
 }
 
 /** GET /api/events/mine: one event on the player page. */
@@ -316,7 +344,9 @@ export interface ManagedEvent extends EventDetails {
   includesMe: boolean;
   /** When the charge list went to the treasurer (membership account events). */
   chargesSentAt: string | null;
-  counts: { going: number; maybe: number; notGoing: number; adultGuests: number; childGuests: number; canHelp: number };
+  /** When the register was marked taken. */
+  registerTakenAt: string | null;
+  counts: { going: number; maybe: number; notGoing: number; adultGuests: number; childGuests: number; canHelp: number; came: number };
 }
 
 export interface ManageView {
@@ -486,4 +516,20 @@ export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name:
     }
   }
   return out.map((row) => row.map(cell).join(",")).join("\r\n");
+}
+
+// ── Who came (the register and check-in) ─────────────────────────────────
+
+/** GET /api/events/:id/checkin: what someone who scanned the QR code sees. */
+export interface CheckInView {
+  event: EventDetails;
+  open: boolean;
+  /** Them, and anyone they signed up, with their answer if they gave one. */
+  people: { personId: string; name: string; self: boolean; response: ResponseDetails | null }[];
+}
+
+/** POST /api/events/:id/checkin: who is here, and how many of each one's guests. */
+export interface CheckInInput {
+  code: string;
+  people: { personId: string; guestsCame?: number }[];
 }
