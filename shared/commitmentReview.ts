@@ -6,6 +6,12 @@
 
 export const GAMES_UMPIRED = ["0", "1", "2", "3", "4", "5+"] as const;
 
+/** The choice for a count of games umpired; "" for none, which may just be before Eddy kept a record. */
+export function gamesUmpiredChoice(n: number | undefined): string {
+  if (!n || n < 1) return "";
+  return n >= 5 ? "5+" : String(n);
+}
+
 export const PRACTICES = ["Very Regular 70%+", "Moderate 50-70%", "Hardly Ever <50%"] as const;
 
 /** Choosing none means none: there is no "None" option (owner, 2026-09-30). */
@@ -121,6 +127,8 @@ export interface ReviewView {
   options?: { sponsors: ReviewOffice[]; officers: ReviewOffice[]; usualSponsor: string | null };
   /** Events recorded in Eddy as attended in the commitment period (worker/src/eventAttendance.ts). */
   eventsAttended?: AttendedEvent[];
+  /** Games umpired in the period as Eddy recorded them (worker/src/umpiring.ts); none before October 2026. */
+  gamesUmpiredInEddy?: number;
   /** For a signer: their saved signature, to sign with in one tap. */
   savedSignatureUrl?: string | null;
   /**

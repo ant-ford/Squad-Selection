@@ -1,0 +1,281 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Env } from "../worker/src/env";
+import type { AuthorizedUser } from "../worker/src/auth";
+import { assignDuty, confirmAssignment, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { invalidateAll } from "../worker/src/cache";
+import {
+  captainsMessage,
+  dutyLine,
+  isOnCommitment,
+  umpiresMessage,
+  weekOf,
+  type DutyAssignment,
+  type UmpireDuty,
+} from "../shared/umpiring";
+import { gamesUmpiredChoice } from "../shared/commitmentReview";
+
+const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const user = (personId: string, officerRoles: AuthorizedUser["officerRoles"] = []) =>
+  ({ email: "u@x.com", personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles }) as unknown as AuthorizedUser;
+const george = user("recGEORGE", [{ office: "umpireCoordinator", designation: "" }]);
+
+const DUTY = "11111111-1111-1111-1111-111111111111";
+const PAID = "22222222-2222-2222-2222-222222222222";
+const future = new Date(Date.now() + 3 * 24 * 3600_000).toISOString();
+
+type Call = { url: URL; method: string; body: any };
+/** PostgREST by table: a function of the request, or rows for any GET. */
+function fake(tables: Record<string, unknown[] | ((url: URL, method: string, body: any) => unknown)>) {
+  const calls: Call[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string, init: RequestInit = {}) => {
+      const url = new URL(input);
+      const method = init.method ?? "GET";
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ url, method, body });
+      const t = tables[url.pathname.split("/").pop()!];
+      const out = typeof t === "function" ? t(url, method, body) : method === "GET" ? t ?? [] : body ?? [];
+      if (out instanceof Response) return out;
+      return new Response(JSON.stringify(out ?? []), { status: 200 });
+    }),
+  );
+  return calls;
+}
+const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET" && c.url.pathname.endsWith("/umpire_assignments"));
+
+const people = (over: Record<string, unknown>[] = []) => [
+  { id: "u-george", api_id: "recGEORGE", given_names: "George", surname: "Lam", qualified_umpire: "Level 2", commitment_end_date: null },
+  { id: "u-ann", api_id: "recANN", given_names: "Ann", surname: "Lee", qualified_umpire: "Level 1", commitment_end_date: "2030-06-30" },
+  { id: "u-bob", api_id: "recBOB", given_names: "Bob", surname: "Page", preferred_name: "Pagey", qualified_umpire: null, commitment_end_date: "2020-06-30" },
+  { id: "u-cat", api_id: "recCAT", given_names: "Cat", surname: "Wong", qualified_umpire: "Not Applicable", commitment_end_date: null },
+  ...over,
+];
+const byApiId = (url: URL) => {
+  const id = url.searchParams.get("api_id")?.replace(/^eq\./, "");
+  return id ? people().filter((p) => p.api_id === id).map((p) => ({ ...p, active: true })) : people();
+};
+
+beforeEach(() => invalidateAll());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  invalidateAll();
+});
+
+const assignment = (over: Partial<DutyAssignment> = {}): DutyAssignment => ({
+  id: "a1", personId: "recANN", name: "Ann", external: false, paid: false, status: "confirmed", createdAt: "2026-10-01T00:00:00Z", ...over,
+});
+const duty = (over: Partial<UmpireDuty> = {}): UmpireDuty => ({
+  id: "d1", matchDate: "2026-10-11T01:00:00.000Z", timeTbc: false, division: "3", venue: "HKFC",
+  homeTeam: "HKFC F", awayTeam: "Elite B", slot: 1, dutyTeam: "HKFC D", status: "scheduled", assignments: [], ...over,
+});
+
+describe("umpiring messages", () => {
+  it("writes a duty as George does: date, kick-off, venue, duty team letter", () => {
+    expect(dutyLine(duty())).toBe("11/10 0900 HKFC D");
+    expect(dutyLine(duty({ matchDate: "2026-10-02T10:50:00.000Z", venue: "HV2", dutyTeam: "HKFC E" }))).toBe("2/10 1850 HV2 E");
+    expect(dutyLine(duty({ matchDate: "2026-10-10T16:00:00.000Z", timeTbc: true, venue: "KP", dutyTeam: "HKFC G" }))).toBe("11/10 TBC KP G");
+  });
+
+  it("sends the umpires the week with the taken ones marked and one link", () => {
+    const text = umpiresMessage(
+      [
+        duty({ id: "d2", matchDate: "2026-10-11T02:45:00.000Z", dutyTeam: "HKFC G" }),
+        duty({ assignments: [assignment({ name: "George" })] }),
+        duty({ id: "d3", status: "cancelled", dutyTeam: "HKFC H" }),
+      ],
+      "https://app.eddy.global/umpiring?week=2026-10-05",
+    );
+    expect(text).toBe(
+      ["🏑Weekly Club Duties🥳", "", "11/10 0900 HKFC D ✅George", "11/10 1045 HKFC G", "", "Put your name down: https://app.eddy.global/umpiring?week=2026-10-05"].join("\n"),
+    );
+  });
+
+  it("sends the captains the final list: club umpires ✅, paid 💰, gaps ❓, offers not shown", () => {
+    const text = captainsMessage([
+      duty({ assignments: [assignment({ name: "George" })] }),
+      duty({ id: "d2", matchDate: "2026-10-11T02:45:00.000Z", dutyTeam: "HKFC F", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] }),
+      duty({ id: "d3", matchDate: "2026-10-11T10:00:00.000Z", dutyTeam: "HKFC A", assignments: [assignment({ status: "offered", paid: true })] }),
+    ]);
+    expect(text.split("\n").slice(2)).toEqual(["11/10 0900 HKFC D ✅George", "11/10 1045 HKFC F 💰Pagey", "11/10 1800 HKFC A ❓"]);
+  });
+
+  it("weeks start on Monday, Hong Kong time", () => {
+    expect(weekOf("2026-10-11T01:00:00.000Z")).toBe("2026-10-05"); // Sunday morning
+    expect(weekOf("2026-10-11T16:30:00.000Z")).toBe("2026-10-12"); // 00:30 Monday in HK
+  });
+});
+
+describe("the commitment and pay", () => {
+  it("is on commitment until the end date; no end date counts as finished", () => {
+    expect(isOnCommitment("2026-10-07", "2026-10-06")).toBe(true);
+    expect(isOnCommitment("2026-10-06", "2026-10-06")).toBe(false);
+    expect(isOnCommitment(null, "2026-10-06")).toBe(false);
+  });
+
+  it("turns a count into the review's choice, leaving none unchosen", () => {
+    expect(gamesUmpiredChoice(undefined)).toBe("");
+    expect(gamesUmpiredChoice(0)).toBe("");
+    expect(gamesUmpiredChoice(3)).toBe("3");
+    expect(gamesUmpiredChoice(9)).toBe("5+");
+  });
+});
+
+describe("who sees the duties", () => {
+  it("is qualified umpires, anyone named as umpire on an HKFC match card this year, and the coordinator", async () => {
+    fake({
+      people: people(),
+      matches: [
+        { id: "m1", ump_1: "HKFC D - Page Bob", ump_2: "Appointed", home_team: "HKFC F", away_team: "Elite B" },
+        { id: "m2", ump_1: "Cat", ump_2: "Valley B", home_team: "HKFC D", away_team: "Valley B" },
+      ],
+      umpire_assignments: [],
+    });
+    expect(await umpiringAccess(env, user("recANN"))).toBe("umpire"); // qualified
+    expect(await umpiringAccess(env, user("recBOB"))).toBe("umpire"); // on a match card, names swapped
+    expect(await umpiringAccess(env, user("recCAT"))).toBeNull(); // "Not Applicable", and a first name alone isn't enough
+    expect(await umpiringAccess(env, user("recZED", [{ office: "sectionCaptain", designation: "" }]))).toBe("coordinator");
+    expect(await umpiringAccess({ ...env, DATA_BACKEND: "airtable" }, user("recANN"))).toBeNull();
+  });
+
+  it("includes anyone who umpired a game in Eddy this year", async () => {
+    fake({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] });
+    expect(await umpiringAccess(env, user("recCAT"))).toBe("umpire");
+  });
+});
+
+describe("taking a duty", () => {
+  const base = (live: unknown[] = []) => ({
+    people: byApiId,
+    matches: [],
+    umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled", duty_team: "HKFC D" }],
+    umpire_assignments: (url: URL, method: string, body: any) =>
+      method === "GET" ? (url.searchParams.get("duty_id") ? live : []) : body ?? [],
+  });
+
+  it("confirms an unpaid umpire at once", async () => {
+    const calls = fake(base());
+    expect(await takeDuty(env, user("recANN"), DUTY, {})).toMatchObject({ status: "confirmed" });
+    const [w] = writes(calls);
+    expect(w.method).toBe("POST");
+    expect(w.body[0]).toMatchObject({ duty_id: DUTY, person_id: "u-ann", paid: false, status: "confirmed" });
+  });
+
+  it("won't pay anyone still on their commitment", async () => {
+    fake(base());
+    await expect(takeDuty(env, user("recANN"), DUTY, { paid: true })).rejects.toThrow(/until your commitment ends/);
+  });
+
+  it("holds a paid offer for the coordinator", async () => {
+    const calls = fake(base());
+    expect(await takeDuty(env, user("recGEORGE"), DUTY, { paid: true })).toMatchObject({ status: "offered" });
+    expect(writes(calls)[0].body[0]).toMatchObject({ paid: true, status: "offered", confirmed_at: null });
+  });
+
+  it("lets a free umpire take a game a paid offer is waiting on", async () => {
+    const calls = fake(base([{ id: PAID, duty_id: DUTY, person_id: "u-george", paid: true, status: "offered" }]));
+    await takeDuty(env, user("recANN"), DUTY, {});
+    expect(writes(calls)[0].body[0]).toMatchObject({ person_id: "u-ann", status: "confirmed" });
+  });
+
+  it("turns their own paid offer into a free confirmation", async () => {
+    const calls = fake(base([{ id: "a-mine", duty_id: DUTY, person_id: "u-george", paid: true, status: "offered" }]));
+    await takeDuty(env, user("recGEORGE"), DUTY, {});
+    const [w] = writes(calls);
+    expect(w.method).toBe("PATCH");
+    expect(w.body).toMatchObject({ paid: false, status: "confirmed" });
+  });
+
+  it("refuses a game someone already has, a cancelled one and a played one", async () => {
+    fake(base([{ id: "a1", duty_id: DUTY, person_id: "u-george", paid: false, status: "confirmed" }]));
+    await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/already taken/);
+    fake({ ...base(), umpire_duties: [{ id: DUTY, match_date: future, status: "cancelled" }] });
+    await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/off the list/);
+    fake({ ...base(), umpire_duties: [{ id: DUTY, match_date: "2026-01-01T00:00:00Z", status: "scheduled" }] });
+    await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/already started/);
+  });
+
+  it("reads a clash on the one-umpire index as someone getting there first", async () => {
+    fake({
+      ...base(),
+      umpire_assignments: (url: URL, method: string) =>
+        method === "GET" ? [] : new Response(JSON.stringify({ code: "23505", message: "duplicate key" }), { status: 409 }),
+    });
+    await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/already taken/);
+  });
+
+  it("is for the club's umpires only", async () => {
+    fake(base());
+    await expect(takeDuty(env, user("recCAT"), DUTY, {})).rejects.toThrow(/club's umpires/);
+  });
+});
+
+describe("the coordinator", () => {
+  const live = [{ id: PAID, duty_id: DUTY, person_id: "u-bob", paid: true, status: "offered" }];
+  const base = () => ({
+    people: byApiId,
+    matches: [],
+    umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled" }],
+    umpire_assignments: (url: URL, method: string, body: any) => {
+      if (method !== "GET") return body ?? [];
+      if (url.searchParams.get("id")) return live.filter((a) => `eq.${a.id}` === url.searchParams.get("id"));
+      return url.searchParams.get("duty_id") ? live : [];
+    },
+  });
+
+  it("confirms a paid offer", async () => {
+    const calls = fake(base());
+    await confirmAssignment(env, george, PAID);
+    expect(writes(calls)[0].body).toMatchObject({ status: "confirmed" });
+  });
+
+  it("puts an outside umpire down, always paid", async () => {
+    const calls = fake({ ...base(), umpire_assignments: (_u: URL, m: string, b: any) => (m === "GET" ? [] : b) });
+    await assignDuty(env, george, DUTY, { externalName: "  Pagey  " });
+    expect(writes(calls)[0].body[0]).toMatchObject({ external_name: "Pagey", paid: true, status: "confirmed", created_by: "u-george" });
+  });
+
+  it("can't pay a club umpire on their commitment, and needs one of a person or a name", async () => {
+    fake({ ...base(), umpire_assignments: (_u: URL, m: string, b: any) => (m === "GET" ? [] : b) });
+    await expect(assignDuty(env, george, DUTY, { personId: "recANN", paid: true })).rejects.toThrow(/on their commitment/);
+    await expect(assignDuty(env, george, DUTY, {})).rejects.toThrow(/Choose a club umpire/);
+    await expect(assignDuty(env, george, DUTY, { personId: "recANN", externalName: "X" })).rejects.toThrow(/Choose a club umpire/);
+  });
+
+  it("is the only one who can confirm or take someone else off", async () => {
+    fake(base());
+    await expect(confirmAssignment(env, user("recANN"), PAID)).rejects.toThrow(/Umpire Coordinator/);
+    await expect(withdrawAssignment(env, user("recANN"), PAID)).rejects.toThrow(/Umpire Coordinator/);
+    // The offer is Bob's, who is on a match card, so he can pull out himself.
+    invalidateAll();
+    const calls = fake({ ...base(), matches: [{ id: "m1", ump_1: "Bob Page", ump_2: "", home_team: "HKFC F", away_team: "Elite B" }] });
+    await withdrawAssignment(env, user("recBOB"), PAID);
+    expect(writes(calls)[0].body).toEqual({ status: "withdrawn" });
+  });
+});
+
+describe("the season's record", () => {
+  it("counts confirmed umpires of played games, free, paid and outside, and the gaps", () => {
+    const report = tallyDuties(
+      [
+        duty({ assignments: [assignment({ name: "George", personId: "recGEORGE" })] }),
+        duty({ id: "d2", assignments: [assignment({ name: "George", personId: "recGEORGE", paid: true })] }),
+        duty({ id: "d3", dutyTeam: "HKFC E", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] }),
+        duty({ id: "d4", dutyTeam: "HKFC E", assignments: [assignment({ name: "Ann", status: "no_show" })] }),
+        duty({ id: "d5", dutyTeam: "HKFC E", assignments: [assignment({ status: "offered", paid: true })] }),
+        duty({ id: "d6", status: "cancelled", assignments: [assignment()] }),
+      ],
+      "2026-2027",
+    );
+    expect(report).toMatchObject({ duties: 5, coveredFree: 1, coveredPaidMembers: 1, coveredExternal: 1, noShows: 1, uncovered: 2 });
+    expect(report.umpires.map((u) => [u.name, u.free, u.paid, u.noShows])).toEqual([
+      ["George", 1, 1, 0],
+      ["Pagey", 0, 1, 0],
+      ["Ann", 0, 0, 1],
+    ]);
+    expect(report.byTeam).toEqual([
+      { team: "HKFC D", duties: 2, free: 1 },
+      { team: "HKFC E", duties: 3, free: 0 },
+    ]);
+  });
+});

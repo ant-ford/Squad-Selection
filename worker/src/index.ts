@@ -24,6 +24,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
+import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
@@ -901,6 +902,31 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/volunteering/board") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getVolunteersBoard(env, user), 200, origin);
+    }
+
+    // ── Umpiring duties (Supabase backend; src/umpiring.ts) ───────────────
+    // The club's umpires take duties; the Umpire Coordinator (and the
+    // Section Captains) confirms, assigns, marks no-shows and reports.
+    if (pathname.startsWith("/api/umpiring")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/umpiring") {
+        return json(await getUmpiringBoard(env, user, url.searchParams.get("week")), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/umpiring/report") {
+        return json(await getUmpiringReport(env, user, url.searchParams.get("season")), 200, origin);
+      }
+      const duty = pathname.match(/^\/api\/umpiring\/duties\/([0-9a-f-]{36})\/(take|assign)$/);
+      if (duty && method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(duty[2] === "take" ? await takeDuty(env, user, duty[1], body) : await assignDuty(env, user, duty[1], body), 200, origin);
+      }
+      const entry = pathname.match(/^\/api\/umpiring\/assignments\/([0-9a-f-]{36})\/(withdraw|confirm|no-show)$/);
+      if (entry && method === "POST") {
+        if (entry[2] === "withdraw") return json(await withdrawAssignment(env, user, entry[1]), 200, origin);
+        if (entry[2] === "confirm") return json(await confirmAssignment(env, user, entry[1]), 200, origin);
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(await setNoShow(env, user, entry[1], body), 200, origin);
+      }
     }
 
     // ── Kit (Supabase backend; src/kit.ts) ────────────────────────────────

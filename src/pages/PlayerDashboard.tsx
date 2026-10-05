@@ -7,7 +7,7 @@ import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability 
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy, UserPlus, BookOpenCheck } from 'lucide-react';
+import { BarChart3, BookOpenCheck, CalendarDays, ChevronDown, Flag, Info, LogOut, Settings, Shield, Trophy, UserPlus } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
@@ -314,7 +314,11 @@ export default function PlayerDashboard() {
         </button>
         <OfficersMenu
           items={officerItems(data)}
-          extras={quizzesOn ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []}
+          extras={[
+            // The coordinator has it among the officers' screens.
+            ...(data.umpiring === 'umpire' ? [{ to: '/umpiring', label: 'Umpiring duties', icon: Flag }] : []),
+            ...(quizzesOn ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []),
+          ]}
           action={inviteLink ? { label: 'Invite someone to join', icon: UserPlus, onSelect: () => setShowInvite(true) } : undefined}
         />
         {(data.isCoach || data.isSectionCaptain) && (

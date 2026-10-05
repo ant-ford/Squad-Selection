@@ -35,6 +35,7 @@ import { pdfsEnabled } from "./pdf/render";
 export { signatureBytes } from "./signatures";
 import { getReferenceData } from "./reference";
 import { attendedEvents } from "./eventAttendance";
+import { gamesUmpiredBetween } from "./umpiring";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { TABLES } from "../../shared/schema/tableNames";
 import {
@@ -278,6 +279,14 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
     view.eventsAttended = await attendedEvents(env, row.person, row.period_start, row.period_end).catch((err) => {
       console.error("Events attended not read:", err instanceof Error ? err.message : err);
       return [];
+    });
+  }
+  // Games umpired in the period as Eddy recorded them (umpiring duties): a
+  // hint beside the member's own answer, which also covers games before Eddy.
+  if (row.person && row.period_start && row.period_end) {
+    view.gamesUmpiredInEddy = await gamesUmpiredBetween(env, row.person, row.period_start, row.period_end).catch((err) => {
+      console.error("Games umpired not read:", err instanceof Error ? err.message : err);
+      return undefined;
     });
   }
   if (canDo === "sponsor" || canDo === "officer") {

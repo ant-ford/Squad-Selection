@@ -42,6 +42,7 @@ const ManageEvents = lazy(() => import('./pages/ManageEvents'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
+const Umpiring = lazy(() => import('./pages/Umpiring'));
 
 /** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
 function pendingJoin(): boolean {
@@ -256,6 +257,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <Volunteers />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/umpiring',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Umpiring />
           </Suspense>
         ),
       },

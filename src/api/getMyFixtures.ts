@@ -94,6 +94,8 @@ export interface GetMyFixturesOutput {
   volunteers?: boolean;
   /** Whether the Events screen is theirs (social secretaries, Section Captains). */
   events?: boolean;
+  /** The umpiring duties screen: the club's umpires, and the Umpire Coordinator who runs it. */
+  umpiring?: 'umpire' | 'coordinator' | null;
   /** Whether their details are kept in Eddy (the Supabase backend): shows "My details". */
   eddyProfile?: boolean;
   /** Today (Hong Kong time) is this player's birthday. */
