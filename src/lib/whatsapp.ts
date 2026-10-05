@@ -1,4 +1,6 @@
 import { safeFormat } from './dateUtils';
+import { POS_SHORT } from './format';
+import { positionRank } from './squadSort';
 
 /**
  * WhatsApp "click to chat" helpers.
@@ -63,6 +65,26 @@ export interface FixtureBrief {
   date: string;
   venue?: string;
   kit?: 'Blue' | 'White' | '';
+  /**
+   * Link that opens this fixture on the player's own page (see fixtureLink),
+   * where they answer for it. Optional so a message can still be built
+   * before the match id is known.
+   */
+  link?: string;
+}
+
+/**
+ * Shareable link to one fixture: it opens the player's page with that
+ * fixture's availability sheet up, the same way ?event= opens an event.
+ * Built on whichever address the app is open at, so preview links stay on
+ * preview.
+ */
+export function fixtureLink(origin: string, matchId: string): string {
+  return `${origin}/?fixture=${encodeURIComponent(matchId)}`;
+}
+
+function linkLine(f: FixtureBrief): string {
+  return f.link ? `\n\nConfirm or say you can't make it: ${f.link}` : '';
 }
 
 function fixtureLine(f: FixtureBrief): string {
@@ -76,7 +98,7 @@ export function buildSelectionMessage(playerName: string, f: FixtureBrief): stri
   const kit = f.kit ? `\n${f.kit} kit.` : '';
   return (
     `Hi ${playerName}, you've been selected for ${fixtureLine(f)}.${kit}` +
-    `\n\nPlease confirm you can play.`
+    (f.link ? linkLine(f) : `\n\nPlease confirm you can play.`)
   );
 }
 
@@ -84,14 +106,44 @@ export function buildSelectionMessage(playerName: string, f: FixtureBrief): stri
  * Squad announcement for pasting into an existing team group chat. wa.me
  * addresses exactly one recipient, so there is no link that messages a whole
  * squad - the coach copies this and pastes it into the group they already
- * have.
+ * have. The fixture link at the end is the group's "poll": each player taps
+ * it and answers in Eddy, against their own name.
+ *
+ * The squad is grouped like a team sheet (GK, DEF, MID, FWD, FLEX, then
+ * anyone without a position) with shirt numbers. Within a position players
+ * keep the order they arrive in, which on the squad screen is the coach's
+ * strongest-first order.
  */
-export function buildSquadAnnouncement(f: FixtureBrief, playerNames: string[]): string {
+export function buildSquadAnnouncement(f: FixtureBrief, players: AnnouncedPlayer[]): string {
   const kit = f.kit ? `\n${f.kit} kit.` : '';
-  const squad = playerNames.length
-    ? `\n\nSquad:\n${playerNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}`
-    : '';
-  return `Squad for ${fixtureLine(f)}.${kit}${squad}`;
+  return `Squad for ${fixtureLine(f)}.${kit}${squadBlock(players)}${linkLine(f)}`;
+}
+
+export interface AnnouncedPlayer {
+  name: string;
+  shirtNo?: string;
+  /** People."Playing Position" as stored, e.g. "Defender". */
+  position?: string;
+}
+
+function squadBlock(players: AnnouncedPlayer[]): string {
+  if (!players.length) return '';
+  // sort() is stable, so the caller's order survives within a position.
+  const sorted = [...players].sort(
+    (a, b) => positionRank(a.position ?? '') - positionRank(b.position ?? ''),
+  );
+  const groups: { label: string; lines: string[] }[] = [];
+  for (const p of sorted) {
+    const label = POS_SHORT[p.position ?? ''] ?? 'Other';
+    const number = p.shirtNo?.trim();
+    const line = number ? `#${number} ${p.name}` : p.name;
+    const last = groups[groups.length - 1];
+    if (last?.label === label) last.lines.push(line);
+    else groups.push({ label, lines: [line] });
+  }
+  // *...* is WhatsApp bold.
+  const body = groups.map((g) => `*${g.label}*\n${g.lines.join('\n')}`).join('\n\n');
+  return `\n\nSquad (${players.length}):\n\n${body}`;
 }
 
 /**

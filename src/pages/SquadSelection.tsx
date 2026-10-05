@@ -11,7 +11,7 @@ import PlayerRow, { canToggleSelection } from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
-import type { FixtureBrief } from '@/lib/whatsapp';
+import { fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -422,8 +422,9 @@ export default function SquadSelection() {
       date: m.date,
       venue: m.venue,
       kit: m.kit ?? '',
+      link: matchId ? fixtureLink(window.location.origin, matchId) : undefined,
     };
-  }, [data?.match]);
+  }, [data?.match, matchId]);
 
   const pendingPlayers = useMemo(
     () => mergedPlayers.filter(p => pendingDeltas.some(d => d.playerId === p.id)),
@@ -801,6 +802,8 @@ export default function SquadSelection() {
             id: p.id,
             preferredName: p.preferredName,
             mobile: p.mobile,
+            shirtNo: p.shirtNo,
+            playingPosition: p.playingPosition,
           }))}
           onClose={() => setShowNotify(false)}
         />

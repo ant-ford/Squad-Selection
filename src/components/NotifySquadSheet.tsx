@@ -14,6 +14,8 @@ export interface NotifyTarget {
   id: string;
   preferredName: string;
   mobile?: string;
+  shirtNo?: string;
+  playingPosition?: string;
 }
 
 /**
@@ -54,7 +56,7 @@ export default function NotifySquadSheet({
   const unreachable = rows.filter((r) => !r.number);
   const announcement = buildSquadAnnouncement(
     fixture,
-    players.map((p) => p.preferredName),
+    players.map((p) => ({ name: p.preferredName, shirtNo: p.shirtNo, position: p.playingPosition })),
   );
 
   const copyAnnouncement = async () => {

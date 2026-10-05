@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildSelectionMessage,
   buildSquadAnnouncement,
+  fixtureLink,
   toWhatsAppNumber,
   whatsAppLink,
   type FixtureBrief,
@@ -71,17 +72,51 @@ describe('message building', () => {
     expect(msg).not.toContain(', ,');
   });
 
-  it('numbers the squad in the announcement', () => {
-    const msg = buildSquadAnnouncement(FIXTURE, ['Sam', 'Alex', 'Jo']);
-    expect(msg).toContain('1. Sam');
-    expect(msg).toContain('2. Alex');
-    expect(msg).toContain('3. Jo');
+  it('lays the squad out by position with shirt numbers, keeping the given order within a position', () => {
+    const msg = buildSquadAnnouncement(FIXTURE, [
+      { name: 'Zed', shirtNo: '9', position: 'Forward' },
+      { name: 'Lee', position: 'Flexible/Varies' },
+      { name: 'Alex', shirtNo: '4', position: 'Defender' },
+      { name: 'Jo', shirtNo: '5', position: 'Defender' },
+      { name: 'Kit', shirtNo: '8', position: 'Midfielder' },
+      { name: 'Sam', shirtNo: '1', position: 'Goalkeeper' },
+      { name: 'Pat', shirtNo: ' ' },
+    ]);
+    expect(msg).toContain(
+      'Squad (7):\n\n' +
+        '*GK*\n#1 Sam\n\n' +
+        '*DEF*\n#4 Alex\n#5 Jo\n\n' +
+        '*MID*\n#8 Kit\n\n' +
+        '*FWD*\n#9 Zed\n\n' +
+        '*FLEX*\nLee\n\n' +
+        '*Other*\nPat',
+    );
   });
 
   it('still produces an announcement with an empty squad', () => {
     const msg = buildSquadAnnouncement(FIXTURE, []);
     expect(msg).toContain('HKFC B vs Kowloon');
-    expect(msg).not.toContain('Squad:');
+    expect(msg).not.toContain('Squad (');
+  });
+
+  it('ends the announcement with the fixture link when there is one', () => {
+    const link = fixtureLink('https://eddy.example', 'rec123');
+    const msg = buildSquadAnnouncement({ ...FIXTURE, link }, [{ name: 'Sam' }]);
+    expect(msg.endsWith(`\n\nConfirm or say you can't make it: ${link}`)).toBe(true);
+    expect(buildSquadAnnouncement(FIXTURE, [{ name: 'Sam' }])).not.toContain('http');
+  });
+
+  it('swaps "Please confirm" for the link in the player message', () => {
+    const link = fixtureLink('https://eddy.example', 'rec123');
+    const msg = buildSelectionMessage('Sam', { ...FIXTURE, link });
+    expect(msg).toContain(link);
+    expect(msg).not.toContain('Please confirm');
+  });
+});
+
+describe('fixtureLink', () => {
+  it("opens the fixture on the player's page at the given address", () => {
+    expect(fixtureLink('https://eddy.example', 'rec123')).toBe('https://eddy.example/?fixture=rec123');
   });
 });
 
