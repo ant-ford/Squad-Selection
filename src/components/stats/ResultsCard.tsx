@@ -9,8 +9,8 @@ const OUTCOME = {
   l: { letter: 'L', label: 'Lost', className: 'bg-rose-600 text-white' },
 } as const;
 
-/** Rows shown at first, and added by each "Show more". */
-const PAGE = 15;
+/** Rows shown at first, and added by each "Show more": fills two or three wide-screen columns evenly. */
+const PAGE = 18;
 
 type Row = MatchResult & { team?: string; goals?: number };
 
@@ -47,7 +47,8 @@ export default function ResultsCard({
         {caption ? `${caption} ` : ''}
         {rows.length} {rows.length === 1 ? 'game' : 'games'}, newest first.
       </p>
-      <ul className="mt-2">
+      {/* Columns on wide screens, read down then across: a row is short, and alone it spreads across a laptop. */}
+      <ul className="mt-2 lg:columns-2 xl:columns-3 lg:gap-x-8">
         {rows.slice(0, shown).map((r, i) => {
           const side = team ?? r.team ?? (isHkfcTeam(r.home) && isHkfcTeam(r.away) ? undefined : isHkfcTeam(r.home) ? r.home : r.away);
           const o = side ? outcomeFor(r, side) : null;
@@ -57,22 +58,10 @@ export default function ResultsCard({
             r.goals ? `${r.goals} ${r.goals === 1 ? 'goal' : 'goals'}` : null,
           ].filter(Boolean);
           return (
-            <li key={`${r.date}-${r.home}-${r.away}-${i}`} className="grid grid-cols-[3.25rem_1fr_auto] gap-2 items-center py-2 border-t border-border">
+            <li key={`${r.date}-${r.home}-${r.away}-${i}`} className="grid grid-cols-[3.25rem_1.75rem_1fr] gap-2 items-center py-2 border-t border-border break-inside-avoid">
               <span className="text-[11px] leading-tight text-muted-foreground tabular-nums">
                 <span className="block">{safeFormat(r.date, multiSeason ? 'd MMM' : 'EEE')}</span>
                 <span className="block">{safeFormat(r.date, multiSeason ? 'yyyy' : 'd MMM')}</span>
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm text-foreground">
-                  <span className={r.home === side ? 'font-semibold' : ''}>{r.home}</span>{' '}
-                  <span className="tabular-nums whitespace-nowrap">
-                    {r.homeScore}&ndash;{r.awayScore}
-                  </span>{' '}
-                  <span className={r.away === side ? 'font-semibold' : ''}>{r.away}</span>
-                </span>
-                {details.length > 0 && (
-                  <span className="block truncate text-[11px] text-muted-foreground">{details.join(' · ')}</span>
-                )}
               </span>
               {o ? (
                 <span
@@ -87,6 +76,18 @@ export default function ResultsCard({
                   derby
                 </span>
               )}
+              <span className="min-w-0">
+                <span className="block text-sm text-foreground">
+                  <span className={r.home === side ? 'font-semibold' : ''}>{r.home}</span>{' '}
+                  <span className="tabular-nums whitespace-nowrap">
+                    {r.homeScore}&ndash;{r.awayScore}
+                  </span>{' '}
+                  <span className={r.away === side ? 'font-semibold' : ''}>{r.away}</span>
+                </span>
+                {details.length > 0 && (
+                  <span className="block truncate text-[11px] text-muted-foreground">{details.join(' · ')}</span>
+                )}
+              </span>
             </li>
           );
         })}
