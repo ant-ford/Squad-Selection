@@ -1,5 +1,5 @@
 /**
- * The events someone attended (migrations 20261003190000 and 20261006120000;
+ * The events someone attended (migrations 20261003190000 and 20261006150000;
  * owner): ticked on the register or checked in with the QR code, at a
  * published event that has started. For the commitment review, which ticks the social functions
  * from it and lists the rest. Kept apart from events.ts so reviews.ts
