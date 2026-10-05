@@ -94,12 +94,40 @@ describe("a season's summary", () => {
       key: "recP1",
       name: "Pat Player",
       teams: { "HKFC A": { apps: 2, goals: 3, captain: 1, keeper: 0, playUps: 0, w: 2, d: 0, l: 0 } },
+      played: [[0, 2, 0], [2, 1, 0]],
     });
     expect(players.find((p) => p.key === "recP2")!.teams).toEqual({
       "HKFC A": { apps: 1, goals: 0, captain: 0, keeper: 1, playUps: 0, w: 1, d: 0, l: 0 },
       "HKFC B": { apps: 1, goals: 0, captain: 0, keeper: 0, playUps: 1, w: 0, d: 1, l: 0 },
     });
     expect(players.find((p) => p.key === "raw:old timer")).toMatchObject({ name: "Old  TIMER" });
+  });
+
+  it("lists each counted game's result, oldest first, home side first", () => {
+    const { results, players } = built().summary;
+    expect(results).toEqual([
+      { date: "2025-10-05", home: "HKFC A", away: "Valley A", homeScore: 3, awayScore: 1, division: "Premier", venue: "HKFC" },
+      { date: "2025-10-05", home: "KCC B", away: "HKFC B", homeScore: 2, awayScore: 2, venue: "KCC" },
+      { date: "2025-10-05", home: "HKFC A", away: "HKFC B", homeScore: 1, awayScore: 0, venue: "HKFC" },
+      { date: "2025-10-05", home: "HKFC B", away: "Pak A", homeScore: 0, awayScore: 2, venue: "HKFC" },
+    ]);
+    // In the derby, Sam played for the away side.
+    expect(players.find((p) => p.key === "recP3")!.played).toEqual([[2, 0, 1], [3, 0, 0]]);
+  });
+
+  it("puts the results in date order whatever order the matches came in", () => {
+    const { results } = buildSeasonSummary({
+      season: "2025-2026",
+      matches: [
+        match("late", { homeTeam: "HKFC A", awayTeam: "Valley A", matchDate: "2026-01-10T07:00:00.000Z" }),
+        // 23:30 UTC is the next morning in Hong Kong.
+        match("early", { homeTeam: "HKFC C", awayTeam: "Pak A", matchDate: "2025-09-20T23:30:00.000Z" }),
+      ],
+      cards: [],
+      names: {},
+      today: "2026-09-26",
+    }).summary;
+    expect(results!.map((r) => [r.date, r.home])).toEqual([["2025-09-21", "HKFC C"], ["2026-01-10", "HKFC A"]]);
   });
 
   it("doesn't count a game played up in goal as a play-up (Bye-law 7.6)", () => {
@@ -176,6 +204,14 @@ describe("adding seasons up", () => {
     });
     expect(period.players.find((p) => p.key === "recP1")!.teams["HKFC A"]).toMatchObject({ apps: 4, goals: 6 });
     expect(period.umpires.find((u) => u.key === "alex wong")).toMatchObject({ games: 4, hkfc: { w: 2 } });
+    expect(period.results.map((r) => r.home)).toEqual([...one.results!, ...one.results!].map((r) => r.home));
+    // A player's games point into their own season's results, so a period has none.
+    expect(period.players.every((p) => p.played === undefined)).toBe(true);
+  });
+
+  it("copes with a summary stored before results were kept", () => {
+    const { results: _r, ...old } = one;
+    expect(combineSeasons([old]).results).toEqual([]);
   });
 
   it("does not change the seasons it was given", () => {
@@ -392,5 +428,16 @@ describe("players and careers", () => {
     expect(career.total).toMatchObject({ apps: 4, goals: 6, captain: 2, w: 4 });
     expect(career.teams["HKFC A"]).toMatchObject({ apps: 4, goals: 6 });
     expect(careerOf([one], "recNobody0000001")).toBeNull();
+  });
+
+  it("lists a player's games with their team and goals, across seasons", async () => {
+    const { careerOf, outcomeFor } = await import("../shared/clubStats");
+    const one = built().summary;
+    const earlier: SeasonSummary = { ...structuredClone(one), season: "2023-2024" };
+    const career = careerOf([one, earlier], "recP3")!;
+    expect(career.results).toHaveLength(4);
+    expect(career.results[0]).toMatchObject({ home: "HKFC A", away: "HKFC B", team: "HKFC B", goals: 0 });
+    expect(career.results.map((r) => outcomeFor(r, r.team))).toEqual(["l", "l", "l", "l"]);
+    expect(careerOf([one], "recP1")!.results.map((r) => [r.away, r.goals])).toEqual([["Valley A", 2], ["HKFC B", 1]]);
   });
 });

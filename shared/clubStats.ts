@@ -11,7 +11,7 @@
  */
 
 /** Bump when the summary's shape or counting changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 8; // 8: rebuilt from Supabase at the switch-over; 7: games in goal are not play-ups
+export const SUMMARY_VERSION = 9; // 9: each game's result; 8: rebuilt from Supabase at the switch-over; 7: games in goal are not play-ups
 
 export interface WDL {
   w: number;
@@ -52,6 +52,25 @@ export interface PlayerSeason {
   key: string;
   name: string;
   teams: Record<string, PlayerTeamLine>;
+  /**
+   * The games they played that season: [index into the season's results,
+   * goals, side (0 home, 1 away)]. The side says which team was theirs in a
+   * derby. Only in a season's own summary; a combined period has none.
+   */
+  played?: [number, number, 0 | 1][];
+}
+
+/** One counted game as the score sheet reads, home side first: "HKFC D 5-4 Valley A". */
+export interface MatchResult {
+  /** "YYYY-MM-DD", Hong Kong. */
+  date: string;
+  home: string;
+  away: string;
+  homeScore: number;
+  awayScore: number;
+  /** HKHA "Division": a league or a cup round. */
+  division?: string;
+  venue?: string;
 }
 
 export interface UmpireSeason {
@@ -80,6 +99,8 @@ export interface SeasonSummary {
   umpires: UmpireSeason[];
   /** HKFC results by who umpired: appointed umpires, or team (duty) umpires. */
   umpireSplits: { appointed: WDL; duty: WDL; unknown: WDL };
+  /** Every counted game, oldest first. Missing from summaries stored before version 9. */
+  results?: MatchResult[];
 }
 
 export const emptyWDL = (): WDL => ({ w: 0, d: 0, l: 0 });
@@ -92,6 +113,14 @@ export function addWDL(into: WDL, from: WDL): WDL {
 }
 
 export const games = (r: WDL) => r.w + r.d + r.l;
+
+/** How a game went for one side, or null for a side that wasn't in it. */
+export function outcomeFor(r: MatchResult, team: string): "w" | "d" | "l" | null {
+  const mine = r.home === team ? r.homeScore : r.away === team ? r.awayScore : null;
+  if (mine === null) return null;
+  const theirs = r.home === team ? r.awayScore : r.homeScore;
+  return mine > theirs ? "w" : mine < theirs ? "l" : "d";
+}
 
 /** Win percentage, 0-100, or null with no games. */
 export const winPct = (r: WDL): number | null => (games(r) ? Math.round((r.w / games(r)) * 100) : null);
@@ -161,6 +190,8 @@ export interface PeriodStats {
   players: PlayerSeason[];
   umpires: UmpireSeason[];
   umpireSplits: SeasonSummary["umpireSplits"];
+  /** Every counted game in the period, oldest first. */
+  results: MatchResult[];
 }
 
 /** Several seasons as one period. Players and umpires are matched by key; the latest name wins. */
@@ -176,7 +207,7 @@ export function combineSeasons(summaries: SeasonSummary[]): PeriodStats {
     matches += s.matches;
     derbies += s.derbies;
     for (const t of s.teams) teams.set(t.team, teams.has(t.team) ? mergeTeam(teams.get(t.team)!, t) : structuredClone(t));
-    for (const p of s.players) {
+    for (const { played: _played, ...p } of s.players) {
       const have = players.get(p.key);
       if (!have) {
         players.set(p.key, structuredClone(p));
@@ -212,6 +243,7 @@ export function combineSeasons(summaries: SeasonSummary[]): PeriodStats {
     players: [...players.values()],
     umpires: [...umpires.values()],
     umpireSplits: splits,
+    results: ordered.flatMap((s) => s.results ?? []),
   };
 }
 
@@ -404,11 +436,19 @@ export interface CareerSeason {
   total: PlayerTeamLine;
 }
 
+/** A game a player played: the result, their team in it and their goals. */
+export interface PlayerResult extends MatchResult {
+  team: string;
+  goals: number;
+}
+
 export interface Career {
   key: string;
   name: string;
   /** Oldest first; only seasons they played in. */
   seasons: CareerSeason[];
+  /** Their games, oldest first (seasons with results kept, version 9 on). */
+  results: PlayerResult[];
   /** Every season added up, team by team. */
   teams: Record<string, PlayerTeamLine>;
   total: PlayerTeamLine;
@@ -417,17 +457,22 @@ export interface Career {
 /** One player's career across the given seasons, or null if they never played in them. */
 export function careerOf(summaries: SeasonSummary[], key: string): Career | null {
   const seasons: CareerSeason[] = [];
+  const results: PlayerResult[] = [];
   let name = '';
   for (const s of [...summaries].sort((a, b) => a.season.localeCompare(b.season))) {
     const p = s.players.find((x) => x.key === key);
     if (!p) continue;
     name = p.name;
     seasons.push({ season: s.season, teams: p.teams, total: totalLine(p.teams) });
+    for (const [i, goals, side] of p.played ?? []) {
+      const r = s.results?.[i];
+      if (r) results.push({ ...r, team: side === 0 ? r.home : r.away, goals });
+    }
   }
   if (seasons.length === 0) return null;
   const teams: Record<string, PlayerTeamLine> = {};
   for (const s of seasons) {
     for (const [t, l] of Object.entries(s.teams)) teams[t] = teams[t] ? mergeLine(teams[t], l) : { ...l };
   }
-  return { key, name, seasons, teams, total: totalLine(teams) };
+  return { key, name, seasons, results, teams, total: totalLine(teams) };
 }
