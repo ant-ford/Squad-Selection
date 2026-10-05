@@ -372,7 +372,7 @@ function SeasonReport() {
           <ul className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
             {data.byTeam.map((t) => (
               <li key={t.team} className="text-foreground">
-                {t.team}: {t.duties} duties, {t.free} free
+                {t.team}: {t.duties} {t.duties === 1 ? 'duty' : 'duties'}, {t.free} free
               </li>
             ))}
           </ul>
