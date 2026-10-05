@@ -21,7 +21,6 @@ import {
 import {
   captainsMessage,
   confirmedOf,
-  isOpen,
   umpireMark,
   umpiresMessage,
   weekEnd,
@@ -67,7 +66,6 @@ function Who({ a }: { a: DutyAssignment }) {
   return (
     <span className={a.status === 'no_show' ? 'line-through text-muted-foreground' : 'text-foreground'}>
       {umpireMark(a)}
-      {a.external && <span className="text-muted-foreground"> (outside)</span>}
     </span>
   );
 }
@@ -82,7 +80,7 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
   if (mine?.status === 'confirmed') {
     return (
       <div className="flex items-center gap-3">
-        <span className="text-xs font-medium text-primary">You're umpiring{mine.paid ? ' (paid)' : ''}</span>
+        <span className="text-xs font-medium text-primary">You're umpiring</span>
         <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(mine.id))}>
           Pull out
         </button>
@@ -93,9 +91,9 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
   if (mine?.status === 'offered') {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-muted-foreground">Your paid offer is waiting for the coordinator</span>
+        <span className="text-xs text-muted-foreground">Paid offer sent</span>
         <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
-          Do it free instead
+          Free instead
         </button>
         <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(mine.id))}>
           Withdraw
@@ -113,10 +111,10 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
   return (
     <div className="flex flex-wrap gap-2">
       <button className={primaryBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
-        I'll take it (free)
+        I'll take it
       </button>
       <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, true))}>
-        Offer to do it paid
+        Paid
       </button>
     </div>
   );
@@ -137,7 +135,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   if (duty.status === 'cancelled') {
     return taken ? (
       <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(taken.id))}>
-        Take {taken.name} off
+        Remove
       </button>
     ) : null;
   }
@@ -152,12 +150,12 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
               disabled={action.isPending}
               onClick={() => action.mutate(() => setNoShow(taken.id, taken.status !== 'no_show'))}
             >
-              {taken.status === 'no_show' ? 'Undo no-show' : "Didn't umpire (no-show)"}
+              {taken.status === 'no_show' ? 'Undo no-show' : 'No-show'}
             </button>
           ) : taken.personId === board.me.personId ? null : (
             // Their own game: "Pull out" is beside it already.
             <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(taken.id))}>
-              Take {taken.name} off
+              Remove
             </button>
           )}
         </div>
@@ -166,7 +164,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
         <ul className="space-y-1">
           {offers.map((o) => (
             <li key={o.id} className="flex items-center gap-3 text-xs">
-              <span className="text-foreground">💰{o.name} offered to do it paid</span>
+              <span className="text-foreground">💰{o.name}</span>
               <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => confirmAssignment(o.id))}>
                 Confirm
               </button>
@@ -192,13 +190,12 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                   {board.umpires?.map((u) => (
                     <option key={u.personId} value={u.personId}>
                       {u.fullName}
-                      {u.onCommitment ? ' (on commitment)' : ''}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="text-xs text-muted-foreground">
-                Or an outside umpire (paid)
+                Outside umpire
                 <input
                   className={input}
                   list="outside-umpires"
@@ -208,20 +205,16 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                     setOutside(e.target.value);
                     setWho('');
                   }}
-                  placeholder="Name"
                 />
+                <datalist id="outside-umpires">
+                  {board.externalNames?.map((n) => <option key={n} value={n} />)}
+                </datalist>
               </label>
             </div>
-            {who && (
+            {who && !chosen?.onCommitment && (
               <label className="flex items-center gap-2 text-xs text-foreground">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-[hsl(var(--primary))]"
-                  checked={paid && !chosen?.onCommitment}
-                  disabled={!!chosen?.onCommitment}
-                  onChange={(e) => setPaid(e.target.checked)}
-                />
-                Paid{chosen?.onCommitment ? ' (not while on their commitment)' : ''}
+                <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+                Paid
               </label>
             )}
             <div className="flex gap-2">
@@ -244,7 +237,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
           </div>
         ) : (
           <button className={plainBtn} onClick={() => setAssigning(true)}>
-            Put someone down
+            Assign
           </button>
         ))}
     </div>
@@ -255,7 +248,6 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
   const coordinator = board.access === 'coordinator';
   const taken = confirmedOf(duty);
   const cancelled = duty.status === 'cancelled';
-  const offers = duty.assignments.filter((a) => a.status === 'offered');
   return (
     <li className={`px-3 py-2.5 space-y-1.5 ${cancelled ? 'opacity-70' : ''}`}>
       <div className="flex items-start gap-2">
@@ -273,18 +265,15 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
       <p className="text-sm">
         {cancelled ? (
           <span className="text-destructive">
-            Off HKHA's list (moved or given to another club)
-            {taken && (coordinator ? `: tell ${taken.name}` : taken.personId === board.me.personId ? ": you're not needed for it" : '')}
+            Removed by HKHA
+            {taken && coordinator ? ` · tell ${taken.name}` : ''}
           </span>
         ) : taken ? (
           <Who a={taken} />
         ) : (
-          <span className="text-amber-600 dark:text-amber-400 font-medium">Needs an umpire</span>
+          <span className="text-amber-600 dark:text-amber-400 font-medium">Open</span>
         )}
-        {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · HKHA marks it rescheduled</span>}
-        {!coordinator && !taken && offers.length > 0 && (
-          <span className="text-muted-foreground"> · {offers.length} paid offer{offers.length === 1 ? '' : 's'} waiting</span>
-        )}
+        {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
       </p>
       {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
       {coordinator && <CoordinatorActions duty={duty} board={board} />}
@@ -294,20 +283,17 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
 
 // ── The week's WhatsApp messages ───────────────────────────────────────
 
-function Message({ title, note, text }: { title: string; note: string; text: string }) {
+function Message({ title, text }: { title: string; text: string }) {
   return (
     <section className="rounded-xl border border-border bg-card p-3 space-y-2">
-      <div>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <p className="text-xs text-muted-foreground">{note}</p>
-      </div>
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2 text-xs text-foreground font-sans">{text}</pre>
       <div className="flex gap-2">
         <button className={plainBtn} onClick={() => copy(text)}>
           <Copy className="h-3.5 w-3.5" /> Copy
         </button>
         <a className={primaryBtn} href={whatsappShareUrl(text)} target="_blank" rel="noreferrer">
-          <MessageCircle className="h-3.5 w-3.5" /> Open in WhatsApp
+          <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
         </a>
       </div>
     </section>
@@ -317,20 +303,10 @@ function Message({ title, note, text }: { title: string; note: string; text: str
 function Messages({ board }: { board: UmpiringBoard }) {
   const live = board.duties.filter((d) => d.status !== 'cancelled');
   if (live.length === 0) return null;
-  const open = live.filter(isOpen).length;
   return (
     <div className="space-y-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">This week's messages</h2>
-      <Message
-        title="1. To the umpires group"
-        note={open ? `${open} of ${live.length} still need an umpire. The link opens this week for them.` : 'Every duty has an umpire.'}
-        text={umpiresMessage(live, board.link)}
-      />
-      <Message
-        title="2. To the captains group"
-        note={open ? `Send once the gaps are filled: ${open} still show ❓.` : 'The final list, ✅ club umpires and 💰 paid.'}
-        text={captainsMessage(live)}
-      />
+      <Message title="Umpires group" text={umpiresMessage(live, board.link)} />
+      <Message title="Captains group" text={captainsMessage(live)} />
     </div>
   );
 }
@@ -342,17 +318,14 @@ function SeasonReport() {
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (error || !data) return <p className="text-sm text-muted-foreground">{errorText(error, 'Could not load the season.')}</p>;
   const tiles: [string, number][] = [
-    ['Duties played', data.duties],
-    ['Club, free', data.coveredFree],
-    ['Club, paid', data.coveredPaidMembers],
-    ['Outside, paid', data.coveredExternal],
-    ['No umpire / no-show', data.uncovered],
+    ['Duties', data.duties],
+    ['Free', data.coveredFree],
+    ['Paid', data.coveredPaidMembers],
+    ['Outside', data.coveredExternal],
+    ['Uncovered', data.uncovered],
   ];
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Season {data.season.replace('-', '–')}, games played so far. Other clubs' match cards can't be read, so a confirmed umpire counts unless marked a no-show.
-      </p>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {tiles.map(([label, n]) => (
           <div key={label} className="rounded-lg border border-border bg-card py-2 text-center">
@@ -410,17 +383,6 @@ function SeasonReport() {
 }
 
 // ── The page ───────────────────────────────────────────────────────────
-
-function Intro({ board }: { board: UmpiringBoard }) {
-  if (!board.me.isUmpire) return null;
-  return (
-    <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-foreground">
-      {board.me.onCommitment
-        ? `You're on your commitment until ${safeFormat(noon(board.me.commitmentEndDate!.slice(0, 10)), 'd MMM yyyy')}, so you umpire unpaid. Put your name down and the game is yours.`
-        : 'Your commitment has ended, so you can umpire free or paid. A free umpire gets the game straight away; a paid offer waits for the coordinator.'}
-    </p>
-  );
-}
 
 /**
  * HKFC's umpiring duties, a week at a time. The club's umpires put their
@@ -495,7 +457,6 @@ export default function Umpiring() {
               <SeasonReport />
             ) : (
               <>
-                <Intro board={data} />
                 <div className="flex items-center gap-2">
                   <button className={plainBtn} disabled={!prev} onClick={() => setParam('week', prev)} aria-label="Previous week">
                     <ChevronLeft className="h-4 w-4" />
@@ -506,7 +467,7 @@ export default function Umpiring() {
                   </button>
                 </div>
                 {byDay.length === 0 ? (
-                  <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">No HKFC umpiring duties this week.</p>
+                  <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">No duties this week.</p>
                 ) : (
                   byDay.map(([day, duties]) => (
                     <section key={day}>
