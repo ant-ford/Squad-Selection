@@ -150,12 +150,15 @@ export default function FixtureList() {
           )}
         </div>
       ) : (
-        <div className="pt-4 space-y-4">
+        <div className="pt-4 space-y-8">
           {sortedDates.map(dateKey => (
             <div key={dateKey}>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                {safeFormat(dateKey, 'EEE d MMM yyyy')}
-              </p>
+              <div className="flex items-center gap-3 mb-3">
+                <h2 className="text-base sm:text-lg font-bold text-foreground whitespace-nowrap">
+                  {safeFormat(dateKey, 'EEEE d MMMM yyyy')}
+                </h2>
+                <div className="h-0.5 flex-1 rounded-full bg-foreground/15" />
+              </div>
               <div className="space-y-2">
                 {grouped[dateKey].map(f => (
                   <FixtureCard key={f.id} fixture={f} conflicts={conflictsByFixture.get(f.id) ?? []} />
