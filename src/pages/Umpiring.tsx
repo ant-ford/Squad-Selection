@@ -70,9 +70,16 @@ function Who({ a }: { a: DutyAssignment }) {
   );
 }
 
+/** For the coordinator: "· playing 10:45" when a club umpire has a game then. */
+function Playing({ duty, personId }: { duty: UmpireDuty; personId: string | null }) {
+  const at = personId ? duty.clashes?.[personId] : undefined;
+  return at ? <span className="text-amber-600 dark:text-amber-400"> · playing {at}</span> : null;
+}
+
 /** What an umpire can do with a duty. */
 function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
   const action = useUmpiringAction();
+  const [anyway, setAnyway] = useState(false);
   const mine = duty.assignments.find((a) => a.personId === board.me.personId);
   const taken = confirmedOf(duty);
   if (duty.status === 'cancelled' || isPast(duty)) return null;
@@ -99,6 +106,13 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
           Withdraw
         </button>
       </div>
+    );
+  }
+  if (duty.clash && !anyway) {
+    return (
+      <button className={linkBtn} onClick={() => setAnyway(true)}>
+        Take anyway
+      </button>
     );
   }
   if (board.me.onCommitment) {
@@ -164,7 +178,10 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
         <ul className="space-y-1">
           {offers.map((o) => (
             <li key={o.id} className="flex items-center gap-3 text-xs">
-              <span className="text-foreground">💰{o.name}</span>
+              <span className="text-foreground">
+                💰{o.name}
+                <Playing duty={duty} personId={o.personId} />
+              </span>
               <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => confirmAssignment(o.id))}>
                 Confirm
               </button>
@@ -190,6 +207,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                   {board.umpires?.map((u) => (
                     <option key={u.personId} value={u.personId}>
                       {u.fullName}
+                      {duty.clashes?.[u.personId] ? ` · playing ${duty.clashes[u.personId]}` : ''}
                     </option>
                   ))}
                 </select>
@@ -269,11 +287,15 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
             {taken && coordinator ? ` · tell ${taken.name}` : ''}
           </span>
         ) : taken ? (
-          <Who a={taken} />
+          <>
+            <Who a={taken} />
+            {coordinator && <Playing duty={duty} personId={taken.personId} />}
+          </>
         ) : (
           <span className="text-amber-600 dark:text-amber-400 font-medium">Open</span>
         )}
         {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
+        {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-600 dark:text-amber-400"> · ⚠ Your game {duty.clash}</span>}
       </p>
       {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
       {coordinator && <CoordinatorActions duty={duty} board={board} />}

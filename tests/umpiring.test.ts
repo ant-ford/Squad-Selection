@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { assignDuty, confirmAssignment, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
 import { invalidateAll } from "../worker/src/cache";
 import {
   captainsMessage,
+  clashingGame,
   dutyLine,
   isOnCommitment,
   umpiresMessage,
@@ -257,6 +258,56 @@ describe("the coordinator", () => {
     const calls = fake({ ...base(), matches: [{ id: "m1", ump_1: "Bob Page", ump_2: "", home_team: "HKFC F", away_team: "Elite B" }] });
     await withdrawAssignment(env, user("recBOB"), PAID);
     expect(writes(calls)[0].body).toEqual({ status: "withdrawn" });
+  });
+});
+
+describe("clashes with the umpire's own games", () => {
+  const game = (hk: string, venue = "HKFC") => ({ matchDate: new Date(`2026-10-11T${hk}:00+08:00`).toISOString(), venue, homeTeam: "HKFC D", awayTeam: "Valley B" });
+  const at = (hk: string, venue = "HKFC", timeTbc = false) => ({ matchDate: new Date(`2026-10-11T${hk}:00+08:00`).toISOString(), venue, timeTbc });
+
+  it("flags overlapping kick-offs at the same ground, but not the next slot", () => {
+    expect(clashingGame(at("10:45"), [game("10:45")])).toBeTruthy();
+    expect(clashingGame(at("10:45"), [game("09:30")])).toBeTruthy();
+    expect(clashingGame(at("10:45"), [game("09:00")])).toBeUndefined(); // the slot before
+    expect(clashingGame(at("10:45"), [game("12:30")])).toBeUndefined(); // the slot after
+  });
+
+  it("allows for travel to another ground", () => {
+    expect(clashingGame(at("10:45", "KP"), [game("12:30")])).toBeTruthy();
+    expect(clashingGame(at("10:45", "KP"), [game("13:30")])).toBeUndefined();
+  });
+
+  it("flags a TBC time on the same day, and nothing on another day", () => {
+    expect(clashingGame(at("00:00", "KP", true), [game("18:00")])).toBeTruthy();
+    expect(clashingGame(at("10:45"), [game("00:00")])).toBeTruthy();
+    expect(clashingGame(at("10:45"), [{ ...game("10:45"), matchDate: "2026-10-12T02:45:00.000Z" }])).toBeUndefined();
+  });
+
+  it("counts the umpire's team's games and games they're picked for, not ones they're Unavailable for", async () => {
+    const sunday = (hk: string) => new Date(`2026-10-11T${hk}:00+08:00`).toISOString();
+    const team = (id: string, over: Record<string, unknown>) => ({ ...people().find((p) => p.id === id), active: true, ...over });
+    fake({
+      people: (url: URL) =>
+        url.searchParams.get("api_id")
+          ? [team("u-george", { selected_team_sos: "HKFC D" })]
+          : [team("u-george", { selected_team_sos: "HKFC D" }), team("u-ann", { registered_team: "HKFC F" }), team("u-bob", { registered_team: "HKFC E", qualified_umpire: "Level 1" })],
+      matches: (url: URL) =>
+        url.searchParams.get("match_status")
+          ? [
+              { id: "m-d", match_date: sunday("12:30"), venue: "HKFC", home_team: "HKFC D", away_team: "Valley B" },
+              { id: "m-f", match_date: sunday("09:00"), venue: "HKFC", home_team: "HKFC F", away_team: "Elite B" },
+              { id: "m-e", match_date: sunday("14:15"), venue: "HKFC", home_team: "HKFC E", away_team: "Rhino A" },
+            ]
+          : [],
+      match_selections: [{ match_id: "m-e", person_id: "u-ann" }],
+      availability_exceptions: [{ id: "x1", match_id: "m-d", person_id: "u-george" }],
+      umpire_duties: [{ id: DUTY, match_date: sunday("14:15"), time_tbc: false, venue: "HKFC", home_team: "HKFC E", away_team: "Rhino A", slot: 1, duty_team: "HKFC G", status: "scheduled" }],
+      umpire_assignments: [],
+    });
+    const board = await getUmpiringBoard(env, george, "2026-10-05");
+    const [d] = board.duties;
+    expect(d.clash).toBeUndefined(); // George's 12:30 game: he's Unavailable for it
+    expect(d.clashes).toEqual({ recANN: "14:15", recBOB: "14:15" }); // Ann picked to play up; Bob's own team
   });
 });
 

@@ -46,6 +46,53 @@ export interface UmpireDuty {
   status: DutyStatus;
   /** Offers, the confirmed umpire, no-shows; withdrawn ones are left out. */
   assignments: DutyAssignment[];
+  /** The viewer's own game it clashes with ("10:45 HKFC D v Valley B"), if any. */
+  clash?: string;
+  /** Coordinator only: club umpires playing at a clashing time, People api id -> kick-off ("10:45"). */
+  clashes?: Record<string, string>;
+}
+
+/** One of an umpire's own games: their team's, or one they're picked for. */
+export interface OwnGame {
+  matchDate: string;
+  venue: string | null;
+  homeTeam: string;
+  awayTeam: string;
+}
+
+/** Same ground: the next slot (1h45 later) is fine, anything closer overlaps. */
+const SAME_GROUND_MS = 105 * 60 * 1000;
+/** Another ground: time to get there too. */
+const OTHER_GROUND_MS = 150 * 60 * 1000;
+
+/** A TBC kick-off is stored as midnight HK time. */
+const isTbc = (iso: string) => hkTime(iso) === "00:00";
+
+/**
+ * The umpire's game a duty clashes with: kick-offs too close for the ground,
+ * or either time still TBC on the same day.
+ */
+export function clashingGame(duty: Pick<UmpireDuty, "matchDate" | "timeTbc" | "venue">, games: OwnGame[]): OwnGame | undefined {
+  const day = hkDateKey(duty.matchDate);
+  const at = new Date(duty.matchDate).getTime();
+  return games.find((g) => {
+    if (hkDateKey(g.matchDate) !== day) return false;
+    if (duty.timeTbc || isTbc(g.matchDate)) return true;
+    const gap = Math.abs(new Date(g.matchDate).getTime() - at);
+    const sameGround = !!duty.venue && duty.venue === g.venue;
+    return gap < (sameGround ? SAME_GROUND_MS : OTHER_GROUND_MS);
+  });
+}
+
+/** "10:45", HK time. */
+export function hkTime(iso: string): string {
+  const p = hkParts(iso);
+  return `${p.hour}:${p.minute}`;
+}
+
+/** "10:45 HKFC D v Valley B" ("TBC" for a time not yet set). */
+export function gameLabel(g: OwnGame): string {
+  return `${isTbc(g.matchDate) ? "TBC" : hkTime(g.matchDate)} ${g.homeTeam} v ${g.awayTeam}`;
 }
 
 export type UmpiringAccess = "umpire" | "coordinator";

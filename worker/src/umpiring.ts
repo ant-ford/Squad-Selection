@@ -15,12 +15,15 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { buildNameDictionary, canonicalKey, parseUmpire } from "../../shared/umpires";
 import { NO_QUALIFICATION } from "../../shared/volunteering";
 import {
+  clashingGame,
+  gameLabel,
   isOnCommitment,
   seasonOf,
   weekEnd,
   weekOf,
   type AssignmentStatus,
   type DutyAssignment,
+  type OwnGame,
   type UmpireDuty,
   type UmpireOption,
   type UmpireTally,
@@ -37,6 +40,9 @@ interface PersonRow {
   surname: string | null;
   qualified_umpire: string | null;
   commitment_end_date: string | null;
+  selected_team_eos: string | null;
+  selected_team_sos: string | null;
+  registered_team: string | null;
 }
 
 interface DutyRow {
@@ -62,7 +68,8 @@ interface AssignmentRow {
   created_at: string;
 }
 
-const PERSON_COLUMNS = "id,api_id,preferred_name,given_names,surname,qualified_umpire,commitment_end_date";
+const PERSON_COLUMNS =
+  "id,api_id,preferred_name,given_names,surname,qualified_umpire,commitment_end_date,selected_team_eos,selected_team_sos,registered_team";
 const DUTY_COLUMNS = "id,match_date,time_tbc,division,venue,home_team,away_team,slot,duty_team,status";
 const ASSIGNMENT_COLUMNS = "id,duty_id,person_id,external_name,paid,status,created_at";
 
@@ -219,6 +226,60 @@ async function dutiesBetween(env: Env, from: string, to: string): Promise<Umpire
   return rows.map((d) => toDuty(d, byDuty.get(d.id) ?? []));
 }
 
+/**
+ * Each person's own games between two HK dates: their team's (the team the
+ * app shows them in) and any they're picked for, less those they've said
+ * they're Unavailable for. For flagging duties that clash.
+ */
+async function ownGames(env: Env, people: PersonRow[], from: string, to: string): Promise<Map<string, OwnGame[]>> {
+  const out = new Map<string, OwnGame[]>();
+  if (people.length === 0) return out;
+  const start = new Date(`${from}T00:00:00+08:00`).toISOString();
+  const end = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + DAY_MS).toISOString();
+  const matches = await db(env).select<{ id: string; match_date: string; venue: string | null; home_team: string | null; away_team: string | null }>(
+    "matches",
+    `select=id,match_date,venue,home_team,away_team&match_date=gte.${encodeURIComponent(start)}&match_date=lt.${encodeURIComponent(end)}&match_status=neq.Rescheduled`,
+  );
+  if (matches.length === 0) return out;
+  const ids = matches.map((m) => m.id);
+  const personIds = people.map((p) => p.id);
+  const [selections, unavailable] = await Promise.all([
+    db(env).select<{ match_id: string; person_id: string }>(
+      "match_selections",
+      `select=match_id,person_id&match_id=${inList(ids)}&person_id=${inList(personIds)}`,
+      "match_id,side,person_id",
+    ),
+    db(env).select<{ id: string; match_id: string; person_id: string }>(
+      "availability_exceptions",
+      `select=id,match_id,person_id&match_id=${inList(ids)}&person_id=${inList(personIds)}&status=eq.Unavailable`,
+    ),
+  ]);
+  const picked = new Set(selections.map((s) => `${s.person_id}|${s.match_id}`));
+  const notPlaying = new Set(unavailable.map((u) => `${u.person_id}|${u.match_id}`));
+  for (const p of people) {
+    const team = p.selected_team_eos || p.selected_team_sos || p.registered_team || "";
+    const games = matches
+      .filter((m) => !notPlaying.has(`${p.id}|${m.id}`) && (picked.has(`${p.id}|${m.id}`) || (!!team && (m.home_team === team || m.away_team === team))))
+      .map((m) => ({ matchDate: m.match_date, venue: m.venue, homeTeam: m.home_team ?? "", awayTeam: m.away_team ?? "" }));
+    if (games.length) out.set(p.id, games);
+  }
+  return out;
+}
+
+/** Marks each duty with the viewer's clash and, for the coordinator, who else is playing then. */
+function markClashes(duties: UmpireDuty[], games: Map<string, OwnGame[]>, me: PersonRow, others: PersonRow[]): void {
+  for (const d of duties) {
+    const mine = clashingGame(d, games.get(me.id) ?? []);
+    if (mine) d.clash = gameLabel(mine);
+    const clashes: Record<string, string> = {};
+    for (const p of others) {
+      const g = clashingGame(d, games.get(p.id) ?? []);
+      if (g) clashes[p.api_id] = gameLabel(g).split(" ")[0];
+    }
+    if (others.length) d.clashes = clashes;
+  }
+}
+
 /** Mondays of the weeks with duties: the last four weeks and everything to come. */
 async function dutyWeeks(env: Env, coordinator: boolean): Promise<string[]> {
   const since = new Date(Date.now() - (coordinator ? 28 : 0) * DAY_MS);
@@ -242,6 +303,9 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
 
   const duties = await dutiesBetween(env, week, weekEnd(week));
   const pool = await umpirePool(env);
+  const others = coordinator ? [...pool.values()] : [];
+  const games = await ownGames(env, [me, ...others.filter((p) => p.id !== me.id)], week, weekEnd(week));
+  markClashes(duties, games, me, others);
   const now = today();
   const board: UmpiringBoard = {
     access,
