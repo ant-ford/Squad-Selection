@@ -8,7 +8,7 @@ export interface ProfileData {
   isSectionCaptain: boolean;
   /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
   officerRoles: {
-    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor' | 'assistantDirector';
+    office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor' | 'assistantDirector' | 'umpireCoordinator';
     designation: string;
   }[];
   /** Officers' sections this person may open, decided by the Worker. */
@@ -25,6 +25,8 @@ export interface ProfileData {
   volunteers?: boolean;
   /** Whether the Events screen is theirs (social secretaries, Section Captains). */
   events?: boolean;
+  /** The umpiring duties screen: the club's umpires, and the Umpire Coordinator who runs it. */
+  umpiring?: 'umpire' | 'coordinator' | null;
   captainTeams: string[];
 
   coachTeams: {

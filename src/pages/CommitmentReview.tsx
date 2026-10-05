@@ -14,6 +14,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import {
   belowAttendance,
   GAMES_UMPIRED,
+  gamesUmpiredChoice,
   PRACTICES,
   RECOMMENDED_REDUCTIONS,
   SOCIAL_FUNCTIONS,
@@ -150,7 +151,8 @@ function SubmitError({ error }: { error: unknown }) {
 function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const options = review.options ?? { sponsors: [], officers: [], usualSponsor: null };
   const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, {
-    gamesUmpired: '',
+    // From the duties Eddy recorded; they can change it.
+    gamesUmpired: gamesUmpiredChoice(review.gamesUmpiredInEddy),
     practices: '',
     // Ticked from the events Eddy recorded them at; they can change it.
     socialFunctions: recordedSocialFunctions(review.eventsAttended),
@@ -540,6 +542,9 @@ export default function CommitmentReview() {
               </div>
               {review.attendance.teamsPlayed.length > 0 && (
                 <p className="text-[11px] text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
+              )}
+              {!!review.gamesUmpiredInEddy && (
+                <p className="text-[11px] text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
               )}
               {!!review.eventsAttended?.length && (
                 <p className="text-[11px] text-muted-foreground mt-1">
