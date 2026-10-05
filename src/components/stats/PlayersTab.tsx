@@ -326,7 +326,6 @@ function CareerView({
       <ResultsCard
         key={`${player}|${season ?? 'all'}`}
         results={career.results}
-        caption={season ? 'Their games this season.' : 'Their games, every season.'}
         multiSeason={!season}
       />
     </div>
