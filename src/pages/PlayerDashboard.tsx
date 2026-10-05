@@ -416,7 +416,9 @@ export default function PlayerDashboard() {
               <div className="space-y-4">
                 {gkFixturesByDate?.map(([date, list]) => (
                   <div key={date}>
-                    <SectionHeader title={safeFormat(date, 'EEEE d MMM')} count={list.length} />
+                    <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3">
+                      {safeFormat(date, 'EEEE d MMM')} ({list.length})
+                    </h2>
                     <DayAvailabilityControl
                       date={date}
                       busy={bulkBusy}

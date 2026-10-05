@@ -24,8 +24,8 @@ export function MetaLine({ date, venue }: { date: string; venue: string }) {
 
   return (
     <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-      <span className="flex items-center gap-1">
-        <Calendar className="h-3 w-3" />
+      <span className="flex items-center gap-1 text-sm font-bold text-foreground uppercase tracking-wide">
+        <Calendar className="h-3.5 w-3.5" />
         {safeFormat(date, 'EEE d MMM')}
       </span>
       {countdown && (

@@ -150,14 +150,14 @@ export default function FixtureList() {
           )}
         </div>
       ) : (
-        <div className="pt-4 space-y-8">
+        <div className="pt-4 space-y-6">
           {sortedDates.map(dateKey => (
             <div key={dateKey}>
-              <div className="flex items-center gap-3 mb-3">
-                <h2 className="text-base sm:text-lg font-bold text-foreground whitespace-nowrap">
-                  {safeFormat(dateKey, 'EEEE d MMMM yyyy')}
+              <div className="flex items-center gap-3 mb-2">
+                <h2 className="text-sm font-bold text-foreground uppercase tracking-wide whitespace-nowrap">
+                  {safeFormat(dateKey, 'EEE d MMM yyyy')}
                 </h2>
-                <div className="h-0.5 flex-1 rounded-full bg-foreground/15" />
+                <div className="h-px flex-1 bg-foreground/15" />
               </div>
               <div className="space-y-2">
                 {grouped[dateKey].map(f => (
