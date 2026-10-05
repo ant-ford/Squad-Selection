@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Copy, Download, PartyPopper, Plus, Search, X } from 'lucide-react';
+import { ArrowLeft, Copy, Download, PartyPopper, Plus, QrCode, Search, X } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import HelpLink from '@/components/HelpLink';
@@ -26,11 +26,12 @@ import {
   setEventStatus,
   setSocialSecretaries,
   uploadPoster,
-  markNoShow,
   waiveCharge,
 } from '@/api/events';
 import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
 import PosterImage from '@/components/events/PosterImage';
+import RegisterSection from '@/components/events/RegisterSection';
+import CheckInQrSheet from '@/components/events/CheckInQrSheet';
 import {
   DEFAULT_AUDIENCE,
   EVENT_GROUPS,
@@ -44,6 +45,7 @@ import {
   answersCsv,
   asksDietary,
   audienceOptions,
+  registerOpen,
   describeAudience,
   type EventInput,
   type ManageView,
@@ -450,11 +452,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
     },
     onError: (err) => toast.error(errorText(err)),
   });
-  const noShow = useMutation({
-    mutationFn: ({ personId, value }: { personId: string; value: boolean }) => markNoShow(id, personId, value),
-    onSuccess: refresh,
-    onError: (err) => toast.error(errorText(err)),
-  });
+  const [qr, setQr] = useState(false);
   const answer = useMutation({
     mutationFn: ({ personId, d }: { personId: string; d: Draft }) =>
       respondToEvent(id, { personId, status: d.status!, guests: d.guests, canHelp: d.canHelp, answers: d.answers, notes: d.notes, asManager: true }),
@@ -527,6 +525,11 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                   <Copy className="h-4 w-4 inline mr-1" /> Copy link for WhatsApp
                 </button>
               )}
+              {e.status === 'published' && (
+                <button className={secondary} onClick={() => setQr(true)}>
+                  <QrCode className="h-4 w-4 inline mr-1" /> Check-in QR code
+                </button>
+              )}
               {e.status === 'cancelled' && (
                 <button className={secondary} disabled={status.isPending} onClick={() => status.mutate('published')}>
                   Reopen
@@ -548,6 +551,9 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                 </button>
               )}
             </div>
+
+            {e.status === 'published' && registerOpen(e) && <RegisterSection event={e} responses={data.responses} />}
+            {qr && <CheckInQrSheet event={e} onClose={() => setQr(false)} />}
 
             {e.status !== 'draft' && (
               <section className="space-y-2">
@@ -587,14 +593,6 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                           {r.status !== 'not_going' &&
                             e.questions.map((q) => (r.answers[q.key] ? <p key={q.key}>{q.label}: {r.answers[q.key]}</p> : null))}
                           {r.canHelp && <p>Can help</p>}
-                          {r.status === 'going' && Date.parse(e.startsAt) <= Date.now() && (
-                            <p>
-                              {r.noShow ? "Didn't come · " : ''}
-                              <button className="text-primary" disabled={noShow.isPending} onClick={() => noShow.mutate({ personId: r.personId, value: !r.noShow })}>
-                                {r.noShow ? 'Came after all' : "Didn't come"}
-                              </button>
-                            </p>
-                          )}
                           {e.paymentMode !== 'free' && r.status === 'going' && (
                             <p>
                               {r.waived ? 'Let off the charge · ' : ''}

@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
-import type { ChargeList, EventInput, EventPerson, EventResponses, ManageView, MyEvent, PaymentInfo, RespondInput } from '@shared/events';
+import type { ChargeList, CheckInInput, CheckInView, EventInput, EventPerson, EventResponses, ManageView, MyEvent, PaymentInfo, RespondInput } from '@shared/events';
 import type { Selection } from '@shared/emailLists';
 
 /** Special events (worker/src/events.ts). */
@@ -68,8 +68,28 @@ export function confirmPayment(id: string, personId: string, confirmed: boolean)
   return apiPost(`/api/events/${id}/confirm-payment`, { personId, confirmed });
 }
 
-export function markNoShow(id: string, personId: string, noShow: boolean): Promise<{ ok: true }> {
-  return apiPost(`/api/events/${id}/no-show`, { personId, noShow });
+export function setAttendance(id: string, personId: string, attended: boolean, guestsCame?: number): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/attendance`, { personId, attended, ...(guestsCame === undefined ? {} : { guestsCame }) });
+}
+
+export function tickEveryone(id: string): Promise<{ ticked: number }> {
+  return apiPost(`/api/events/${id}/tick-everyone`, {});
+}
+
+export function setRegisterTaken(id: string, taken: boolean): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/register-taken`, { taken });
+}
+
+export function getCheckinLink(id: string): Promise<{ url: string }> {
+  return apiGet(`/api/events/${id}/checkin-link`);
+}
+
+export function getCheckIn(id: string, code: string): Promise<CheckInView> {
+  return apiGet(`/api/events/${id}/checkin`, { c: code });
+}
+
+export function checkIn(id: string, input: CheckInInput): Promise<{ ok: true; checkedIn: number }> {
+  return apiPost(`/api/events/${id}/checkin`, input);
 }
 
 export function waiveCharge(id: string, personId: string, waived: boolean): Promise<{ ok: true }> {

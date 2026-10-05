@@ -38,6 +38,8 @@ export function taskTitle(task: MyTask): string {
       return `Register ${task.subject ?? 'a new joiner'} with HockeyHK`;
     case 'event':
       return `${task.subject ?? 'An event'}: are you coming?`;
+    case 'register':
+      return `Take the register for ${task.subject ?? 'your event'}`;
   }
 }
 
