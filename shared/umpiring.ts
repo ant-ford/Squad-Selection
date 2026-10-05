@@ -4,7 +4,7 @@
  * umpire_duties. The club's umpires take them in Eddy, and George Lam, the
  * Umpire Coordinator, fills any gap and sends the week's list on WhatsApp:
  * first the open slots to the umpires group, then the final list to the
- * captains group. See supabase/migrations/20261006120000_umpiring.sql.
+ * captains group. See supabase/migrations/20261006200000_umpiring.sql.
  *
  *  - Who sees the duties: qualified umpires (an umpiring level on their
  *    volunteering), and anyone who umpired an HKFC game in the last 12

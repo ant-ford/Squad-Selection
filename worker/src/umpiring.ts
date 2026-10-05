@@ -3,7 +3,7 @@
  * umpiring duties, and the Umpire Coordinator (and the Section Captains)
  * fills the gaps, sends the week's WhatsApp messages and keeps the season's
  * record. See shared/umpiring.ts and
- * supabase/migrations/20261006120000_umpiring.sql.
+ * supabase/migrations/20261006200000_umpiring.sql.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
