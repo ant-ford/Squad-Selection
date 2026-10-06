@@ -96,8 +96,9 @@ function groupByPlayer<T extends { player?: string[] }>(rows: readonly T[]): Map
   return out;
 }
 
+/** First name and surname, as the app shows names everywhere: squads often have two of a first name. */
 function playerName(p: Player): string {
-  return p.preferredName || [p.givenNames, p.surname].filter(Boolean).join(" ") || "Player";
+  return [p.preferredName || p.givenNames, p.surname].filter(Boolean).join(" ") || "Player";
 }
 
 /** Pure grid computation. Everything is passed in so it is testable without a database. */

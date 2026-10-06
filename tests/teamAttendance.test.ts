@@ -67,6 +67,14 @@ describe("computeTeamAttendance", () => {
     expect(res.dates).toEqual(["2026-10-04", "2026-10-11"]);
   });
 
+  it("names players by first name and surname", () => {
+    const res = run({
+      players: [player("recB1", "HKFC B", { preferredName: "Matt", surname: "Lowe" }), player("recB2", "HKFC B", { preferredName: "", givenNames: "Matthew", surname: "Archer" })],
+      matches: [match("m1", "2026-10-04")],
+    });
+    expect(res.teams[0].players.map((p) => p.name)).toEqual(["Matt Lowe", "Matthew Archer"]);
+  });
+
   it("leaves out teams with no squad, and a squad's other teams' fixtures", () => {
     const res = run({
       players: [player("recB1", "HKFC B")],
