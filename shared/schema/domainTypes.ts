@@ -45,6 +45,8 @@ export interface Player {
   optInOnly?: boolean;
   /** People."Date of Birth" as "MM-DD". The year is dropped on purpose (shared/birthday.ts). */
   birthday?: string;
+  /** When they last opened Eddy (stamped at most once a day at sign-in); unset if not since stamping began. */
+  lastSeenAt?: string;
 }
 
 export interface Team {

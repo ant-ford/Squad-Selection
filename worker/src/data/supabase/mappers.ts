@@ -76,6 +76,7 @@ export interface PlayerLiteRow {
   ever_registered_to_premier: boolean; u21_eligible: boolean;
   section_rank: number | null; status: string | null; applicant_stage: string | null; opt_in_only: boolean;
   birthday: string | null;
+  last_seen_at?: string | null;
 }
 
 /** As toPlayer, for the lite view: no photo (so nothing to sign), CV, coach notes, Player/Coach or rank date. */
@@ -104,6 +105,7 @@ export function toPlayerLite(r: PlayerLiteRow): Player {
     applicantStage: str(r.applicant_stage),
     optInOnly: r.opt_in_only === true,
     birthday: str(r.birthday),
+    lastSeenAt: str(r.last_seen_at ?? null),
   };
 }
 
