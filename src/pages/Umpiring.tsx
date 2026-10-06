@@ -615,7 +615,7 @@ export default function Umpiring() {
                     </section>
                   ))
                 )}
-                {coordinator && <Messages board={data} />}
+                {data.messages && <Messages board={data} />}
               </>
             )}
           </>
