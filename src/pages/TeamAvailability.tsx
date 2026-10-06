@@ -1,5 +1,4 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AttendanceSheet } from '@/components/SeasonStatsSheet';
@@ -9,7 +8,7 @@ import { shortTeam } from '@/lib/format';
 import { useTeamAttendance } from '@/lib/queries';
 import { toneClasses } from '@/lib/statusTone';
 import { MIN_SIDE, STATUS_ORDER, countSquad, squadTone } from '@/lib/teamAvailability';
-import type { ProfileData } from '@/api/getMyProfile';
+import { openTeamAvailability, rememberOpenTeamAvailability } from '@/lib/scrollMemory';
 import type { SquadPlayer, TeamFixture, TeamSquad } from '@/api/getTeamAttendance';
 
 const NAME_COL = 'w-28 min-w-28 max-w-28';
@@ -137,14 +136,11 @@ function FixtureDetail({
  * the top, each cell the number of the squad available for that fixture.
  * A team opens to show its players, each cell exactly as on that player's
  * own attendance grid; a name opens that grid, with every team they can
- * play for. The coach's own teams start open.
+ * play for. Teams start closed, so the first view is the whole club.
  */
 export default function TeamAvailability() {
-  const { profile } = useOutletContext<{ profile: ProfileData }>();
   const { data, isLoading, isError } = useTeamAttendance();
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set((profile.coachTeams ?? []).map((t) => t.teamName)),
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(openTeamAvailability()));
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [openPlayer, setOpenPlayer] = useState<OpenPlayer | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -191,6 +187,7 @@ export default function TeamAvailability() {
       const next = new Set(prev);
       if (next.has(team)) next.delete(team);
       else next.add(team);
+      rememberOpenTeamAvailability(next);
       return next;
     });
   const toggleCell = (key: string) => setOpenKey((k) => (k === key ? null : key));
