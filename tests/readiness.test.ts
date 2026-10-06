@@ -27,5 +27,19 @@ describe('detectSameDayConflicts', () => {
   });
   it('no conflict across different dates', () =>
     expect(detectSameDayConflicts([f({ id: 'a' }), f({ id: 'b', date: '2026-08-11T19:00:00' })])).toHaveLength(0));
+  it('groups by the Hong Kong day: Sat 07:00 HKT (Fri 23:00Z) and Sat 15:00 HKT clash', () => {
+    const c = detectSameDayConflicts([
+      f({ id: 'm1-home', date: '2026-08-14T23:00:00.000Z', selectedPlayers: [{ id: 'p1', name: 'John Smith' }] }),
+      f({ id: 'm2-home', date: '2026-08-15T07:00:00.000Z', hkfcTeam: 'HKFC B', selectedPlayers: [{ id: 'p1', name: 'John Smith' }] }),
+    ]);
+    expect(c).toHaveLength(1);
+    expect(c[0].date).toBe('2026-08-15');
+  });
+  it('Fri 20:00 HKT and Sat 07:00 HKT are different days', () => {
+    const c = detectSameDayConflicts([
+      f({ id: 'm1-home', date: '2026-08-14T12:00:00.000Z', selectedPlayers: [{ id: 'p1', name: 'John Smith' }] }),
+      f({ id: 'm2-home', date: '2026-08-14T23:00:00.000Z', hkfcTeam: 'HKFC B', selectedPlayers: [{ id: 'p1', name: 'John Smith' }] }),
+    ]);
+    expect(c).toHaveLength(0);
+  });
 });
-

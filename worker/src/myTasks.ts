@@ -9,34 +9,30 @@
  *    review email has gone out and they have not submitted their form.
  *  - waivers: no Waivers & Declarations submission this season (since
  *    1 July), so everyone is asked again each July.
+ *  - details: an Active member who has not checked their details this season.
  *
  * And anything the New Joiner and Statements processes are waiting on them
- * for, one line per person, each with that person's form (stage 1 has no
+ * for, one line per person, each opening an Eddy screen (stage 1 has no
  * line: the owner removed the Section Captains' invite prompt):
- *  - joiner: stage 2, the applicant's own New Joiner Form (club
- *    application). Seen only if the applicant can sign in to Eddy.
- *  - application: stage 3 the sponsor (support form), stage 4 the chairman
- *    and stage 5 the membership officer (signature forms), from the
- *    applicant's Sponsored By links.
+ *  - joiner: stage 2, the applicant's own application (/apply).
+ *  - application: the sponsor, the chairman and the membership officer sign
+ *    in Eddy (applicationSigning.ts), in that order; once all three have,
+ *    the membership officer has an accept line.
  *  - review: a statement at Member Submitted waits on its sponsor, at
- *    Sponsor Submitted on its membership officer.
- *  - On Supabase the same three sign in Eddy (applicationSigning.ts), in
- *    that order; once all three have, the membership officer has an
- *    accept line.
+ *    Sponsor Submitted on its membership officer (/review/<id>).
  *  - system: the app owner only, while a system health check fails
  *    (systemHealth.ts); opens /system.
- *  - kit / registration (Supabase): a Section Captain's request to the Kit
- *    Convenor or the Hockey Convenor for a new joiner, until they mark it
- *    done (joiners.ts).
+ *  - kit / registration: a Section Captain's request to the Kit Convenor or
+ *    the Hockey Convenor for a new joiner, until they mark it done
+ *    (joiners.ts).
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { getCached, getShared } from "./cache";
 import { firstLink, getOfficeHolders } from "./contacts";
 import { WAITING_ON_KEY } from "./reference";
-import { people, type ApplicantTaskRow, type MyTaskRow } from "./data/people";
+import { people, type MyTaskRow } from "./data/people";
 import { commitments } from "./data/commitments";
-import { backendFor } from "./data/backend";
 import { isRowId } from "./data/ids";
 import { db, eq } from "./data/supabase";
 import { openJoinerTasks } from "./joiners";
@@ -59,7 +55,7 @@ export interface MyTask {
   subject?: string;
   /** The part the signed-in person plays for that applicant or member. */
   role?: TaskRole;
-  /** The form to open, when the base has a link. */
+  /** The Eddy screen to open. */
   url?: string;
   /** An event: when answers close. */
   due?: string;
@@ -67,17 +63,11 @@ export interface MyTask {
 
 /*
  * The fields read live with the repositories: the signed-in person's own
- * forms and the applicants at stages 2-5 in data/people.ts (MyTaskRow,
+ * forms and the invited applicants in data/people.ts (MyTaskRow,
  * ApplicantTaskRow), the reviews in progress in data/commitments.ts
  * (ReviewTaskRow).
  */
 
-/** Stage -> who signs it: [role, the applicant's link naming them, their form]. */
-const SIGNERS: Record<string, [TaskRole, keyof ApplicantTaskRow, keyof ApplicantTaskRow]> = {
-  "3. Club Application (Signed)": ["Sponsor", "sponsoredBySponsor", "sponsorFormUrl"],
-  "4. Sponsor (Signed)": ["Chairman", "sponsoredByChair", "chairFormUrl"],
-  "5. Chairman (Signed)": ["Membership Officer", "sponsoredByOfficer", "officerFormUrl"],
-};
 const INVITED_STAGE = "2. Section Captain Invitation";
 
 /**
@@ -102,14 +92,12 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
     env,
     WAITING_ON_KEY,
     async () => {
-      const stages = [INVITED_STAGE, ...Object.keys(SIGNERS)];
       const reviewStages = [NOTIFIED, MEMBER_SUBMITTED, SPONSOR_SUBMITTED];
-      const onSupabase = backendFor(env, "people") === "supabase";
       const [applicants, reviews, holders, signing] = await Promise.all([
-        people(env).listApplicantsAtStages(stages),
+        people(env).listApplicantsAtStages([INVITED_STAGE]),
         commitments(env).listReviewsAtStages(reviewStages),
         getOfficeHolders(env),
-        onSupabase ? signingTasks(env) : Promise.resolve({} as Record<string, MyTask[]>),
+        signingTasks(env),
       ]);
 
       const out: WaitingOn = {};
@@ -119,35 +107,15 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         if (!list.some((t) => t.id === task.id)) list.push(task);
       };
 
+      // An invited applicant's own application screen (apply.ts).
       for (const r of applicants) {
-        const stage = text(r.stage) ?? "";
-        const first = text(r.preferredName) ?? text(r.givenNames);
-        const subject = [first, text(r.surname)].filter(Boolean).join(" ") || "An applicant";
-        if (stage === INVITED_STAGE) {
-          // On Supabase, Eddy's own application screen (src/apply.ts); on Airtable, the Fillout form.
-          const inEddy = backendFor(env, "people") === "supabase";
-          add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: inEddy ? "/apply" : text(r.joinerFormUrl) });
-          continue;
-        }
-        // On Supabase the signing lines come from applicationSigning.ts (below).
-        const signer = onSupabase ? undefined : SIGNERS[stage];
-        if (!signer) continue;
-        const [role, link, form] = signer;
-        add(holders[firstLink(r[link]) ?? ""], {
-          id: `application:${r.id}`,
-          key: "application",
-          subject,
-          role,
-          url: text(r[form]),
-        });
+        if (text(r.stage) === INVITED_STAGE) add(r.id, { id: `joiner:${r.id}`, key: "joiner", url: "/apply" });
       }
 
+      // Signing an application (applicationSigning.ts).
       for (const [personId, tasks] of Object.entries(signing)) for (const t of tasks) add(personId, t);
 
-      // On Supabase the reviews are Eddy's own screen (src/reviews.ts); on
-      // Airtable they are still the Fillout forms.
-      const inEddy = backendFor(env, "commitments") === "supabase";
-      const reviewUrl = (id: string, fillout: unknown) => (inEddy ? `/review/${id}` : text(fillout));
+      // Commitment reviews (reviews.ts).
       for (const r of reviews) {
         // The same cut-off as the Statements board: older periods are history.
         const periodEnd = firstText(r.periodEnd)?.slice(0, 10);
@@ -156,14 +124,14 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
         const member = firstLink(r.people);
         const subject = firstText(r.fullName) ?? "A member";
         if (stage === NOTIFIED) {
-          add(member, { id: `statement:${r.id}`, key: "statement", url: inEddy ? `/review/${r.id}` : firstText(r.memberFormUrl) });
+          add(member, { id: `statement:${r.id}`, key: "statement", url: `/review/${r.id}` });
         } else if (stage === MEMBER_SUBMITTED) {
           add(holders[firstLink(r.sponsorLink) ?? ""], {
             id: `review:${r.id}`,
             key: "review",
             subject,
             role: "Sponsor",
-            url: reviewUrl(r.id, r.sponsorFormUrl),
+            url: `/review/${r.id}`,
           });
         } else if (stage === SPONSOR_SUBMITTED) {
           add(holders[firstLink(r.officerLink) ?? ""], {
@@ -171,7 +139,7 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
             key: "review",
             subject,
             role: "Membership Officer",
-            url: reviewUrl(r.id, r.officerFormUrl),
+            url: `/review/${r.id}`,
           });
         }
       }
@@ -206,10 +174,8 @@ const ORDER: Record<MyTaskKey, number> = { system: -1, joiner: 0, details: 1, st
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
-  const onSupabase = backendFor(env, "people") === "supabase";
-  // Airtable ids only on Airtable (the id goes into a formula); on Supabase,
-  // people created in Eddy have a uuid.
-  if (!isRowId(env, "people", personId)) return { tasks: [] };
+  // An imported person's id, or the uuid of one created in Eddy.
+  if (!isRowId(personId)) return { tasks: [] };
 
   const [mine, waitingOn] = await Promise.all([
     getCached(
@@ -223,19 +189,16 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   const today = hkDateKey(new Date().toISOString());
   const tasks: MyTask[] = [...(waitingOn[personId] ?? [])];
   if (!waiversDoneThisSeason(mine.waiversSubmittedAt, today)) {
-    // On Supabase, Eddy's own waivers screen (src/declarations.ts); on Airtable, the Fillout form.
-    const inEddy = backendFor(env, "people") === "supabase";
-    tasks.push({ id: "waivers", key: "waivers", url: inEddy ? "/waivers" : text(mine.waiversFormUrl) });
+    // Eddy's waivers screen (declarations.ts).
+    tasks.push({ id: "waivers", key: "waivers", url: "/waivers" });
   }
-  // Members check their details at the start of each season (Supabase: Eddy's screen).
-  if (onSupabase && (await needsDetailsCheck(env, personId, today))) {
+  // Members check their details at the start of each season.
+  if (await needsDetailsCheck(env, personId, today)) {
     tasks.push({ id: "details", key: "details", url: "/my-details" });
   }
   // A minute in this isolate, dropped when a request is made or marked done.
-  if (onSupabase) {
-    const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, personId), MY_RECORD_TTL_MS);
-    for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
-  }
+  const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, personId), MY_RECORD_TTL_MS);
+  for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
   // Events they are invited to and have not answered (events.ts).
   for (const e of await eventTasks(env, user).catch(() => [])) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });
   // Registers to take for events they keep (events.ts).

@@ -7,7 +7,6 @@ import { missingDetails, type RegistrationPlayer } from "../shared/registration"
 import { currentSeason } from "../worker/src/seasonContext";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.example",
@@ -51,10 +50,9 @@ const blank: RegistrationPlayer = {
 };
 
 describe("HKHA registration", () => {
-  it("opens to the Hockey Convenor only, on Supabase only", () => {
-    expect(sectionsFor(convenor, env)).toEqual(["registration"]);
-    expect(sectionsFor(captain, env)).not.toContain("registration");
-    expect(sectionsFor(convenor, { ...env, DATA_BACKEND: "airtable" })).toEqual([]);
+  it("opens to the Hockey Convenor only", () => {
+    expect(sectionsFor(convenor)).toEqual(["registration", "people", "dataChecks", "discipline"]);
+    expect(sectionsFor(captain)).not.toContain("registration");
   });
 
   it("lists what's missing before a player can be registered", () => {

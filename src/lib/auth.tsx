@@ -8,7 +8,7 @@ import { clearAllDrafts } from './drafts';
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  loginWithEmail: (email: string, redirectTo?: string) => Promise<void>;
+  loginWithEmail: (email: string, redirectTo?: string, captchaToken?: string) => Promise<void>;
   verifyEmailOtp: (email: string, token: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -84,11 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Proofpoint) pre-fetch links to inspect them, which burns the single-use
   // magic-link token before the recipient ever clicks it.
   // `redirectTo` brings the magic link back to a page (the join page); the
-  // code works wherever they are.
-  const loginWithEmail = async (email: string, redirectTo?: string): Promise<void> => {
+  // code works wherever they are. `captchaToken` is the Turnstile token
+  // (components/Turnstile.tsx), which Supabase Auth requires once CAPTCHA
+  // protection is on.
+  const loginWithEmail = async (email: string, redirectTo?: string, captchaToken?: string): Promise<void> => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo ?? window.location.origin },
+      options: { emailRedirectTo: redirectTo ?? window.location.origin, captchaToken },
     });
     if (error) throw error;
   };

@@ -1,8 +1,8 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarDays, Download, Search, User, UserPlus, AlertTriangle } from 'lucide-react';
+import { CalendarDays, Download, Search, UserPlus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import ApplicantCard from '@/components/membership/ApplicantCard';
@@ -26,6 +26,13 @@ type Tab = (typeof TABS)[number]['key'];
 
 /** Filters live in the address, so a view can be bookmarked or shared. */
 const FILTERS = [{ key: 'type', label: 'Applicant type', of: (c: Card) => c.applicantType }] as const;
+
+/** A small labelled button by the search box; `active` when it is switched on. */
+function pillClass(active = false) {
+  return `flex items-center gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-md transition-colors ${
+    active ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+  }`;
+}
 
 export default function MembershipBoard() {
   const navigate = useNavigate();
@@ -93,15 +100,18 @@ export default function MembershipBoard() {
   if (profileLoading) return <BoardSkeleton />;
   if (!allowed) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background p-6">
-        <div className="text-center space-y-3">
-          <p className="text-lg font-semibold text-foreground">Membership access required</p>
-          <p className="text-sm text-muted-foreground">
-            This section is for the Membership Officers and Section Captains.
-          </p>
-          <button onClick={() => navigate('/')} className="text-sm text-primary underline">
-            Go to Player Dashboard
-          </button>
+      <div className="min-h-screen bg-background">
+        <AppHeader title="Membership" />
+        <div className="flex items-center justify-center p-6 pt-16">
+          <div className="text-center space-y-3">
+            <p className="text-lg font-semibold text-foreground">Membership access required</p>
+            <p className="text-sm text-muted-foreground">
+              This section is for the Membership Officers and Section Captains.
+            </p>
+            <button onClick={() => navigate('/')} className="min-h-10 px-3 text-sm text-primary underline">
+              Player view
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -109,16 +119,10 @@ export default function MembershipBoard() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <AppHeader subtitle="Membership">
-        <button onClick={exportCsv} disabled={exporting} className={headerNavClass()} title="Active members CSV">
-          <Download className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Active members CSV'}</span>
-        </button>
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader
+        title="Membership"
+        menuItems={[{ label: exporting ? 'Exporting…' : 'Active members CSV', icon: Download, onSelect: () => void exportCsv(), disabled: exporting }]}
+      />
 
       <main className="flex-1 container mx-auto px-4 py-4">
         <div role="tablist" aria-label="Membership views" className="flex gap-1 mb-4 border-b border-border">
@@ -183,13 +187,13 @@ export default function MembershipBoard() {
           ))}
           <button
             onClick={() => setParam('parked', showParked ? null : '1')}
-            className={headerNavClass(showParked)}
+            className={pillClass(showParked)}
             aria-pressed={showParked}
           >
             {showParked ? 'Hide' : 'Show'} parked ({parkedCount})
           </button>
           {canPropose && (
-            <button onClick={() => navigate('/trial-sessions')} className={headerNavClass()}>
+            <button onClick={() => navigate('/trial-sessions')} className={pillClass()}>
               <CalendarDays className="h-3.5 w-3.5" /> Trial sessions
             </button>
           )}

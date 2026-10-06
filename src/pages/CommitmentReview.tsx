@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
@@ -456,7 +455,6 @@ function OfficerReviewView({ review }: { review: ReviewView }) {
 
 export default function CommitmentReview() {
   const { reviewId = '' } = useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: review, isLoading, error, refetch } = useQuery({
     queryKey: ['review', reviewId],
@@ -477,12 +475,7 @@ export default function CommitmentReview() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Player Statement">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Player statement" back="/" />
 
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
         {isLoading ? (
