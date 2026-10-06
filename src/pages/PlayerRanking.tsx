@@ -13,7 +13,7 @@ import {
   GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3, CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
@@ -332,7 +332,7 @@ export default function PlayerRanking() {
     return (
       <div className="p-6 text-center text-destructive">
         Failed to load ranking: {(ranking.error as any)?.message ?? 'Unknown error'}
-        <div className="mt-3"> <Button onClick={() => ranking.refetch()}>Retry</Button> </div>
+        <div className="mt-3"> <ActionButton variant="outline" onClick={() => ranking.refetch()}>Retry</ActionButton> </div>
       </div>
     );
   }
@@ -937,13 +937,13 @@ function MoveToRankSheet({ player, activeCount, onClose, onSubmit, history }: {
         />
         {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex gap-2">
-          <Button className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button
-            className="flex-1 bg-primary text-primary-foreground"
+          <ActionButton variant="outline" className="flex-1" onClick={onClose}>Cancel</ActionButton>
+          <ActionButton
+            className="flex-1"
             onClick={() => { if (isValid) onSubmit(n); else setError(`Enter a whole number between 1 and ${activeCount}.`); }}
           >
             Move
-          </Button>
+          </ActionButton>
         </div>
         <p className="text-[11px] text-muted-foreground">Staged — remember to press Save.</p>
       </div>
@@ -1021,14 +1021,15 @@ function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
       </div>
 
       <div className="flex gap-2 mt-4">
-        <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button
-          className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
-          disabled={overCapacity || saving}
+        <ActionButton variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</ActionButton>
+        <ActionButton
+          className="flex-1"
+          disabled={overCapacity}
+          loading={saving}
           onClick={() => onSave(local)}
         >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-        </Button>
+          Save
+        </ActionButton>
       </div>
     </ModalSheet>
   );

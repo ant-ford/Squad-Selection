@@ -1,12 +1,10 @@
 /*
  * Status colours: success / warning / danger / info.
  *
- * Wire-up: add one line to src/index.css, straight after `@import "tailwindcss";`
- *
- *   @import "./styles/status-tokens.css";
+ * Imported by src/index.css straight after `@import "tailwindcss";`.
  *
  * Same pattern as index.css: `@theme` maps each Tailwind colour onto an HSL
- * triple held in `:root`, so these utilities exist once imported:
+ * triple held in `:root`, so these utilities exist:
  *
  *   bg-success              solid fill            text-success-foreground  text on the solid
  *   bg-success-soft         soft tint             text-success-soft-foreground  text on the tint
@@ -25,12 +23,12 @@
  *   tone     solid     fg on solid   soft      soft-fg on soft   soft-fg on white / card   solid on white / card
  *   success  #157f3c   5.07          #c9f8d9   6.87              8.07 / 7.58               5.07 / 4.77
  *   warning  #f59f0a   6.85 (dark)   #fdedaa   6.66              7.84 / 7.37               2.14 / 2.01 (fill only)
- *   danger   #de121f   5.00          #ffd6d9   6.46              8.53 / 8.02               5.00 / 4.70
- *   info     #0b72b6   5.10          #d3ecfd   7.33              8.94 / 8.40               5.10 / 4.80
+ *   danger   #c81924   5.82          #ffd6d9   6.46              8.53 / 8.02               5.82 / 5.47
+ *   info     #0c72b6   5.13          #d3ecfd   7.34              8.96 / 8.42               5.13 / 4.82
  *
- * Danger keeps --destructive's hue (356.3) a little darker: white on the
- * existing --destructive is 4.11:1, short of AA. Info keeps --primary's hue
- * (203.9); white on --primary is 2.94:1, so info is darker too.
+ * Danger's solid IS --destructive and info's solid IS --primary (both point
+ * at those variables), so the four tones move with index.css. Their soft
+ * tints and soft-foregrounds keep the same hues.
  * The soft tints sit between Tailwind's 100 and 200 steps: the pale washes
  * were close to invisible on a phone outdoors (see PlayerFixtureCard).
  *
@@ -70,13 +68,13 @@
   --warning-soft: 48 96% 83%;
   --warning-soft-foreground: 23 83% 29%;
 
-  --danger: 356.3 85% 47%;
-  --danger-foreground: 0 0% 100%;
-  --danger-soft: 356.3 100% 92%;
-  --danger-soft-foreground: 356.3 75% 34%;
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --danger-soft: 356 100% 92%;
+  --danger-soft-foreground: 356 75% 34%;
 
-  --info: 203.9 88.3% 38%;
-  --info-foreground: 0 0% 100%;
-  --info-soft: 203.9 90% 91%;
-  --info-soft-foreground: 203.9 80% 26%;
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+  --info-soft: 204 90% 91%;
+  --info-soft-foreground: 204 80% 26%;
 }

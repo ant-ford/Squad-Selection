@@ -19,7 +19,7 @@ import { Loader2 } from 'lucide-react';
  * accident; pass type="submit" when it should.
  *
  * The danger variant uses the danger token (src/styles/status-tokens.css),
- * not --destructive: white on --destructive is 4.1:1, under AA.
+ * which is --destructive.
  */
 
 export type ActionButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
