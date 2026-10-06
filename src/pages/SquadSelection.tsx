@@ -547,7 +547,7 @@ export default function SquadSelection() {
   }
 
   return (
-    <div className="pt-3 pb-24">
+    <div className="pb-24">
       <MatchHeader match={optimisticMatch} matchId={matchId} />
 
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
