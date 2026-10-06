@@ -300,10 +300,21 @@ export default function PlayerDashboard() {
         ]}
       />
 
-      {/* What the player came for comes first: anything they must do, then
-          their fixtures. Events, kit and the rest follow. */}
+      {/* Anything the player must do or should know first (tasks, events,
+          kit, volunteering, birthdays), then their fixtures. */}
       <div className="container mx-auto px-4 pt-4 pb-8">
-        <MyTasksBanner />
+        {/* The notices own their margins elsewhere; here they sit in one
+            evenly spaced column above the fixtures. */}
+        <div className="flex flex-col gap-3 mb-6 empty:hidden *:m-0!">
+          <MyTasksBanner />
+          <EventsSection enabled={!!data.eddyProfile} />
+          <MyKitCard />
+          <MyVolunteeringLink />
+          {data.isBirthday && <BirthdayBanner name={data.playerName} />}
+          {!!data.teamBirthdays?.length && (
+            <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
+          )}
+        </div>
 
         {isSpecialGK ? (
           data.fixtures.length === 0 ? (
@@ -373,14 +384,6 @@ export default function PlayerDashboard() {
               </div>
             )}
           </>
-        )}
-
-        <EventsSection enabled={!!data.eddyProfile} />
-        <MyKitCard />
-        <MyVolunteeringLink />
-        {data.isBirthday && <BirthdayBanner name={data.playerName} />}
-        {!!data.teamBirthdays?.length && (
-          <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
         )}
 
         {/* Played fixtures. Read-only: availability is a statement about the
