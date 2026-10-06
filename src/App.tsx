@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
-import { useMyProfile } from '@/lib/queries';
+import { usePrefetchQuery, useQuery } from '@tanstack/react-query';
+import { myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
@@ -71,9 +72,15 @@ function AuthGate() {
 
 /** The player page, or for an applicant (or someone registering to join) their application. */
 function Home() {
+  // The player page's own reads go out with the profile, not after it. The
+  // dashboard's fixtures observer is the one that stays enabled: this one only
+  // watches for the data, so it never refetches a variant that's off screen.
+  usePrefetchQuery(myFixturesQuery(true));
+  usePrefetchQuery(myTasksQuery);
+  const fixturesIn = useQuery({ ...myFixturesQuery(true), enabled: false }).data !== undefined;
   const { data, isLoading } = useMyProfile();
-  if (isLoading) return <AppLoading />;
   if (data?.applicant) return <Navigate to="/apply" replace />;
+  if (isLoading && !fixturesIn) return <AppLoading />;
   return <PlayerDashboard />;
 }
 
@@ -364,6 +371,10 @@ const router = createBrowserRouter([
   },
 ]);
 
+// index.html shows a static copy of this screen until the bundle runs. When
+// it did, carry on from it instead of fading the text in a second time.
+const textIn = document.getElementById('boot-loader') ? '' : 'animate-[fade-up_0.6s_ease-out_both]';
+
 function AppLoading() {
   return (
     <div className="min-h-screen relative flex flex-col items-center justify-center bg-background overflow-hidden">
@@ -402,9 +413,9 @@ function AppLoading() {
         />
         <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary-tint/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
         <div className="relative mt-10 text-center">
-          <p className="font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground animate-[fade-up_0.6s_ease-out_both]">HKFC</p>
-          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:120ms]">Squad Selection</p>
-          <p className="mt-6 font-mono text-[10px] tracking-widest text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:240ms]">warming up…</p>
+          <p className={`font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground ${textIn}`}>HKFC</p>
+          <p className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>Squad Selection</p>
+          <p className={`mt-6 font-mono text-[10px] tracking-widest text-muted-foreground ${textIn} [animation-delay:240ms]`}>warming up…</p>
         </div>
       </div>
     </div>

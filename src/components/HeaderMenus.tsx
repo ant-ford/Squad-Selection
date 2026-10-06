@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpenCheck,
@@ -21,7 +21,9 @@ import {
 import type { ProfileData } from '@/api/getMyProfile';
 import { headerIconClass } from '@/components/AppHeader';
 import { GUIDE_URLS } from '@/components/HelpLink';
-import InviteDialog from '@/components/InviteDialog';
+
+// Loaded when opened, not with every page that has the menu.
+const InviteDialog = lazy(() => import('@/components/InviteDialog'));
 
 /** One line of a header menu: a screen to open, a page elsewhere (new tab), or something to do. */
 export interface MenuEntry {
@@ -165,7 +167,11 @@ export function MainMenu({ officer, profile }: { officer: MenuEntry[]; profile?:
   return (
     <>
       <DropMenu label="Menu" icon={Menu} groups={groups} align="left" />
-      {showInvite && invite && <InviteDialog link={invite} onClose={() => setShowInvite(false)} />}
+      {showInvite && invite && (
+        <Suspense fallback={null}>
+          <InviteDialog link={invite} onClose={() => setShowInvite(false)} />
+        </Suspense>
+      )}
     </>
   );
 }
