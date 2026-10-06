@@ -34,7 +34,7 @@ export interface PersonSquad {
 export interface PersonAdminCan {
   /** Membership details: the Membership Officer and Section Captains. */
   membership: boolean;
-  /** Move the applicant stage: the Membership Officer and Section Captains. */
+  /** Move the applicant stage: the Membership Officer and Section Captains, when stageTargets offers any. */
   stage: boolean;
   /** Selected teams and position (Section Captains) or the registered team (Men's Convenor). */
   squad: boolean;
@@ -58,6 +58,8 @@ export interface PersonAdminView {
   can: PersonAdminCan;
   /** Only when can.membership. */
   membership?: PersonMembership;
+  /** Where the stage may be moved (shared/membershipStages.ts stageTargets); only when can.stage. */
+  stageTargets?: string[];
   /** Only when can.squad. */
   squad?: PersonSquad;
   /** Team names to choose from, by rank; only when can.squad. */

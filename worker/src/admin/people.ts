@@ -8,7 +8,7 @@ import type { Env } from "../env";
 import { sectionsFor, type AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
 import { db, eq } from "../data/supabase";
-import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../../shared/membershipStages";
+import { PIPELINE_STAGES, ACCEPTED_STAGE, stageTargets } from "../../../shared/membershipStages";
 import { actionLabel, fieldLabel, type HistoryEntry } from "../../../shared/history";
 import { displayName, type PersonAdminCan, type PersonAdminView, type PersonSearchRow } from "../../../shared/adminPeople";
 
@@ -106,7 +106,7 @@ export function canFor(user: AuthorizedUser, p: PersonDb): PersonAdminCan {
   const registeredTeam = sections.includes("registration");
   return {
     membership,
-    stage: membership,
+    stage: membership && stageTargets(p.status, p.applicant_stage).length > 0,
     squad: sections.includes("club") || registeredTeam,
     registeredTeam,
     suspend: offices.has("hockeyConvenor"),
@@ -143,6 +143,7 @@ export async function getPersonAdmin(env: Env, user: AuthorizedUser, id: string)
       commitmentEndDate: blank(p.commitment_end_date),
     };
   }
+  if (can.stage) view.stageTargets = stageTargets(p.status, p.applicant_stage);
   if (can.squad) {
     view.squad = {
       registeredTeam: blank(p.registered_team),
