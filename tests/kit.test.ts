@@ -5,7 +5,7 @@ import { sectionsFor } from "../worker/src/auth";
 import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
 import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recPLAYER", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 const convenor = { ...player, personId: "recCONVENOR", officerRoles: [{ office: "kitConvenor", designation: "" }] } as AuthorizedUser;
 
@@ -31,12 +31,11 @@ afterEach(() => vi.unstubAllGlobals());
 const TEAMS = ["HKFC A", "HKFC B", "HKFC C", "HKFC D"];
 
 describe("kit", () => {
-  it("opens the kit section to the Kit Convenor and Section Captains, on Supabase only", () => {
-    expect(sectionsFor(convenor, env)).toEqual(["kit"]);
+  it("opens the kit section to the Kit Convenor and Section Captains", () => {
+    expect(sectionsFor(convenor)).toEqual(["kit"]);
     const captain = { officerRoles: [{ office: "sectionCaptain" as const, designation: "" }] };
-    expect(sectionsFor(captain, env)).toEqual(["membership", "chairman", "kit", "planning", "trials", "people", "club"]);
-    expect(sectionsFor(captain, { ...env, DATA_BACKEND: "airtable" })).toEqual(["membership", "chairman"]);
-    expect(sectionsFor(player, env)).toEqual([]);
+    expect(sectionsFor(captain)).toEqual(["membership", "chairman", "kit", "planning", "trials", "people", "club"]);
+    expect(sectionsFor(player)).toEqual([]);
   });
 
   it("suggests spares whose shirt fits, from the person's own team's range first, then lower numbers", () => {
@@ -138,8 +137,6 @@ describe("kit", () => {
     expect(kit.mine).toMatchObject({ shirtNo: 5, place: "with_holder", holder: { name: "Cap Tain" } });
     expect(kit.holding).toMatchObject([{ shirtNo: 6, owner: { name: "Mate" } }]);
     expect(calls[0].url.searchParams.get("or")).toBe('(owner_id.eq."recPLAYER",holder_id.eq."recPLAYER",pending_to_id.eq."recPLAYER")');
-    // Nothing on Airtable, rather than an error on everyone's dashboard.
-    expect(await getMyKit({ ...env, DATA_BACKEND: "airtable" }, player)).toMatchObject({ mine: null, holding: [] });
   });
 
   it("tells a player when kit on order is expected, and only while it's on order", async () => {

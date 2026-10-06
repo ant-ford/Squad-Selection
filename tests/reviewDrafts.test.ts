@@ -4,7 +4,6 @@ import { cleanDraft, DEFAULT_DRAFT_MODEL, draftContext, generateDrafts, type Dra
 import { draftsFor } from "../worker/src/reviews";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   OPENROUTER_API_KEY: "or_test",
