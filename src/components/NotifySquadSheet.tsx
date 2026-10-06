@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Check, Copy, MessageCircle, X } from 'lucide-react';
 import {
   buildAvailabilityRequest,
+  buildDroppedMessage,
   buildSelectionMessage,
   buildSquadAnnouncement,
   toWhatsAppNumber,
@@ -10,6 +11,7 @@ import {
   type FixtureBrief,
 } from '@/lib/whatsapp';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { safeFormat } from '@/lib/dateUtils';
 
 export interface NotifyTarget {
   id: string;
@@ -39,10 +41,16 @@ export interface NotifyTarget {
 export default function NotifySquadSheet({
   fixture,
   players,
+  sinceNotice,
+  onNotified,
   onClose,
 }: {
   fixture: FixtureBrief;
   players: NotifyTarget[];
+  /** Who came in and went out since the squad was last sent, and when that was. */
+  sinceNotice?: { at: string; added: NotifyTarget[]; removed: NotifyTarget[] } | null;
+  /** The squad was sent (copied, or a WhatsApp opened): it's remembered as what the players know. */
+  onNotified?: () => void;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -70,6 +78,7 @@ export default function NotifySquadSheet({
   const copyAnnouncement = async () => {
     try {
       await navigator.clipboard.writeText(announcement);
+      if (!askingAvailability) onNotified?.();
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success('Message copied — paste it into your team group');
@@ -83,6 +92,17 @@ export default function NotifySquadSheet({
     const message = buildSelectionMessage(row.preferredName, fixture);
     window.open(whatsAppLink(row.number, message), '_blank', 'noopener,noreferrer');
     setMessaged((prev) => new Set(prev).add(row.id));
+    onNotified?.();
+  };
+
+  // Just the players who changed since the squad was sent.
+  const changed = sinceNotice && (sinceNotice.added.length > 0 || sinceNotice.removed.length > 0) ? sinceNotice : null;
+  const tellOne = (p: NotifyTarget, dropped: boolean) => {
+    const number = toWhatsAppNumber(p.mobile);
+    if (!number) return;
+    const message = dropped ? buildDroppedMessage(p.preferredName, fixture) : buildSelectionMessage(p.preferredName, fixture);
+    window.open(whatsAppLink(number, message), '_blank', 'noopener,noreferrer');
+    setMessaged((prev) => new Set(prev).add(`${dropped ? 'out' : 'in'}:${p.id}`));
   };
 
   return (
@@ -109,6 +129,33 @@ export default function NotifySquadSheet({
         </div>
 
         <div className="px-4 py-3 space-y-4">
+          {changed && (
+            <section>
+              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                Since you notified {safeFormat(changed.at, 'EEE HH:mm')}
+              </h3>
+              <ul className="space-y-1.5">
+                {[...changed.added.map((p) => ({ p, out: false })), ...changed.removed.map((p) => ({ p, out: true }))].map(({ p, out }) => (
+                  <li key={`${out ? 'out' : 'in'}:${p.id}`} className="flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2">
+                    <span className="text-sm text-foreground truncate">
+                      <span className={out ? 'text-danger-soft-foreground' : 'text-success-soft-foreground'}>{out ? '−' : '+'}</span> {p.preferredName}
+                    </span>
+                    {toWhatsAppNumber(p.mobile) ? (
+                      <button
+                        onClick={() => tellOne(p, out)}
+                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border border-border text-foreground hover:bg-muted"
+                      >
+                        {messaged.has(`${out ? 'out' : 'in'}:${p.id}`) ? <Check className="h-3.5 w-3.5" /> : <MessageCircle className="h-3.5 w-3.5" />}
+                        WhatsApp
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No number</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {/* Whole squad: copy for the team group. */}
           <section>
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">

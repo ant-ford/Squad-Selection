@@ -60,6 +60,10 @@ export interface MatchInfo {
    *  back so the server can tell whether someone else changed the squad
    *  since (POST /api/squad/changes). 0 before the first change. */
   selectionVersion?: number;
+  /** The squad as last sent from Notify (worker/src/squadNotices.ts). */
+  notice?: { at: string; squad: string[] } | null;
+  /** The team's last squad this season, for "Start from last squad". */
+  lastSquad?: { matchId: string; date: string; players: string[] } | null;
 }
 
 /** Shirt colour options. '' means not yet decided. */
@@ -87,4 +91,9 @@ export interface GetPlayersForMatchOutput {
 
 export async function getPlayersForMatch(matchId: string): Promise<GetPlayersForMatchOutput> {
   return apiGet<GetPlayersForMatchOutput>(`/api/match/${encodeURIComponent(matchId)}/players`);
+}
+
+/** Notify was used: the squad as it stands is what the players were told. */
+export function noteSquadNotified(matchId: string, side: 'home' | 'away'): Promise<{ at: string; squad: string[] }> {
+  return apiPost('/api/squad/notified', { matchId, side });
 }

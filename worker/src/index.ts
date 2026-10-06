@@ -13,6 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
+import { noteSquadNotified } from "./squadNotices";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
@@ -600,6 +601,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       };
       const { displaced } = await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
       return json({ success: true, displaced }, 200, origin);
+    }
+
+    // Notify was used: the squad as it stands is what the players were told (squadNotices.ts).
+    if (method === "POST" && pathname === "/api/squad/notified") {
+      const user = await requireCoach(request, env);
+      return json(await noteSquadNotified(env, user.personId, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>), 200, origin);
     }
 
     // A squad save as changes: only who was added and removed, merged with

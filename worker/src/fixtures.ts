@@ -17,6 +17,7 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
+import { changedSinceNotice, noticesForMatches, type SquadNotice } from "./squadNotices";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
@@ -570,7 +571,12 @@ export async function getUpcomingFixtures(
   // The answers for these fixtures only (match=in, narrow columns), not the
   // whole season's: ~5 KB a team on preview against ~177 KB. Kept under the
   // availability_exceptions version (reference.ts getExceptionsForMatches).
-  const listedExceptions = await getExceptionsForMatches(env, matchIds);
+  const [listedExceptions, notices] = await Promise.all([
+    getExceptionsForMatches(env, matchIds),
+    // The squads last sent from Notify: a dot on the card when the squad has
+    // changed since (squadNotices.ts). The team feed has no use for it.
+    opts.user ? noticesForMatches(env, matchIds).catch(() => new Map<string, SquadNotice>()) : Promise.resolve(new Map<string, SquadNotice>()),
+  ]);
   const exceptionsByMatch = new Map<string, any[]>();
   for (const exc of listedExceptions) {
     const mId = linkId(exc.match);
@@ -631,6 +637,8 @@ export async function getUpcomingFixtures(
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount: selectedIds.length,
         selectedIds,
+        /** The squad differs from the one last sent from Notify. */
+        unsentChanges: changedSinceNotice(notices.get(`${m.id}:${isHome ? "home" : "away"}`), selectedIds),
         selectedPlayers,
         selectedPositionSummary,
         hasGoalkeeperSelected: (selectedPositionSummary.GK ?? 0) > 0,

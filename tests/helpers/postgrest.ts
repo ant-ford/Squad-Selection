@@ -304,7 +304,8 @@ let uuidSeq = 0;
 const uuid = () => `00000000-0000-4000-9000-${String(++uuidSeq).padStart(12, "0")}`;
 
 export function fakePostgrest(opts: PostgrestOptions = {}): FakePostgrest {
-  const tables: Record<string, PgRow[]> = opts.tables ?? {};
+  // Views a test that isn't about them needn't list: the squads last sent from Notify.
+  const tables: Record<string, PgRow[]> = { api_squad_notices: [], ...(opts.tables ?? {}) };
   const calls: PgCall[] = [];
   const problems: string[] = [];
 

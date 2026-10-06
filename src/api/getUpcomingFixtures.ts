@@ -10,6 +10,8 @@ export interface UpcomingFixture {
   isHome: boolean;
   division: string;
   venue: string;
+  /** The squad differs from the one last sent from Notify. */
+  unsentChanges?: boolean;
   targetSquadSize: number;
   selectedCount: number;
   selectedIds?: string[];
