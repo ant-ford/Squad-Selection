@@ -41,6 +41,20 @@ const INVALIDATION = {
   matchCards: {
     prefixes: ["calendar:"],
   },
+  // Coaches, captains and squad sizes: the roster, the teams and every
+  // per-match list are keyed on the teams / team_people versions (and coach
+  // access is read afresh at sign-in). Only the calendar feeds remain.
+  teams: {
+    prefixes: ["calendar:"],
+  },
+  // Who holds an office: section access, and the boards that name the
+  // signing officers and sponsors.
+  offices: {
+    // (Sign-in reads offices afresh every request: auth_context.)
+    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
+  },
+  // (The Men's Convenor's suspensions, and what eligibility builds from
+  // them, are keyed on the suspensions cache version: nothing to drop.)
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */
@@ -57,3 +71,9 @@ export const invalidateCommitments = (env: Env) => invalidate(env, "commitments"
 
 /** After a write to Match Cards (e.g. linking cards to a player). */
 export const invalidateMatchCards = (env: Env) => invalidate(env, "matchCards");
+
+/** After a change to a team's coaches, captains or target squad size. */
+export const invalidateTeams = (env: Env) => invalidate(env, "teams");
+
+/** After an office changes hands or is edited. */
+export const invalidateOffices = (env: Env) => invalidate(env, "offices");

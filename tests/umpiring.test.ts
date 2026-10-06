@@ -11,6 +11,8 @@ import {
   reportGrid,
   dutyLine,
   isOnCommitment,
+  mergeOutsideNames,
+  similarOutsideNames,
   umpiresMessage,
   weekOf,
   type DutyAssignment,
@@ -389,5 +391,74 @@ describe("the season's record", () => {
         { day: "2026-10-18", cells: { "HKFC A": ["–"] } },
       ],
     });
+  });
+});
+
+describe("outside umpires' names", () => {
+  const known = ["Andy Chan", "Philipp Boettger", "Jelena Surjanac", "Kuldeep Singh"];
+
+  it("keeps one spelling per umpire, however written, the first list's winning", () => {
+    expect(mergeOutsideNames(["andy chan", "Kuldeep Singh"], ["Andy CHAN", "SINGH Kuldeep", "Lyle  Williams"])).toEqual([
+      "andy chan",
+      "Kuldeep Singh",
+      "Lyle Williams",
+    ]);
+  });
+
+  it("asks about a name a letter or two out, or part of one", () => {
+    expect(similarOutsideNames("Andy Chen", known)).toEqual(["Andy Chan"]);
+    expect(similarOutsideNames("Phillip Boettger", known)).toEqual(["Philipp Boettger"]);
+    expect(similarOutsideNames("Singh Kuldip", known)).toEqual(["Kuldeep Singh"]);
+    expect(similarOutsideNames("boettger", known)).toEqual(["Philipp Boettger"]);
+    expect(similarOutsideNames("Surjanak", known)).toEqual(["Jelena Surjanac"]);
+  });
+
+  it("asks nothing for a known name, a new one, or too little to go on", () => {
+    expect(similarOutsideNames("ANDY  chan", known)).toEqual([]);
+    expect(similarOutsideNames("Chan Andy", known)).toEqual([]);
+    expect(similarOutsideNames("Mark Lee", known)).toEqual([]);
+    expect(similarOutsideNames("An", known)).toEqual([]);
+    expect(similarOutsideNames("Andy", ["Andy Chan", "Andy Lo"])).toEqual(["Andy Chan", "Andy Lo"]);
+  });
+
+  const recent = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
+  const board = (used: unknown[]) => ({
+    people: byApiId,
+    matches: [
+      { id: "m1", ump_1: "Appt - Jelena SURJANAC", ump_2: "Khalsa C - Lyle Williams - 4477", home_team: "HKFC F", away_team: "Khalsa C" },
+      { id: "m2", ump_1: "HKFC D - Ray Smith", ump_2: "Page Bob", home_team: "HKFC D", away_team: "Valley B" },
+      { id: "m3", ump_1: "Appointed", ump_2: "Gurdev", home_team: "HKFC B", away_team: "Valley A" },
+      { id: "m4", ump_1: "andy chan", ump_2: "Valley B", home_team: "HKFC E", away_team: "Valley B" },
+    ],
+    umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled", duty_team: "HKFC D" }],
+    umpire_assignments: (url: URL, method: string, body: any) => {
+      if (method !== "GET") return body ?? [];
+      return url.searchParams.get("external_name") ? used : [];
+    },
+  });
+
+  it("lists those put down in Eddy and those on HKFC match cards, A–Z", async () => {
+    const calls = fake(board([{ id: "a1", external_name: "Andy Chan", created_at: recent }]));
+    const b = await getUmpiringBoard(env, george, null);
+    // Not Bob (a member, names swapped), nor HKFC D's duty umpire, nor a first name alone.
+    expect(b.externalNames).toEqual(["Andy Chan", "Jelena SURJANAC", "Lyle Williams"]);
+    const read = calls.find((c) => c.url.searchParams.get("external_name"))!;
+    expect(read.url.searchParams.get("status")).toBe("neq.withdrawn");
+  });
+
+  it("saves a known name in its known spelling", async () => {
+    const calls = fake(board([{ id: "a1", external_name: "Andy Chan", created_at: recent }]));
+    await assignDuty(env, george, DUTY, { externalName: "andy  CHAN" });
+    expect(writes(calls)[0].body[0]).toMatchObject({ external_name: "Andy Chan" });
+    invalidateAll();
+    const again = fake(board([]));
+    await assignDuty(env, george, DUTY, { externalName: "jelena surjanac" });
+    expect(writes(again)[0].body[0]).toMatchObject({ external_name: "Jelena SURJANAC" });
+  });
+
+  it("counts one outside umpire once in the season's record, however written", () => {
+    const outside = (name: string, id: string) => duty({ id, assignments: [assignment({ name, personId: null, external: true, paid: true })] });
+    const report = tallyDuties([outside("Andy Chan", "d1"), outside("andy chan", "d2"), outside("Chan Andy", "d3")], "2026-2027");
+    expect(report.umpires.map((u) => [u.name, u.paid])).toEqual([["Andy Chan", 3]]);
   });
 });

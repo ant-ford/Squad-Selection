@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ExternalLink, FileText, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import type { StatementCard } from '@/api/membership';
 import { ApiError } from '@/lib/apiClient';
@@ -168,13 +168,14 @@ function NotifySection({ card, today, onDone }: { card: StatementCard; today: st
       <h3 className="font-semibold text-sm text-foreground">Review email</h3>
       <p className="text-xs text-muted-foreground mt-1">{note}</p>
       {card.canNotify && (
-        <Button
-          className="mt-3 w-full h-10 bg-primary text-primary-foreground disabled:opacity-50"
+        <ActionButton
+          fullWidth
+          className="mt-3"
           disabled={notify.isPending}
           onClick={() => setConfirming(true)}
         >
           {notify.isPending ? 'Requesting…' : 'Notify member now'}
-        </Button>
+        </ActionButton>
       )}
       {confirming && (
         <ConfirmDialog

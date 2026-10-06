@@ -1,12 +1,11 @@
 import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/lib/auth';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
+import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart3, CalendarDays, ChevronDown, IdCard, Info, Settings, Shield } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
@@ -15,17 +14,14 @@ import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameD
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import AppFooter from '@/components/AppFooter';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import EventsSection from '@/components/events/EventsSection';
-import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
-import UmpireViewButton from '@/components/UmpireViewButton';
-import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
-import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+import { useScrollMemory } from '@/lib/scrollMemory';
 
 // Opened from the profile menu: loaded then, not with the page.
 const CalendarSyncSheet = lazy(() => import('@/components/CalendarSyncSheet'));
@@ -61,8 +57,7 @@ function setPromptDismissed(fixtureId: string, dismissed: boolean): void {
 /**
  * One-tap availability for a whole day, for the goalkeeper cohort, who see
  * every HKFC fixture grouped by date. Everyone else is asked about the rest
- * of the day when they say No to their own team's game (SameDayGamesPrompt),
- * which replaced this control on their list.
+ * of the day when they say No to their own team's game (SameDayGamesPrompt).
  */
 function DayAvailabilityControl({
   date,
@@ -73,10 +68,7 @@ function DayAvailabilityControl({
   busy: string | null;
   onSet: (date: string, status: AvailabilityStatus) => void;
 }) {
-  // Collapsed by default. This sits above every multi-fixture day, so as a
-  // permanently expanded row of buttons it added a block of height to each
-  // one and pushed the fixtures themselves - the thing players came to act
-  // on - down the page. Open it and the same three choices are there.
+  // Collapsed by default, so it doesn't push the fixtures down the page.
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -84,7 +76,7 @@ function DayAvailabilityControl({
       <div className="flex justify-end -mt-1">
         <button
           onClick={() => setOpen(true)}
-          className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline py-0.5"
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline py-0.5"
         >
           Set whole day
         </button>
@@ -99,19 +91,19 @@ function DayAvailabilityControl({
           key={s}
           disabled={busy !== null}
           onClick={() => onSet(date, s)}
-          className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors disabled:opacity-50 ${
+          className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors disabled:opacity-50 ${
             busy === date + s
               ? 'bg-primary text-primary-foreground border-primary'
               : 'border-border text-muted-foreground hover:bg-muted/50'
           }`}
         >
-          {s === 'Available' ? 'All going' : s === 'Maybe' ? 'All maybe' : 'All out'}
+          {s === 'Available' ? 'All available' : s === 'Maybe' ? 'All maybe' : 'All no'}
         </button>
       ))}
       <button
         onClick={() => setOpen(false)}
         aria-label="Close whole-day availability"
-        className="text-[11px] text-muted-foreground hover:text-foreground px-1 py-1"
+        className="text-xs text-muted-foreground hover:text-foreground px-1 py-1"
       >
         &times;
       </button>
@@ -120,7 +112,6 @@ function DayAvailabilityControl({
 }
 
 export default function PlayerDashboard() {
-  const { logout } = useAuth();
   const navigate = useNavigate();
   // Open by default (owner request, 2026-09-23) - players want to see how the
   // last games went. Results are always fetched (a few recent fixtures, read
@@ -135,9 +126,6 @@ export default function PlayerDashboard() {
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
-  // still be on its way: the menu fills in when it lands.
-  const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -159,12 +147,11 @@ export default function PlayerDashboard() {
   const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus, notes?: string) => {
     // A fresh "No" is a new moment to ask about the rest of the day.
     if (status === 'Unavailable') setPromptDismissed(fixtureId, false);
+    // No toast on success: the card changes under the player's thumb, which
+    // says it. A failure rolls the card back and does say so.
     quickAvailability.mutate(
       { fixtureId, status, notes },
-      {
-        onSuccess: () => toast.success('Availability updated'),
-        onError: () => toast.error('Failed to update availability'),
-      },
+      { onError: () => toast.error('Could not save your answer. Try again.') },
     );
   };
 
@@ -180,8 +167,7 @@ export default function PlayerDashboard() {
     bulkAvailability.mutate(
       { date, status },
       {
-        onSuccess: () => toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`),
-        onError: () => toast.error('Failed to update availability'),
+        onError: () => toast.error(`Could not save your answers for ${safeFormat(date, 'EEE d MMM')}. Try again.`),
         onSettled: () => setBulkBusy(null),
       },
     );
@@ -304,100 +290,50 @@ export default function PlayerDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader menu={<MainMenu officer={officerItems(data)} profile={myProfile} />}>
-        {(data.isCoach || data.isSectionCaptain) && (
-          <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
-            <Shield className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Coach View</span>
-          </button>
-        )}
-        {data.umpiring && <UmpireViewButton />}
-        <ProfileMenu
-          guide="player"
-          onLogout={() => logout()}
-          entries={[
-            { to: '/my-details', label: 'My details', icon: IdCard },
-            ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
-            { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
-            { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
-          ]}
-        />
-      </AppHeader>
+      <AppHeader
+        title="Player view"
+        guide="player"
+        profileItems={[
+          ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
+          { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
+          { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
+        ]}
+      />
 
-      {/* Player identity card (compact - stat boxes removed) */}
-      <div className="container mx-auto px-4 py-4">
-        <MyTasksBanner />
-        <MyKitCard />
-        <div className="bg-card border border-border rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center">
-              <img
-                src={data.photo || DEFAULT_PHOTO}
-                alt=""
-                className="h-full w-full object-cover"
-                loading="lazy"
-                onError={fallBackToDefaultPhoto}
-              />
-            </div>
-            <div className="flex-1">
-              <p className="font-semibold text-foreground">{data.playerName}</p>
-              <p className="text-sm text-muted-foreground">
-                {displayTeam || 'No team'}
-                {data.playingPosition ? ` - ${data.playingPosition}` : ''}
-                {data.shirtNoValue ? ` - #${data.shirtNoValue}` : ''}
-              </p>
-            </div>
-            {data.eddyProfile && (
-              <button onClick={() => navigate('/my-details')} className="text-xs font-medium text-primary shrink-0">
-                My details
-              </button>
-            )}
-          </div>
+      {/* Anything the player must do or should know first (tasks, events,
+          kit, volunteering, birthdays), then their fixtures. */}
+      <div className="container mx-auto px-4 pt-4 pb-8">
+        {/* The notices own their margins elsewhere; here they sit in one
+            evenly spaced column above the fixtures. */}
+        <div className="flex flex-col gap-3 mb-6 empty:hidden *:m-0!">
+          <MyTasksBanner />
+          <EventsSection enabled={!!data.eddyProfile} />
+          <MyKitCard />
+          <MyVolunteeringLink />
+          {data.isBirthday && <BirthdayBanner name={data.playerName} />}
+          {!!data.teamBirthdays?.length && (
+            <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
+          )}
         </div>
-        <MyVolunteeringLink />
-        {data.isBirthday && <BirthdayBanner name={data.playerName} />}
-        {!!data.teamBirthdays?.length && (
-          <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
-        )}
-        <EventsSection enabled={!!data.eddyProfile} />
-      </div>
-
-      <div className="container mx-auto px-4 pb-8">
 
         {isSpecialGK ? (
-          <>
-            <div className="mb-3 p-3 rounded-lg bg-muted/60 border border-border">
-              <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Info className="h-4 w-4 text-primary shrink-0" />
-                Goalkeeper availability
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                All {displayTeam} goalkeepers can support any HKFC team. Let us know which
-                matches you can play.
-              </p>
+          data.fixtures.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-border rounded-xl">
+              <p className="text-muted-foreground">No upcoming HKFC fixtures</p>
             </div>
-            {data.fixtures.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-border rounded-xl">
-                <p className="text-muted-foreground">No upcoming HKFC fixtures</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {gkFixturesByDate?.map(([date, list]) => (
-                  <div key={date}>
-                    <DateHeading date={date} suffix={` (${list.length})`} />
-                    <DayAvailabilityControl
-                      date={date}
-                      busy={bulkBusy}
-                      onSet={handleBulkAvailability}
-                    />
-                    <div className="space-y-2">
-                      {list.map((f) => renderCard(f))}
-                    </div>
+          ) : (
+            <div className="space-y-4">
+              {gkFixturesByDate?.map(([date, list]) => (
+                <div key={date}>
+                  <DateHeading date={date} suffix={` (${list.length})`} />
+                  <DayAvailabilityControl date={date} busy={bulkBusy} onSet={handleBulkAvailability} />
+                  <div className="space-y-2">
+                    {list.map((f) => renderCard(f))}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
+                </div>
+              ))}
+            </div>
+          )
         ) : (
           <>
             <SectionHeader title="My Team" count={data.fixtures.length} />
@@ -528,10 +464,7 @@ export default function PlayerDashboard() {
 function DashboardSkeleton() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card px-4 py-4">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-4 w-24 mt-1" />
-      </div>
+      <AppHeader title="Player view" guide="player" />
       <div className="container mx-auto px-4 py-4 space-y-4">
         <Skeleton className="h-20 w-full rounded-xl" />
         <Skeleton className="h-4 w-40" />

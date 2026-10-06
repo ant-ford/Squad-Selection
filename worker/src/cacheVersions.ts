@@ -25,6 +25,7 @@ export const CACHE_VERSION_KEYS = [
   "offices",
   "events",
   "event_responses",
+  "suspensions",
 ] as const;
 
 export type CacheVersionKey = (typeof CACHE_VERSION_KEYS)[number];

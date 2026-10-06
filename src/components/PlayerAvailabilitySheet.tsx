@@ -5,18 +5,8 @@ import { POS_SHORT } from '@/lib/format';
 import { availableLabel } from '@shared/availableLabel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useTeamAvailability, type TeamAvailabilityRow } from '@/lib/queries';
-
-const STATUS_PILL: Record<string, string> = {
-  Available: 'bg-green-100 text-green-800',
-  Maybe: 'bg-amber-100 text-amber-800',
-  Unavailable: 'bg-red-100 text-red-800',
-};
-
-function statusLabel(status: string, selected: boolean) {
-  if (status === 'Available') return availableLabel(selected);
-  if (status === 'Unavailable') return 'No';
-  return status || '—';
-}
+import { StatusChip } from '@/components/ui/status-chip';
+import { availabilityLabel, availabilityTone } from '@/lib/availabilityTone';
 
 /** "9 available · 1 maybe · 2 no", skipping the zeros; worded like the pills. */
 function tally(rows: TeamAvailabilityRow[], selected: boolean) {
@@ -49,13 +39,7 @@ function PlayerList({
             <span className={`flex-1 text-foreground truncate ${isYou ? 'font-semibold' : ''}`}>
               {m.name}{isYou && ' (you)'}
             </span>
-            <span
-              className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                STATUS_PILL[m.status] ?? 'bg-muted text-muted-foreground'
-              }`}
-            >
-              {statusLabel(m.status, selected)}
-            </span>
+            <StatusChip tone={availabilityTone(m.status)}>{availabilityLabel(m.status, selected)}</StatusChip>
           </div>
         );
       })}
@@ -78,7 +62,7 @@ function Section({
       <div className="flex items-baseline justify-between gap-2 mb-2">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
         {rows && rows.length > 0 && (
-          <span className="text-[11px] text-muted-foreground shrink-0">{tally(rows, selected)}</span>
+          <span className="text-xs text-muted-foreground shrink-0">{tally(rows, selected)}</span>
         )}
       </div>
       {rows === null ? (

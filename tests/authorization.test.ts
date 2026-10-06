@@ -469,9 +469,9 @@ describe("requireCoach", () => {
 
 describe("officers' sections", () => {
   it.each([
-    ["a membership officer", "membershipOfficer", ["membership"]],
+    ["a membership officer", "membershipOfficer", ["membership", "people"]],
     ["a section chair", "chairman", ["chairman"]],
-    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman", "kit", "planning", "trials"]],
+    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman", "kit", "planning", "trials", "people", "club", "dataChecks"]],
     ["an ordinary player", "activePlayer", []],
     // Teams.Section Captain is coach access; it opens neither section.
     ["a Teams-linked section captain with no officer row", "sectionCaptain", []],
@@ -560,7 +560,7 @@ describe("the Assistant Director of Hockey", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
+    expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials", "people", "club", "dataChecks"]);
   });
 });
 

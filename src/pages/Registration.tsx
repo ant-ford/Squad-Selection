@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Check, ChevronDown, Copy, Download, FileText, Search, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { AlertTriangle, Check, ChevronDown, Copy, Download, FileText, Search } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,6 +14,7 @@ import { useMyProfile } from '@/lib/queries';
 import { downloadRegistration, getRegistrationBoard, markRegistered, saveRegistrationDetails, unmarkRegistered } from '@/api/registration';
 import { hkDateKey } from '@shared/hkDateKey';
 import { REASON_LABEL, isVisiting, missingDetails, suggestRegisteredName, tidyRegisteredName, type RegistrationPlayer } from '@shared/registration';
+import { errorMessage } from '@/lib/errorMessages';
 
 type View = 'todo' | 'all' | 'missing';
 const VIEWS: { key: View; label: string }[] = [
@@ -25,7 +26,7 @@ const NO_TEAM = 'No registered team';
 const selectClass = inputClass.replace('w-full', 'w-auto');
 
 const chip = 'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full';
-const failed = (err: unknown) => toast.error(err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Try again.');
+const failed = (err: unknown) => toast.error(errorMessage(err, 'save'));
 
 async function copy(label: string, value: string) {
   try {
@@ -217,7 +218,6 @@ function PlayerItem({
  * and a CSV for HockeyHK's spreadsheet.
  */
 export default function Registration() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.sections?.includes('registration') ?? false;
@@ -409,12 +409,7 @@ export default function Registration() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="HKHA registration">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="HKHA registration" />
       <main className="flex-1 container mx-auto max-w-4xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

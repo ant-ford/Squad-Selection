@@ -205,6 +205,9 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     // derby cannot end up reading one side's kit while writing the other's.
     side: resolvedSide,
     kit: ((resolvedSide === "away" ? match.awayKit : match.homeKit) || "") as KitColour,
+    // The version of the squad listed here, read from the same record, so
+    // the two always agree. A save sends it back (POST /api/squad/changes).
+    selectionVersion: (resolvedSide === "away" ? match.selectionVersionAway : match.selectionVersionHome) ?? 0,
   };
   return { match: matchInfo, players };
 }
@@ -226,10 +229,12 @@ export interface DisplacedSelection {
  * team has selected (Selected for [Team] on same day).
  *
  * Which lower squads to look at comes from the evaluation context's season
- * index, which can be a few seconds behind. Each affected match is re-read
- * fresh before it is written, so nothing is removed that is not really
- * there; a lower selection made in the last few seconds on another isolate
- * can be missed, and then shows up as the double-booked chip as before.
+ * index, which can be a few seconds behind. Each removal is applied to the
+ * lower squad as it is now (apply_squad_changes, no version check), so
+ * nothing is removed that is not really there and nobody else's changes to
+ * that squad are undone; a lower selection made in the last few seconds on
+ * another isolate can be missed, and then shows up as the double-booked chip
+ * as before.
  *
  * A lower match already marked Played is left alone: that appearance
  * happened, and rewriting its squad would not undo it.
@@ -241,6 +246,7 @@ async function releaseFromLowerSameDaySquads(
   playerIds: string[],
   rankMap: Record<string, number>,
   playersById: Map<string, Player>,
+  actorId: string | null = null,
 ): Promise<DisplacedSelection[]> {
   const targetRank = rankMap[targetTeam] ?? UNRANKED_TEAM_RANK;
   const byMatch = new Map<string, { team: string; playerIds: Set<string> }[]>();
@@ -256,38 +262,75 @@ async function releaseFromLowerSameDaySquads(
 
   const displaced: DisplacedSelection[] = [];
   for (const [lowerMatchId, teams] of byMatch) {
-    const lower = await matches(env).getById(lowerMatchId);
+    // Status and team names from the season index: neither changes in the
+    // seconds it can be behind, and the removal itself reads the squad fresh.
+    const lower = ctx.matchesById.get(lowerMatchId);
     if (!lower) continue;
     if (lower.matchStatus === "Played") continue;
-    const updates: Partial<Record<SelectionField, string[]>> = {};
     for (const { team, playerIds: ids } of teams) {
-      const sides: [string | undefined, SelectionField, string[] | undefined][] = [
-        [lower.homeTeam, "selectedPlayersHome", lower.selectedPlayersHome],
-        [lower.awayTeam, "selectedPlayersAway", lower.selectedPlayersAway],
-      ];
-      for (const [sideTeam, field, current] of sides) {
+      const sides: [string | undefined, MatchSide][] = [[lower.homeTeam, "home"], [lower.awayTeam, "away"]];
+      for (const [sideTeam, side] of sides) {
         if (sideTeam !== team) continue;
-        const removed = (current ?? []).filter((id) => ids.has(id));
-        if (removed.length === 0) continue;
-        updates[field] = (current ?? []).filter((id) => !ids.has(id));
-        for (const id of removed) {
-          const p = playersById.get(id);
-          displaced.push({
-            playerId: id,
-            playerName: [p?.preferredName, p?.surname].filter(Boolean).join(" ") || p?.givenNames || "Player",
-            team,
-            matchId: lowerMatchId,
-          });
-        }
+        const result = await matches(env).applySelectionChanges(lowerMatchId, {
+          side, add: [], remove: [...ids], version: null, actorId, source: "release",
+        });
+        if (result.status !== "ok") continue;
+        for (const id of result.removed) displaced.push({ playerId: id, playerName: playerName(playersById.get(id)), team, matchId: lowerMatchId });
       }
     }
-    if (Object.keys(updates).length > 0) {
-      await matches(env).update(lowerMatchId, updates);
-    }
+    // The match record is kept under the match_selections version, which
+    // the release moved: nothing to drop.
   }
   return displaced;
 }
 
+function playerName(p: Player | undefined): string {
+  return [p?.preferredName, p?.surname].filter(Boolean).join(" ") || p?.givenNames || "Player";
+}
+
+type ReleaseContext = { ctx: EvaluationContext; hkfcTeam: string; playersById: Map<string, Player> };
+
+/**
+ * Server-side eligibility revalidation (INV-003) of the players a save adds
+ * that are not in the squad already: 422 naming each blocked one. Returns
+ * what the same-day release needs afterwards.
+ */
+async function revalidateAdds(
+  env: Env,
+  match: Match,
+  ref: Awaited<ReturnType<typeof getReferenceData>>,
+  side: MatchSide | undefined,
+  newlyAddedIds: string[],
+): Promise<ReleaseContext> {
+  const teamMap = new Map<string, Team>(ref.teams.map((t) => [t.teamName || "", t]));
+  const hkfcTeam = hkfcTeamName(match, ref.teamRankMap, side);
+  if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
+
+  const { ctx } = await buildEvaluationContext(env, match, ref.teamRankMap, teamMap, ref.players, hkfcTeam);
+  const playersById = new Map(ref.players.map((p) => [p.id, p]));
+
+  const violations: string[] = [];
+  for (const id of newlyAddedIds) {
+    const player = playersById.get(id);
+    if (!player) { violations.push(`${id}: player not found or inactive`); continue; }
+
+    const eligibility = evaluatePlayerEligibility(player, match, ctx);
+    if (eligibility.status === "blocked") {
+      const name = player.preferredName || player.givenNames || id;
+      violations.push(`${name}: ${eligibility.reason}`);
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new HttpError(`Selection rejected — ineligible player(s): ${violations.join("; ")}`, 422);
+  }
+  return { ctx, hkfcTeam, playersById };
+}
+
+/**
+ * The whole-squad save. Superseded by applySquadChanges; kept for one
+ * release so PWAs still running the old page can save.
+ */
 export async function syncSquad(
   env: Env,
   matchId: string,
@@ -309,34 +352,7 @@ export async function syncSquad(
   const newlyAddedIds = cleanIds.filter((id) => !currentSelectedBefore.includes(id));
   // Set when newly added players pass revalidation; the same-day release
   // below runs only after this squad has been written.
-  let release: { ctx: EvaluationContext; hkfcTeam: string; playersById: Map<string, Player> } | null = null;
-
-  if (newlyAddedIds.length > 0) {
-    const teamMap = new Map<string, Team>(ref.teams.map((t) => [t.teamName || "", t]));
-    const hkfcTeam = hkfcTeamName(match, ref.teamRankMap, side);
-    if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
-    
-    const { ctx } = await buildEvaluationContext(env, match, ref.teamRankMap, teamMap, ref.players, hkfcTeam);
-    const playersById = new Map(ref.players.map((p) => [p.id, p]));
-    
-    const violations: string[] = [];
-    for (const id of newlyAddedIds) {
-      const player = playersById.get(id);
-      if (!player) { violations.push(`${id}: player not found or inactive`); continue; }
-      
-      const eligibility = evaluatePlayerEligibility(player, match, ctx);
-      if (eligibility.status === "blocked") {
-        const name = player.preferredName || player.givenNames || id;
-        violations.push(`${name}: ${eligibility.reason}`);
-      }
-    }
-    
-    if (violations.length > 0) {
-      throw new HttpError(`Selection rejected — ineligible player(s): ${violations.join("; ")}`, 422);
-    }
-
-    release = { ctx, hkfcTeam, playersById };
-  }
+  const release = newlyAddedIds.length > 0 ? await revalidateAdds(env, match, ref, side, newlyAddedIds) : null;
 
   // Derby safety: ensure a player isn't selected for BOTH sides of the same match
   const updates: Partial<Record<SelectionField, string[]>> = { [fieldName]: cleanIds };
@@ -364,6 +380,111 @@ export async function syncSquad(
   // rather than a match-by-match computation.
   await invalidateSelectionCaches(env, matchId, match.season || "");
   return { displaced };
+}
+
+const MAX_SQUAD_CHANGES = 40;
+
+export interface SquadChangesBody {
+  matchId?: unknown;
+  side?: unknown;
+  add?: unknown;
+  remove?: unknown;
+  version?: unknown;
+}
+
+export type SquadChangesOutcome =
+  | { status: "ok"; version: number; selectedIds: string[]; displaced: DisplacedSelection[] }
+  | { status: "conflict"; version: number; selectedIds: string[]; players: { id: string; name: string }[] };
+
+function playerIdList(value: unknown, name: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new HttpError(`${name} must be a list of player ids`, 400);
+  if (value.length > MAX_SQUAD_CHANGES) throw new HttpError(`${name} can list at most ${MAX_SQUAD_CHANGES} players`, 400);
+  for (const id of value) {
+    if (!isRowId(id)) throw new HttpError(`${name} has an invalid player id`, 400);
+  }
+  return [...new Set(value as string[])];
+}
+
+/** Checks a POST /api/squad/changes body; 400 on anything malformed. */
+export function parseSquadChanges(body: SquadChangesBody) {
+  if (!isRowId(body.matchId)) throw new HttpError("matchId is invalid", 400);
+  if (body.side !== undefined && body.side !== null && body.side !== "home" && body.side !== "away") {
+    throw new HttpError('side must be "home" or "away"', 400);
+  }
+  const add = playerIdList(body.add, "add");
+  const remove = playerIdList(body.remove, "remove");
+  if (add.some((id) => remove.includes(id))) throw new HttpError("A player cannot be added and removed in one save", 400);
+  const version = body.version;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 0) {
+    throw new HttpError("version must be a whole number", 400);
+  }
+  return { matchId: body.matchId, side: (body.side ?? undefined) as MatchSide | undefined, add, remove, version };
+}
+
+/**
+ * A coach's save as changes (Track B6): only the players added and removed,
+ * applied to the squad as it is now, so two coaches working on one squad
+ * no longer undo each other. Refused as a conflict only when someone else
+ * changed one of the same players since `version` (owner decision, 6 Oct
+ * 2026). Adds not already in the squad are revalidated as syncSquad does;
+ * a higher team's add releases the player from same-day lower squads.
+ *
+ * Subrequests: the fresh match read, the rpc, one rpc per released lower
+ * squad side and the shared-cache invalidation, plus the cached reference
+ * and season reads when cold.
+ */
+export async function applySquadChanges(
+  env: Env,
+  body: SquadChangesBody,
+  actor: { email: string; personId?: string },
+): Promise<SquadChangesOutcome> {
+  const { matchId, side, add, remove, version } = parseSquadChanges(body);
+
+  // Fresh, never the 30s cache: which adds are new decides what is revalidated.
+  const match = await matches(env).getById(matchId);
+  if (!match) throw new HttpError("Match not found", 404);
+  const ref = await getReferenceData(env);
+  const resolvedSide = resolveHkfcSide(match, ref.teamRankMap, side);
+  const current = new Set(getSelectedPlayerIds(match, ref.teamRankMap, resolvedSide));
+  const newlyAddedIds = add.filter((id) => !current.has(id));
+  const release = newlyAddedIds.length > 0 ? await revalidateAdds(env, match, ref, resolvedSide, newlyAddedIds) : null;
+
+  const actorId = actor.personId || null;
+  const result = await matches(env).applySelectionChanges(matchId, {
+    side: resolvedSide, add, remove, version, actorId, source: "coach",
+  });
+
+  if (result.status === "conflict") {
+    // The other change moved the cache versions, so the page's reload reads it.
+    const byId = new Map(ref.players.map((p) => [p.id, p]));
+    return {
+      status: "conflict",
+      version: result.version,
+      selectedIds: result.selected,
+      players: result.players.map((id) => ({ id, name: playerName(byId.get(id)) })),
+    };
+  }
+  if (result.status === "unchanged") {
+    return { status: "ok", version: result.version, selectedIds: result.selected, displaced: [] };
+  }
+
+  // Higher team priority (Bye-Law 7.1 / spec 7.3), after the save so a
+  // failed save never leaves a player removed from both squads. Only players
+  // this save really added, and only those that were revalidated.
+  let displaced: DisplacedSelection[] = [];
+  const released = release ? result.added.filter((id) => newlyAddedIds.includes(id)) : [];
+  if (release && released.length > 0) {
+    displaced = await releaseFromLowerSameDaySquads(
+      env, release.ctx, release.hkfcTeam, released, ref.teamRankMap, release.playersById, actorId,
+    );
+    for (const d of displaced) {
+      console.log(`[Same-Day Audit] action=release playerId=${d.playerId} from=${d.team} matchId=${d.matchId} for=${release.hkfcTeam} forMatchId=${matchId} actor=${actor.email || "unknown"}`);
+    }
+  }
+
+  await invalidateSelectionCaches(env, matchId, match.season || "");
+  return { status: "ok", version: result.version, selectedIds: result.selected, displaced };
 }
 
 export async function toggleAutoSelect(env: Env, matchId: string, enabled: boolean, actingEmail?: string) {

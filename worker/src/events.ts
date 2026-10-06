@@ -34,6 +34,8 @@ import {
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
   answerRefusal,
+  billed,
+  cleanLink,
   checkInOpen,
   guestsCameOf,
   needsRegister,
@@ -93,6 +95,7 @@ interface EventRow {
   guest_child_price: number | string | null;
   payment_mode: PaymentMode;
   payment_details: string | null;
+  link_url: string | null;
   charges_sent_at: string | null;
   register_taken_at: string | null;
   checkin_code: string | null;
@@ -107,7 +110,7 @@ interface EventRow {
   team: { team_name: string } | null;
 }
 const EVENT_COLS =
-  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
+  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,link_url,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
 
 interface ResponseRow {
   event_id: string;
@@ -149,6 +152,7 @@ function toDetails(r: EventRow, posterUrl: string | null): EventDetails {
     guestChildPrice: money(r.guest_child_price),
     paymentMode: r.payment_mode,
     paymentDetails: r.payment_details,
+    linkUrl: r.link_url,
     guestsAllowed: r.guests_allowed,
     maxGuests: r.max_guests,
     helpNeeded: r.help_needed,
@@ -299,7 +303,7 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
     const details = toDetails(r, posters[r.id] ?? null);
     // Their bill: their own place unless someone else signed them up, and everyone they signed up.
     const paying = [...(mine && !mine.signed_up_by_id ? [mine] : []), ...signedUp];
-    const charge = r.payment_mode === "free" ? undefined : computeCharges(details, paying.map(toChargeInput)).find((c) => c.payerId === user.personId);
+    const charge = !billed(r.payment_mode) ? undefined : computeCharges(details, paying.map(toChargeInput)).find((c) => c.payerId === user.personId);
     const payment = payments.find((x) => x.event_id === r.id);
     return {
         ...details,
@@ -618,7 +622,10 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
   if (max !== null && (!Number.isInteger(max) || max < 1 || max > 10)) throw new HttpError("Guests per person: 1 to 10.", 400, "INVALID_INPUT");
   const socialFunction = type === "social_function" && body.socialFunction ? body.socialFunction : null;
   if (socialFunction && !(SOCIAL_FUNCTIONS as readonly string[]).includes(socialFunction)) throw new HttpError("Choose the social function from the list.", 400, "INVALID_INPUT");
-  const free = paymentMode === "free";
+  // Free and self-funded bill nobody; self-funded may show an estimated cost per person.
+  const free = !billed(paymentMode);
+  const link = cleanLink(body.linkUrl);
+  if (link && typeof link === "object") throw new HttpError(link.error, 400, "INVALID_INPUT");
   const paymentDetails = paymentMode === "payme_fps" ? text(body.paymentDetails, 300) : "";
   if (paymentMode === "payme_fps" && !paymentDetails) throw new HttpError("Give the PayMe link or FPS ID people should pay to.", 400, "INVALID_INPUT");
   return {
@@ -629,11 +636,12 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
     starts_at: startsAt,
     ends_at: endsAt,
     respond_by: respondBy,
-    member_price: free ? null : toPrice(body.memberPrice),
+    member_price: paymentMode === "free" ? null : toPrice(body.memberPrice),
     guest_adult_price: free || !guestsAllowed ? null : toPrice(body.guestAdultPrice),
     guest_child_price: free || !guestsAllowed ? null : toPrice(body.guestChildPrice),
     payment_mode: paymentMode,
     payment_details: paymentDetails || null,
+    link_url: link,
     guests_allowed: guestsAllowed,
     max_guests: max,
     help_needed: text(body.helpNeeded, 200) || null,
