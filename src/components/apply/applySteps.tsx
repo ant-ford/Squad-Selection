@@ -6,6 +6,7 @@ import PhoneInput from '@/components/profile/PhoneInput';
 import SignaturePad from '@/components/SignaturePad';
 import { ChoiceOrOther, fieldInput, HkidInput } from '@/components/profile/ProfileFields';
 import { StepShell, errorText, type StepProps } from '@/components/profile/steps';
+import { differs } from '@/lib/drafts';
 import { saveClubs, saveFamily, saveTrials, submitApplication, uploadApplicantFile } from '@/api/apply';
 import { hkDateKey } from '@shared/hkDateKey';
 import { NATIONALITIES } from '@shared/profile';
@@ -121,7 +122,7 @@ export function ClubsStep({ view, ...nav }: ApplyStepProps) {
   };
   const set = (i: number, patch: Partial<PrivateClub>) => setClubs(clubs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   return (
-    <StepShell title="Private clubs" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell title="Private clubs" {...nav} onNext={next} busy={save.isPending} problem={problem} dirty={!save.isSuccess && differs({ clubs }, { clubs: view.clubs })}>
       <Count label="Are you a member of a private club?" value={clubs.length} max={MAX_CLUBS} onChange={(n) => setClubs(resize(clubs, n, () => ({ club: '', sinceYear: thisYear })))} />
       {clubs.map((c, i) => (
         <div key={i} className="grid grid-cols-3 gap-3 items-end">
@@ -193,7 +194,14 @@ export function TrialsStep({ view, ...nav }: ApplyStepProps) {
   };
   const set = (i: number, patch: Partial<TrialAttended>) => setTrials(trials.map((t, j) => (j === i ? { ...t, ...patch } : t)));
   return (
-    <StepShell title="Trials with HKFC" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell
+      title="Trials with HKFC"
+      {...nav}
+      onNext={next}
+      busy={save.isPending}
+      problem={problem}
+      dirty={!save.isSuccess && differs({ trials, details }, { trials: view.trials, details: view.participationDetails ?? '' })}
+    >
       <Count label="Have you taken part in any trials?" value={trials.length} max={MAX_TRIALS} onChange={(n) => setTrials(resize(trials, n, () => ({ date: '', types: [], division: '' })))} />
       {trials.map((t, i) => (
         <fieldset key={i} className="rounded-md border border-border p-3 space-y-2">
@@ -341,7 +349,15 @@ export function FamilyStep({ view, details, ...nav }: ApplyStepProps) {
   const dirty = () => setSaved(false);
 
   return (
-    <StepShell title="Family" {...nav} onNext={next} nextLabel={saved ? 'Next' : 'Save and next'} busy={save.isPending} problem={problem}>
+    <StepShell
+      title="Family"
+      {...nav}
+      onNext={next}
+      nextLabel={saved ? 'Next' : 'Save and next'}
+      busy={save.isPending}
+      problem={problem}
+      dirty={!saved && differs({ hasSpouse, spouse, children, relatives }, { hasSpouse: !!view.spouse, spouse: view.spouse ?? EMPTY_MEMBER, children: view.children, relatives: view.relatives })}
+    >
       {married && (
         <FileUpload
           kind="document"
@@ -463,7 +479,15 @@ export function AgreeStep({ view, details, onFinished, ...nav }: ApplyStepProps 
   const tick = (key: string) => (on: boolean) => setTicked((t) => (on ? [...t, key] : t.filter((k) => k !== key)));
 
   return (
-    <StepShell title="Agree and sign" {...nav} onNext={next} nextLabel="Submit application" busy={submit.isPending} problem={problem}>
+    <StepShell
+      title="Agree and sign"
+      {...nav}
+      onNext={next}
+      nextLabel="Submit application"
+      busy={submit.isPending}
+      problem={problem}
+      dirty={!submit.isSuccess && (ticked.length > 0 || Object.keys(sigs).length > 1 || Object.keys(sigs.children).length > 0)}
+    >
       {items.map((a) => (
         <section key={a.key} className="space-y-2">
           <h3 className="text-sm font-semibold text-foreground">{a.title}</h3>

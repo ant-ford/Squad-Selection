@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useParams, useSearchParams, useBlocker } from 'react-router-dom';
+import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
 import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
-import { apiPost, apiGet } from '../lib/apiClient';
+import { apiPost, apiGet, ApiError } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import PlayerRow, { canToggleSelection } from '@/components/PlayerRow';
@@ -12,15 +13,25 @@ import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
 import { fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
-import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
 import { compareSelected, sortSquadList } from '@/lib/squadSort';
 import { POS_SHORT, initials, shortTeam } from '@/lib/format';
+import { pruneDeltas, squadChanges, type SquadDelta } from '@/lib/squadDelta';
 
-type Delta = { playerId: string; action: 'select' | 'remove' };
+type Delta = SquadDelta;
+
+/** What POST /api/squad/changes answers on success. */
+interface SquadChangesResult {
+  success: boolean;
+  version: number;
+  selectedIds: string[];
+  displaced?: { playerName: string; team: string }[];
+}
+
+const CONFLICT_MESSAGE = 'Someone else changed this squad. Check and save again.';
 
 // The whole pool, not a top-N shortlist: the ranking orders the unselected
 // half of the squad list, so every candidate needs a place in it.
@@ -86,6 +97,16 @@ export default function SquadSelection() {
     }
     return Array.from(map.values());
   }, [data, pollData, pendingDeltas]);
+
+  // A fresh squad (after a conflict, or the 30s refetch) can already hold
+  // some of this coach's pending changes, made by someone else. Those are
+  // dropped so Save counts only real changes; the rest stay pending and
+  // show on top of the new squad.
+  useEffect(() => {
+    if (!data?.players) return;
+    const selected = data.players.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
+    setPendingDeltas(prev => pruneDeltas(prev, selected));
+  }, [data]);
 
   // A player picked for the Es and then taken by the Cs comes back blocked on
   // the E sheet - and the default eligibility chips would hide the very row
@@ -320,14 +341,7 @@ export default function SquadSelection() {
 
   const hasChanges = pendingDeltas.length > 0;
 
-  useEffect(() => {
-    if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasChanges]);
-
-  const blocker = useBlocker(hasChanges);
+  const leave = useUnsavedChanges(hasChanges, 'Your squad changes will be lost.');
 
   const handleFilterChange = useCallback((f: FilterState) => {
     eligibilityDefaultedRef.current = false;
@@ -367,6 +381,24 @@ export default function SquadSelection() {
   );
 
   const listRef = useRef<HTMLDivElement>(null);
+  // The list scrolls with the page (it used to be a 60vh box of its own),
+  // so the virtualizer needs to know where on the page the list starts.
+  const [listTop, setListTop] = useState(0);
+  const measureListTop = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const top = Math.round(el.getBoundingClientRect().top + window.scrollY);
+    setListTop(prev => (prev === top ? prev : top));
+  }, []);
+  useLayoutEffect(measureListTop);
+  useEffect(() => {
+    // Things above the list change height without this page re-rendering
+    // (the filter panel opening an ability group, a banner loading).
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measureListTop);
+    ro.observe(document.body);
+    return () => ro.disconnect();
+  }, [measureListTop]);
   /**
    * Measured row heights are cached against THIS key, so it has to be the
    * same thing React keys the row by - the player.
@@ -388,9 +420,9 @@ export default function SquadSelection() {
     (index: number) => sortedPlayers[index]?.id ?? index,
     [sortedPlayers],
   );
-  const virtualizer = useVirtualizer({
+  const virtualizer = useWindowVirtualizer({
     count: sortedPlayers.length,
-    getScrollElement: () => listRef.current,
+    scrollMargin: listTop,
     getItemKey,
     // Only ever used for a row that has not been measured yet. A bare row is
     // about this tall; the chip rows measure themselves on mount.
@@ -474,28 +506,42 @@ export default function SquadSelection() {
   };
 
   const handleSave = async () => {
-    if (!hasChanges) return;
+    if (!hasChanges || !data) return;
+    const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
+    // Only this coach's adds and removes, against the squad as loaded, plus
+    // that squad's version: the server merges them with anyone else's
+    // changes and refuses only when both touched the same player.
+    const loadedSelected = data.players.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
+    const { add, remove } = squadChanges(pendingDeltas, loadedSelected);
+    if (add.length === 0 && remove.length === 0) {
+      setPendingDeltas([]);
+      return;
+    }
     setSaving(true);
     try {
-      const selectedIds = mergedPlayers.filter(p => p.selectionStatus === 'Selected').map(p => p.id);
-      const result = await apiPost<{ displaced?: { playerName: string; team: string }[] }>('/api/squad/sync', {
+      const result = await apiPost<SquadChangesResult>('/api/squad/changes', {
         matchId,
-        selectedIds,
-        side: side,
+        side,
+        add,
+        remove,
+        version: data.match.selectionVersion ?? 0,
       });
-      const qk: [string, string | undefined, string | undefined] = ['playersForMatch', matchId, side];
+      // The squad as it is now, everyone's changes included.
+      const selected = new Set(
+        result.selectedIds ?? [...loadedSelected.filter(id => !remove.includes(id)), ...add],
+      );
       queryClient.setQueryData(qk, (old: any) => {
         if (!old) return old;
         return {
           ...old,
-          match: { ...old.match, selectedCount: selectedIds.length },
+          match: { ...old.match, selectedCount: selected.size, selectionVersion: result.version },
           players: old.players.map((p: any) => ({
             ...p,
-            selectionStatus: selectedIds.includes(p.id) ? 'Selected' : ''
-          }))
+            selectionStatus: selected.has(p.id) ? 'Selected' : '',
+          })),
         };
       });
-      toast.success('Squad synced successfully');
+      toast.success('Squad saved');
       // Higher team priority (Bye-Law 7.1): anyone this squad took from a
       // same-day lower squad has been removed from it. Say so, so the coach
       // can let that team know.
@@ -512,7 +558,15 @@ export default function SquadSelection() {
       queryClient.invalidateQueries({ queryKey: ['upcomingFixtures'] });
       queryClient.invalidateQueries({ queryKey: ['recommendations', matchId, side] });
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to sync squad');
+      if (e instanceof ApiError && e.code === 'SQUAD_CONFLICT') {
+        // Someone else changed one of the same players. Reload the squad and
+        // keep this coach's changes: they show on top of the new squad, so
+        // the coach checks and saves again.
+        toast.error(CONFLICT_MESSAGE);
+        queryClient.invalidateQueries({ queryKey: qk });
+      } else {
+        toast.error(e?.message || 'Could not save the squad');
+      }
     } finally {
       setSaving(false);
     }
@@ -552,8 +606,10 @@ export default function SquadSelection() {
 
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
 
-      <div className="container mx-auto px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/50">
-        <div className="flex items-center gap-3">
+      {/* Pinned while the list scrolls under it. */}
+      <div className="sticky top-0 z-20 bg-background border-b border-border/50">
+      <div className="container mx-auto px-4 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex items-center gap-2 min-h-10">
           <input
             type="checkbox"
             id="toggle-all"
@@ -561,15 +617,16 @@ export default function SquadSelection() {
             checked={filteredPlayers.length > 0 && filteredPlayers.filter(p => p.eligibilityStatus !== 'blocked').every(p => p.selectionStatus === 'Selected')}
             onChange={handleToggleAllVisible}
           />
-          <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">Select All</label>
+          <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">Select all</label>
         </div>
         <div className="w-px h-5 bg-border/50 hidden sm:block" />
         
         <button
           onClick={() => handleToggleAutoSelect(!autoSelectEnabled)}
           disabled={autoSelectPending}
+          aria-pressed={autoSelectEnabled}
           className={`
-            inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium
+            inline-flex items-center gap-2 px-3 min-h-10 rounded-full text-xs sm:text-sm font-medium
             transition-all duration-150 border select-none
             ${autoSelectEnabled
               ? 'bg-primary-tint/10 text-primary border-primary/30 hover:bg-primary-tint/15'
@@ -579,7 +636,7 @@ export default function SquadSelection() {
           `}
         >
           <Wand2 className={`h-3.5 w-3.5 ${autoSelectEnabled ? 'text-primary' : ''}`} />
-          <span>Auto-Select</span>
+          <span>Auto-select</span>
           <span className={`
             inline-flex items-center justify-center w-7 h-4 rounded-full transition-colors duration-150
             ${autoSelectEnabled ? 'bg-primary' : 'bg-border'}
@@ -595,7 +652,7 @@ export default function SquadSelection() {
         {notifyFixture && (
           <button
             onClick={() => setShowNotify(true)}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors"
             title={
               selectedPlayers.length > 0
                 ? 'Message the selected squad on WhatsApp'
@@ -616,7 +673,8 @@ export default function SquadSelection() {
             )}
             <button
               onClick={() => setShowPriorityManager(prev => !prev)}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              aria-expanded={showPriorityManager}
+              className="inline-flex items-center gap-1 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors"
               title="Edit priority player list"
             >
               <Settings2 className="h-3 w-3" />
@@ -628,12 +686,13 @@ export default function SquadSelection() {
         {autoSelectEnabled && suppressedPlayerIds.size > 0 && (
           <button
             onClick={() => { setSuppressedPlayerIds(new Set()); setHasRunAutoSelect(false); }}
-            className="text-xs text-muted-foreground underline hover:text-foreground"
+            className="min-h-10 text-sm text-muted-foreground underline hover:text-foreground"
           >
             <X className="inline h-3 w-3 mr-0.5" />
             {suppressedPlayerIds.size} excluded — rescan
           </button>
         )}
+      </div>
       </div>
 
       {showPriorityManager && (
@@ -641,7 +700,7 @@ export default function SquadSelection() {
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Wand2 className="h-4 w-4 text-primary" />
-              Auto-Select Priority Players
+              Auto-select priority players
             </h3>
             <button
               onClick={() => setShowPriorityManager(false)}
@@ -676,10 +735,10 @@ export default function SquadSelection() {
             <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search players by name..."
+              placeholder="Search by name"
               value={prioritySearch}
               onChange={e => setPrioritySearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full pl-8 pr-3 h-10 text-base sm:text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
@@ -709,15 +768,15 @@ export default function SquadSelection() {
             disabled={savingPriority}
             className="w-full py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {savingPriority ? 'Saving...' : `Save Priority List (${priorityPlayers.length} players)`}
+            {savingPriority ? 'Saving...' : `Save priority list (${priorityPlayers.length})`}
           </button>
         </div>
       )}
 
-      <div ref={listRef} className="container mx-auto px-4 max-h-[60vh] overflow-y-auto">
+      <div ref={listRef} className="container mx-auto px-4">
         {sortedPlayers.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
-            No players match the current filters.
+            No players match the filters
           </div>
         ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
@@ -736,7 +795,7 @@ export default function SquadSelection() {
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
                   }}
                 >
                   <PlayerRow
@@ -774,24 +833,14 @@ export default function SquadSelection() {
               <span className="text-xs text-muted-foreground shrink-0">+{pendingPlayers.length - 4} more</span>
             )}
           </div>
-          <button onClick={() => setPendingDeltas([])} className="flex-1 py-2.5 sm:py-3 border rounded text-sm font-medium">Discard</button>
-          <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 sm:py-3 bg-primary text-primary-foreground rounded text-sm font-medium">
+          <button onClick={() => setPendingDeltas([])} className="flex-1 min-h-11 border rounded text-sm font-medium">Discard</button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 min-h-11 bg-primary text-primary-foreground rounded text-sm font-medium disabled:opacity-60">
             {saving ? 'Saving...' : `Save (${pendingDeltas.length})`}
           </button>
         </div>
       )}
 
-      {blocker.state === 'blocked' && (
-        <ConfirmDialog
-          title="Discard unsaved changes?"
-          message="You have pending selection changes that will be lost."
-          confirmLabel="Discard"
-          cancelLabel="Stay"
-          destructive
-          onConfirm={() => blocker.proceed()}
-          onCancel={() => blocker.reset()}
-        />
-      )}
+      {leave.prompt}
 
       {showNotify && notifyFixture && (
         <NotifySquadSheet

@@ -1,7 +1,8 @@
 import { Users } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
-import { availableLabel } from '@shared/availableLabel';
 import { availabilityClasses } from '@/lib/availabilityTone';
+import { preferenceTagLabel } from '@/lib/availabilityAnswers';
+import AvailabilityAnswerControl from '@/components/AvailabilityAnswerControl';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {
@@ -14,52 +15,48 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
   const isSelected = fixture.selectionStatus === 'Selected';
   const isUnavailable = fixture.availabilityStatus === 'Unavailable';
   const isMaybe = fixture.availabilityStatus === 'Maybe';
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onTap();
-    }
-  };
+  const home = fixture.isHome ? fixture.hkfcTeam : fixture.opponent;
+  const away = fixture.isHome ? fixture.opponent : fixture.hkfcTeam;
 
   return (
     <div
       // Answered states carry a heavier border and a solid tint: the old
       // fractional-opacity washes were close to invisible on a phone outdoors.
-      // The card takes the soft tint, so the active availability button below
-      // takes the solid colour to stand off it. Available stays untinted.
-      className={`w-full border-2 rounded-xl p-3 text-left transition-all hover:shadow-sm cursor-pointer ${
+      // The card takes the soft tint, so the chosen answer below takes the
+      // solid colour to stand off it. Available stays untinted.
+      className={`w-full border-2 rounded-xl p-3 ${
         isSelected
           ? 'border-primary bg-primary/5'
           : availabilityClasses(isUnavailable || isMaybe ? fixture.availabilityStatus : '', 'card')
       }`}
-      role="button"
-      tabIndex={0}
-      onClick={onTap}
-      onKeyDown={handleKeyDown}
     >
-      {/* Which list it's from, in plain words: a team above (play-up) or
-          below (support) the player's own. */}
-      {(fixture.isPlayUp || fixture.fixtureCategory === 'support') && (
-        <p className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
-          {fixture.isPlayUp
-            ? isSelected
-              ? `Selected to play up for ${fixture.selectionTeam || fixture.hkfcTeam}`
-              : `Play-up · ${fixture.selectionTeam || fixture.hkfcTeam}`
-            : isSelected
-            ? `Selected to support ${fixture.hkfcTeam}`
-            : `Support · ${fixture.hkfcTeam}`}
-        </p>
-      )}
+      {/* Only the top of the card opens the fixture sheet. The answer
+          control is a sibling of this button, never inside it. */}
+      <button
+        type="button"
+        onClick={onTap}
+        className="block w-full text-left rounded-lg hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {/* Which list it's from, in plain words: a team above (play-up) or
+            below (support) the player's own. */}
+        {(fixture.isPlayUp || fixture.fixtureCategory === 'support') && (
+          <span className={`block mb-1 text-xs font-medium uppercase tracking-wide ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+            {fixture.isPlayUp
+              ? isSelected
+                ? `Selected to play up for ${fixture.selectionTeam || fixture.hkfcTeam}`
+                : `Play-up · ${fixture.selectionTeam || fixture.hkfcTeam}`
+              : isSelected
+              ? `Selected to support ${fixture.hkfcTeam}`
+              : `Support · ${fixture.hkfcTeam}`}
+          </span>
+        )}
 
-      {/* Top row: title + StatusBadge */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+        <span className="flex items-start justify-between gap-2">
+          <span className="min-w-0 font-semibold text-sm text-foreground flex items-center gap-1.5">
             <span className="truncate">
-              {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
+              {home}
               <span className="text-muted-foreground font-normal"> vs </span>
-              {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
+              {away}
             </span>
             {/* Which shirt to bring. Hidden until a coach has decided. */}
             {fixture.kit && (
@@ -73,59 +70,30 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                 }`}
               />
             )}
-          </p>
-        </div>
-        <StatusBadge status={fixture.selectionStatus} />
-      </div>
-
-      {/* Meta across the full width so it stays on one line on a phone; squad
-          size and the availability segmented control share the row below. */}
-      <div className="mt-1.5">
-        <MetaLine date={fixture.date} venue={fixture.venue} />
-      </div>
-      <div className="mt-1.5 flex justify-between items-center">
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Users className="h-3 w-3" />
-          {fixture.selectedCount}/{fixture.targetSquadSize}
+          </span>
+          <span className="shrink-0 flex items-center gap-2">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Users className="h-3 w-3" aria-hidden="true" />
+              <span className="sr-only">Picked: </span>
+              {fixture.selectedCount}/{fixture.targetSquadSize}
+            </span>
+            <StatusBadge status={fixture.selectionStatus} />
+          </span>
         </span>
-        <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
-          {[
-            { value: 'Available', label: availableLabel(isSelected) },
-            { value: 'Maybe', label: 'Maybe' },
-            { value: 'Unavailable', label: 'No' },
-          ].map(({ value, label }, idx) => {
-            const active = fixture.availabilityStatus === value;
-            return (
-              <button
-                key={value}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAvailabilityChange(value as any);
-                }}
-                className={`
-                  px-2 py-1 text-xs font-medium min-w-[48px] transition-colors
-                  ${idx === 0 ? 'rounded-l-full' : ''}
-                  ${idx === 2 ? 'rounded-r-full' : ''}
-                  ${active ? availabilityClasses(value, 'solid') : 'bg-background text-muted-foreground hover:bg-muted/50'}
-                  ${idx > 0 ? 'border-l border-border' : ''}
-                `}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Says where the status came from. A preference is a default the
-          player can override just by tapping one of the buttons above; an
-          answer they gave for this fixture is not overridden by anything. */}
-      {fixture.availabilityFromRule && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          {fixture.availabilityStatus} from your availability preferences. Tap to set this
-          fixture on its own.
-        </p>
-      )}
+        <span className="mt-1.5 block">
+          <MetaLine date={fixture.date} venue={fixture.venue} />
+        </span>
+      </button>
+
+      <AvailabilityAnswerControl
+        className="mt-2"
+        value={fixture.availabilityStatus}
+        isSelected={isSelected}
+        onChange={onAvailabilityChange}
+        label={`Your answer for ${home} vs ${away}`}
+        preferenceLabel={fixture.availabilityFromRule ? preferenceTagLabel('your') : undefined}
+      />
 
       {fixture.playerNotes && (
         <div className="mt-2 text-xs text-muted-foreground italic truncate">“{fixture.playerNotes}”</div>

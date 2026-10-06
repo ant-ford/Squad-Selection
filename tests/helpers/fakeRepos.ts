@@ -9,6 +9,7 @@ import * as rulesModule from "../../worker/src/data/availabilityRules";
 import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
 import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
+import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
@@ -23,9 +24,11 @@ import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRu
 import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
 import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
 import type { MembershipEventsRepo, NewMembershipEvent } from "../../worker/src/data/membershipEvents";
+import type { SuspensionsRepo } from "../../worker/src/data/suspensions";
+import type { ManualSuspension } from "../../worker/src/suspension";
 import type { CommitmentsRepo } from "../../worker/src/data/commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../../worker/src/data/commitments";
-import type { FieldMap, Row } from "../../worker/src/data/rows";
+import type { FieldList, Row } from "../../worker/src/data/rows";
 import { API_ID_RE } from "../../worker/src/data/ids";
 import { HttpError } from "../../worker/src/http";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../shared/schema/fieldMaps";
@@ -42,24 +45,23 @@ import type {
  * in production: the same filters, the same "blank counts as different" for
  * a != filter, the same errors for a missing row. Writes mutate the arrays.
  *
- * Installed by spying on each module's accessor (people(env), teams(env),
- * ...), so it does not depend on backend.ts or pick(): it keeps working once
- * the Airtable implementations are deleted. See tests/helpers/README.md.
+ * Installed by spying on each module accessor (people(env), teams(env),
+ * ...): the seam the data modules keep for tests.
  */
 
 // ── State ────────────────────────────────────────────────────────────────
 
 /** Every key a People row view (api_people_crm) can carry. */
 type PeopleCrmKey =
-  | keyof typeof MEMBERSHIP_FIELDS
-  | keyof typeof CHAIRMAN_FIELDS
-  | keyof typeof EXPORT_FIELDS
-  | keyof typeof NUMBER_HOLDER_FIELDS
-  | keyof typeof APPLICANT_STAGE_FIELDS
-  | keyof typeof CONTACT_FIELDS
-  | keyof typeof NAME_FIELDS
-  | keyof typeof MY_TASK_FIELDS
-  | keyof typeof APPLICANT_TASK_FIELDS;
+  | (typeof MEMBERSHIP_FIELDS)[number]
+  | (typeof CHAIRMAN_FIELDS)[number]
+  | (typeof EXPORT_FIELDS)[number]
+  | (typeof NUMBER_HOLDER_FIELDS)[number]
+  | (typeof APPLICANT_STAGE_FIELDS)[number]
+  | (typeof CONTACT_FIELDS)[number]
+  | (typeof NAME_FIELDS)[number]
+  | (typeof MY_TASK_FIELDS)[number]
+  | (typeof APPLICANT_TASK_FIELDS)[number];
 
 /**
  * One People row: the Player the squad reads see, plus `crm`, the officer
@@ -84,8 +86,8 @@ export interface FakeOffice {
 /** An availability exception, plus who gave the answer (not on the domain type). */
 export type FakeException = AvailabilityException & { updatedBy?: string };
 
-type CommitmentKey = keyof typeof COMMITMENT_FIELDS | keyof typeof NOTIFY_FIELDS | keyof typeof REVIEW_TASK_FIELDS;
-/** One Commitments row as api_commitments_crm has it, keyed by field-map KEYS. */
+type CommitmentKey = (typeof COMMITMENT_FIELDS)[number] | (typeof NOTIFY_FIELDS)[number] | (typeof REVIEW_TASK_FIELDS)[number];
+/** One Commitments row as api_commitments_crm has it, keyed by its column names. */
 export type FakeCommitment = { id: string } & Partial<Record<CommitmentKey, unknown>>;
 
 export interface FakeState {
@@ -100,6 +102,8 @@ export interface FakeState {
   rankingEvents: RankingEventRow[];
   membershipEvents: NewMembershipEvent[];
   commitments: FakeCommitment[];
+  /** Open manual suspensions (api_suspensions, cleared_at null). */
+  suspensions: ManualSuspension[];
 }
 
 export type RepoName = keyof FakeState;
@@ -116,6 +120,7 @@ export interface FakeRepos {
   rankingEvents: RankingEventsRepo;
   membershipEvents: MembershipEventsRepo;
   commitments: CommitmentsRepo;
+  suspensions: SuspensionsRepo;
 }
 
 export interface RepoCall {
@@ -142,7 +147,7 @@ export interface FakeReposHandle {
 export function emptyState(): FakeState {
   return {
     people: [], teams: [], officers: [], matches: [], matchCards: [], availabilityExceptions: [], availabilityRules: [],
-    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [],
+    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [], suspensions: [],
   };
 }
 
@@ -195,18 +200,18 @@ function personValue(p: FakePerson, key: string): unknown {
   return (p as unknown as Record<string, unknown>)[column];
 }
 
-function personRow<M extends FieldMap>(p: FakePerson, map: M): Row<M> {
+function personRow<M extends FieldList>(p: FakePerson, map: M): Row<M> {
   const row: Record<string, unknown> = { id: p.id };
-  for (const key of Object.keys(map)) {
+  for (const key of map) {
     const v = personValue(p, key);
     if (v !== undefined && v !== null) row[key] = clone(v);
   }
   return row as Row<M>;
 }
 
-function commitmentRow<M extends FieldMap>(c: FakeCommitment, map: M): Row<M> {
+function commitmentRow<M extends FieldList>(c: FakeCommitment, map: M): Row<M> {
   const row: Record<string, unknown> = { id: c.id };
-  for (const key of Object.keys(map)) {
+  for (const key of map) {
     const v = (c as Record<string, unknown>)[key];
     if (v !== undefined && v !== null) row[key] = clone(v);
   }
@@ -352,6 +357,32 @@ function buildRepos(s: FakeState): FakeRepos {
         if (value !== undefined) (m as unknown as Record<string, unknown>)[key] = clone(value);
       }
     },
+    // apply_squad_changes: adds and removes applied to the squad as it is
+    // now, the version bumped per real change, and a derby add taken off the
+    // other side. No change history is kept, so it never reports a conflict;
+    // spy on it to return one.
+    async applySelectionChanges(id, change) {
+      const m = s.matches.find((x) => x.id === id);
+      if (!m) throw new HttpError(`No match ${id}`, 404, "NOT_FOUND");
+      const [listKey, otherKey, versionKey, otherVersionKey] = change.side === "home"
+        ? (["selectedPlayersHome", "selectedPlayersAway", "selectionVersionHome", "selectionVersionAway"] as const)
+        : (["selectedPlayersAway", "selectedPlayersHome", "selectionVersionAway", "selectionVersionHome"] as const);
+      const before = m[listKey] ?? [];
+      const removed = before.filter((pid) => change.remove.includes(pid));
+      const added = [...new Set(change.add)].filter((pid) => !before.includes(pid));
+      if (added.length === 0 && removed.length === 0) {
+        return { status: "unchanged", version: m[versionKey] ?? 0, selected: [...before] };
+      }
+      m[listKey] = [...before.filter((pid) => !removed.includes(pid)), ...added];
+      m[versionKey] = (m[versionKey] ?? 0) + 1;
+      let otherVersion: number | null = null;
+      const other = m[otherKey] ?? [];
+      if (other.some((pid) => added.includes(pid))) {
+        m[otherKey] = other.filter((pid) => !added.includes(pid));
+        otherVersion = m[otherVersionKey] = (m[otherVersionKey] ?? 0) + 1;
+      }
+      return { status: "ok", version: m[versionKey], otherVersion, added, removed, selected: [...m[listKey]] };
+    },
     async listForSeason(season) {
       return s.matches.filter((m) => !season || m.season === season).map(clone);
     },
@@ -487,9 +518,15 @@ function buildRepos(s: FakeState): FakeRepos {
     },
   };
 
+  const suspensions: SuspensionsRepo = {
+    async listOpen() {
+      return s.suspensions.map(clone);
+    },
+  };
+
   return {
     people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents,
-    membershipEvents, commitments,
+    membershipEvents, commitments, suspensions,
   };
 }
 
@@ -545,6 +582,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(rankingEventsModule, "rankingEvents").mockImplementation(() => repos.rankingEvents),
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
+    vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
   ];
 
   const handle: FakeReposHandle = {

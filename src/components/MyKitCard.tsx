@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Shirt } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { confirmKit, getMyKit, moveKit } from '@/api/kit';
 import { reportMove } from '@/lib/kitMoves';
 import type { MyKit } from '@shared/kit';
+import { errorMessage } from '@/lib/errorMessages';
 
 /** A captain holding a team's kit sees the first few; the rest are a tap away. */
 const SHOWN = 5;
@@ -17,7 +17,7 @@ const button =
 const quiet =
   'shrink-0 inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-background text-foreground hover:bg-muted disabled:opacity-50';
 
-const failed = (err: unknown) => toast.error(err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Try again.');
+const failed = (err: unknown) => toast.error(errorMessage(err, 'save'));
 const first = (name?: string) => (name ?? '').split(' ')[0] || 'them';
 
 function mineLine(mine: NonNullable<MyKit['mine']>, convenors: string[]): string {

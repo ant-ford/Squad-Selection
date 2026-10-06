@@ -1,4 +1,5 @@
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
+import { hkDateKey } from '@shared/hkDateKey';
 
 export interface SameDayConflict {
   date: string;
@@ -11,7 +12,12 @@ export interface SameDayConflict {
 
 export function detectSameDayConflicts(fixtures: UpcomingFixture[]): SameDayConflict[] {
   const byDate = new Map<string, UpcomingFixture[]>();
-  for (const f of fixtures) byDate.set(f.date.slice(0, 10), [...(byDate.get(f.date.slice(0, 10)) ?? []), f]);
+  for (const f of fixtures) {
+    // Group by the Hong Kong calendar day: an early kick-off is the previous
+    // day in UTC, so slicing the ISO string would split or merge days wrongly.
+    const day = hkDateKey(f.date);
+    byDate.set(day, [...(byDate.get(day) ?? []), f]);
+  }
   const out: SameDayConflict[] = [];
   for (const [date, list] of byDate) {
     for (let i = 0; i < list.length; i++)
@@ -35,3 +41,20 @@ export function detectSameDayConflicts(fixtures: UpcomingFixture[]): SameDayConf
   return out;
 }
 
+
+/**
+ * How long before push-back a squad that is still short turns red on the
+ * coach's fixture list: about two days. Earlier than that, a squad short of
+ * players is normal (answers are still coming in) and the count alone says
+ * enough.
+ */
+export const SHORTFALL_URGENT_MS = 48 * 60 * 60 * 1000;
+
+/** True from 48 hours before push-back until push-back. */
+export function isShortfallUrgent(date: string | undefined | null, now = new Date()): boolean {
+  if (!date) return false;
+  const start = Date.parse(date);
+  if (Number.isNaN(start)) return false;
+  const left = start - now.getTime();
+  return left > 0 && left <= SHORTFALL_URGENT_MS;
+}

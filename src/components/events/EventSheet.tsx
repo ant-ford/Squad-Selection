@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarDays, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
+import { CalendarDays, ExternalLink, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
+import { differs } from '@/lib/drafts';
 import { respondToEvent, searchEventPeople } from '@/api/events';
-import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
+import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, billed, linkLabel, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines, statusChip } from './eventText';
 import BillBox from './BillBox';
 import PosterImage from './PosterImage';
@@ -42,6 +43,7 @@ export function ResponseEditor({
   onSave,
   onCancel,
   relaxed = false,
+  onDirtyChange,
 }: {
   event: Pick<EventDetails, 'guestsAllowed' | 'maxGuests' | 'helpNeeded' | 'questions'>;
   initial: Draft;
@@ -51,8 +53,15 @@ export function ResponseEditor({
   onCancel?: () => void;
   /** A social secretary answering on someone's behalf: required questions may be left. */
   relaxed?: boolean;
+  /** Told whether the answer differs from `initial`, so a sheet can ask before closing. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [d, setD] = useState<Draft>(initial);
+  const dirty = differs(d, initial);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const max = event.maxGuests ?? 1;
   const going = d.status && d.status !== 'not_going';
   const dietary = asksDietary(event.questions);
@@ -156,6 +165,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
   const [editing, setEditing] = useState<{ personId: string | null; name: string; initial: Draft } | null>(null);
   const [search, setSearch] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['myEvents'] });
     void queryClient.invalidateQueries({ queryKey: ['myTasks'] });
@@ -198,7 +208,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
   const editingMe = editing && editing.personId === null;
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()}>
+    <Sheet open dirty={editorDirty} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="bottom" className="p-4 sm:max-w-lg sm:mx-auto">
         <SheetHeader onClose={onClose}>
           <SheetTitle>{event.title}</SheetTitle>
@@ -225,6 +235,11 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               </p>
             )}
             {event.description && <p className="whitespace-pre-line pt-1">{event.description}</p>}
+            {event.linkUrl && !cancelled && (
+              <a href={event.linkUrl} target="_blank" rel="noopener noreferrer" className={`${secondary} inline-flex items-center gap-1.5 mt-1`}>
+                <ExternalLink className="h-4 w-4" /> {linkLabel(event.linkUrl)}
+              </a>
+            )}
           </div>
 
           {!cancelled && (
@@ -235,9 +250,9 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
                   {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
                 </p>
               </div>
-              {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}, who pays for you.</p>}
+              {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}
               {event.open && (!mine || editingMe) ? (
-                <ResponseEditor
+                <ResponseEditor onDirtyChange={setEditorDirty}
                   key={`me-${mine?.status ?? 'none'}`}
                   event={event}
                   initial={draftOf(mine)}
@@ -262,17 +277,17 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
             </section>
           )}
 
-          {event.bill && event.paymentMode !== 'free' && !cancelled && <BillBox event={event} />}
+          {event.bill && billed(event.paymentMode) && !cancelled && <BillBox event={event} />}
 
           {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
             <section className="rounded-xl border border-border p-3 space-y-2">
               <h3 className="text-sm font-semibold text-foreground">Other players you're signing up</h3>
-              <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>
+              {billed(event.paymentMode) && <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>}
               {event.signedUp.map((p) =>
                 editing?.personId === p.personId ? (
                   <div key={p.personId} className="space-y-2">
                     <p className="text-sm font-medium text-foreground">{p.name}</p>
-                    <ResponseEditor event={event} initial={editing.initial} saving={save.isPending} onSave={(d) => save.mutate({ personId: p.personId, d })} onCancel={() => setEditing(null)} />
+                    <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} onSave={(d) => save.mutate({ personId: p.personId, d })} onCancel={() => setEditing(null)} />
                   </div>
                 ) : (
                   <div key={p.personId} className="flex items-center gap-2">
@@ -294,7 +309,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               {event.open && event.invited && editing?.personId && !event.signedUp.some((p) => p.personId === editing.personId) ? (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-foreground">Signing up {editing.name}</p>
-                  <ResponseEditor event={event} initial={editing.initial} saving={save.isPending} saveLabel="Sign up" onSave={(d) => save.mutate({ personId: editing.personId, d })} onCancel={() => setEditing(null)} />
+                  <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} saveLabel="Sign up" onSave={(d) => save.mutate({ personId: editing.personId, d })} onCancel={() => setEditing(null)} />
                 </div>
               ) : event.open && event.invited && !adding ? (
                 <button className="inline-flex items-center gap-1.5 text-sm text-primary" onClick={() => setAdding(true)}>
@@ -341,7 +356,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
           )}
 
           {event.manager && (
-            <Link to={`/events/manage?event=${event.id}`} className="block text-center text-sm text-primary">
+            <Link to={`/events/manage/${event.id}`} className="block text-center text-sm text-primary">
               Manage this event
             </Link>
           )}

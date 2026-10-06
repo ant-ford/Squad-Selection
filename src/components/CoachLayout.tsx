@@ -2,7 +2,6 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMyProfile } from '@/lib/queries';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppHeader from '@/components/AppHeader';
-import AppFooter from '@/components/AppFooter';
 import { coachScreen } from '@/lib/header';
 import { coachDashboardPath } from '@/lib/scrollMemory';
 
@@ -34,10 +33,11 @@ export default function CoachLayout() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {header}
+      {/* No footer on coach screens: they are working screens, and the
+          squad and ranking save bars sit at the bottom. */}
       <main className="flex-1">
         <Outlet context={{ profile }} />
       </main>
-      <AppFooter />
     </div>
   );
 }

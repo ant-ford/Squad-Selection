@@ -8,7 +8,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { askAboutPicture, isPhotoDataUrl, parseReply } from "./vision";
 import { normaliseHkid } from "../../shared/phone";
 import { NATIONALITIES } from "../../shared/profile";
@@ -73,7 +72,6 @@ export function toSuggestions(raw: unknown): IdSuggestions {
 export { parseReply };
 
 export async function readIdDocument(env: Env, _user: AuthorizedUser, body: Record<string, unknown>): Promise<{ suggestions: IdSuggestions }> {
-  if (backendFor(env, "people") !== "supabase") throw new HttpError("Not available yet.", 409, "NOT_YET");
   if (!env.OPENROUTER_API_KEY) throw new HttpError("Reading documents isn't set up.", 503, "AI_UNAVAILABLE");
   const kind = body.kind === "passport" ? "passport" : body.kind === "hkid" ? "hkid" : null;
   const image = body.dataUrl;
