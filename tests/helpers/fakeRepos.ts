@@ -26,7 +26,11 @@ import type { TeamsRepo } from "../../worker/src/data/teams";
 import type { Office, OfficersRepo } from "../../worker/src/data/officers";
 import type { MatchesRepo } from "../../worker/src/data/matches";
 import type { MatchCardsRepo } from "../../worker/src/data/matchCards";
-import type { AvailabilityExceptionsRepo, ExceptionWrite } from "../../worker/src/data/availabilityExceptions";
+import type { AvailabilityExceptionsRepo, AvailabilityOutcome } from "../../worker/src/data/availabilityExceptions";
+import { SupabaseError } from "../../worker/src/data/supabase";
+import { needsExplicitAvailable } from "../../worker/src/availabilityRules";
+import { UNRANKED_TEAM_RANK } from "../../worker/src/reference";
+import { hkDateKey } from "../../shared/hkDateKey";
 import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRules";
 import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
 import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
@@ -424,35 +428,105 @@ function buildRepos(s: FakeState): FakeRepos {
     },
   };
 
-  const seasonOf = (matchId: string) => s.matches.find((m) => m.id === matchId)?.season ?? "";
-  const toException = (id: string, w: ExceptionWrite): FakeException => ({
+  const toException = (id: string, m: Match, playerId: string, status: string, notes: string | undefined, by: string): FakeException => ({
     id,
-    player: [w.playerId],
-    match: [w.matchId],
-    availabilityStatus: w.status,
-    note: w.notes ?? "",
+    player: [playerId],
+    match: [m.id],
+    availabilityStatus: status as FakeException["availabilityStatus"],
+    note: notes ?? "",
     // The view reads the season from the match.
-    season: seasonOf(w.matchId),
+    season: m.season ?? "",
     updatedAt: new Date().toISOString(),
-    updatedBy: w.updatedById,
+    updatedBy: by,
   });
+  /** set_availability's errors, as PostgREST reports them. */
+  const pgError = (status: number, code: string, message: string) =>
+    new SupabaseError(`Supabase POST rpc/set_availability failed (${status}): ${message}`, status, code);
+  /** A team's rank as set_availability reads it: Active teams only, a blank or 0 rank is 99. */
+  const activeRank = (name: string | undefined) => {
+    const t = s.teams.find((x) => x.active === true && !!name && x.teamName === name);
+    return t ? t.teamRank || UNRANKED_TEAM_RANK : undefined;
+  };
+  /**
+   * set_availability (migration 20261007141003), in memory: the same checks,
+   * the same store-or-delete decision through the TypeScript rule engine
+   * (needsExplicitAvailable), all or nothing.
+   */
+  const setAnswer: AvailabilityExceptionsRepo["set"] = async ({ playerId, matchIds, status, notes, updatedById }) => {
+    if (!["Available", "Maybe", "Unavailable"].includes(status)) throw pgError(400, "22023", "status must be Available, Maybe or Unavailable");
+    if (matchIds.some((id) => !id)) throw pgError(400, "22023", "matchIds[] must be record ids");
+    const p = findPerson(playerId);
+    if (!p || p.active !== true) throw pgError(404, "P0002", "Player not found or inactive");
+    const by = updatedById || playerId;
+    if (!findPerson(by)) throw pgError(404, "P0002", `No person ${by}`);
+    const playerRank = activeRank(p.registeredTeam) ?? UNRANKED_TEAM_RANK;
+    // In api_id order, as availability_rule_status breaks its last ties.
+    const rules = s.availabilityRules.filter((r) => (r.player ?? []).includes(playerId)).sort((a, b) => a.id.localeCompare(b.id));
+
+    const rows = [...s.availabilityExceptions];
+    const kept: AvailabilityOutcome["results"] = [];
+    const created: AvailabilityOutcome["results"] = [];
+    const before: AvailabilityOutcome["before"] = [];
+    const seasons: string[] = [];
+    for (const matchId of [...new Set(matchIds)]) {
+      const m = s.matches.find((x) => x.id === matchId);
+      if (m?.season && !seasons.includes(m.season)) seasons.push(m.season);
+      const i = m ? rows.findIndex((e) => e.player?.[0] === playerId && e.match?.[0] === matchId) : -1;
+      if (i >= 0) before.push({ matchId, exceptionId: rows[i].id, status: rows[i].availabilityStatus ?? "" });
+      let needed = false;
+      if (status === "Available" && m && m.matchStatus === "Scheduled") {
+        const sides = [m.homeTeam, m.awayTeam].map(activeRank).filter((r): r is number => r !== undefined);
+        const fixtureRank = sides.length ? Math.min(...sides) : UNRANKED_TEAM_RANK;
+        needed = needsExplicitAvailable(
+          rules,
+          { date: hkDateKey(m.matchDate), isPlayUp: fixtureRank < playerRank, isSupport: fixtureRank > playerRank },
+          { optInOnly: p.optInOnly === true },
+        );
+      }
+      if (status === "Available" && !needed) {
+        if (i >= 0) rows.splice(i, 1);
+        kept.push({ matchId, exceptionId: null });
+      } else if (!m) {
+        throw pgError(404, "P0002", `No match ${matchId}`);
+      } else if (i >= 0) {
+        rows[i] = toException(rows[i].id, m, playerId, status, notes, by);
+        kept.push({ matchId, exceptionId: rows[i].id });
+      } else {
+        const id = fakeUuid();
+        rows.push(toException(id, m, playerId, status, notes, by));
+        created.push({ matchId, exceptionId: id });
+      }
+    }
+    // One transaction: nothing changes unless every answer went through.
+    s.availabilityExceptions.splice(0, s.availabilityExceptions.length, ...rows);
+    return { updated: kept.length + created.length, results: [...kept, ...created], before, seasons };
+  };
   const availabilityExceptions: AvailabilityExceptionsRepo = {
+    // The targeted reads select id, player, match, status and note only.
+    async listForMatches(matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
+    async listForPlayer(playerId, matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => e.player?.[0] === playerId && matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
     async listForSeasons(seasons) {
       return s.availabilityExceptions
         .filter((e) => seasons.includes(e.season ?? ""))
         .map(({ updatedBy: _by, ...e }) => clone(e));
     },
-    async apply({ deleteIds, updates, creates }) {
-      // One transaction on Supabase (apply_availability_changes).
-      for (const { id } of updates) if (!s.availabilityExceptions.some((e) => e.id === id)) throw new Error(`No exception ${id}`);
-      removeWhere(s.availabilityExceptions, (e) => deleteIds.includes(e.id));
-      for (const { id, write } of updates) {
-        const i = s.availabilityExceptions.findIndex((e) => e.id === id);
-        s.availabilityExceptions[i] = toException(id, write);
-      }
-      const createdIds = creates.map(() => fakeUuid());
-      creates.forEach((w, i) => s.availabilityExceptions.push(toException(createdIds[i], w)));
-      return { createdIds };
+    set: setAnswer,
+    async setForDate({ playerId, date, status, notes }) {
+      const ids = s.matches
+        .filter((m) => m.matchStatus === "Scheduled" && hkDateKey(m.matchDate) === date)
+        .filter((m) => activeRank(m.homeTeam) !== undefined || activeRank(m.awayTeam) !== undefined)
+        .map((m) => m.id)
+        .sort();
+      if (ids.length === 0) return { updated: 0, results: [], before: [], seasons: [] };
+      return setAnswer({ playerId, matchIds: ids, status, notes });
     },
   };
 

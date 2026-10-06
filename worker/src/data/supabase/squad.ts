@@ -4,7 +4,7 @@ import type { TeamsRepo } from "../teams";
 import type { OfficersRepo, Office } from "../officers";
 import type { MatchesRepo, MatchPatch, SelectionChangeResult } from "../matches";
 import type { MatchCardsRepo } from "../matchCards";
-import type { AvailabilityExceptionsRepo } from "../availabilityExceptions";
+import type { AvailabilityExceptionsRepo, AvailabilityOutcome } from "../availabilityExceptions";
 import type { AvailabilityRulesRepo } from "../availabilityRules";
 import type { AbilityGroupsRepo } from "../abilityGroups";
 import type { RankingEventsRepo, RankingEventRow } from "../rankingEvents";
@@ -121,22 +121,54 @@ export function supabaseMatchCards(env: Env): MatchCardsRepo {
   };
 }
 
+const toOutcome = (o: Partial<AvailabilityOutcome> | null): AvailabilityOutcome => ({
+  updated: o?.updated ?? 0,
+  results: o?.results ?? [],
+  before: o?.before ?? [],
+  seasons: o?.seasons ?? [],
+});
+
 export function supabaseAvailabilityExceptions(env: Env): AvailabilityExceptionsRepo {
   const d = db(env);
+  /** The columns a targeted answers read needs: not season or updated_at. */
+  const EXCEPTION_COLUMNS = "id,player,match,availability_status,note";
+  /** Match ids per request, so the URL stays well inside PostgREST's limits. */
+  const IDS_PER_READ = 100;
+  // match=in.(...) is an index lookup per match (matches_api_id_key, then
+  // availability_exceptions_match_idx); chunks are read in parallel.
+  const byMatches = async (matchIds: string[], extra: string) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < matchIds.length; i += IDS_PER_READ) chunks.push(matchIds.slice(i, i + IDS_PER_READ));
+    const rows = await Promise.all(
+      chunks.map((ids) => d.select<ExceptionRow>("api_availability_exceptions", `select=${EXCEPTION_COLUMNS}${extra}&match=${inList(ids)}`)),
+    );
+    return rows.flat().map(toException);
+  };
   return {
+    async listForMatches(matchIds) {
+      if (matchIds.length === 0) return [];
+      return byMatches(matchIds, "");
+    },
+    async listForPlayer(playerId, matchIds) {
+      if (!playerId || matchIds.length === 0) return [];
+      return byMatches(matchIds, `&player=${eq(playerId)}`);
+    },
     async listForSeasons(seasons) {
       if (seasons.length === 0) return [];
       return (await d.select<ExceptionRow>("api_availability_exceptions", `select=*&season=${inList(seasons)}`)).map(toException);
     },
-    async apply({ deleteIds, updates, creates }) {
-      const w = (x: { matchId: string; playerId: string; status: string; notes?: string; updatedById: string }) => ({
-        match: x.matchId, player: x.playerId, status: x.status, notes: x.notes ?? "", updatedBy: x.updatedById,
-      });
-      // One transaction: the player's answers never end up half-changed.
-      const createdIds = await d.rpc<string[]>("apply_availability_changes", {
-        p: { delete: deleteIds, update: updates.map(({ id, write }) => ({ id, ...w(write) })), create: creates.map(w) },
-      });
-      return { createdIds: createdIds ?? [] };
+    // One call, one transaction, a few hundred bytes: the database reads the
+    // player's row for each match and decides store-or-delete under a
+    // per-player lock, so two taps on different isolates cannot interleave.
+    async set({ playerId, matchIds, status, notes, updatedById }) {
+      return toOutcome(await d.rpc<AvailabilityOutcome>("set_availability", {
+        p_player: playerId, p_matches: matchIds, p_status: status, p_notes: notes ?? null, p_updated_by: updatedById ?? null,
+      }));
+    },
+    async setForDate({ playerId, date, status, notes }) {
+      return toOutcome(await d.rpc<AvailabilityOutcome>("set_availability_for_date", {
+        p_player: playerId, p_date: date, p_status: status, p_notes: notes ?? null,
+      }));
     },
   };
 }
