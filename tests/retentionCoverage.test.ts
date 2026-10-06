@@ -43,6 +43,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "registration_events.person_id": { kept: "playing record: team moves after play-ups" },
   "hkha_registrations.person_id": { kept: "playing record: the team they were registered with HKHA for" },
   "umpire_assignments.person_id": { kept: "umpiring record, like match cards; holds no contact details" },
+  "season_rollover_people.person_id": { kept: "playing record: their teams before a season rollover, for its undo" },
   "offices.person_id": { kept: "who held which office stays on record; delete_own_profile retires their offices" },
 
   // ── Someone acting on another person's record: no personal data about them ──
