@@ -54,18 +54,15 @@ export interface TeamCoachLinks {
   sectionCaptainIds: string[];
   /**
    * Team names each person coaches (Teams.Coach link), keyed by People
-   * record id. A plain object rather than a Map so it survives the KV
-   * round trip (JSON turns a Map into {} without complaint).
+   * record id. A plain object rather than a Map, as it was when this went
+   * through KV's JSON round trip (which turns a Map into {}).
    */
   coachTeamNamesByPersonId: Record<string, string[]>;
   /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
   allTeamNames: string[];
 }
 
-/**
- * Shared across isolates: every authenticated request needs this, and on a
- * cold isolate it was one more Teams read before any route could start.
- */
+/** Cached: every authenticated request needs this. */
 export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
   return getShared<TeamCoachLinks>(
     env,
@@ -183,8 +180,8 @@ function playerByEmailKey(email: string): string {
 }
 
 /**
- * Drops the lookup in this isolate at once and, given `env`, in KV after
- * the response - a rank change is already several Airtable writes long.
+ * Drops the lookup in this isolate at once, and the rest of the clearing
+ * after the response when `env` has a cache binding.
  */
 export function invalidatePlayerByEmail(email: string, env?: Env): void {
   const key = playerByEmailKey(email);
@@ -197,9 +194,6 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
  * coach links, ability/rank fields) - every read built on top of
  * getReferenceData/getTeamCoachLinks or a per-match player list would
  * otherwise keep serving the pre-write snapshot.
- *
- * The reference reads are shared, so the KV copies go too - otherwise every
- * other isolate kept serving the pre-write roster for the rest of the TTL.
  */
 export async function invalidateReferenceData(env: Env): Promise<void> {
   invalidateCachePrefix("players-for-match:");
@@ -207,10 +201,8 @@ export async function invalidateReferenceData(env: Env): Promise<void> {
 }
 
 /**
- * People-record lookup by email, shared across isolates. Every caller,
- * including the authorization path in worker/src/auth.ts, reuses the entry;
- * on a cold isolate this used to be a formula scan of the whole People
- * table (every field of it) before any route could begin. Pass
+ * People-record lookup by email, cached. Every caller, including the
+ * authorization path in worker/src/auth.ts, reuses the entry. Pass
  * { fresh: true } to bypass the cache for a live read.
  */
 export async function getPlayerByEmail(

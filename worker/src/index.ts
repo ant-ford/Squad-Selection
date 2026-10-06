@@ -147,11 +147,11 @@ export default {
     }
 
     // Every request runs inside its own context (requestContext.ts): the
-    // Airtable client and the caches count what they do into it, and cache
+    // database client and the caches count what they do into it, and cache
     // invalidation can hand slow KV housekeeping to ctx.waitUntil. The
     // numbers go out as a Server-Timing header, readable in the browser's
     // Timing tab, and as one structured log line per request in Workers
-    // Logs - the "is it Airtable or is it us" question, answered per call.
+    // Logs - the "is it the database or is it us" question, answered per call.
     const stats = newRequestStats();
     const startedAt = Date.now();
     const waitUntil = ctx?.waitUntil ? (p: Promise<unknown>) => ctx.waitUntil(p) : undefined;
@@ -173,10 +173,6 @@ export default {
               path: pathname,
               status: response.status,
               ms: totalMs,
-              airtableCalls: stats.airtableCalls,
-              airtableMs: Math.round(stats.airtableMs),
-              airtableBytes: stats.airtableBytes,
-              airtable429s: stats.airtableRateLimited,
               ...(stats.dbCalls > 0 ? { dbCalls: stats.dbCalls, dbMs: Math.round(stats.dbMs), dbBytes: stats.dbBytes } : {}),
               cacheHits: stats.cacheHits,
               cacheMisses: stats.cacheMisses,

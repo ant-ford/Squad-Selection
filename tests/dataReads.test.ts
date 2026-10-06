@@ -91,6 +91,7 @@ describe("instrumentation", () => {
     expect(timing).toMatch(/db;dur=\d+;desc="calls=1 bytes=2"/);
     expect(timing).toMatch(/cache;desc="hits=0 misses=1 kv=0"/);
     expect(timing).toMatch(/total;dur=\d+/);
+    expect(timing).not.toContain("airtable");
     expect(res.headers.get("Timing-Allow-Origin")).toBe("https://app.test");
   });
 });

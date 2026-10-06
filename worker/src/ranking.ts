@@ -56,10 +56,8 @@ function rankingCacheKey(active: boolean): string {
 const RANKING_CONFIG_KEY = "ranking:config";
 
 /**
- * Drop the ranking lists and config everywhere. They are shared through KV
- * now (every coach on the ranking screen used to cost each isolate its own
- * People read every thirty seconds), so a write has to reach the other
- * isolates too, not just this one.
+ * Drop the ranking lists and config in this isolate. Other isolates hold
+ * their copies for 30 s at most (cache.ts getShared).
  */
 async function invalidateRankingCaches(env: Env): Promise<void> {
   await invalidateShared(env, [rankingCacheKey(true), rankingCacheKey(false), RANKING_CONFIG_KEY]);

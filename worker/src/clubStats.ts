@@ -8,7 +8,7 @@
  *   - the current season under a key that carries when this season's
  *     Matches and Match Cards last changed (currentVersion), so a result
  *     hkha-sync writes straight to Postgres shows on the next request.
- * Building a past season costs about thirty Airtable pages, inside the
+ * Building a past season costs a handful of database reads, inside the
  * Workers plan's fifty subrequests, which is why the page asks for one
  * season per request and adds seasons up itself.
  *
@@ -342,12 +342,11 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
 }
 
 /**
- * A past season is read straight from Airtable, not through the squad app's
- * shared season caches: it is built once a month at most, and caching its
- * two-thousand Match Cards as well as its summary would spend two more of
- * the Cloudflare account's 1,000 daily KV writes (shared with production)
- * on data nobody reads again. The current season does use those caches -
- * the squad pages have them warm - unless `fresh` asks for rows read now.
+ * A past season is read straight from the database, not through the squad
+ * app's season caches: it is built once a month at most, and its
+ * two-thousand Match Cards are read again by nobody. The current season does
+ * use those caches - the squad pages have them warm - unless `fresh` asks
+ * for rows read now.
  */
 async function seasonRows(env: Env, season: string, fresh: boolean): Promise<{ matches: Match[]; cards: MatchCard[] }> {
   if (season === currentSeason() && !fresh) {

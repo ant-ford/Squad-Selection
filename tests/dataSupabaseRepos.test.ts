@@ -9,7 +9,6 @@ import { fileLink, verifyFileLink } from "../worker/src/data/supabase/files";
 import { handleFileRequest } from "../worker/src/files";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.test",

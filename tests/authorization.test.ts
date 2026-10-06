@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the Airtable access layer so the auth engine is tested in isolation.
+// Mock the data reads so the auth engine is tested in isolation.
 const mocks = vi.hoisted(() => ({
   getPlayerByEmail: vi.fn(),
   getTeamCoachLinks: vi.fn(),
@@ -18,8 +18,6 @@ import { HttpError } from "../worker/src/http";
 import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
-  AIRTABLE_TOKEN: "test-token",
-  AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "test-anon-key",
@@ -296,15 +294,14 @@ describe("requireAuthorizedUser", () => {
 
   it("lets an applicant in the New Joiner process sign in on Supabase, to fill in their application", async () => {
     const applicant = { id: "recApplicant", email: "new@example.com", active: false, playerCoach: [], status: "Applicant", applicantStage: "2. Section Captain Invitation" };
-    const SUPA = { ...ENV, DATA_BACKEND: "supabase" };
     supabaseReturns(applicant.email);
     mocks.getPlayerByEmail.mockResolvedValue(applicant);
-    expect((await requireAuthorizedUser(authedRequest(), SUPA)).personId).toBe("recApplicant");
+    expect((await requireAuthorizedUser(authedRequest(), ENV)).personId).toBe("recApplicant");
     // Not once rejected.
     invalidateAll();
     supabaseReturns(applicant.email);
     mocks.getPlayerByEmail.mockResolvedValue({ ...applicant, applicantStage: "Rejected" });
-    await expectError(requireAuthorizedUser(authedRequest(), SUPA), 403, "APPLICATION_ACCESS_DENIED");
+    await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
   });
 
   it("denies an email that does not exist in People with 403 APPLICATION_ACCESS_DENIED", async () => {
@@ -509,8 +506,6 @@ describe("officers' sections", () => {
 // ---------------------------------------------------------------------------
 
 describe("the Assistant Director of Hockey", () => {
-  const SUPABASE_ENV = { ...ENV, DATA_BACKEND: "supabase" };
-
   it("coaches every team without a Teams link, as a Section Captain does", async () => {
     supabaseReturns("adh@hkfc.com");
     mocks.getPlayerByEmail.mockResolvedValue(people.assistantDirector);

@@ -6,17 +6,15 @@ import { fakeKv } from "./helpers/kv";
 // The in-isolate map is what this replaces, so "a different isolate" is
 // simulated by clearing it while the KV store keeps its contents.
 //
-// On the Supabase backend KV holds only the Stats summaries (`stats-summary:`
-// keys); every other getShared read stays in the isolate. The tests of what
-// survives the Airtable removal therefore use SUPABASE_ENV and a Stats key.
+// KV holds only the Stats summaries (`stats-summary:` keys); every other
+// getShared read stays in the isolate, so the KV tests use a Stats key.
 
 /** A new isolate: same KV, empty local map. */
 function newIsolate() {
   invalidateAll();
 }
 
-const SUPABASE = "supabase";
-/** A Stats summary: the one kind of entry KV keeps on Supabase. */
+/** A Stats summary: the one kind of entry KV keeps. */
 const STATS_KEY = "stats-summary:2025-2026";
 
 beforeEach(() => invalidateAll());
@@ -27,7 +25,7 @@ describe("shared cache without a binding", () => {
   it("falls back to the in-isolate cache", async () => {
     let calls = 0;
     const fetcher = async () => { calls++; return ["a"]; };
-    const env = { DATA_BACKEND: SUPABASE };
+    const env = {};
 
     expect(await getShared(env, STATS_KEY, fetcher)).toEqual(["a"]);
     expect(await getShared(env, STATS_KEY, fetcher)).toEqual(["a"]);
@@ -42,7 +40,7 @@ describe("shared cache without a binding", () => {
 describe("shared cache with KV", () => {
   it("spares a second isolate the upstream read", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     let calls = 0;
     const fetcher = async () => { calls++; return [{ id: "rec1" }]; };
 
@@ -59,7 +57,7 @@ describe("shared cache with KV", () => {
 
   it("answers a repeat read in one isolate without going to KV", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     const fetcher = async () => ["x"];
     await getShared(env, STATS_KEY, fetcher);
     const readsAfterFirst = kv.reads.length;
@@ -70,13 +68,13 @@ describe("shared cache with KV", () => {
 
   it("never writes a TTL below the minimum KV accepts", async () => {
     const kv = fakeKv();
-    await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, "stats-summary:brief", async () => "v", 5 * 1000);
+    await getShared({ CACHE: kv }, "stats-summary:brief", async () => "v", 5 * 1000);
     expect(kv.store.get("stats-summary:brief")?.ttl).toBe(60);
   });
 
   it("shares one upstream read between concurrent callers", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     let calls = 0;
     const fetcher = async () => { calls++; return "v"; };
 
@@ -96,7 +94,7 @@ describe("shared cache lifetimes", () => {
   it("caps the in-isolate copy of a shared entry at a minute whatever KV's TTL is", async () => {
     vi.useFakeTimers();
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     let fetches = 0;
     const fetcher = async () => { fetches++; return ["v"]; };
     const sixHours = 6 * 60 * 60 * 1000;
@@ -121,7 +119,7 @@ describe("shared cache lifetimes", () => {
     const pending: Promise<unknown>[] = [];
 
     await runWithRequestContext({ stats: newRequestStats(), waitUntil: (p) => { pending.push(p); } }, () =>
-      invalidateShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, [STATS_KEY], ["exceptions:"]),
+      invalidateShared({ CACHE: kv }, [STATS_KEY], ["exceptions:"]),
     );
     expect(kv.store.has(STATS_KEY)).toBe(false);
     expect(pending.length).toBe(0);
@@ -131,7 +129,7 @@ describe("shared cache lifetimes", () => {
 describe("invalidation after a write", () => {
   it("drops the key everywhere, so another isolate cannot serve what was replaced", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     let value = "before";
     const fetcher = async () => value;
 
@@ -149,7 +147,7 @@ describe("invalidation after a write", () => {
   // nothing reaches KV.
   it("clears every key under a prefix, and nothing outside it", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
+    const env = { CACHE: kv };
     let value = "old";
     await getShared(env, "exceptions:2026-2027", async () => [value]);
     await getShared(env, "exceptions:2025-2026", async () => [value]);
@@ -169,17 +167,17 @@ describe("when KV itself misbehaves", () => {
   // A cache is an optimisation. Losing it must not lose the request.
   it("still answers when the read throws", async () => {
     const kv = fakeKv({ get: async () => { throw new Error("KV down"); } });
-    expect(await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, STATS_KEY, async () => "live")).toBe("live");
+    expect(await getShared({ CACHE: kv }, STATS_KEY, async () => "live")).toBe("live");
   });
 
   it("still answers when the write throws", async () => {
     const kv = fakeKv({ put: async () => { throw new Error("over quota"); } });
-    expect(await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, STATS_KEY, async () => "live")).toBe("live");
+    expect(await getShared({ CACHE: kv }, STATS_KEY, async () => "live")).toBe("live");
   });
 
   it("still completes a write when invalidation throws", async () => {
     const kv = fakeKv({ delete: async () => { throw new Error("KV down"); } });
-    await expect(invalidateShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, [STATS_KEY])).resolves.toBeUndefined();
+    await expect(invalidateShared({ CACHE: kv }, [STATS_KEY])).resolves.toBeUndefined();
   });
 });
 
@@ -188,7 +186,7 @@ describe("cache clearing on the Supabase backend", () => {
   // anything else would just spend the free plan's 1,000 deletes and writes a day.
   it("touches KV only for the Stats summaries", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: "supabase" };
+    const env = { CACHE: kv };
     await invalidateShared(env, ["scheduled-matches", "player-by-email:a@b.c", "stats-summary:current"], ["exceptions:"]);
     expect(kv.deletes).toEqual(["stats-summary:current"]);
     expect(kv.writes).toEqual([]);
@@ -198,7 +196,7 @@ describe("cache clearing on the Supabase backend", () => {
   // and KV is never asked or written.
   it("keeps every other read out of KV, and still caches it in the isolate", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv, DATA_BACKEND: "supabase" };
+    const env = { CACHE: kv };
     let calls = 0;
     const fetcher = async () => { calls++; return [{ id: "rec1" }]; };
 

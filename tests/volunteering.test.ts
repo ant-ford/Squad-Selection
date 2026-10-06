@@ -12,7 +12,7 @@ import { getMyVolunteering, getVolunteersBoard, parseVolunteering, rolesOf, save
 import { invalidateAll } from "../worker/src/cache";
 import { EMPTY_ROLES, VOLUNTEER_GROUPS } from "../shared/volunteering";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 
 type Call = { url: URL; method: string; body: any };

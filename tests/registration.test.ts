@@ -7,7 +7,6 @@ import { missingDetails, type RegistrationPlayer } from "../shared/registration"
 import { currentSeason } from "../worker/src/seasonContext";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.example",

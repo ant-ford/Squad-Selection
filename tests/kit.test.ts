@@ -5,7 +5,7 @@ import { sectionsFor } from "../worker/src/auth";
 import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
 import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recPLAYER", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 const convenor = { ...player, personId: "recCONVENOR", officerRoles: [{ office: "kitConvenor", designation: "" }] } as AuthorizedUser;
 

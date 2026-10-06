@@ -6,11 +6,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 //   - scheduled-matches (10min, invalidated by syncSquad)
 //   - availability:{matchId} poll cache (25s, invalidated by writes)
 //
-// On the Supabase path (DATA_BACKEND "supabase"), through the in-memory
-// repositories: "a read reached the database" is a call to the repository
-// method behind it, where it used to be a GET to the Airtable fake. All of
-// these caches are per-isolate on Supabase (getShared keeps only the Stats
-// summaries in KV), so no CACHE binding is needed.
+// Through the in-memory repositories: "a read reached the database" is a
+// call to the repository method behind it. All of these caches are
+// per-isolate (getShared keeps only the Stats summaries in KV), so no CACHE
+// binding is needed.
 // ---------------------------------------------------------------------------
 
 import {

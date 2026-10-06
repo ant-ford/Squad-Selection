@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // All domain modules are mocked. Sign-in is REAL: worker/src/auth.ts verifies
 // the bearer token against Supabase (/auth/v1/user, faked below), then looks
 // the email up in People and reads the Teams coach / section-captain links
-// and the Active office rows, all through the in-memory repositories on the
-// Supabase path (DATA_BACKEND "supabase"). Who a request is therefore comes
+// and the Active office rows, all through the in-memory repositories. Who a
+// request is therefore comes
 // from seeded data, as in production. These tests prove the router derives
 // identity from the session (never from query/body params) and applies the
 // right gates and error codes.
@@ -101,10 +101,6 @@ import { office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
   ...SUPABASE_TEST_ENV,
-  // Read only by the GET /health?deep=1 Airtable probe at the end of this
-  // file, which PR #172 replaces with the Supabase probe.
-  AIRTABLE_TOKEN: "test-token",
-  AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",

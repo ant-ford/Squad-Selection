@@ -28,19 +28,16 @@ const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Mid
  * records (Selected Players Home/Away), so syncSquad invalidates this cache
  * after every write.
  *
- * Never stretched to hours, as other reads were while the Airtable webhook
- * ran. Selections change constantly, and when an invalidation fails - on
- * 2026-09-23 the account ran out of KV operations - a six-hour copy left
- * the coach dashboard showing 0/14 for a squad that had been saved hours
- * earlier. Ten minutes bounds that failure, at the cost of
- * one shared Airtable read per ten minutes.
+ * Never stretched to hours: selections change constantly, and on
+ * 2026-09-23, when a failed invalidation left a six-hour copy, the coach
+ * dashboard showed 0/14 for a squad saved hours earlier. (Each isolate now
+ * holds any such read for 30 s at most; cache.ts getShared.)
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Versioned so a deploy can retire a bad KV copy: the "scheduled-matches"
- * entry written on 2026-09-23 was stale and, with KV deletes failing, could
- * not be cleared. Bump the suffix again only for the same reason.
+ * Versioned so a deploy could retire a bad KV copy (2026-09-23), when this
+ * read was still shared through KV.
  */
 export const SCHEDULED_MATCHES_KEY = "scheduled-matches:v2";
 

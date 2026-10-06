@@ -98,7 +98,6 @@ export interface FakePostgrest {
 
 /** The env a Supabase-path test needs. Spread it into the test's env. */
 export const SUPABASE_TEST_ENV = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
 } as const;

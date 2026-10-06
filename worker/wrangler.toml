@@ -21,12 +21,9 @@ routes = [
 [observability]
 enabled = true
 
-# Shared cache for raw Airtable reads (see worker/src/cache.ts).
-#
-# The in-isolate cache alone cannot help a request that lands on a cold
-# isolate, which on this traffic is most of them - so most requests rebuilt
-# everything from Airtable and took many seconds. KV gives those isolates
-# something to share.
+# Shared cache for the Stats summaries (see worker/src/cache.ts): they are
+# expensive to build, so every isolate shares the one copy. Everything else
+# is held in the isolate only.
 #
 # The Worker treats this binding as optional and falls back to the
 # in-isolate cache without it, so commenting these lines out is a complete
@@ -35,15 +32,13 @@ enabled = true
 binding = "CACHE"
 id = "841b5bd54444493ba85e09bffd2f9f49"
 
-# Members' files for the Supabase backend (photos, documents), served only
-# through signed links (src/files.ts). Unused while DATA_BACKEND is airtable:
-# only the Supabase repositories hand out those links.
+# Members' files (photos, documents), served only through signed links
+# (src/files.ts).
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "eddy-files"
 
 [vars]
-AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 # Comma-separated allow-list. Both frontend hostnames are served during the
 # domain move; the request's Origin is echoed back when it is on this list.
 # Drop the workers.dev entry once that hostname is retired.
@@ -51,17 +46,9 @@ ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-sel
 
 SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
-# Where the Worker reads and writes club data: "airtable" or "supabase", with
-# per-module exceptions in DATA_BACKEND_OVERRIDES ("people=supabase,...").
-# See worker/src/data/backend.ts. Supabase from the October 2026 switch-over;
-# rolling back is setting this back to "airtable" and deploying (only on the
-# day: writes after the switch exist only in Supabase; docs/CUTOVER.md).
-DATA_BACKEND = "supabase"
-DATA_BACKEND_OVERRIDES = ""
-# eddy-production, which holds the data once DATA_BACKEND is supabase (the
-# same project as sign-in, SUPABASE_URL above). Its secret key is the
-# DATA_SUPABASE_SECRET_KEY secret, installed by the CI deploy. While the
-# backend is airtable, only /health uses it, to report whether it answers.
+# eddy-production, which holds the club's data (the same project as
+# sign-in, SUPABASE_URL above). Its secret key is the
+# DATA_SUPABASE_SECRET_KEY secret, installed by the CI deploy.
 DATA_SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 # This Worker's public origin, for the links it hands out (signed file links).
 API_ORIGIN = "https://api.eddy.global"
@@ -74,8 +61,8 @@ CLUB_MEMBERSHIP_EMAIL = "HKFC Membership Department <membership_dept@hkfc.com>"
 CLUB_MEMBERSHIP_CONTACT = "Caren"
 # An existing member's levy form goes to the front desk.
 FRONT_DESK_EMAIL = "HKFC Front Desk <frontdesk@hkfc.com>"
-# Email (src/mailer.ts), used only on the Supabase backend. The Resend key is
-# the RESEND_API_KEY secret, installed by the CI deploy.
+# Email (src/mailer.ts). The Resend key is the RESEND_API_KEY secret,
+# installed by the CI deploy.
 MAIL_FROM = "Eddy <notifications@eddy.global>"
 APP_ORIGIN = "https://app.eddy.global"
 # The review request goes in the captain's name, copied to the membership inbox.
@@ -107,17 +94,14 @@ crons = ["0 3 * * *", "30 3 * * *"]
 #   - no custom domain (routes are inherited unless overridden);
 #   - no cron (the daily jobs are production's);
 #   - its OWN KV cache namespace (hkfc-api-preview-cache), so a branch never
-#     writes entries production reads. Without one every preview request
-#     re-read the season from Airtable, which was slow and ate into the
-#     5-requests-a-second limit production shares with it;
+#     writes entries production reads;
 #   - CORS only for the local dev frontend (npm run dev:preview-api).
 # vars and kv_namespaces are not inherited by an environment, so the ones it
 # needs are restated here.
 #
 # The KV operation quota is per Cloudflare ACCOUNT, so this namespace shares
-# it with production. Preview a branch that includes the generation-based
-# prefix clearing (cache.ts SHARED_PREFIXES); an older branch still clears
-# prefixes with list(), and the free plan's 1,000 lists a day ran out once.
+# it with production. Only the Stats summaries use KV, so a preview costs a
+# handful of operations.
 [env.preview]
 routes = []
 
@@ -125,24 +109,20 @@ routes = []
 binding = "CACHE"
 id = "00df7f19eb074e5ab538ea2180b91932"
 
-# Members' files for the Supabase backend (photos, documents), served only
-# through signed links (src/files.ts). Preview's own copy, never production's.
+# Members' files (photos, documents), served only through signed links
+# (src/files.ts). Preview's own copy, never production's.
 [[env.preview.r2_buckets]]
 binding = "FILES"
 bucket_name = "eddy-files-preview"
 
 [env.preview.vars]
-AIRTABLE_BASE_ID = "appG6amyHthm3Nnde"
 # Local frontends only: the usual Vite port, and 5174 for a second one
 # running at the same time (`vite --mode preview-api --port 5174`).
 ALLOWED_ORIGIN = "http://localhost:5173,http://localhost:5174"
 SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
-# Preview reads and writes eddy-preview, as production will after the
-# switch-over. eddy-preview holds an imported copy of the club's data, so
-# preview saves change that copy, never Airtable.
-DATA_BACKEND = "supabase"
-DATA_BACKEND_OVERRIDES = ""
+# Preview reads and writes eddy-preview, which holds a copy of the club's
+# data, so preview saves change that copy, never production's.
 # Sign-in stays on eddy-production (SUPABASE_URL above); the data comes from
 # eddy-preview. Its secret key is DATA_SUPABASE_SECRET_KEY, installed by
 # .github/workflows/preview.yml.

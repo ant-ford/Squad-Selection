@@ -3,7 +3,7 @@ import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { getQuiz, markQuiz, quizScoreBoard, submitQuiz } from "../worker/src/quizzes";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recPLAYER", officerRoles: [] } as unknown as AuthorizedUser;
 const captain = { ...player, officerRoles: [{ office: "sectionCaptain", designation: "Men's Captain" }] } as unknown as AuthorizedUser;
 

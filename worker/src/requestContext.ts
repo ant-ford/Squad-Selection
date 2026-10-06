@@ -12,16 +12,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface RequestStats {
-  /** Airtable REST calls made for this request. */
-  airtableCalls: number;
-  /** Wall time spent waiting on Airtable, in ms (summed across calls). */
-  airtableMs: number;
-  /** Airtable response bytes received (JSON text length). */
-  airtableBytes: number;
-  /** 429 responses Airtable sent this request (each cost a sleep + retry). */
-  airtableRateLimited: number;
-  /** Supabase (PostgREST) calls, wall time and response bytes, as for Airtable. */
+  /** Supabase (PostgREST) calls made for this request. */
   dbCalls: number;
+  /** Wall time spent waiting on them, in ms (summed across calls), and the response bytes. */
   dbMs: number;
   dbBytes: number;
   /** In-isolate cache hits. */
@@ -46,10 +39,6 @@ const storage = new AsyncLocalStorage<RequestContext>();
 
 export function newRequestStats(): RequestStats {
   return {
-    airtableCalls: 0,
-    airtableMs: 0,
-    airtableBytes: 0,
-    airtableRateLimited: 0,
     dbCalls: 0,
     dbMs: 0,
     dbBytes: 0,
@@ -66,15 +55,6 @@ export function runWithRequestContext<R>(context: RequestContext, fn: () => R): 
 
 export function currentRequestContext(): RequestContext | undefined {
   return storage.getStore();
-}
-
-export function recordAirtableCall(ms: number, bytes: number, rateLimitedAttempts = 0): void {
-  const stats = storage.getStore()?.stats;
-  if (!stats) return;
-  stats.airtableCalls += 1;
-  stats.airtableMs += ms;
-  stats.airtableBytes += bytes;
-  stats.airtableRateLimited += rateLimitedAttempts;
 }
 
 export function recordDbCall(ms: number, bytes: number): void {
@@ -127,11 +107,9 @@ export function inBackground(work: () => Promise<unknown>): Promise<void> {
  * Logs get the same numbers as one structured line (see index.ts).
  */
 export function serverTimingHeader(stats: RequestStats, totalMs: number): string {
-  const airtable = `airtable;dur=${Math.round(stats.airtableMs)};desc="calls=${stats.airtableCalls} bytes=${stats.airtableBytes} 429s=${stats.airtableRateLimited}"`;
   const cache = `cache;desc="hits=${stats.cacheHits} misses=${stats.cacheMisses} kv=${stats.kvHits}"`;
   const total = `total;dur=${Math.round(totalMs)}`;
-  // Only once Supabase is in use, so requests that never touch it keep
-  // exactly the header they had.
+  // Only when the request used the database.
   const db = stats.dbCalls > 0 ? `db;dur=${Math.round(stats.dbMs)};desc="calls=${stats.dbCalls} bytes=${stats.dbBytes}", ` : "";
-  return `${airtable}, ${db}${cache}, ${total}`;
+  return `${db}${cache}, ${total}`;
 }

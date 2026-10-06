@@ -17,7 +17,7 @@ import {
 } from "../shared/umpiring";
 import { gamesUmpiredChoice } from "../shared/commitmentReview";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const user = (personId: string, officerRoles: AuthorizedUser["officerRoles"] = []) =>
   ({ email: "u@x.com", personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles }) as unknown as AuthorizedUser;
 const george = user("recGEORGE", [{ office: "umpireCoordinator", designation: "" }]);

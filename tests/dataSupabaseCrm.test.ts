@@ -5,7 +5,6 @@ import { commitments } from "../worker/src/data/commitments";
 import { membershipEvents } from "../worker/src/data/membershipEvents";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.test",
