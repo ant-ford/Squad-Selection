@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, PackageOpen, Search, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { AlertTriangle, PackageOpen, Search } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import HelpLink from '@/components/HelpLink';
 import { Skeleton } from '@/components/ui/skeleton';
 import HandOutSheet from '@/components/kit/HandOutSheet';
 import SetSheet from '@/components/kit/SetSheet';
@@ -35,7 +34,6 @@ const FILTERS: { key: string; label: string; test: (s: KitSet) => boolean }[] = 
  * still needs kit. Refreshes itself, since several people hand out at once.
  */
 export default function Kit() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.sections?.includes('kit') ?? false;
@@ -275,13 +273,7 @@ export default function Kit() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Kit">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-        <HelpLink guide="kit" />
-      </AppHeader>
+      <AppHeader title="Kit" guide="kit" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

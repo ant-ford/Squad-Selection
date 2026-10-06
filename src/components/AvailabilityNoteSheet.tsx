@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertCircle } from 'lucide-react';
+import { ActionButton } from '@/components/ui/action-button';
 import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { safeFormat } from '@/lib/dateUtils';
@@ -26,7 +26,7 @@ export default function AvailabilityNoteSheet({
   const [notes, setNotes] = useState(fixture.playerNotes);
 
   return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
+    <Sheet open dirty={!busy && notes.trim() !== fixture.playerNotes.trim()} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
         <div className="px-4 py-6">
           <SheetHeader onClose={onClose}>
@@ -60,17 +60,17 @@ export default function AvailabilityNoteSheet({
           </div>
 
           <div className="mt-3 flex gap-2">
-            <Button onClick={onClose} className="flex-1">
+            <ActionButton variant="outline" onClick={onClose} className="flex-1">
               Skip
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
               onClick={() => onSave(notes.trim())}
-              disabled={busy || notes.trim() === fixture.playerNotes}
-              className="flex-1 bg-primary text-primary-foreground disabled:opacity-50"
+              loading={busy}
+              disabled={notes.trim() === fixture.playerNotes}
+              className="flex-1"
             >
-              {busy && <Loader2 className="h-4 w-4 animate-spin mr-2 inline" />}
               Save note
-            </Button>
+            </ActionButton>
           </div>
         </div>
       </SheetContent>

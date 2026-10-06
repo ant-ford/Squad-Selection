@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, ExternalLink, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check, ExternalLink } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { errorText, primary } from '@/components/profile/steps';
@@ -109,12 +109,7 @@ export default function JoinerTaskPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="New joiner">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="New joiner" back="/" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4">{body()}</main>
       <AppFooter />
     </div>

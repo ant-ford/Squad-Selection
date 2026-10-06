@@ -28,7 +28,7 @@ export default function PolishButton({ field, text, onUse }: { field: string; te
       {polish.error && <p className="text-xs text-destructive">{polish.error instanceof ApiError ? polish.error.message : "Couldn't polish it just now."}</p>}
       {draft && (
         <div className="rounded-md border border-primary/40 bg-primary/5 p-2.5 space-y-2">
-          <p className="text-[11px] font-medium text-muted-foreground">A suggestion, keeping what you wrote. Check it's right before using it.</p>
+          <p className="text-xs font-medium text-muted-foreground">A suggestion, keeping what you wrote. Check it's right before using it.</p>
           <p className="text-sm text-foreground whitespace-pre-line">{draft}</p>
           <div className="flex gap-2">
             <button

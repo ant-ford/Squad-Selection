@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import SignBlock from '@/components/SignBlock';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary } from '@/components/profile/steps';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
 import { getSigningView, getSponsorDrafts, remakeApplicationPdf, sendApplication, signApplication } from '@/api/signing';
@@ -27,7 +28,7 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground whitespace-pre-line">{value || '–'}</dd>
     </div>
   );
@@ -42,7 +43,6 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
  */
 export default function SignApplicationPage() {
   const { id = '' } = useParams();
-  const navigate = useNavigate();
   const view = useQuery({ queryKey: ['signing', id], queryFn: () => getSigningView(id) });
 
   const body = () => {
@@ -62,12 +62,7 @@ export default function SignApplicationPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Membership application">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Membership application" back="/" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>
@@ -88,7 +83,7 @@ function Application({ v }: { v: SigningView }) {
           <img src={v.photoUrl || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" onError={fallBackToDefaultPhoto} />
         </div>
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-foreground">{v.name}</h1>
+          <h2 className="text-lg font-semibold text-foreground">{v.name}</h2>
           <p className="text-xs text-muted-foreground">
             {v.applicationType}
             {v.categoryType ? ` · ${v.categoryType}` : ''} · submitted {safeFormat(v.submittedAt, 'd MMM yyyy')}
@@ -311,7 +306,13 @@ function SponsorSign({ v }: { v: SigningView }) {
       trainingComments: a.trainingComments || drafts.data.trainingComments || '',
     }));
   }, [drafts.data]);
-  const set = (k: keyof SponsorAnswers) => (value: string) => setAnswers((a) => ({ ...a, [k]: value }));
+  // Typed in (the AI drafts filling the boxes don't count).
+  const [touched, setTouched] = useState(false);
+  const set = (k: keyof SponsorAnswers) => (value: string) => {
+    setTouched(true);
+    setAnswers((a) => ({ ...a, [k]: value }));
+  };
+  const leave = useUnsavedChanges(!sign.isSuccess && (touched || (!!sig && sig !== 'saved')));
   const submit = () => {
     const bad = sponsorProblem(answers) ?? (!sig ? 'Sign the application.' : null);
     setProblem(bad);
@@ -338,6 +339,7 @@ function SponsorSign({ v }: { v: SigningView }) {
         <p className="text-xs font-medium text-foreground">Your signature</p>
         <SignBlock savedUrl={v.savedSignatureUrl} onChange={setSig} />
       </div>
+      {leave.prompt}
       {problem && (
         <p role="alert" className="text-xs text-destructive">
           {problem}
@@ -356,6 +358,7 @@ function OfficerSign({ v, role }: { v: SigningView; role: 'chair' | 'officer' })
   const [sig, setSig] = useState<string | null | 'saved'>(v.savedSignatureUrl ? 'saved' : null);
   const [problem, setProblem] = useState<string | null>(null);
   const sign = useSign(v, role);
+  const leave = useUnsavedChanges(!sign.isSuccess && !!sig && sig !== 'saved');
   const submit = () => {
     if (!sig) return setProblem('Sign the application.');
     setProblem(null);
@@ -364,6 +367,7 @@ function OfficerSign({ v, role }: { v: SigningView; role: 'chair' | 'officer' })
   return (
     <Block title={`Sign as ${ROLE_LABEL[role]}`}>
       <SignBlock savedUrl={v.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       {problem && (
         <p role="alert" className="text-xs text-destructive">
           {problem}

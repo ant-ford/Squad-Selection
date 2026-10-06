@@ -15,6 +15,7 @@
  *  - Paid is a flag only: no fee is recorded.
  */
 import { hkDateKey } from "./hkDateKey";
+import { canonicalKey, tidy } from "./umpires";
 
 export type DutyStatus = "scheduled" | "rescheduled" | "cancelled";
 export type AssignmentStatus = "offered" | "confirmed" | "withdrawn" | "no_show";
@@ -46,7 +47,7 @@ export interface UmpireDuty {
   status: DutyStatus;
   /** Offers, the confirmed umpire, no-shows; withdrawn ones are left out. */
   assignments: DutyAssignment[];
-  /** The viewer's own game it clashes with ("10:45 HKFC D v Valley B"), if any. */
+  /** The viewer's own game it clashes with ("10:45 HKFC D vs Valley B"), if any. */
   clash?: string;
   /** Coordinator only: club umpires playing at a clashing time, People api id -> kick-off ("10:45"). */
   clashes?: Record<string, string>;
@@ -90,9 +91,9 @@ export function hkTime(iso: string): string {
   return `${p.hour}:${p.minute}`;
 }
 
-/** "10:45 HKFC D v Valley B" ("TBC" for a time not yet set). */
+/** "10:45 HKFC D vs Valley B" ("TBC" for a time not yet set). */
 export function gameLabel(g: OwnGame): string {
-  return `${isTbc(g.matchDate) ? "TBC" : hkTime(g.matchDate)} ${g.homeTeam} v ${g.awayTeam}`;
+  return `${isTbc(g.matchDate) ? "TBC" : hkTime(g.matchDate)} ${g.homeTeam} vs ${g.awayTeam}`;
 }
 
 export type UmpiringAccess = "umpire" | "coordinator";
@@ -125,7 +126,10 @@ export interface UmpiringBoard {
   messages: boolean;
   /** Coordinator only: the umpires' list, for putting someone down. */
   umpires?: UmpireOption[];
-  /** Coordinator only: names of outside umpires used before, most recent first. */
+  /**
+   * Coordinator only: outside umpires' names, A–Z, one spelling each. Those
+   * put down in Eddy and those on HKFC match cards in the last 12 months.
+   */
   externalNames?: string[];
   /** Where the umpires' link in the first message points. */
   link: string;
@@ -336,4 +340,75 @@ export function captainsMessage(duties: UmpireDuty[]): string {
 /** Opens WhatsApp with the message ready to send; the group is chosen there. */
 export function whatsappShareUrl(message: string): string {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
+// ── Outside umpires' names ─────────────────────────────────────────────
+
+/**
+ * One name per outside umpire, however it was written (case, spacing,
+ * word order): the first list's spelling wins, then A–Z.
+ */
+export function mergeOutsideNames(...lists: readonly string[][]): string[] {
+  const byKey = new Map<string, string>();
+  for (const list of lists) {
+    for (const raw of list) {
+      const name = tidy(raw);
+      const key = canonicalKey(name);
+      if (key && !byKey.has(key)) byKey.set(key, name);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/** The known spelling of a name typed in another case, spacing or order. */
+export function knownSpelling(typed: string, known: readonly string[]): string | undefined {
+  const key = canonicalKey(typed);
+  return key ? known.find((n) => canonicalKey(n) === key) : undefined;
+}
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+const words = (name: string) => canonicalKey(name).split(" ").filter(Boolean);
+const asWritten = (name: string) => tidy(name).toLowerCase().replace(/[(),.]/g, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * Known outside umpires a new name probably means, best first (up to
+ * three): a spelling a letter or two out ("Andy Chen" for Andy Chan), or
+ * part of a name ("Boettger" for Philipp Boettger). None when the name is
+ * already known in another case or spacing: that spelling is used anyway.
+ */
+export function similarOutsideNames(typed: string, known: readonly string[]): string[] {
+  const key = canonicalKey(typed);
+  if (key.length < 3 || knownSpelling(typed, known)) return [];
+  // A slip per five letters, at most two.
+  const allowed = Math.min(2, Math.floor(key.length / 5));
+  const mine = words(typed);
+  const scored: { name: string; score: number }[] = [];
+  for (const name of known) {
+    const distance = Math.min(editDistance(key, canonicalKey(name)), editDistance(asWritten(typed), asWritten(name)));
+    if (distance <= allowed) {
+      scored.push({ name, score: distance });
+      continue;
+    }
+    // Fewer words, each one of theirs (a slip allowed in a longer word).
+    const theirs = words(name);
+    const part =
+      mine.length < theirs.length &&
+      mine.every((w) => w.length >= 3 && theirs.some((t) => t === w || (w.length >= 5 && editDistance(t, w) <= 1)));
+    if (part) scored.push({ name, score: 3 });
+  }
+  return scored
+    .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+    .slice(0, 3)
+    .map((s) => s.name);
 }
