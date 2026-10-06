@@ -304,6 +304,28 @@ describe("what the processes are waiting on someone for", () => {
     expect(selects.filter((s) => s === "*" || s.includes("hkid"))).toEqual([]);
     expect(await res.text()).not.toContain("A123456");
   });
+
+  it("asks for every part at once, not one after another", async () => {
+    // Each PostgREST answer takes a moment; note when each read starts and ends.
+    const inner = globalThis.fetch;
+    const span: Record<string, { start: number; end: number }> = {};
+    let tick = 0;
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      const table = new URL(input).pathname.split("/").pop()!;
+      const s = (span[table] ??= { start: ++tick, end: 0 });
+      await new Promise((r) => setTimeout(r, 5));
+      const res = await inner(input, init);
+      s.end = ++tick;
+      return res;
+    });
+    await tasksFor("pat@hkfc.com");
+    // The joiner requests (steps), the events and the signing lines (applications) overlap.
+    for (const [a, b] of [["steps", "events"], ["steps", "applications"], ["events", "applications"]]) {
+      expect(span[a], a).toBeDefined();
+      expect(span[b], b).toBeDefined();
+      expect(span[a].start < span[b].end && span[b].start < span[a].end, `${a} and ${b} overlap`).toBe(true);
+    }
+  });
 });
 
 describe("waivers count for the season they were signed in", () => {

@@ -174,6 +174,10 @@ describe("fake repositories", () => {
       { id: ALICE, membershipNo: "M1", preferredName: "Test", status: "Member" },
     ]);
     expect((await people(env).listContactsByIds(new Set([ALICE, "nonsense"])))[0].photo).toEqual([{ url: "u", filename: "f" }]);
+    // One directory row by id (resigned or not: the caller decides), null when there's no such person.
+    expect(await people(env).getDirectoryRow(ALICE)).toMatchObject({ id: ALICE, status: "Member", membershipNo: "M1" });
+    expect((await people(env).getDirectoryRow(recId("Gone")))?.status).toBe("Resigned");
+    expect(await people(env).getDirectoryRow("recNobody00000000")).toBeNull();
     expect((await people(env).listInactiveRankable()).map((p) => p.id)).toEqual([recId("Old")]);
     await people(env).update(ALICE, { sectionRank: 4, membershipNo: "M2", playingAbility: null });
     expect(fake.state.people[0]).toMatchObject({ sectionRank: 4, crm: { membershipNo: "M2" } });

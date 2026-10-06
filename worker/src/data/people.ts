@@ -97,6 +97,8 @@ export interface PeopleRepo {
   getApplicantStage(id: string): Promise<ApplicantStageRow | null>;
   /** Everyone not Resigned (a superset; the caller re-checks). */
   listDirectory(): Promise<DirectoryRow[]>;
+  /** One person's directory row (events: is the viewer invited?); null when there is no such person. */
+  getDirectoryRow(id: string): Promise<DirectoryRow | null>;
   /**
    * Contact details for the given ids. Anything that is not a row id is
    * ignored; each person comes back once, in no particular order.
