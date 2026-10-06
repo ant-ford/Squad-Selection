@@ -99,10 +99,9 @@ crons = ["0 3 * * *", "30 3 * * *"]
 
 # ── Branch preview (.github/workflows/preview.yml) ──────────────────────
 # A separate Worker, hkfc-api-preview, deployed by hand from the Actions
-# tab so a branch can be checked in a browser before it merges. It reads the
-# production Airtable base with its own READ-ONLY token (the AIRTABLE_TOKEN
-# secret of the `preview` GitHub environment), so it cannot change club
-# data even by mistake; saving a squad through it fails, by design.
+# tab so a branch can be checked in a browser before it merges. It reads and
+# writes eddy-preview (DATA_SUPABASE_URL below), so it cannot change club
+# data even by mistake.
 #
 # Kept away from production on purpose:
 #   - no custom domain (routes are inherited unless overridden);

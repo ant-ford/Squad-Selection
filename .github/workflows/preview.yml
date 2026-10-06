@@ -11,9 +11,9 @@ name: Preview API
 #
 # What keeps the preview away from production is in worker/wrangler.toml
 # under [env.preview]: its own Worker name, no custom domain, no cron, no
-# shared KV cache, and CORS only for http://localhost:5173 and :5174. Its
-# Airtable token is a separate, read-only one, so it cannot change club
-# data; with DATA_BACKEND = "supabase" it reads and writes eddy-preview.
+# shared KV cache, and CORS only for http://localhost:5173 and :5174. With
+# DATA_BACKEND = "supabase" it reads and writes eddy-preview, never
+# production data.
 
 on:
   workflow_dispatch:
@@ -65,16 +65,9 @@ jobs:
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      # Set on every run so rotating the GitHub secret is all it takes. Read
-      # from stdin, so the value never appears in the command line or log.
-      - name: Set Airtable token (read-only)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
-        run: printf '%s' "$AIRTABLE_TOKEN" | npx wrangler secret put AIRTABLE_TOKEN --config worker/wrangler.toml --env preview
-
-      # eddy-preview's secret key, for the Supabase data backend. Same pattern:
-      # stdin only, set on every run.
+      # eddy-preview's secret key, for the Supabase data backend. Set on every
+      # run so rotating the GitHub secret is all it takes. Read from stdin, so
+      # the value never appears in the command line or log.
       - name: Set Supabase data key (eddy-preview)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -167,6 +160,6 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
             echo "- URL: $URL"
             echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173 (or add \`-- --port 5174\`)"
-            echo "- Data: whatever DATA_BACKEND in [env.preview] says. On supabase, saves change eddy-preview; on airtable they fail (read-only token)."
+            echo "- Data: eddy-preview (DATA_BACKEND in [env.preview]); saves change that copy only."
             echo "- Health: \`$URL/health?deep=1\`"
           } >> "$GITHUB_STEP_SUMMARY"
