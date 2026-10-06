@@ -2,7 +2,7 @@ import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { people } from "./data/people";
 import type { Env } from "./env";
-import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, getPlayerByEmail, getExceptionsForMatches, getPlayerExceptions, UNRANKED_TEAM_RANK } from "./reference";
 import { getCached, getShared } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
@@ -403,20 +403,26 @@ export async function buildPlayerFixtureView(
   // minutes and no calendar client refreshes faster than hourly, so paying
   // for an uncached scan of the whole season's exceptions there bought
   // nothing at all - and it is the single most expensive read on the path.
-  const allExceptions = await getExceptionsForSeasons(
-    env,
-    relevantCategorized.map((x) => x.side.match.season || ""),
-    { fresh: opts.freshAvailability ?? true },
-  );
-  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
+  //
+  // Either way only these matches are read, never the whole season: the
+  // player's own answers (player=eq & match=in), about a kilobyte, or - for
+  // the calendar, which also names the squad - every answer for these
+  // matches. The season's answers were ~177 KB on preview.
+  const fresh = opts.freshAvailability ?? true;
+  const [matchExceptions, playerRules] = await Promise.all([
+    opts.withSquad
+      ? getExceptionsForMatches(env, relevantMatchIds, { fresh })
+      : getPlayerExceptions(env, playerId, relevantMatchIds, { fresh }),
+    getRulesForPlayer(env, playerId),
+  ]);
+  const playerExceptions = matchExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
-  const playerRules = await getRulesForPlayer(env, playerId);
   // Everyone's answer, per match, so a calendar event can say who else is in
   // the squad and which of them are only a Maybe. The dashboard never shows
   // the squad, so only the calendar feed builds it.
   const squadStatus = new Map<string, string>();
   if (opts.withSquad) {
-    for (const e of allExceptions) {
+    for (const e of matchExceptions) {
       const mId = linkId(e.match);
       const pId = linkId(e.player);
       if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
@@ -542,9 +548,11 @@ export async function getUpcomingFixtures(
   });
   if (relevant.length === 0) return { fixtures: [] };
   const matchIds = relevant.map((m) => m.id);
-  const allExceptions = await getExceptionsForSeasons(env, relevant.map((m) => m.season || ""));
+  // The answers for these fixtures only (match=in, narrow columns), not the
+  // whole season's: ~5 KB a team on preview against ~177 KB.
+  const listedExceptions = await getExceptionsForMatches(env, matchIds);
   const exceptionsByMatch = new Map<string, any[]>();
-  for (const exc of allExceptions) {
+  for (const exc of listedExceptions) {
     const mId = linkId(exc.match);
     if (!mId || !matchIds.includes(mId)) continue;
     exceptionsByMatch.set(mId, [...(exceptionsByMatch.get(mId) || []), exc]);

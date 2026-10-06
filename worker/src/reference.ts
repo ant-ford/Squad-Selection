@@ -256,4 +256,41 @@ export async function getExceptionsForSeasons(
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Every answer for these matches, and nothing else (match=in.(...), narrow
+ * columns): what a coach list or a squad needs, instead of the whole
+ * season's answers (~177 KB on preview) filtered here. Cached under
+ * "exceptions:" like the season reads, so every availability write clears
+ * it; { fresh: true } reads past the cache.
+ */
+export async function getExceptionsForMatches(
+  env: Env,
+  matchIds: string[],
+  opts?: { fresh?: boolean },
+): Promise<AvailabilityException[]> {
+  const ids = [...new Set(matchIds.filter(Boolean))].sort();
+  if (ids.length === 0) return [];
+  const load = () => availabilityExceptions(env).listForMatches(ids);
+  if (opts?.fresh) return load();
+  return getShared<AvailabilityException[]>(env, `exceptions:matches:${ids.join(",")}`, load, EXCEPTIONS_TTL_MS);
+}
+
+/**
+ * One player's own answers for these matches (player=eq & match=in.(...)):
+ * a player's dashboard, at about a kilobyte. Pass { fresh: true } where the
+ * player must see the tap they just made (see getExceptionsForSeasons).
+ */
+export async function getPlayerExceptions(
+  env: Env,
+  playerId: string,
+  matchIds: string[],
+  opts?: { fresh?: boolean },
+): Promise<AvailabilityException[]> {
+  const ids = [...new Set(matchIds.filter(Boolean))].sort();
+  if (!playerId || ids.length === 0) return [];
+  const load = () => availabilityExceptions(env).listForPlayer(playerId, ids);
+  if (opts?.fresh) return load();
+  return getShared<AvailabilityException[]>(env, `exceptions:player:${playerId}:${ids.join(",")}`, load, EXCEPTIONS_TTL_MS);
+}
+
 export { invalidateCache };

@@ -4,7 +4,8 @@ import { teams as teamsRepo } from "./data/teams";
 import { isRowId } from "./data/ids";
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
-import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
+import { getReferenceData, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
+import { availabilityExceptions } from "./data/availabilityExceptions";
 import { SCHEDULED_MATCHES_KEY } from "./fixtures";
 import { evaluatePlayerEligibility, type EvaluationContext } from "./eligibility";
 import { HttpError } from "./http";
@@ -97,17 +98,20 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   // longer hold is what let a squad saved on one isolate stay invisible on
   // another for minutes.
   const cacheKey = `players-for-match:${matchId}:${side ?? "auto"}`;
-  const { data: heavyData } = await getCached(cacheKey, async () => {
-    const { ctx, exceptionsRaw } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
-    return { ctx, allPlayers: ref.players, allExceptions: exceptionsRaw };
-  }, PLAYERS_FOR_MATCH_TTL_MS);
-  const { ctx, allPlayers, allExceptions } = heavyData;
+  // This match's own answers and notes come from the poll's read (one match,
+  // narrow columns, shared with the 30 s poll), alongside the context.
+  const [{ data: heavyData }, forMatch] = await Promise.all([
+    getCached(cacheKey, async () => {
+      const { ctx } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
+      return { ctx, allPlayers: ref.players };
+    }, PLAYERS_FOR_MATCH_TTL_MS),
+    getAvailabilityForMatch(env, matchId),
+  ]);
+  const { ctx, allPlayers } = heavyData;
 
-  const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
-  const exceptionMap = new Map<string, any>();
-  for (const exc of matchExceptions) {
-    const pId = linkId(exc.player);
-    if (pId) exceptionMap.set(pId, exc);
+  const exceptionMap = new Map<string, { availabilityStatus: string; note: string; playerNotes?: string }>();
+  for (const exc of forMatch.exceptions) {
+    if (exc.playerId) exceptionMap.set(exc.playerId, { availabilityStatus: exc.status, note: exc.notes });
   }
 
   const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
@@ -470,12 +474,11 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
 /**
  * Availability exceptions for one match, for the 30s squad-page poll.
  *
- * Previously this scanned the whole Availability Exceptions table with
- * FIND("{id}", {Match}) on every poll tick. Now it resolves the match's
- * season (30s match-record cache), reuses the season-scoped exceptions
- * cache (5 min, invalidated by every availability write) and holds a 25s
- * per-match cache of its own - so steady-state polling makes zero Airtable
- * calls and the linked-field FIND fragility is gone entirely.
+ * One read of that match's answers only (match=eq, narrow columns: at most a
+ * few KB), held 25 s in this isolate and cleared by every availability write
+ * made here. It used to read the match, then the whole season's answers
+ * (~177 KB on preview) and filter them here. Not "changed since": an
+ * Available answer is usually a deleted row, which a since-filter cannot see.
  */
 const AVAILABILITY_FOR_MATCH_TTL_MS = 25 * 1000;
 
@@ -483,12 +486,9 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
   const { data } = await getCached<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
     `availability:${matchId}`,
     async () => {
-      const match = await matches(env).getById(matchId);
-      const season = match?.season || "";
-      if (!season) return { exceptions: [] };
-      const allExceptions = await getExceptionsForSeasons(env, [season]);
+      const forMatch = await availabilityExceptions(env).listForMatches([matchId]);
       return {
-        exceptions: allExceptions
+        exceptions: forMatch
           .filter((e) => linkId(e.match) === matchId)
           .map((e) => ({
             playerId: linkId(e.player) || "",
