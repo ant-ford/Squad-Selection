@@ -90,6 +90,7 @@ import {
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { getDataChecks } from "./dataChecks";
+import { linkMatchCard } from "./matchCardLink";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -899,6 +900,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/admin/data-checks") {
       await requireSection(request, env, "dataChecks");
       return json(await getDataChecks(env), 200, origin);
+    }
+    const cardLink = pathname.match(/^\/api\/admin\/match-cards\/([^/]{1,64})\/link$/);
+    if (method === "POST" && cardLink) {
+      const user = await requireSection(request, env, "dataChecks");
+      const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+      return json(await linkMatchCard(env, user, cardLink[1], body), 200, origin);
     }
 
     // ── Volunteering (src/volunteering.ts) ────────────────────────────────
