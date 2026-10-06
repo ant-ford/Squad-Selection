@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -110,13 +110,16 @@ function FixtureDetail({
                     {label} &middot; {g.players.length}
                   </p>
                   <p className="text-foreground">
+                    {/* The comma stays with its name; the space between names is where lines break. */}
                     {g.players.map((p, i) => (
-                      <span key={p.id} className="whitespace-nowrap">
-                        <button onClick={() => onPlayer(p)} className="hover:underline">
-                          {p.name}
-                        </button>
-                        {i < g.players.length - 1 && ', '}
-                      </span>
+                      <Fragment key={p.id}>
+                        <span className="whitespace-nowrap">
+                          <button onClick={() => onPlayer(p)} className="hover:underline">
+                            {p.name}
+                          </button>
+                          {i < g.players.length - 1 && ','}
+                        </span>{' '}
+                      </Fragment>
                     ))}
                   </p>
                 </div>
