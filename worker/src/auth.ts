@@ -169,6 +169,10 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *                and passport numbers included: the Hockey Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
  *                Supabase backend only.
+ *   dataChecks - records to put right (unlinked match cards, shared
+ *                Registered Names, re-registrations to review, incomplete
+ *                players, likely duplicates): the Men's Convenor and the
+ *                Section Captains. Supabase backend only.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -177,10 +181,11 @@ export const SECTION_OFFICES = {
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
   registration: ["hockeyConvenor"],
+  dataChecks: ["hockeyConvenor", "sectionCaptain"],
 } as const satisfies Record<string, readonly Office[]>;
 
 /** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration"];
+const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration", "dataChecks"];
 
 export type Section = keyof typeof SECTION_OFFICES;
 
