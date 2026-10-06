@@ -11,6 +11,25 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { syncSquad } from "../worker/src/squad";
 import { invalidateAll } from "../worker/src/cache";
 import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import { applyToFakeTables } from "./helpers/selectionChanges";
+import type { SelectionChange } from "../worker/src/data/matches";
+
+// The release goes through apply_squad_changes (Supabase only); here it is
+// applied to the fake tables, and each call is recorded.
+const state = vi.hoisted(() => ({ releases: [] as { matchId: string; change: SelectionChange }[] }));
+vi.mock("../worker/src/data/matches", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../worker/src/data/matches")>();
+  return {
+    ...real,
+    matches: (env: any) => ({
+      ...real.matches(env),
+      applySelectionChanges: async (matchId: string, change: SelectionChange) => {
+        state.releases.push({ matchId, change });
+        return applyToFakeTables(tables, matchId, change);
+      },
+    }),
+  };
+});
 
 const ENV = {
   AIRTABLE_TOKEN: "***",
@@ -62,7 +81,10 @@ function install(matches: ReturnType<typeof fixture>[]) {
 const selected = (matchId: string) =>
   tables.Matches.find((r) => r.id === matchId)?.fields["Selected Players Home"];
 
-beforeEach(() => invalidateAll());
+beforeEach(() => {
+  invalidateAll();
+  state.releases = [];
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("syncSquad: higher team priority", () => {
@@ -74,6 +96,11 @@ describe("syncSquad: higher team priority", () => {
     expect(selected("recHigh")).toEqual(["recU21PlayerAAAAA"]);
     expect(selected("recLow")).toEqual(["recKimPlayerAAAAA"]);
     expect(displaced).toEqual([{ playerId: "recU21PlayerAAAAA", playerName: "Uma S", team: "HKFC D", matchId: "recLow" }]);
+    // Applied to the lower squad as it is now, with no version check.
+    expect(state.releases).toEqual([{
+      matchId: "recLow",
+      change: { side: "home", add: [], remove: ["recU21PlayerAAAAA"], version: null, actorId: null, source: "release" },
+    }]);
   });
 
   it("does the same for any player, not only U21s", async () => {
@@ -105,6 +132,7 @@ describe("syncSquad: higher team priority", () => {
 
     expect(displaced).toEqual([]);
     expect(selected("recLow")).toEqual(["recSamPlayerAAAAA"]);
+    expect(state.releases).toEqual([]);
   });
 
   it("still rejects the reverse: a lower team cannot take a player a higher team has", async () => {
