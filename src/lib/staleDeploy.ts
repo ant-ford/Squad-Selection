@@ -1,18 +1,28 @@
 // Recovery from a stale client after a new deploy.
 //
 // Asset filenames are content-hashed, and a deploy removes the previous ones.
-// A client still holding an old index.html - from the service worker precache,
-// or a tab left open across a deploy - therefore asks for chunk filenames that
-// no longer exist. The Worker serves static assets with SPA fallback, so those
-// requests do not 404: they return index.html with status 200 and a HTML
-// content type. The browser then tries to parse HTML as JavaScript, the lazy
-// route never resolves, and the Suspense skeleton stays on screen forever.
+// A client still holding an old index.html - a tab left open across a deploy,
+// or a page loaded by the previous service worker - therefore asks for chunk
+// filenames that no longer exist. They 404 (web-shell/index.ts), the import
+// rejects, and without recovery the Suspense skeleton stays on screen.
 //
-// Reloading alone does not fix it, because the same stale precache answers the
-// next load the same way. Recovery has to drop the service worker and its
-// caches first, then reload to fetch a current index.html.
+// A plain reload is tried first. By the time a chunk has gone missing the new
+// service worker has normally taken over (skipWaiting + clientsClaim) and its
+// precache holds the current index.html, and other navigations go to the
+// network first (vite.config.ts). The same error also comes from a dropped
+// connection, where clearing everything would leave nothing to load from.
+//
+// If the reload lands on the same failure, the cached shell itself is stale,
+// so the second attempt drops the service worker and its caches before
+// reloading. After that we stop and let the error surface.
 
 const RECOVERY_FLAG = 'stale-deploy-recovered';
+
+/** Value of RECOVERY_FLAG after the first step, kept across the reload. */
+const RELOADED = 'reloaded';
+
+/** Set once recovery has started in this page, so a failure reported by several listeners acts once. */
+let recovering = false;
 
 /** True for the "chunk came back as HTML, or never arrived" family of errors. */
 export function isChunkLoadError(error: unknown): boolean {
@@ -27,23 +37,39 @@ export function isChunkLoadError(error: unknown): boolean {
 }
 
 /**
- * Clears the service worker and its caches, then reloads - at most once per
- * tab. The guard matters: if the reload lands on the same broken state we must
- * stop and let the error surface, rather than reload forever.
+ * Reloads; on a second failure in the same tab, clears the service worker and
+ * its caches first. At most those two reloads per tab: if the state is still
+ * broken after both we stop rather than reload forever.
  *
- * Returns false when recovery has already been attempted, so the caller can
- * show a real error instead.
+ * Returns false when recovery has been used up, so the caller can show a real
+ * error instead.
  */
 export async function recoverFromStaleDeploy(): Promise<boolean> {
+  // One failure reaches us from preloadError, unhandledrejection and the
+  // route error element; only the first call may move recovery on a step.
+  if (recovering) return true;
+
+  let step: string | null;
   try {
-    if (sessionStorage.getItem(RECOVERY_FLAG)) return false;
-    sessionStorage.setItem(RECOVERY_FLAG, '1');
+    step = sessionStorage.getItem(RECOVERY_FLAG);
+    // Any other value - including '1' from the version of this code that
+    // cleared everything straight away - means both steps have been used.
+    if (step !== null && step !== RELOADED) return false;
+    sessionStorage.setItem(RECOVERY_FLAG, step === null ? RELOADED : 'cleared');
   } catch {
     // Storage blocked (private mode, embedded webview). Without the guard a
     // reload loop is possible, so do not attempt recovery at all.
     return false;
   }
+  recovering = true;
 
+  if (step === RELOADED) await clearServiceWorker();
+
+  window.location.reload();
+  return true;
+}
+
+async function clearServiceWorker(): Promise<void> {
   try {
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -61,7 +87,4 @@ export async function recoverFromStaleDeploy(): Promise<boolean> {
   } catch {
     // Same: fall through to the reload regardless.
   }
-
-  window.location.reload();
-  return true;
 }

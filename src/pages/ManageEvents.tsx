@@ -56,7 +56,7 @@ import type { Selection } from '@shared/emailLists';
 
 const STATUS_BADGE: Record<ManagedEvent['status'], string> = {
   draft: 'bg-muted text-muted-foreground',
-  published: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+  published: 'bg-emerald-500/15 text-emerald-700',
   cancelled: 'bg-destructive/10 text-destructive',
 };
 const STATUS_LABEL: Record<ManagedEvent['status'], string> = { draft: 'Draft', published: 'Published', cancelled: 'Cancelled' };
@@ -497,7 +497,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
               <p className="text-xs text-muted-foreground">{countsLine(e)}</p>
               <p className="text-xs text-muted-foreground">Invited: {describeAudience(e.audience, e.team)}</p>
               {e.includesMe === false && e.status !== 'cancelled' && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” below.</p>
+                <p className="text-xs text-amber-700">You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” below.</p>
               )}
             </div>
 

@@ -40,6 +40,21 @@ export interface RequestContext {
    * it up.
    */
   waitUntil?: (promise: Promise<unknown>) => void;
+  /** The error behind a 5xx answer, and who was signed in, for error_log (systemHealth.ts). */
+  error?: unknown;
+  personId?: string;
+}
+
+/** Remembers the error a 5xx answer was made from (index.ts), for error_log. */
+export function noteRequestError(err: unknown): void {
+  const context = storage.getStore();
+  if (context) context.error = err;
+}
+
+/** Remembers who is signed in (auth.ts), for error_log. */
+export function noteRequestPerson(personId: string): void {
+  const context = storage.getStore();
+  if (context) context.personId = personId;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

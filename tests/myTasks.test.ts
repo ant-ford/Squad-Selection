@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { invalidateAll } from "../worker/src/cache";
-import { invalidateForTables } from "../worker/src/airtableWebhook";
+import { invalidateCommitments, invalidatePeople } from "../worker/src/invalidation";
 import { waiversDoneThisSeason } from "../worker/src/myTasks";
 import worker from "../worker/src/index";
 import type { Env } from "../worker/src/env";
@@ -247,14 +247,14 @@ describe("the person's own forms", () => {
   it("goes as soon as the base shows the statement submitted", async () => {
     await tasksFor("pat@hkfc.com"); // warm the caches
     db.state.commitments[0].reviewProgress = "Member Submitted (with Sponsor)";
-    await invalidateForTables(ENV, ["Commitments"]); // what the webhook does
+    await invalidateCommitments(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["waivers"]);
   });
 
   it("goes as soon as the base shows this season's waivers", async () => {
     await tasksFor("pat@hkfc.com");
     (db.state.people[0].crm as Record<string, unknown>).waiversSubmittedAt = "2026-09-26T03:00:00.000Z";
-    await invalidateForTables(ENV, ["People"]);
+    await invalidatePeople(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["statement"]);
   });
 });
@@ -295,7 +295,7 @@ describe("what the processes are waiting on someone for", () => {
     const samRow = db.state.people.find((r) => r.id === ID.sam)!;
     samRow.applicantStage = "4. Sponsor (Signed)";
     (samRow.crm as Record<string, unknown>).sponsoredByChair = [OFFICE.chair];
-    await invalidateForTables(ENV, ["People"]);
+    await invalidatePeople(ENV);
     expect((await tasksFor("chris@hkfc.com")).map((t: any) => t.key)).toEqual(["review"]);
     expect((await tasksFor("charles@hkfc.com")).map((t: any) => t.subject)).toEqual(["Cara Applicant", "Sam Applicant"]);
   });

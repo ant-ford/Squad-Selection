@@ -31,7 +31,11 @@ export function hkDaysUntil(dateStr: string | undefined | null, now = new Date()
  * results view. Null when there is nothing sensible to say.
  */
 export function countdownLabel(dateStr: string | undefined | null, now = new Date()): string | null {
-  const days = hkDaysUntil(dateStr, now);
+  return daysLabel(hkDaysUntil(dateStr, now));
+}
+
+/** countdownLabel for a day count already worked out with hkDaysUntil. */
+export function daysLabel(days: number | null): string | null {
   if (days === null) return null;
   if (days === 0) return 'Today';
   if (days === 1) return 'Tomorrow';

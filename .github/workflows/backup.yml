@@ -12,6 +12,11 @@ name: Database backup
 # only the secret half (kept off GitHub except in the restore-drill
 # environment) can read it. The repository is public, so the scripts print
 # sizes, checksums and table counts, never data or connection strings.
+#
+# Each run ends by recording a heartbeat in the database it backed up
+# (scripts/backup/heartbeat.sh). GitHub turns off scheduled workflows in a
+# public repository after 60 days without activity, so this could stop
+# without failing; Eddy's daily health check flags a backup over 30 hours old.
 
 on:
   schedule:
@@ -49,6 +54,15 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
         run: bash scripts/backup/dump.sh
+      # Eddy's daily health check (worker/src/systemHealth.ts) reads this.
+      # Recorded on failure too; never fails the job itself.
+      - name: Record the run
+        if: always()
+        env:
+          PGURL: ${{ secrets.PROD_DB_URL }}
+          OK: ${{ job.status == 'success' }}
+          LABEL: eddy-production
+        run: bash scripts/backup/heartbeat.sh
 
   preview:
     if: >-
@@ -71,3 +85,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
           ALSO_MONTHLY: "no"
         run: bash scripts/backup/dump.sh
+      - name: Record the run
+        if: always()
+        env:
+          PGURL: ${{ secrets.PREVIEW_DB_URL }}
+          OK: ${{ job.status == 'success' }}
+          LABEL: eddy-preview
+        run: bash scripts/backup/heartbeat.sh

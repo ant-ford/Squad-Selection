@@ -24,9 +24,9 @@ export function sizesLine(s: KitSizes): string {
 
 const PLACE_TONE: Record<KitPlace, string> = {
   on_order: 'bg-muted text-muted-foreground',
-  in_store: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-  with_holder: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  with_owner: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  in_store: 'bg-sky-500/15 text-sky-700',
+  with_holder: 'bg-amber-500/15 text-amber-700',
+  with_owner: 'bg-emerald-500/15 text-emerald-700',
 };
 
 export function PlaceBadge({ set }: { set: Pick<KitSet, 'place' | 'holder'> & { pendingTo?: KitSet['pendingTo'] } }) {

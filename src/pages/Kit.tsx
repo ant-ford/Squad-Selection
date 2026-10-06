@@ -238,7 +238,7 @@ export default function Kit() {
                       </span>
                       <span className="block text-xs text-muted-foreground truncate">{sizesLine(s.sizes)}</span>
                       {s.mismatches.length > 0 && (
-                        <span className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 truncate">
+                        <span className="flex items-center gap-1 text-xs text-amber-700 truncate">
                           <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden /> {s.mismatches.join('; ')}
                         </span>
                       )}

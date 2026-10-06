@@ -151,13 +151,6 @@ export interface RankingList {
   version: number;
 }
 
-export interface RecentChange {
-  id: string;
-  kind: string;
-  playerName: string;
-  text: string;
-  at: string;
-}
 /** Which fixtures a standing availability rule applies to. */
 export type AvailabilityRuleType =
   | "Play-ups"
