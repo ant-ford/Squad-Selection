@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
+import { useParams, useSearchParams, useBlocker } from 'react-router-dom';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
-import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
+import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { apiPost, apiGet } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
@@ -19,7 +19,6 @@ import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
 import { compareSelected, sortSquadList } from '@/lib/squadSort';
 import { POS_SHORT, initials, shortTeam } from '@/lib/format';
-import { coachDashboardPath } from '@/lib/scrollMemory';
 
 type Delta = { playerId: string; action: 'select' | 'remove' };
 
@@ -37,7 +36,6 @@ interface PriorityPlayer {
 
 export default function SquadSelection() {
   const { matchId } = useParams<{ matchId: string }>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const side = (searchParams.get("side") as "home" | "away") || undefined;
 
@@ -549,12 +547,7 @@ export default function SquadSelection() {
   }
 
   return (
-    <div className="pb-24">
-      <div className="container mx-auto px-4">
-        <button onClick={() => navigate(coachDashboardPath())} className="flex items-center gap-1 py-3 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Fixtures
-        </button>
-      </div>
+    <div className="pt-3 pb-24">
       <MatchHeader match={optimisticMatch} matchId={matchId} />
 
       <PlayerFilters filters={filters} onChange={handleFilterChange} />

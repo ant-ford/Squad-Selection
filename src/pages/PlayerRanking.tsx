@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors,
@@ -9,7 +9,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserPlus,
+  Search, Settings2, X, ChevronUp, ChevronDown, UserPlus,
   GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3, CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,7 +28,6 @@ import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@share
 import type { RankingChange } from '@/lib/queries';
 import { POS_SHORT } from '@/lib/format';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { coachDashboardPath } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 const ALL_POSITIONS = Object.keys(POS_SHORT);
@@ -87,7 +86,6 @@ function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGrou
 }
 
 export default function PlayerRanking() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const isSectionCaptain = !!profile?.isSectionCaptain;
@@ -366,9 +364,6 @@ export default function PlayerRanking() {
   return (
     <div className="pb-32">
       <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
-        <button onClick={() => navigate(coachDashboardPath())} className="flex items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-        </button>
         <div className="flex-1" />
         {isSectionCaptain && (
           <button
@@ -378,10 +373,6 @@ export default function PlayerRanking() {
             <Settings2 className="h-3.5 w-3.5" /> Configuration
           </button>
         )}
-      </div>
-
-      <div className="container mx-auto px-4 pt-2 pb-1">
-        <h1 className="text-xl font-semibold text-foreground">Player Ranking</h1>
       </div>
 
       {isMobile ? (
