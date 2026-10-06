@@ -309,7 +309,7 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
             <span className="font-semibold">{duty.timeTbc ? 'TBC' : safeFormat(duty.matchDate, 'HH:mm')}</span> · {duty.venue || 'Venue TBC'}
             {duty.division && <span className="text-muted-foreground"> · Div {duty.division}</span>}
           </p>
-          <p className={`text-xs text-muted-foreground ${cancelled ? 'line-through' : ''}`}>
+          <p className={`text-xs text-foreground ${cancelled ? 'line-through' : ''}`}>
             {duty.homeTeam} v {duty.awayTeam}
           </p>
         </div>

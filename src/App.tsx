@@ -404,7 +404,7 @@ function AppLoading() {
         <div className="relative mt-10 text-center">
           <p className="font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground animate-[fade-up_0.6s_ease-out_both]">HKFC</p>
           <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:120ms]">Squad Selection</p>
-          <p className="mt-6 font-mono text-[10px] tracking-widest text-muted-foreground/70 animate-[fade-up_0.6s_ease-out_both] [animation-delay:240ms]">warming up…</p>
+          <p className="mt-6 font-mono text-[10px] tracking-widest text-muted-foreground animate-[fade-up_0.6s_ease-out_both] [animation-delay:240ms]">warming up…</p>
         </div>
       </div>
     </div>
