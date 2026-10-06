@@ -26,6 +26,11 @@ export interface AvailabilityOutcome {
 }
 
 export interface AvailabilityExceptionsRepo {
+  /** Every answer for these matches (id, player, match, status, note only). */
+  listForMatches(matchIds: string[]): Promise<AvailabilityException[]>;
+  /** One player's answers for these matches (id, player, match, status, note only). */
+  listForPlayer(playerId: string, matchIds: string[]): Promise<AvailabilityException[]>;
+
   /** Exceptions for matches in any of the given (non-empty, de-duplicated) seasons. */
   listForSeasons(seasons: string[]): Promise<AvailabilityException[]>;
   /**

@@ -502,6 +502,17 @@ function buildRepos(s: FakeState): FakeRepos {
     return { updated: kept.length + created.length, results: [...kept, ...created], before, seasons };
   };
   const availabilityExceptions: AvailabilityExceptionsRepo = {
+    // The targeted reads select id, player, match, status and note only.
+    async listForMatches(matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
+    async listForPlayer(playerId, matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => e.player?.[0] === playerId && matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
     async listForSeasons(seasons) {
       return s.availabilityExceptions
         .filter((e) => seasons.includes(e.season ?? ""))

@@ -76,7 +76,8 @@ const db = useFakeRepos(() => ({
 
 const peopleFetches = () => db.callsTo("people", "findByEmail").length;
 const matchesFetches = () => db.callsTo("matches", "listScheduled").length;
-const exceptionFetches = () => db.callsTo("availabilityExceptions", "listForSeasons").length;
+/** Reads of availability answers of any shape: a season's, some matches', or one player's. */
+const exceptionFetches = () => db.callsTo("availabilityExceptions").filter((c) => c.method.startsWith("list")).length;
 
 beforeEach(() => {
   invalidateAll();
