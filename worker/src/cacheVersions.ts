@@ -47,5 +47,5 @@ export function parseCacheVersions(raw: unknown): CacheVersions {
 
 /** One small read: every counter (~0.3 KB). */
 export async function readCacheVersions(env: Env): Promise<CacheVersions> {
-  return parseCacheVersions(await db(env).rpc<unknown>("read_cache_versions", {}));
+  return parseCacheVersions(await db(env).rpcRead<unknown>("read_cache_versions", {}));
 }

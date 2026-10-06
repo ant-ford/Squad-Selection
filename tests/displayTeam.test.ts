@@ -13,12 +13,12 @@ import type { Player } from "../shared/schema/domainTypes";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
-import { match, person, recId, team } from "./helpers/factories";
+import { match, person, recId, team, signedIn } from "./helpers/factories";
 
 const ENV = { ...SUPABASE_TEST_ENV } as Env;
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return signedIn({ email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] });
 }
 
 const db = useFakeRepos();
@@ -232,13 +232,13 @@ describe("player portal fixture categories (per-day, max three)", () => {
     expect(out.supportFixtures ?? []).toHaveLength(0);
   });
 
-  it("asks Supabase about the officer screens, and a plain player gets none of them", async () => {
+  it("decides the officer screens from sign-in, with no reads, and a plain player gets none of them", async () => {
     const out = await portal({ registeredTeam: "D", matches: [{ id: recId("MD"), homeTeam: "D", day: 1 }] });
     expect(out.eddyProfile).toBe(true);
     expect(out.volunteers).toBe(false);
     expect(out.events).toBe(false);
     expect(out.umpiring).toBeNull();
-    expect(pg.reads("api_offices")).toHaveLength(1);
+    for (const table of ["api_offices", "offices", "team_people", "people", "matches", "umpire_assignments"]) expect(pg.reads(table)).toHaveLength(0);
     expect(pg.writes()).toHaveLength(0);
   });
 });

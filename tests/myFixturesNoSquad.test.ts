@@ -13,16 +13,16 @@ import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { match, person, recId, team } from "./helpers/factories";
+import { match, person, recId, team, signedIn } from "./helpers/factories";
 
 const ENV = { ...SUPABASE_TEST_ENV, CALENDAR_SECRET: "test-calendar-secret" } as Env;
 
 const JONNY = recId("P1");
 const SAM = recId("P2");
 
-const authUser: AuthorizedUser = {
+const authUser: AuthorizedUser = signedIn({
   email: "jonny@hkfc.com", personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-};
+});
 
 const DAY = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().split("T")[0];
 

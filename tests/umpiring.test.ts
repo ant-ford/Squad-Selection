@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { assignDuty, confirmAssignment, getUmpiringBoard, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, refreshUmpirePool, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { signedIn } from "./helpers/factories";
 import { invalidateAll } from "../worker/src/cache";
 import {
   captainsMessage,
@@ -20,8 +21,10 @@ import {
 import { gamesUmpiredChoice } from "../shared/commitmentReview";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+/** Who auth_context says is in the umpire pool: the qualified (George, Ann) and Bob, from a match card. */
+const UMPIRES = new Set(["recGEORGE", "recANN", "recBOB"]);
 const user = (personId: string, officerRoles: AuthorizedUser["officerRoles"] = []) =>
-  ({ email: "u@x.com", personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles }) as unknown as AuthorizedUser;
+  signedIn({ email: "u@x.com", personId, officerRoles, umpire: UMPIRES.has(personId) });
 const george = user("recGEORGE", [{ office: "umpireCoordinator", designation: "" }]);
 
 const DUTY = "11111111-1111-1111-1111-111111111111";
@@ -127,8 +130,16 @@ describe("the commitment and pay", () => {
 });
 
 describe("who sees the duties", () => {
-  it("is qualified umpires, anyone named as umpire on an HKFC match card this year, and the coordinator", async () => {
-    fake({
+  /** The pool refreshUmpirePool stores (People uuids), from a fake with the given tables. */
+  async function storedPool(tables: Parameters<typeof fake>[0]): Promise<string[]> {
+    let stored: string[] = [];
+    fake({ ...tables, set_umpire_pool: (_url, _method, body) => ((stored = [...body.p_people].sort()), stored.length) });
+    await refreshUmpirePool(env);
+    return stored;
+  }
+
+  it("stores qualified umpires and anyone named as umpire on an HKFC match card this year", async () => {
+    const pool = await storedPool({
       people: people(),
       matches: [
         { id: "m1", ump_1: "HKFC D - Page Bob", ump_2: "Appointed", home_team: "HKFC F", away_team: "Elite B" },
@@ -136,21 +147,21 @@ describe("who sees the duties", () => {
       ],
       umpire_assignments: [],
     });
-    expect(await umpiringAccess(env, user("recANN"))).toBe("umpire"); // qualified
-    expect(await umpiringAccess(env, user("recBOB"))).toBe("umpire"); // on a match card, names swapped
-    expect(await umpiringAccess(env, user("recCAT"))).toBeNull(); // "Not Applicable", and a first name alone isn't enough
+    // Ann and George are qualified; Bob is on a match card, names swapped.
+    // Cat isn't: "Not Applicable", and a first name alone isn't enough.
+    expect(pool).toEqual(["u-ann", "u-bob", "u-george"]);
+  });
+
+  it("stores anyone who umpired a game in Eddy this year", async () => {
+    expect(await storedPool({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] })).toContain("u-cat");
+  });
+
+  it("decides the screen from sign-in (auth_context's umpire flag) and the offices, with no reads", async () => {
+    const calls = fake({});
+    expect(await umpiringAccess(env, user("recANN"))).toBe("umpire");
+    expect(await umpiringAccess(env, user("recCAT"))).toBeNull();
     expect(await umpiringAccess(env, user("recZED", [{ office: "sectionCaptain", designation: "" }]))).toBe("coordinator");
-  });
-
-  it("hides the screen, not the player page, when the umpiring tables can't be read", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    fake({ people: people(), matches: [], umpire_assignments: () => new Response(JSON.stringify({ code: "42P01", message: "relation does not exist" }), { status: 404 }) });
-    expect(await umpiringAccess(env, user("recANN"))).toBeNull();
-  });
-
-  it("includes anyone who umpired a game in Eddy this year", async () => {
-    fake({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] });
-    expect(await umpiringAccess(env, user("recCAT"))).toBe("umpire");
+    expect(calls).toHaveLength(0);
   });
 });
 

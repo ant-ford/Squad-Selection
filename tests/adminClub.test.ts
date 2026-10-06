@@ -15,7 +15,7 @@ vi.mock("../worker/src/cache", async (importOriginal) => {
 
 import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
-import { OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "../worker/src/reference";
+import { MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "../worker/src/reference";
 import {
   OFFICE_ROLES, addOffice, createOfficeHolder, editOffice, listOffices, listTeams, parseNewOffice, parseTeamChange, saveTeam,
 } from "../worker/src/admin/club";
@@ -91,7 +91,7 @@ describe("offices", () => {
     const calls = fake({ "rpc/admin_save_office": { status: "ok", id: "recNEW" } });
     expect(await addOffice(env, captain, { office: "membershipOfficer", personId: "recP1", replaces: "recOLD" })).toEqual({ ok: true, id: "recNEW" });
     expect(calls[0].body).toEqual({ p: { role: "membership_officer", person: "recP1", replaces: "recOLD" }, p_actor: "recCAPTAIN" });
-    expect(invalidatedKeys()).toEqual(expect.arrayContaining([OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY]));
+    expect(invalidatedKeys()).toEqual(expect.arrayContaining([MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY]));
   });
 
   it("is 409 ALREADY_HOLDS when they already hold it", async () => {
@@ -178,7 +178,7 @@ describe("teams", () => {
     let calls = fake({ "rpc/admin_save_team": { status: "ok", changed: ["coach"] } });
     expect(await saveTeam(env, captain, "recT1", { coachIds: ["recA1"] })).toEqual({ ok: true, changed: ["coach"] });
     expect(calls[0].body).toEqual({ p_team: "recT1", p_actor: "recCAPTAIN", p: { coaches: ["recA1"] } });
-    expect(invalidatedKeys()).toEqual(expect.arrayContaining(["club-reference", "team-coach-links"]));
+    expect(invalidatedKeys()).toEqual(expect.arrayContaining(["club-reference", "active-teams"]));
     mocks.invalidateShared.mockClear();
     calls = fake({ "rpc/admin_save_team": { status: "ok", changed: [] } });
     await saveTeam(env, captain, "recT1", { targetSquadSize: 14 });

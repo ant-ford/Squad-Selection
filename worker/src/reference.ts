@@ -4,7 +4,7 @@ import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared } f
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
-import { officers, type Office } from "./data/officers";
+import type { Office } from "./data/officers";
 import { availabilityExceptions } from "./data/availabilityExceptions";
 import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
@@ -43,57 +43,9 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 
 const REFERENCE_TTL_MS = 10 * 60 * 1000;
 
-/**
- * Coach / Section Captain relationships across ALL team records â€” including
- * teams currently marked inactive. Authorization must depend on the person's
- * role, not on whether a team record happens to be inactive, so this lookup
- * deliberately skips the "{Active}=TRUE()" filter used by getReferenceData().
- */
-export interface TeamCoachLinks {
-  coachIds: string[];
-  sectionCaptainIds: string[];
-  /**
-   * Team names each person coaches (Teams.Coach link), keyed by People
-   * record id. A plain object rather than a Map, as it was when this went
-   * through KV's JSON round trip (which turns a Map into {}).
-   */
-  coachTeamNamesByPersonId: Record<string, string[]>;
-  /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
-  allTeamNames: string[];
-}
-
-/** Cached: every authenticated request needs this. */
-export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
-  return getShared<TeamCoachLinks>(
-    env,
-    "team-coach-links",
-    async () => {
-      const allTeams = await teamsRepo(env).listAll();
-      const coachIds = new Set<string>();
-      const sectionCaptainIds = new Set<string>();
-      const coachTeamNamesByPersonId: Record<string, string[]> = {};
-      const allTeamNames: string[] = [];
-      for (const team of allTeams) {
-        const teamName = team.teamName || "";
-        if (teamName) allTeamNames.push(teamName);
-        for (const id of team.coach ?? []) {
-          if (typeof id !== "string") continue;
-          coachIds.add(id);
-          if (teamName) (coachTeamNamesByPersonId[id] ??= []).push(teamName);
-        }
-        for (const id of team.sectionCaptain ?? []) {
-          if (typeof id === "string") sectionCaptainIds.add(id);
-        }
-      }
-      return {
-        coachIds: [...coachIds],
-        sectionCaptainIds: [...sectionCaptainIds],
-        coachTeamNamesByPersonId,
-        allTeamNames,
-      };
-    },
-    REFERENCE_TTL_MS,
-  );
+/** The Active teams alone (~3 KB), for screens that need no players list. */
+export async function getActiveTeams(env: Env): Promise<Team[]> {
+  return getShared<Team[]>(env, "active-teams", () => teamsRepo(env).listActive(), REFERENCE_TTL_MS);
 }
 
 /*
@@ -112,22 +64,6 @@ export interface OfficerRole {
   /** The row's Designation. Empty when the row has none. */
   designation: string;
 }
-
-/**
- * Offices held, keyed by People record id, from the Membership Officers,
- * Section Chairs and Section Captains tables. Only Active rows count: a Retired row is history,
- * not access.
- *
- * Officers sign in with their personal email, which is on their People
- * record, and each officer row links to that record through Member. So this
- * is matched on the record id, like the Teams coach links, and never on the
- * officer row's own Email field.
- */
-export interface OfficerLinks {
-  rolesByPersonId: Record<string, OfficerRole[]>;
-}
-
-export const OFFICER_LINKS_KEY = "officer-links";
 
 /**
  * The applicant records behind the membership board and Insights
@@ -149,29 +85,6 @@ export const STATEMENT_RECORDS_KEY = "statement-records:v2";
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";
 
-export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
-  return getShared<OfficerLinks>(
-    env,
-    OFFICER_LINKS_KEY,
-    async () => {
-      // The Kit Convenor opens the kit screens, the Hockey Convenor league
-      // registration requests, the Assistant Director of Hockey every
-      // team's coach screens and the Umpire Coordinator the umpiring duties.
-      const offices: Office[] = [
-        "membershipOfficer", "sectionChair", "sectionCaptain",
-        "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator",
-      ];
-      const rows = await officers(env).listActive(offices);
-      const rolesByPersonId: Record<string, OfficerRole[]> = {};
-      for (const { office, designation, memberIds } of rows) {
-        for (const id of memberIds) (rolesByPersonId[id] ??= []).push({ office, designation });
-      }
-      return { rolesByPersonId };
-    },
-    REFERENCE_TTL_MS,
-  );
-}
-
 /** An access decision follows a correction made outside the Worker within a minute. */
 const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
 
@@ -192,12 +105,12 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
 /**
  * Fan-out for a write that changes club reference data (team rosters,
  * coach links, ability/rank fields) - every read built on top of
- * getReferenceData/getTeamCoachLinks or a per-match player list would
+ * getReferenceData/getActiveTeams or a per-match player list would
  * otherwise keep serving the pre-write snapshot.
  */
 export async function invalidateReferenceData(env: Env): Promise<void> {
   invalidateCachePrefix("players-for-match:");
-  await invalidateShared(env, ["club-reference", "team-coach-links"]);
+  await invalidateShared(env, ["club-reference", "active-teams"]);
 }
 
 /**

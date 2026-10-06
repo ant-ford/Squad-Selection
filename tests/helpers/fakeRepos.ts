@@ -11,6 +11,9 @@ import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
 import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
+import * as authContextModule from "../../worker/src/authContext";
+import type { AuthContext } from "../../worker/src/authContext";
+import { parseCacheVersions } from "../../worker/src/cacheVersions";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
   APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
@@ -583,6 +586,8 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
     vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
+    // auth.ts reads the signed-in person through auth_context: answered from the same state.
+    vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
   ];
 
   const handle: FakeReposHandle = {
@@ -632,4 +637,63 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
     current = null;
   });
   return proxy;
+}
+
+// ── auth_context ─────────────────────────────────────────────────────────
+
+const OFFICE_ROLES: Record<Office, string> = {
+  membershipOfficer: "membership_officer",
+  sectionChair: "section_chair",
+  sectionCaptain: "section_captain",
+  sponsor: "sponsor",
+  kitConvenor: "kit_convenor",
+  hockeyConvenor: "hockey_convenor",
+  assistantDirector: "assistant_director",
+  umpireCoordinator: "umpire_coordinator",
+};
+const OFFICE_ORDER: Office[] = [
+  "membershipOfficer", "sectionChair", "sectionCaptain", "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator", "sponsor",
+];
+
+/**
+ * What auth_context(p_email) returns for the seeded state, by the SQL's
+ * rules (supabase/migrations/*_auth_context.sql): the person by email
+ * (Active first), Teams links over ALL teams in id order, captaincies of
+ * Active teams, Active offices in office order. A seeded person's `uuid`
+ * defaults to their id; `umpire` is read from the row (default false).
+ */
+export function authContextFrom(s: FakeState, email: string): AuthContext {
+  const want = normalizeEmail(email);
+  const rows = s.people.filter((p) => typeof p.email === "string" && normalizeEmail(p.email) === want);
+  const p = rows.find((r) => r.active) ?? rows[0];
+  const versions = parseCacheVersions({});
+  if (!p) {
+    return {
+      person: null, isTeamCoach: false, coachTeams: [], teamSectionCaptain: false, allTeamNames: [], captainTeams: [],
+      socialSecretaryTeams: [], offices: [], umpire: false, versions,
+    };
+  }
+  const teams = [...s.teams].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const offices = s.officers
+    .filter((o) => o.status === "Active" && o.member === p.id)
+    .sort((a, b) => OFFICE_ORDER.indexOf(a.office) - OFFICE_ORDER.indexOf(b.office) || (a.id < b.id ? -1 : 1))
+    .map((o) => ({ role: OFFICE_ROLES[o.office], office: o.office === "sponsor" ? null : o.office, designation: o.designation ?? "" }));
+  const teamSectionCaptain = teams.some((t) => (t.sectionCaptain ?? []).includes(p.id));
+  const { crm: _crm, ...player } = p;
+  const extra = p as FakePerson & { uuid?: string; umpire?: boolean };
+  return {
+    person: { ...player, uuid: extra.uuid ?? p.id },
+    isTeamCoach: teams.some((t) => (t.coach ?? []).includes(p.id)),
+    coachTeams: teams.filter((t) => (t.coach ?? []).includes(p.id) && t.teamName).map((t) => t.teamName!),
+    teamSectionCaptain,
+    allTeamNames:
+      teamSectionCaptain || offices.some((o) => o.office === "assistantDirector")
+        ? teams.filter((t) => t.teamName).map((t) => t.teamName!)
+        : [],
+    captainTeams: teams.filter((t) => t.active && (t.teamCaptain ?? []).includes(p.id)).map((t) => t.teamName || ""),
+    socialSecretaryTeams: [],
+    offices,
+    umpire: extra.umpire === true,
+    versions,
+  };
 }

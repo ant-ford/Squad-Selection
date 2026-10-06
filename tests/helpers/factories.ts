@@ -1,5 +1,7 @@
 import type { AbilityGroupConfiguration, AvailabilityRule, Match, MatchCard, Player, Team } from "../../shared/schema/domainTypes";
 import type { FakeCommitment, FakeException, FakeOffice, FakePerson } from "./fakeRepos";
+import type { AuthorizedUser } from "../../worker/src/auth";
+import { parseCacheVersions } from "../../worker/src/cacheVersions";
 
 // ---------------------------------------------------------------------------
 // Shared eligibility-engine test factories.
@@ -183,4 +185,29 @@ export function office(kind: FakeOffice["office"], member: string | null, overri
 /** A Commitments row, keyed by COMMITMENT_FIELDS / REVIEW_TASK_FIELDS names. */
 export function commitment(overrides: Partial<FakeCommitment> = {}): FakeCommitment {
   return { id: nextId("Commitment"), ...overrides };
+}
+
+/**
+ * A signed-in user as auth.ts builds it (requireAuthorizedUser), with
+ * auth_context's extras defaulted: no offices, no captaincies, not an
+ * umpire, every cache version 0. `person` defaults to { id: personId }.
+ */
+export function signedIn(overrides: Partial<AuthorizedUser> & { email: string }): AuthorizedUser {
+  const personId = overrides.personId ?? "";
+  const personUuid = overrides.personUuid ?? "";
+  return {
+    personId,
+    personUuid,
+    person: { id: personId, uuid: personUuid, email: overrides.email },
+    role: "player",
+    coachTeams: [],
+    isSectionCaptain: false,
+    officerRoles: [],
+    offices: [],
+    captainTeams: [],
+    socialSecretaryTeams: [],
+    umpire: false,
+    versions: parseCacheVersions({}),
+    ...overrides,
+  };
 }

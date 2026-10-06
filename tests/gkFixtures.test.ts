@@ -14,10 +14,10 @@ import type { ReferenceData } from "../worker/src/reference";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { exception, match, person, recId, team } from "./helpers/factories";
+import { exception, match, person, recId, team, signedIn } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return signedIn({ email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] });
 }
 
 const ENV = {

@@ -10,6 +10,7 @@
  * behaviour.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { CacheVersions } from "./cacheVersions";
 
 export interface RequestStats {
   /** Supabase (PostgREST) calls made for this request. */
@@ -36,6 +37,8 @@ export interface RequestContext {
   /** The error behind a 5xx answer, and who was signed in, for error_log (systemHealth.ts). */
   error?: unknown;
   personId?: string;
+  /** The database's cache versions, once this request has read them (auth.ts). */
+  versions?: CacheVersions;
 }
 
 /** Remembers the error a 5xx answer was made from (index.ts), for error_log. */
@@ -48,6 +51,12 @@ export function noteRequestError(err: unknown): void {
 export function noteRequestPerson(personId: string): void {
   const context = storage.getStore();
   if (context) context.personId = personId;
+}
+
+/** Remembers the cache versions read with the person (auth.ts), for the caches later in the request. */
+export function noteRequestVersions(versions: CacheVersions): void {
+  const context = storage.getStore();
+  if (context) context.versions = versions;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

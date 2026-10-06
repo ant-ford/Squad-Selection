@@ -11,7 +11,7 @@
  */
 import { invalidateShared } from "./cache";
 import type { Env } from "./env";
-import { CHAIRMAN_DIRECTORY_KEY, MEMBERSHIP_RECORDS_KEY, OFFICER_LINKS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "./reference";
+import { CHAIRMAN_DIRECTORY_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "./reference";
 
 interface Rule {
   keys?: string[];
@@ -45,13 +45,14 @@ const INVALIDATION = {
   // Coaches, captains and squad sizes: the roster, coach access and every
   // per-match list built on them.
   teams: {
-    keys: ["club-reference", "team-coach-links"],
+    keys: ["club-reference", "active-teams"],
     prefixes: ["players-for-match:", "season-index:", "calendar:"],
   },
   // Who holds an office: section access, and the boards that name the
   // signing officers and sponsors.
   offices: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY, "volunteering:office-holders"],
+    // (Sign-in reads offices afresh every request: auth_context.)
+    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
   // The Men's Convenor's suspensions (discipline.ts): the open ones
   // (seasonContext.ts MANUAL_SUSPENSIONS_KEY) and what eligibility built

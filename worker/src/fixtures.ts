@@ -160,7 +160,7 @@ export async function getMyFixtures(
   const ref = await getReferenceData(env);
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
-  const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
+  const captainTeams = authUser.captainTeams;
   const today = hkDateKey(new Date().toISOString());
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
