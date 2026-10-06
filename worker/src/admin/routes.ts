@@ -4,6 +4,8 @@
  *   GET  /api/history?person=<api id>         people section
  *   GET  /api/admin/people?q=<name>           people section
  *   GET  /api/admin/people/:id                people section
+ *   POST /api/admin/people/:id/membership     membership section
+ *   POST /api/admin/people/:id/stage          membership section
  *
  * Each route checks its own section; the person page then shows only the
  * blocks the caller's offices open (people.ts canFor), and each save checks
@@ -13,6 +15,7 @@ import type { Env } from "../env";
 import { requireSection } from "../auth";
 import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
+import { moveStage, saveMembership } from "./membership";
 
 export async function readBody(request: Request): Promise<Record<string, unknown>> {
   let body: unknown;
@@ -45,6 +48,12 @@ export async function adminRoute(request: Request, env: Env, url: URL): Promise<
   if (method === "GET" && person) {
     const user = await requireSection(request, env, "people");
     return getPersonAdmin(env, user, person[1]);
+  }
+  const membership = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})\/(membership|stage)$/);
+  if (method === "POST" && membership) {
+    const user = await requireSection(request, env, "membership");
+    const body = await readBody(request);
+    return membership[2] === "membership" ? saveMembership(env, user, membership[1], body) : moveStage(env, user, membership[1], body);
   }
   return undefined;
 }

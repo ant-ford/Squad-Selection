@@ -59,7 +59,8 @@ describe("the people section", () => {
 });
 
 describe("what each officer may do to a person", () => {
-  const p = personRow() as any;
+  // An applicant, so there is a stage to move to.
+  const p = personRow({ status: "Applicant", applicant_stage: "2. Section Captain Invitation" }) as any;
   it("the Membership Officer: membership, stage; not squad, suspensions or active", () => {
     expect(canFor(env, officer, p)).toEqual({
       membership: true, stage: true, squad: false, registeredTeam: false, suspend: false, activate: false, juniorRoute: false,
