@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
@@ -121,20 +120,21 @@ function DayAvailabilityControl({
 export default function PlayerDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  // Declared before the query that reads it: results are fetched only while
-  // this is on. Open by default (owner request, 2026-09-23) - players want to
-  // see how the last games went. The payload is a few recent fixtures, and
-  // the played-matches read behind it is shared through KV.
+  // Open by default (owner request, 2026-09-23) - players want to see how the
+  // last games went. Results are always fetched (a few recent fixtures, read
+  // from the cached season context) and hiding them is display-only, so the
+  // toggle never swaps the page back to the skeleton for a refetch. Home
+  // (App.tsx) starts this same query alongside the profile.
   const [showPast, setShowPast] = useState(true);
-  const { data, isLoading: loading } = useMyFixtures(showPast);
+  const { data, isLoading: loading } = useMyFixtures(true);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile).
+  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
+  // still be on its way: the menu fills in when it lands.
   const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
@@ -460,9 +460,7 @@ export default function PlayerDashboard() {
 
           {showPast && (
             <div className="mt-3 space-y-2">
-              {loading ? (
-                <p className="text-sm text-muted-foreground py-2">Loading results…</p>
-              ) : (data.pastFixtures ?? []).length === 0 ? (
+              {(data.pastFixtures ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
                   No fixtures played in the last few weeks.
                 </p>
@@ -513,15 +511,8 @@ export default function PlayerDashboard() {
         onClose={() => setStatsPlayerId(null)}
       />
 
-      {showRules && (
-        <AvailabilityRulesSheet
-          onClose={() => {
-            setShowRules(false);
-            // A new rule changes the default on every unanswered fixture.
-            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
-          }}
-        />
-      )}
+      {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
+      {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
       <AppFooter />
     </div>
   );

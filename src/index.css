@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Self-hosted: one variable file (latin, 300-800). Preloaded from index.html by
+   the preload-font plugin in vite.config.ts. */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('@fontsource-variable/open-sans/files/open-sans-latin-wght-normal.woff2') format('woff2');
+}
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -26,7 +36,7 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --font-sans: 'Open Sans', sans-serif;
-  --font-mono: 'Source Code Pro', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
@@ -58,7 +68,7 @@
   --input: 200 23.0769% 97.4510%;
   --ring: 202.8169 89.1213% 53.1373%;
   --font-sans: 'Open Sans', sans-serif;
-  --font-mono: 'Source Code Pro', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --shadow-x: 0px;
   --shadow-y: 2px;
   --shadow-blur: 0px;

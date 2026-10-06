@@ -11,9 +11,9 @@ import { inputClass, primaryButton, secondaryButton } from '@/components/kit/kit
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
-import { downloadRegistration, getRegistrationBoard, markRegistered, unmarkRegistered } from '@/api/registration';
+import { downloadRegistration, getRegistrationBoard, markRegistered, saveRegistrationDetails, unmarkRegistered } from '@/api/registration';
 import { hkDateKey } from '@shared/hkDateKey';
-import { REASON_LABEL, isVisiting, missingDetails, type RegistrationPlayer } from '@shared/registration';
+import { REASON_LABEL, isVisiting, missingDetails, suggestRegisteredName, tidyRegisteredName, type RegistrationPlayer } from '@shared/registration';
 
 type View = 'todo' | 'all' | 'missing';
 const VIEWS: { key: View; label: string }[] = [
@@ -57,6 +57,40 @@ function Field({ label, value }: { label: string; value: string | null }) {
   );
 }
 
+/**
+ * The Registered Name, editable: match cards link to the player by it. The
+ * suggestion (SURNAME Given Names) only fills the box; nothing saves until
+ * the Convenor taps Save.
+ */
+function RegisteredName({ p, busy, onSave }: { p: RegistrationPlayer; busy: boolean; onSave: (name: string | null) => void }) {
+  const [draft, setDraft] = useState(p.registeredName ?? '');
+  const suggestion = suggestRegisteredName(p.surname, p.givenNames);
+  const value = tidyRegisteredName(draft) || null;
+  return (
+    <div className="space-y-1">
+      <label htmlFor={`rn-${p.id}`} className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        Registered name
+      </label>
+      <div className="flex items-center gap-2">
+        <input id={`rn-${p.id}`} className={inputClass} value={draft} placeholder={suggestion ?? ''} maxLength={80} onChange={(e) => setDraft(e.target.value)} />
+        {p.registeredName && (
+          <button className="shrink-0 p-1 text-muted-foreground hover:text-primary" onClick={() => copy('Registered name', p.registeredName!)} aria-label="Copy Registered name" title="Copy">
+            <Copy className="h-3 w-3" />
+          </button>
+        )}
+        <button className={`${secondaryButton} shrink-0`} disabled={busy || value === (p.registeredName ?? null)} onClick={() => onSave(value)}>
+          Save
+        </button>
+      </div>
+      {!draft && suggestion && (
+        <button className="text-xs text-primary" onClick={() => setDraft(suggestion)}>
+          Use {suggestion}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PlayerItem({
   p,
   today,
@@ -65,6 +99,8 @@ function PlayerItem({
   onToggle,
   onRegistered,
   onUndo,
+  onSaveName,
+  onVisiting,
 }: {
   p: RegistrationPlayer;
   today: string;
@@ -73,6 +109,8 @@ function PlayerItem({
   onToggle: () => void;
   onRegistered: () => void;
   onUndo: () => void;
+  onSaveName: (name: string | null) => void;
+  onVisiting: (on: boolean) => void;
 }) {
   const missing = missingDetails(p, today);
   const docs = [
@@ -91,12 +129,12 @@ function PlayerItem({
           </span>
           <span className="flex flex-wrap gap-1 mt-0.5">
             {p.reason ? (
-              <span className={`${chip} bg-amber-500/15 text-amber-700 dark:text-amber-400`} title={p.reasonDetail ?? undefined}>
+              <span className={`${chip} bg-amber-500/15 text-amber-700`} title={p.reasonDetail ?? undefined}>
                 {REASON_LABEL[p.reason]}
                 {p.reasonDetail ? ` · ${p.reasonDetail}` : ''}
               </span>
             ) : (
-              <span className={`${chip} bg-emerald-500/15 text-emerald-700 dark:text-emerald-400`}>
+              <span className={`${chip} bg-emerald-500/15 text-emerald-700`}>
                 <Check className="h-3 w-3" /> Registered {safeFormat(p.registeredAt, 'd MMM')}
               </span>
             )}
@@ -105,7 +143,11 @@ function PlayerItem({
                 <AlertTriangle className="h-3 w-3" /> Missing: {missing.join(', ')}
               </span>
             )}
-            {isVisiting(p) && <span className={`${chip} bg-primary/15 text-primary`}>No HKID: visiting player</span>}
+            {p.visiting ? (
+              <span className={`${chip} bg-primary/15 text-primary`}>Visiting player</span>
+            ) : (
+              isVisiting(p) && <span className={`${chip} bg-amber-500/15 text-amber-700 dark:text-amber-400`}>No HKID: visiting?</span>
+            )}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 mt-1 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -119,7 +161,6 @@ function PlayerItem({
               </a>
             )}
             <dl className="flex-1 min-w-0 grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
-              <Field label="Registered name" value={p.registeredName} />
               <Field label="Surname" value={p.surname} />
               <Field label="Given names" value={p.givenNames} />
               <Field label="Chinese name" value={p.chineseName} />
@@ -132,6 +173,15 @@ function PlayerItem({
               <Field label="Email" value={p.email} />
               <Field label="Previous EOS" value={p.previousEos} />
             </dl>
+          </div>
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div className="flex-1 min-w-[16rem]">
+              <RegisteredName key={p.registeredName ?? ''} p={p} busy={busy} onSave={onSaveName} />
+            </div>
+            <label className="flex h-9 items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={!!p.visiting} disabled={busy} onChange={(e) => onVisiting(e.target.checked)} />
+              Visiting player
+            </label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {docs.length > 0 ? (
@@ -206,6 +256,15 @@ export default function Registration() {
     mutationFn: (id: string) => unmarkRegistered(id),
     onSuccess: () => {
       toast.success('Back on the Needs registering list');
+      changed();
+    },
+    onError: failed,
+  });
+
+  const details = useMutation({
+    mutationFn: ({ id, change }: { id: string; change: { registeredName?: string | null; visiting?: boolean } }) => saveRegistrationDetails(id, change),
+    onSuccess: (r) => {
+      toast.success(r.linked > 0 ? `Saved · ${r.linked} match card${r.linked === 1 ? '' : 's'} linked` : 'Saved');
       changed();
     },
     onError: failed,
@@ -320,10 +379,12 @@ export default function Registration() {
                     p={p}
                     today={today}
                     open={openId === p.id}
-                    busy={register.isPending || undo.isPending}
+                    busy={register.isPending || undo.isPending || details.isPending}
                     onToggle={() => setOpenId(openId === p.id ? null : p.id)}
                     onRegistered={() => register.mutate([p.id])}
                     onUndo={() => undo.mutate(p.id)}
+                    onSaveName={(registeredName) => details.mutate({ id: p.id, change: { registeredName } })}
+                    onVisiting={(visiting) => details.mutate({ id: p.id, change: { visiting } })}
                   />
                 ))}
               </ul>
