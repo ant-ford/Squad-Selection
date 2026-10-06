@@ -55,13 +55,21 @@ export interface TurnstileHandle {
   reset(): void;
 }
 
-/** Calls onToken with a token, or null when it expires, fails or is spent. */
-export const Turnstile = forwardRef<TurnstileHandle, { onToken: (token: string | null) => void }>(
-  function Turnstile({ onToken }, ref) {
+interface TurnstileProps {
+  /** A token, or null when it expires or is spent. */
+  onToken: (token: string | null) => void;
+  /** The check could not run (script blocked, hostname not allowed, network). */
+  onError: () => void;
+}
+
+export const Turnstile = forwardRef<TurnstileHandle, TurnstileProps>(
+  function Turnstile({ onToken, onError }, ref) {
     const box = useRef<HTMLDivElement>(null);
     const widget = useRef<string | null>(null);
     const latest = useRef(onToken);
     latest.current = onToken;
+    const failed = useRef(onError);
+    failed.current = onError;
 
     useImperativeHandle(ref, () => ({
       reset() {
@@ -81,10 +89,16 @@ export const Turnstile = forwardRef<TurnstileHandle, { onToken: (token: string |
             appearance: 'interaction-only',
             callback: (token: string) => latest.current(token),
             'expired-callback': () => latest.current(null),
-            'error-callback': () => latest.current(null),
+            'error-callback': () => {
+              latest.current(null);
+              failed.current();
+            },
           });
         })
-        .catch(() => latest.current(null));
+        .catch(() => {
+          latest.current(null);
+          failed.current();
+        });
       return () => {
         cancelled = true;
         if (widget.current && window.turnstile) window.turnstile.remove(widget.current);

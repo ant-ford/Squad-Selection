@@ -45,8 +45,16 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
   // The Turnstile token for the next send (null until Cloudflare has one).
   // Not needed when Turnstile is off.
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // A check that can't run must not leave the button stuck on "Checking...":
+  // the send goes ahead, and Supabase's refusal (if CAPTCHA is on) gets the
+  // "security check" message.
+  const [checkFailed, setCheckFailed] = useState(false);
   const turnstile = useRef<TurnstileHandle>(null);
-  const waitingForCheck = !!TURNSTILE_SITE_KEY && !captchaToken;
+  const waitingForCheck = !!TURNSTILE_SITE_KEY && !captchaToken && !checkFailed;
+  const onToken = (token: string | null) => {
+    setCaptchaToken(token);
+    if (token) setCheckFailed(false);
+  };
 
   // Post-login routing happens in one place: AuthGate unmounts Login the
   // instant the session arrives and renders the authenticated app (player
@@ -242,7 +250,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
         )}
 
         <div className="mt-4 empty:hidden">
-          <Turnstile ref={turnstile} onToken={setCaptchaToken} />
+          <Turnstile ref={turnstile} onToken={onToken} onError={() => setCheckFailed(true)} />
         </div>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
