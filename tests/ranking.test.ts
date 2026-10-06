@@ -18,7 +18,7 @@ import { invalidateAll } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
 import type { Env } from "../worker/src/env";
 import { SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { recId } from "./helpers/factories";
+import { recId, signedIn } from "./helpers/factories";
 import { personRow, rankingDb, type PersonRow, type RankingDb } from "./helpers/rankingDb";
 
 const ENV = { ...SUPABASE_TEST_ENV } as unknown as Env;
@@ -97,7 +97,7 @@ describe("activatePlayer", () => {
 });
 
 function sectionCaptain(): AuthorizedUser {
-  return { email: "captain@hkfc.com", personId: recId("Captain"), role: "coach", coachTeams: [], isSectionCaptain: true, officerRoles: [] };
+  return signedIn({ email: "captain@hkfc.com", personId: recId("Captain"), role: "coach", coachTeams: [], isSectionCaptain: true, officerRoles: [] });
 }
 
 function ranksOf(): { id: string; rank: number }[] {
@@ -196,7 +196,7 @@ describe("setAbilityGroupConfig", () => {
   });
 
   it("rejects a non-Section-Captain caller", async () => {
-    const notCaptain: AuthorizedUser = { email: "coach@hkfc.com", personId: recId("Coach"), role: "coach", coachTeams: ["A"], isSectionCaptain: false, officerRoles: [] };
+    const notCaptain: AuthorizedUser = signedIn({ email: "coach@hkfc.com", personId: recId("Coach"), role: "coach", coachTeams: ["A"], isSectionCaptain: false, officerRoles: [] });
     await expect(
       setAbilityGroupConfig(ENV, { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 }, notCaptain),
     ).rejects.toMatchObject({ status: 403 });

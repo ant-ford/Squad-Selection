@@ -15,7 +15,7 @@ vi.mock("../worker/src/cache", async (importOriginal) => {
 
 import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
-import { OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "../worker/src/reference";
+import { MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "../worker/src/reference";
 import {
   OFFICE_ROLES, addOffice, createOfficeHolder, editOffice, listOffices, listTeams, parseNewOffice, parseTeamChange, saveTeam,
 } from "../worker/src/admin/club";
@@ -91,7 +91,7 @@ describe("offices", () => {
     const calls = fake({ "rpc/admin_save_office": { status: "ok", id: "recNEW" } });
     expect(await addOffice(env, captain, { office: "membershipOfficer", personId: "recP1", replaces: "recOLD" })).toEqual({ ok: true, id: "recNEW" });
     expect(calls[0].body).toEqual({ p: { role: "membership_officer", person: "recP1", replaces: "recOLD" }, p_actor: "recCAPTAIN" });
-    expect(invalidatedKeys()).toEqual(expect.arrayContaining([OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY]));
+    expect(invalidatedKeys()).toEqual(expect.arrayContaining([MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY]));
   });
 
   it("is 409 ALREADY_HOLDS when they already hold it", async () => {
@@ -129,7 +129,7 @@ describe("POST /api/admin/people (a new office holder)", () => {
     const calls = fake({ "rpc/admin_create_person": { status: "ok", id: "uuid-new" } });
     expect(await createOfficeHolder(env, captain, { preferredName: " Pat ", surname: "Lam", email: " Pat.Lam@Example.TEST " })).toEqual({ ok: true, id: "uuid-new" });
     expect(calls[0].body).toEqual({ p: { preferredName: "Pat", givenNames: null, surname: "Lam", email: "pat.lam@example.test" }, p_actor: "recCAPTAIN" });
-    expect(mocks.invalidateShared.mock.calls[0][2]).toContain("player-by-email:");
+    expect(mocks.invalidateShared.mock.calls[0][2]).toContain("my-tasks:");
   });
 
   it("is 409 EMAIL_TAKEN for an email someone already has", async () => {
@@ -174,15 +174,15 @@ describe("teams", () => {
     expect(() => parseTeamChange({ sectionCaptainIds: ["recA1"] })).toThrow(/Nothing/);
   });
 
-  it("saves through admin_save_team and drops the team caches only when something changed", async () => {
+  it("saves through admin_save_team and has no cache to drop: every team cache is keyed on the cache versions", async () => {
     let calls = fake({ "rpc/admin_save_team": { status: "ok", changed: ["coach"] } });
     expect(await saveTeam(env, captain, "recT1", { coachIds: ["recA1"] })).toEqual({ ok: true, changed: ["coach"] });
     expect(calls[0].body).toEqual({ p_team: "recT1", p_actor: "recCAPTAIN", p: { coaches: ["recA1"] } });
-    expect(invalidatedKeys()).toEqual(expect.arrayContaining(["club-reference", "team-coach-links"]));
+    expect(mocks.invalidateShared.mock.calls.flatMap((c) => [...(c[1] as string[]), ...((c[2] as string[]) ?? [])])).toEqual([]);
     mocks.invalidateShared.mockClear();
     calls = fake({ "rpc/admin_save_team": { status: "ok", changed: [] } });
     await saveTeam(env, captain, "recT1", { targetSquadSize: 14 });
-    expect(invalidatedKeys()).toEqual([]);
+    expect(mocks.invalidateShared).not.toHaveBeenCalled();
   });
 });
 

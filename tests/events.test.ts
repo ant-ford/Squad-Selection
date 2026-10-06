@@ -14,10 +14,28 @@ import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
 import { billed, cleanLink, linkLabel, checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
+import { signedIn } from "./helpers/factories";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
-const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) =>
-  ({ email: `${personId}@x.com`, personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [], ...extra }) as AuthorizedUser;
+/**
+ * The signed-in user as auth_context reads them: their uuid, and the
+ * Social Secretary office / team links the current fake() was given.
+ */
+const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) => {
+  const uuid = UUID[personId] ?? "";
+  return signedIn({
+    email: `${personId}@x.com`,
+    personId,
+    personUuid: uuid,
+    offices: (rights.offices?.[uuid] ?? []).map(() => ({ role: "social_secretary", office: null, designation: "" })),
+    socialSecretaryTeams: ((rights.teamPeople?.[uuid] ?? []) as { teams: { id: string; team_name: string } }[]).map((t) => ({
+      id: t.teams.id,
+      name: t.teams.team_name,
+    })),
+    ...extra,
+  });
+};
+let rights: { offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]> } = {};
 
 const person = (id: string, name: string, team: string, status = "Member"): DirectoryPerson => ({
   id,
@@ -61,6 +79,7 @@ type Call = { url: URL; method: string; body: any };
 /** A fake PostgREST: `events`, `responses` (rows for event_responses), offices and team_people per uuid. */
 function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
   const calls: Call[] = [];
+  rights = { offices: opts.offices, teamPeople: opts.teamPeople };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit = {}) => {

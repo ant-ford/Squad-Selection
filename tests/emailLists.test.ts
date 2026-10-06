@@ -266,8 +266,8 @@ describe("the directory", () => {
 
   it("asks People for the list fields only, never the CRM", async () => {
     const res = await body(await as("charles@personal.com", "/api/chairman/directory"));
-    // The directory view (CHAIRMAN_FIELDS) is the only People read besides sign-in.
-    expect([...new Set(db.callsTo("people").map((c) => c.method))].sort()).toEqual(["findByEmail", "listDirectory"]);
+    // The directory view (CHAIRMAN_FIELDS) is the only People read (sign-in reads through auth_context).
+    expect([...new Set(db.callsTo("people").map((c) => c.method))].sort()).toEqual(["listDirectory"]);
     expect(JSON.stringify(res)).not.toMatch(/HKID|A123456|000-111|Secret Road/);
   });
 });

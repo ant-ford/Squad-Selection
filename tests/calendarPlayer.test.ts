@@ -11,7 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { handlePlayerCalendarFeed, handleTeamCalendarFeed } from "../worker/src/calendar";
-import { invalidateAll, invalidateCache, invalidateCachePrefix } from "../worker/src/cache";
+import { invalidateAll, invalidateCache } from "../worker/src/cache";
+import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
 import { currentSeason, previousSeason } from "../worker/src/seasonContext";
 import { SupabaseError } from "../worker/src/data/supabase";
 import type { Match } from "../shared/schema/domainTypes";
@@ -310,7 +311,7 @@ describe("player calendar event detail", () => {
     // fetched, so a failure in the one optional read must not take the
     // whole feed with it.
     db.state.matches = [match(M_F, "F", 1, [P1])];
-    vi.spyOn(db.repos.matches, "listPlayedForSeasons").mockRejectedValue(new SupabaseError("Supabase 500", 500));
+    vi.spyOn(db.repos.matches, "listResultsForSeasons").mockRejectedValue(new SupabaseError("Supabase 500", 500));
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const sig = await sign(`player:${P1}`);
@@ -350,10 +351,10 @@ describe("player calendar event detail", () => {
     db.state.matches = [match(M_F, "F", 1), result(recId("R1"), "F", "Opponent", 3, 1, -30)];
     await feed();
 
-    // Supabase path: the played-matches read is matches.listPlayedForSeasons,
+    // Supabase path: the played-matches read is matches.listResultsForSeasons (narrow columns),
     // which takes the seasons it is bounded by (the Airtable version checked
     // its query for a {Season}= filter).
-    const playedQueries = db.callsTo("matches", "listPlayedForSeasons");
+    const playedQueries = db.callsTo("matches", "listResultsForSeasons");
     const season = currentSeason();
     const bounded = [season, previousSeason(season) || ""].filter(Boolean).sort();
 
@@ -367,9 +368,8 @@ describe("player calendar event detail", () => {
     db.state.matches = [match(M_F, "F", 1, [P1])];
     await feed();
 
-    // Drop only the built ICS, so the next call rebuilds the events but may
-    // still answer its data reads from cache.
-    invalidateCachePrefix("calendar:");
+    // Outside the Workers runtime there is no edge cache, so the next call
+    // rebuilds the events but may still answer its data reads from cache.
     db.calls.length = 0;
     await feed();
 
@@ -538,19 +538,68 @@ describe("player calendar feed signature and caching", () => {
     expect(res.status).toBe(200);
   });
 
-  it("a cache hit makes zero data reads (display team is read from cached reference data, not a fresh lookup)", async () => {
-    db.state.matches = [match(M_F, "F", 1)];
-    const sig = await sign(`player:${P1}`);
-    await handlePlayerCalendarFeed(ENV, P1, sig); // cold: populates both club-reference and the ICS cache
-    // Every read: the repositories, and Supabase directly (special events).
-    const callsAfterFirst = db.calls.length + pg.calls.length;
-    expect(callsAfterFirst).toBeGreaterThan(0);
+  describe("at the edge (caches.default)", () => {
+    /** Cloudflare's cache for this data centre, as the Workers runtime has it. */
+    let edge: Map<string, string>;
+    let pendingPuts: Promise<unknown>[];
+    beforeEach(() => {
+      edge = new Map();
+      pendingPuts = [];
+      vi.stubGlobal("caches", {
+        default: {
+          match: async (url: string) => (edge.has(url) ? new Response(edge.get(url)) : undefined),
+          put: async (url: string, res: Response) => void edge.set(url, await res.text()),
+        },
+      });
+    });
+    /** One feed request, as index.ts runs it (its own context; the edge write after the response). */
+    async function poll(sig: string) {
+      const stats = newRequestStats();
+      const res = await runWithRequestContext({ stats, waitUntil: (p) => void pendingPuts.push(p) }, () =>
+        handlePlayerCalendarFeed(ENV, P1, sig, "https://api.eddy.global"),
+      );
+      await Promise.all(pendingPuts);
+      return { res, text: await res.text(), stats };
+    }
 
-    db.calls.length = 0;
-    pg.calls.length = 0;
-    const res2 = await handlePlayerCalendarFeed(ENV, P1, sig); // warm: must not read anything
-    expect(res2.status).toBe(200);
-    expect([...db.calls, ...pg.calls]).toHaveLength(0);
+    it("a repeat poll is served from the edge with no data reads, and keyed on its own host", async () => {
+      db.state.matches = [match(M_F, "F", 1)];
+      const sig = await sign(`player:${P1}`);
+      const cold = await poll(sig);
+      expect(cold.res.status).toBe(200);
+      expect(db.calls.length + pg.calls.length).toBeGreaterThan(0);
+      expect([...edge.keys()]).toEqual([expect.stringMatching(/^https:\/\/api\.eddy\.global\/api\/calendar\/__feed-cache\/player\//)]);
+
+      invalidateAll(); // calendar apps poll from anywhere: a fresh isolate
+      db.calls.length = 0;
+      pg.calls.length = 0;
+      const warm = await poll(sig);
+      expect(warm.res.status).toBe(200);
+      expect(warm.res.headers.get("Content-Type")).toContain("text/calendar");
+      expect(warm.text).toBe(cold.text);
+      // Only the cache versions are read (one small read in production).
+      expect([...db.calls, ...pg.calls]).toHaveLength(0);
+      expect(warm.stats.cacheHits).toBe(1);
+    });
+
+    it("rebuilds once anything the feed reads has changed", async () => {
+      db.state.matches = [match(M_F, "F", 1)];
+      const sig = await sign(`player:${P1}`);
+      const before = await poll(sig);
+      // Selected for the fixture: a write, which moves the versions.
+      await db.repos.matches.update(M_F, { selectedPlayersHome: [P1] });
+      invalidateAll();
+      const after = await poll(sig);
+      expect(after.text).not.toBe(before.text);
+      expect(edge.size).toBe(2);
+    });
+
+    it("never answers a wrongly signed poll from the edge", async () => {
+      db.state.matches = [match(M_F, "F", 1)];
+      await poll(await sign(`player:${P1}`));
+      const res = await handlePlayerCalendarFeed(ENV, P1, "0".repeat(64), "https://api.eddy.global");
+      expect(res.status).toBe(401);
+    });
   });
 });
 

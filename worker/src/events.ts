@@ -776,7 +776,6 @@ export async function setSocialSecretaries(env: Env, user: AuthorizedUser, body:
   const dir = await directory(env);
   if (ids.some((id) => !dir.some((p) => p.id === id))) throw new HttpError("Choose people from the search.", 400, "INVALID_INPUT");
   await d.rpc("set_team_people", { p_team: team.api_id, p_role: "social_secretary", p_people: ids });
-  invalidateCachePrefix("event-rights:");
   return { ok: true };
 }
 

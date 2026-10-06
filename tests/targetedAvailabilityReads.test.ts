@@ -22,6 +22,7 @@ import { getAvailabilityForMatch, getPlayersForMatch } from "../worker/src/squad
 import { availabilityExceptions } from "../worker/src/data/availabilityExceptions";
 import { invalidateAll } from "../worker/src/cache";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
+import { parseCacheVersions } from "../worker/src/cacheVersions";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
@@ -43,11 +44,9 @@ const M4 = recId("M4");
 const M6 = recId("M6");
 const ELSEWHERE = recId("Elsewhere");
 
-function user(email: string, extra: Partial<AuthorizedUser> = {}): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [], ...extra };
-}
-
 describe("availability reads through the repositories", () => {
+  /** Signed in as auth.ts builds it (auth_context), from the fakes' state. */
+  const user = (email: string, extra: Partial<AuthorizedUser> = {}): AuthorizedUser => db.signedIn(email, extra);
   const db = useFakeRepos(() => ({
     teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) =>
       team({ id: recId(`T${i}`), teamName: n, teamRank: i + 1, active: true, targetSquadSize: 14 }),
@@ -79,8 +78,10 @@ describe("availability reads through the repositories", () => {
 
   const calls = (method: string) => db.callsTo("availabilityExceptions", method);
 
-  it("my-fixtures reads only the player's own answers for their cards, fresh every time", async () => {
-    const first = await getMyFixtures(ENV, user("bob@hkfc.com"));
+  it("my-fixtures reads only the player's own answers for their cards, exact under the cache versions", async () => {
+    // As index.ts runs a request: the versions come from the (fake) database.
+    const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
+    const first = await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
     expect(first.fixtures.map((f: any) => [f.id, f.availabilityStatus, f.playerNotes])).toEqual([
       [M1, "Maybe", "Late"],
       [M4, "Unavailable", "Work"],
@@ -89,10 +90,16 @@ describe("availability reads through the repositories", () => {
     expect(calls("listForMatches")).toHaveLength(0);
     expect(calls("listForPlayer").map((c) => c.args)).toEqual([[BOB, [M1, M4].sort()]]);
 
-    // An answer written on another isolate shows on the next request.
+    // While the versions stand, the next request reads nothing.
+    await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
+    expect(calls("listForPlayer")).toHaveLength(1);
+
+    // An answer written on another isolate moves the version (the fakes move
+    // every counter on any repository write), and shows on the next request.
     db.state.availabilityExceptions[0].availabilityStatus = "Unavailable";
-    const second = await getMyFixtures(ENV, user("bob@hkfc.com"));
-    expect(second.fixtures[0].availabilityStatus).toBe("Unavailable");
+    await db.repos.people.update(DAVE, { playingAbility: "A" });
+    const third = await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
+    expect(third.fixtures[0].availabilityStatus).toBe("Unavailable");
     expect(calls("listForPlayer")).toHaveLength(2);
   });
 
@@ -143,9 +150,10 @@ describe("availability reads through the repositories", () => {
 });
 
 describe("what the targeted reads send to PostgREST", () => {
+  /** One signed-in request: sign-in (auth_context) hands it the cache versions, so no read of its own. */
   const counted = async <T>(fn: () => Promise<T>) => {
     const stats = newRequestStats();
-    const out = await runWithRequestContext({ stats }, fn);
+    const out = await runWithRequestContext({ stats, versions: parseCacheVersions({}) }, fn);
     return { out, stats };
   };
   afterEach(() => vi.unstubAllGlobals());

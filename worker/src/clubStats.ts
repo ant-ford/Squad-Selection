@@ -5,9 +5,9 @@
  *   - past seasons under `stats-summary:v<N>:<season>` for thirty days (they
  *     do not change; a correction shows within a month, or at once by
  *     bumping SUMMARY_VERSION);
- *   - the current season under a key that carries when this season's
- *     Matches and Match Cards last changed (currentVersion), so a result
- *     hkha-sync writes straight to Postgres shows on the next request.
+ *   - the current season under a key that carries the Matches and Match
+ *     Cards cache versions (currentVersion), so a result hkha-sync writes
+ *     straight to Postgres shows on the next request.
  * Building a past season costs a handful of database reads, inside the
  * Workers plan's fifty subrequests, which is why the page asks for one
  * season per request and adds seasons up itself.
@@ -19,7 +19,8 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import type { Match, MatchCard } from "../../shared/schema/domainTypes";
-import { getShared } from "./cache";
+import { getShared, requestVersions } from "./cache";
+import { readCacheVersions } from "./cacheVersions";
 import { HttpError } from "./http";
 import { getAllMatches, getMatchCardsForSeason, currentSeason } from "./seasonContext";
 import { people } from "./data/people";
@@ -27,7 +28,6 @@ import { matches as matchesRepo } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
-import { db, eq } from "./data/supabase";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   SUMMARY_VERSION,
@@ -45,9 +45,9 @@ import { buildNameDictionary, canonicalKey, parseUmpire, type ParsedUmpire } fro
 
 const PAST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /**
- * The current season's summary. A changed result or card moves the key
- * (currentVersion), so this is a backstop only, for a deleted row, which
- * leaves no newer updated_at behind.
+ * The current season's summary. Any change to Matches or Match Cards,
+ * deletions included, moves the key (currentVersion), so this only bounds
+ * how long KV keeps a superseded copy.
  */
 const CURRENT_TTL_MS = 6 * 60 * 60 * 1000;
 export const STATS_CURRENT_KEY = "stats-summary:current";
@@ -369,17 +369,14 @@ async function buildFor(env: Env, season: string, fresh = false): Promise<Stored
 }
 
 /**
- * When this season's Matches and Match Cards last changed: the newest
- * updated_at of each, two one-row reads. Postgres keeps updated_at on every
- * write, hkha-sync's included.
+ * The Matches and Match Cards cache versions (cache_versions), which every
+ * real change to either moves, hkha-sync's included. They came with
+ * sign-in; outside a request they are one small read. (Before, two reads of
+ * the newest updated_at, which missed deletions.)
  */
-async function currentVersion(env: Env, season: string): Promise<string> {
-  const latest = async (view: string) => {
-    const rows = await db(env).select<{ updated_at: string }>(view, `select=updated_at&season=${eq(season)}&order=updated_at.desc&limit=1`);
-    return rows[0]?.updated_at.replace(/\D/g, "") || "0";
-  };
-  const [matches, cards] = await Promise.all([latest("matches_v"), latest("match_cards_v")]);
-  return `${matches}.${cards}`;
+async function currentVersion(env: Env): Promise<string> {
+  const versions = (await requestVersions(env)) ?? (await readCacheVersions(env));
+  return `${versions.matches}.${versions.match_cards}`;
 }
 
 /** A season's stored summary, building it when it is not kept yet. */
@@ -389,7 +386,7 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   const current = currentSeason();
   if (season > current) throw new HttpError("That season has not started.", 400, "INVALID_INPUT");
   if (season === current) {
-    const version = await currentVersion(env, season);
+    const version = await currentVersion(env);
     // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
     const stored = await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS);
     // Across 1 July the fixed key may still hold last season's summary.

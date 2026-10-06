@@ -1,3 +1,4 @@
+import { signedIn } from "./helpers/factories";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
@@ -24,7 +25,7 @@ const env = {
   MAIL_FROM: "Eddy <notifications@eddy.global>",
 } as Env;
 
-const user = (personId: string, officer = false, sectionCaptain = false): AuthorizedUser => ({
+const user = (personId: string, officer = false, sectionCaptain = false): AuthorizedUser => (signedIn({
   email: `${personId}@x.com`,
   personId,
   role: "player",
@@ -34,7 +35,7 @@ const user = (personId: string, officer = false, sectionCaptain = false): Author
     ...(officer ? [{ office: "membershipOfficer" as const, designation: "Membership Officer" }] : []),
     ...(sectionCaptain ? [{ office: "sectionCaptain" as const, designation: "Men's Captain" }] : []),
   ],
-} as AuthorizedUser);
+}));
 
 const REVIEW = "recAAAAAAAAAAAAAA";
 const row = (over: Record<string, unknown> = {}) => ({

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { signedIn } from "./helpers/factories";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { notifySigner, signApplication, signingTasks } from "../worker/src/applicationSigning";
@@ -14,7 +15,8 @@ const env = {
 } as Env;
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const as = (personId: string) => ({ email: "x@x.com", personId, officerRoles: [] }) as unknown as AuthorizedUser;
+/** Signed in as this person; their uuid (from auth_context) is the one the fake's People reads answer with. */
+const as = (personId: string): AuthorizedUser => signedIn({ email: "x@x.com", personId, personUuid: U(11) });
 
 const applicant = {
   id: U(1), api_id: "recAPPLICANT", preferred_name: "Sam", given_names: "Samuel", surname: "Lee", status: "Applicant",

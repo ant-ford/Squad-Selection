@@ -15,7 +15,7 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, inList, SupabaseError } from "./data/supabase";
-import { invalidatePeople, invalidateSuspensions } from "./invalidation";
+import { invalidatePeople } from "./invalidation";
 import { currentSeason, getSeasonContext } from "./seasonContext";
 import {
   groupByPlayer,
@@ -248,12 +248,12 @@ function mapError(err: unknown): never {
 }
 
 /**
- * Eligibility reads the open suspensions through the season index; the
- * player lists are built from it. A new suspension can also clear an old
- * People flag, so that one drops the People caches too.
+ * Eligibility reads the open suspensions through the season index, which
+ * is keyed on the suspensions cache version the write moved. A new
+ * suspension can also clear an old People flag, so that one drops the
+ * People caches that have no version (the boards).
  */
 async function invalidate(env: Env, peopleChanged: boolean): Promise<void> {
-  await invalidateSuspensions(env);
   if (peopleChanged) await invalidatePeople(env);
 }
 
