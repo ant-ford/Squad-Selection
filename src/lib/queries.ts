@@ -21,6 +21,7 @@ import {
 import { getChairmanDirectory } from '@/api/chairman';
 import { getMyTasks } from '@/api/getMyTasks';
 import { getSeasonStats } from '@/api/stats';
+import { ALL_TIME_CONCURRENCY, allTimePlan } from '@/lib/allTimeStats';
 import { hkDateKey } from '@shared/hkDateKey';
 import type {
   AbilityGroupConfigMap,
@@ -66,36 +67,35 @@ export function useSeasonStats(season: string | null) {
 }
 
 /**
- * Every season with games, newest first, for "All time". Fetched one season
- * at a time: the first view of a past season makes the Worker build it from
- * about thirty Airtable pages, and ten at once would meet Airtable's rate
- * limit. History is taken to have ended after two empty seasons in a row
- * (a single empty one can be a gap).
+ * Every season with games, newest first, for "All time". Up to
+ * ALL_TIME_CONCURRENCY seasons are requested at once (allTimeStats.ts),
+ * not one after another: about 15 requests in a row became about four
+ * rounds. History ends after two empty seasons in a row (a single empty one
+ * can be a gap).
  */
 export function useAllSeasonStats(seasons: string[], enabled: boolean) {
-  const [reach, setReach] = useState(0);
+  // How many seasons, from the newest, may be requested: it grows as they load.
+  const [reach, setReach] = useState(() => Math.min(seasons.length, ALL_TIME_CONCURRENCY));
   const results = useQueries({
     queries: seasons.map((season, i) => ({
       queryKey: ['seasonStats', season],
       queryFn: () => getSeasonStats(season),
-      enabled: enabled && i <= reach,
+      enabled: enabled && i < reach,
       staleTime: STATS_STALE_MS,
     })),
   });
-  const loaded = results.slice(0, reach + 1).map((r) => r.data);
-  const seenData = loaded.some((d) => (d?.matches ?? 0) > 0);
-  const lastTwoEmpty = reach >= 1 && loaded[reach]?.matches === 0 && loaded[reach - 1]?.matches === 0;
-  const ended = (seenData && lastTwoEmpty) || reach >= seasons.length - 1;
-  const current = results[reach];
+  const plan = allTimePlan(results.map((r) => r.data?.matches));
+  const next = plan.done ? plan.counted : plan.fetchUpTo;
   useEffect(() => {
-    if (enabled && current?.data && !ended) setReach((r) => r + 1);
-  }, [enabled, current?.data, ended]);
+    if (enabled && next !== reach) setReach(next);
+  }, [enabled, next, reach]);
+  const loaded = results.slice(0, plan.counted).map((r) => r.data);
   const summaries = loaded.filter((d): d is NonNullable<typeof d> => !!d && d.matches > 0);
   return {
     summaries,
-    done: ended && !!current?.data,
-    loadedCount: loaded.filter(Boolean).length,
-    isError: results.slice(0, reach + 1).some((r) => r.isError),
+    done: plan.done,
+    loadedCount: results.filter((r) => r.data).length,
+    isError: results.slice(0, Math.max(reach, plan.counted)).some((r) => r.isError),
   };
 }
 
