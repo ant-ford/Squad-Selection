@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
@@ -121,7 +120,6 @@ function DayAvailabilityControl({
 export default function PlayerDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   // Open by default (owner request, 2026-09-23) - players want to see how the
   // last games went. Results are always fetched (a few recent fixtures, read
   // from the cached season context) and hiding them is display-only, so the
@@ -513,15 +511,8 @@ export default function PlayerDashboard() {
         onClose={() => setStatsPlayerId(null)}
       />
 
-      {showRules && (
-        <AvailabilityRulesSheet
-          onClose={() => {
-            setShowRules(false);
-            // A new rule changes the default on every unanswered fixture.
-            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
-          }}
-        />
-      )}
+      {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
+      {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
       <AppFooter />
     </div>
   );
