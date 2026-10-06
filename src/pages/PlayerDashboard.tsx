@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart3, CalendarDays, ChevronDown, Settings } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Flag, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
@@ -307,6 +307,15 @@ export default function PlayerDashboard() {
             evenly spaced column above the fixtures. */}
         <div className="flex flex-col gap-3 mb-6 empty:hidden *:m-0!">
           <MyTasksBanner />
+          {data.duty && (
+            <Link to="/umpiring" className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-muted">
+              <Flag className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">
+                <span className="font-medium">Your duty:</span> {data.duty.when}
+                <span className="text-muted-foreground"> · {data.duty.game} · Umpire {data.duty.slot}{data.duty.venue ? ` · ${data.duty.venue}` : ''}</span>
+              </span>
+            </Link>
+          )}
           <EventsSection enabled={!!data.eddyProfile} />
           <MyKitCard />
           <MyVolunteeringLink />

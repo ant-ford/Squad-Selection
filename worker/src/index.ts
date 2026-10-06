@@ -20,6 +20,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
+import { ackDutyChanges } from "./myDuties";
 import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, refreshUmpirePool, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
@@ -983,6 +984,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireAuthorizedUser(request, env);
       if (method === "GET" && pathname === "/api/umpiring") {
         return json(await getUmpiringBoard(env, user, url.searchParams.get("week")), 200, origin);
+      }
+      // Opened from My Tasks: the umpire has seen their duties' changes (myDuties.ts).
+      if (method === "POST" && pathname === "/api/umpiring/seen") {
+        return json(await ackDutyChanges(env, user), 200, origin);
       }
       if (method === "GET" && pathname === "/api/umpiring/report") {
         return json(await getUmpiringReport(env, user, url.searchParams.get("season")), 200, origin);

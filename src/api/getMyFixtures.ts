@@ -96,6 +96,8 @@ export interface GetMyFixturesOutput {
   events?: boolean;
   /** The umpiring duties screen: the club's umpires, and the Umpire Coordinator who runs it. */
   umpiring?: 'umpire' | 'coordinator' | null;
+  /** The umpire's next duty within two weeks (worker/src/myDuties.ts). */
+  duty?: { when: string; game: string; venue: string | null; slot: 1 | 2 } | null;
   /** Whether their details are kept in Eddy (the Supabase backend): shows "My details". */
   eddyProfile?: boolean;
   /** Today (Hong Kong time) is this player's birthday. */

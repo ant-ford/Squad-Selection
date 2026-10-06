@@ -25,6 +25,7 @@ import {
   confirmAssignment,
   getUmpiringBoard,
   getUmpiringReport,
+  markDutyChangesSeen,
   setNoShow,
   takeDuty,
   withdrawAssignment,
@@ -654,6 +655,17 @@ export default function Umpiring() {
     else next.delete(key);
     setParams(next, { replace: true });
   };
+
+  // Opened from the My Tasks line about a duty that moved or was called off:
+  // they've seen it, so the line goes.
+  const queryClient = useQueryClient();
+  const seen = params.get('seen') === '1';
+  useEffect(() => {
+    if (!seen) return;
+    setParam('seen', null);
+    void markDutyChangesSeen().then(() => queryClient.invalidateQueries({ queryKey: ['myTasks'] }), () => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seen]);
 
   const byDay = useMemo(() => {
     const days = new Map<string, UmpireDuty[]>();
