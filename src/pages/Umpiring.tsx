@@ -150,7 +150,8 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   const [who, setWho] = useState('');
   const [outside, setOutside] = useState('');
   // Typing a name not in the list (straight away when there's no list yet).
-  const known = board.externalNames ?? [];
+  const known = board.externalUmpires ?? [];
+  const [club, setClub] = useState('');
   const [typing, setTyping] = useState(known.length === 0);
   const [paid, setPaid] = useState(false);
   const taken = confirmedOf(duty);
@@ -246,14 +247,20 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                       if (e.target.value === NEW_NAME) {
                         setTyping(true);
                         setOutside('');
-                      } else setOutside(e.target.value);
+                        setClub('');
+                      } else {
+                        setOutside(e.target.value);
+                        // Their club from last time; George can change it.
+                        setClub(known.find((k) => k.name === e.target.value)?.club ?? '');
+                      }
                       setWho('');
                     }}
                   >
                     <option value="">Choose…</option>
-                    {known.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
+                    {known.map((k) => (
+                      <option key={k.name} value={k.name}>
+                        {k.name}
+                        {k.club ? ` (${k.club})` : ''}
                       </option>
                     ))}
                     <option value={NEW_NAME}>New name…</option>
@@ -261,6 +268,12 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                 )}
               </label>
             </div>
+            {!who && outside.trim() && (
+              <label className="block text-xs text-muted-foreground">
+                Club
+                <input className={input} value={club} maxLength={40} onChange={(e) => setClub(e.target.value)} />
+              </label>
+            )}
             {who && !chosen?.onCommitment && (
               <label className="flex items-center gap-2 text-xs text-foreground">
                 <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
@@ -273,7 +286,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                 disabled={action.isPending || (!who && !outside.trim())}
                 onClick={() =>
                   action.mutate(
-                    () => (who ? assignDuty(duty.id, { personId: who, paid: paid && !chosen?.onCommitment }) : assignDuty(duty.id, { externalName: outside })),
+                    () => (who ? assignDuty(duty.id, { personId: who, paid: paid && !chosen?.onCommitment }) : assignDuty(duty.id, { externalName: outside, externalClub: club })),
                     { onSuccess: () => setAssigning(false) },
                   )
                 }
@@ -445,7 +458,7 @@ function UmpireTable({ report }: { report: UmpiringReport }) {
           {report.umpires.map((u) => (
             <tr key={u.personId ?? `x-${u.name}`}>
               <td className={`${td} text-foreground`}>{u.name}</td>
-              <td className={`${td} text-muted-foreground`}>{u.external ? 'Outside' : 'HKFC'}</td>
+              <td className={`${td} text-muted-foreground`}>{u.affiliation}</td>
               <td className={`${td} text-right`}>{u.free || ''}</td>
               <td className={`${td} text-right`}>{u.paid || ''}</td>
               <td className={`${td} text-right`}>{u.noShows || ''}</td>

@@ -26,6 +26,8 @@ export interface DutyAssignment {
   /** The name to show: a club umpire's first name, or the outside umpire's name. */
   name: string;
   external: boolean;
+  /** An outside umpire's club, when the coordinator gave one. */
+  club: string | null;
   paid: boolean;
   status: AssignmentStatus;
   createdAt: string;
@@ -123,8 +125,8 @@ export interface UmpiringBoard {
   };
   /** Coordinator only: the umpires' list, for putting someone down. */
   umpires?: UmpireOption[];
-  /** Coordinator only: names of outside umpires used before, most recent first. */
-  externalNames?: string[];
+  /** Coordinator only: outside umpires used before, most recent first, with their last-given club. */
+  externalUmpires?: { name: string; club: string | null }[];
   /** Where the umpires' link in the first message points. */
   link: string;
 }
@@ -134,6 +136,8 @@ export interface UmpireTally {
   /** People api id; null for an outside umpire. */
   personId: string | null;
   external: boolean;
+  /** "HKFC", an outside umpire's club, or "Outside" when it isn't known. */
+  affiliation: string;
   free: number;
   paid: number;
   noShows: number;
@@ -157,6 +161,8 @@ export interface ReportDuty {
   umpire: string | null;
   /** First name, for the grid. */
   short: string | null;
+  /** As for UmpireTally; null when uncovered. */
+  affiliation: string | null;
   outcome: DutyOutcome;
 }
 
@@ -209,7 +215,7 @@ export function reportCsvRows(report: Pick<UmpiringReport, "rows">): string[][] 
       r.awayTeam,
       r.dutyTeam,
       r.umpire ?? "",
-      r.umpire ? (r.outcome === "outside" ? "Outside" : "HKFC") : "",
+      r.affiliation ?? "",
       OUTCOME_LABEL[r.outcome],
     ]),
   ];

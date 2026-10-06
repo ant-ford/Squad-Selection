@@ -16,7 +16,7 @@ export function takeDuty(dutyId: string, paid: boolean): Promise<{ ok: true; sta
 }
 
 /** The coordinator puts a club umpire or an outside umpire down. */
-export function assignDuty(dutyId: string, body: { personId?: string; externalName?: string; paid?: boolean }): Promise<{ ok: true }> {
+export function assignDuty(dutyId: string, body: { personId?: string; externalName?: string; externalClub?: string; paid?: boolean }): Promise<{ ok: true }> {
   return apiPost(`/api/umpiring/duties/${dutyId}/assign`, body);
 }
 

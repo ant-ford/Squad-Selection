@@ -66,7 +66,7 @@ afterEach(() => {
 });
 
 const assignment = (over: Partial<DutyAssignment> = {}): DutyAssignment => ({
-  id: "a1", personId: "recANN", name: "Ann", external: false, paid: false, status: "confirmed", createdAt: "2026-10-01T00:00:00Z", ...over,
+  id: "a1", personId: "recANN", name: "Ann", external: false, club: null, paid: false, status: "confirmed", createdAt: "2026-10-01T00:00:00Z", ...over,
 });
 const duty = (over: Partial<UmpireDuty> = {}): UmpireDuty => ({
   id: "d1", matchDate: "2026-10-11T01:00:00.000Z", timeTbc: false, division: "3", venue: "HKFC",
@@ -238,10 +238,12 @@ describe("the coordinator", () => {
     expect(writes(calls)[0].body).toMatchObject({ status: "confirmed" });
   });
 
-  it("puts an outside umpire down, always paid", async () => {
+  it("puts an outside umpire down, always paid, with their club if given", async () => {
     const calls = fake({ ...base(), umpire_assignments: (_u: URL, m: string, b: any) => (m === "GET" ? [] : b) });
-    await assignDuty(env, george, DUTY, { externalName: "  Pagey  " });
-    expect(writes(calls)[0].body[0]).toMatchObject({ external_name: "Pagey", paid: true, status: "confirmed", created_by: "u-george" });
+    await assignDuty(env, george, DUTY, { externalName: "  Gurcharan  ", externalClub: " KNS " });
+    expect(writes(calls)[0].body[0]).toMatchObject({ external_name: "Gurcharan", external_club: "KNS", paid: true, status: "confirmed", created_by: "u-george" });
+    await assignDuty(env, george, DUTY, { externalName: "Pagey" });
+    expect(writes(calls)[1].body[0]).toMatchObject({ external_name: "Pagey", external_club: null });
   });
 
   it("can't pay a club umpire on their commitment, and needs one of a person or a name", async () => {
@@ -355,6 +357,14 @@ describe("the season's record", () => {
       ["2026-10-11", "09:00", "HKFC", "3", "HKFC F", "Elite B", "HKFC D", "George", "HKFC", "Free"],
       ["2026-10-11", "09:00", "KP", "3", "HKFC F", "Elite B", "HKFC E", "Pagey", "Outside", "Paid (outside)"],
     ]);
+  });
+
+  it("gives an outside umpire's club as their affiliation, the latest one given", () => {
+    const outside = (id: string, club: string | null, matchDate = "2026-10-11T01:00:00.000Z") =>
+      duty({ id, matchDate, assignments: [assignment({ name: "Gurcharan", personId: null, external: true, paid: true, club })] });
+    const report = tallyDuties([outside("d1", null), outside("d2", "KNS", "2026-10-18T01:00:00.000Z"), duty({ id: "d3", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] })], "2026-2027");
+    expect(report.umpires.map((u) => [u.name, u.affiliation])).toEqual([["Gurcharan", "KNS"], ["Pagey", "Outside"]]);
+    expect(report.rows.map((r) => r.affiliation)).toEqual(["Outside", "Outside", "KNS"]);
   });
 
   it("lays out George's grid: a row per day, a column per duty team", () => {

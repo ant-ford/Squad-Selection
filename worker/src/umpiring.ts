@@ -65,6 +65,7 @@ interface AssignmentRow {
   duty_id: string;
   person_id: string | null;
   external_name: string | null;
+  external_club: string | null;
   paid: boolean;
   status: AssignmentStatus;
   created_at: string;
@@ -73,7 +74,7 @@ interface AssignmentRow {
 const PERSON_COLUMNS =
   "id,api_id,preferred_name,given_names,surname,qualified_umpire,commitment_end_date,selected_team_eos,selected_team_sos,registered_team";
 const DUTY_COLUMNS = "id,match_date,time_tbc,division,venue,home_team,away_team,slot,duty_team,status";
-const ASSIGNMENT_COLUMNS = "id,duty_id,person_id,external_name,paid,status,created_at";
+const ASSIGNMENT_COLUMNS = "id,duty_id,person_id,external_name,external_club,paid,status,created_at";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const POOL_KEY = "umpiring:pool";
@@ -183,6 +184,7 @@ function toAssignment(r: AssignmentRow, people: Map<string, PersonRow>): DutyAss
     personId: p?.api_id ?? null,
     name: r.external_name ?? (p ? firstName(p) : "?"),
     external: !!r.external_name,
+    club: r.external_club,
     paid: r.paid,
     status: r.status,
     createdAt: r.created_at,
@@ -326,11 +328,18 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
     board.umpires = [...pool.values()]
       .map<UmpireOption>((p) => ({ personId: p.api_id, name: firstName(p), fullName: fullName(p), onCommitment: isOnCommitment(p.commitment_end_date, now) }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-    const outside = await db(env).select<{ id: string; external_name: string; created_at: string }>(
+    const outside = await db(env).select<{ id: string; external_name: string; external_club: string | null; created_at: string }>(
       "umpire_assignments",
-      "select=id,external_name,created_at&external_name=not.is.null&order=created_at.desc,id",
+      "select=id,external_name,external_club,created_at&external_name=not.is.null&order=created_at.desc,id",
     );
-    board.externalNames = [...new Set(outside.map((o) => o.external_name))].slice(0, 20);
+    // Newest first: each name once, with the club last given for them.
+    const seen = new Map<string, { name: string; club: string | null }>();
+    for (const o of outside) {
+      const have = seen.get(o.external_name);
+      if (!have) seen.set(o.external_name, { name: o.external_name, club: o.external_club });
+      else if (!have.club && o.external_club) have.club = o.external_club;
+    }
+    board.externalUmpires = [...seen.values()].slice(0, 20);
   }
   return board;
 }
@@ -447,6 +456,8 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   const externalName = typeof body.externalName === "string" ? body.externalName.trim().replace(/\s+/g, " ") : "";
   if (!!personId === !!externalName) throw new HttpError("Choose a club umpire, or type an outside umpire's name.", 400, "INVALID_INPUT");
   if (externalName.length > 60) throw new HttpError("That name is too long.", 400, "INVALID_INPUT");
+  const externalClub = typeof body.externalClub === "string" ? body.externalClub.trim().replace(/\s+/g, " ") : "";
+  if (externalClub.length > 40) throw new HttpError("That club name is too long.", 400, "INVALID_INPUT");
 
   const live = await liveAssignments(env, d.id);
   if (live.some((a) => a.status === "confirmed" || a.status === "no_show")) throw taken();
@@ -455,7 +466,7 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   if (externalName) {
     await writing(() =>
       db(env).insert("umpire_assignments", [
-        { duty_id: d.id, external_name: externalName, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
+        { duty_id: d.id, external_name: externalName, external_club: externalClub || null, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
       ]),
     );
     return { ok: true };
@@ -511,7 +522,8 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
     const outcome: DutyOutcome = !a ? "uncovered" : a.status === "no_show" ? "no_show" : a.external ? "outside" : a.paid ? "paid" : "free";
     report.rows.push({
       matchDate: d.matchDate, timeTbc: d.timeTbc, venue: d.venue, division: d.division, homeTeam: d.homeTeam, awayTeam: d.awayTeam,
-      dutyTeam: d.dutyTeam, personId: a?.personId ?? null, umpire: a?.name ?? null, short: a?.name ?? null, outcome,
+      dutyTeam: d.dutyTeam, personId: a?.personId ?? null, umpire: a?.name ?? null, short: a?.name ?? null,
+      affiliation: !a ? null : !a.external ? "HKFC" : a.club || "Outside", outcome,
     });
     if (!a) {
       report.uncovered++;
@@ -519,8 +531,12 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
       continue;
     }
     const key = a.personId ?? `external:${a.name.toLowerCase()}`;
-    const t = tallies.get(key) ?? { name: a.name, personId: a.personId, external: a.external, free: 0, paid: 0, noShows: 0 };
+    const t = tallies.get(key) ?? { name: a.name, personId: a.personId, external: a.external, affiliation: "", free: 0, paid: 0, noShows: 0 };
     tallies.set(key, t);
+    // In date order, so the latest club given wins.
+    if (!a.external) t.affiliation = "HKFC";
+    else if (a.club) t.affiliation = a.club;
+    else t.affiliation ||= "Outside";
     if (a.status === "no_show") {
       t.noShows++;
       report.noShows++;
