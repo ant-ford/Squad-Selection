@@ -3,7 +3,7 @@ import { matches } from "./data/matches";
 import { people } from "./data/people";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
-import { getCached, getShared, rawReadTtl } from "./cache";
+import { getCached, getShared } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
@@ -29,11 +29,11 @@ const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Mid
  * records (Selected Players Home/Away), so syncSquad invalidates this cache
  * after every write.
  *
- * Always 10 minutes, even with the Airtable webhook set up (rawReadTtl would
- * stretch it to six hours). Selections change constantly, and when an
- * invalidation fails - on 2026-09-23 the account ran out of KV operations -
- * a six-hour copy left the coach dashboard showing 0/14 for a squad that had
- * been saved hours earlier. Ten minutes bounds that failure, at the cost of
+ * Never stretched to hours, as other reads were while the Airtable webhook
+ * ran. Selections change constantly, and when an invalidation fails - on
+ * 2026-09-23 the account ran out of KV operations - a six-hour copy left
+ * the coach dashboard showing 0/14 for a squad that had been saved hours
+ * earlier. Ten minutes bounds that failure, at the cost of
  * one shared Airtable read per ten minutes.
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
@@ -89,7 +89,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   const key = `played-matches:${unique.join(",")}`;
   return getShared<Match[]>(env, key, async () => {
     return matches(env).listPlayedForSeasons(unique);
-  }, rawReadTtl(env, SCHEDULED_MATCHES_TTL_MS));
+  }, SCHEDULED_MATCHES_TTL_MS);
 }
 
 // ---------------------------------------------------------------------------

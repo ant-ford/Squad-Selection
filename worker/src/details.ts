@@ -10,11 +10,9 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
-import { deleteQueuedFiles } from "./retention";
-import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
@@ -211,7 +209,7 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   }
   const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p), idHidden: p.hkid_hidden });
   await db(env).update("people", `id=${eq(p.id)}`, patch);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -251,22 +249,18 @@ export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<
  * "Delete my profile": removes the signed-in person's personal details,
  * files and sign-in at once, the same removal as the 13-month retention job
  * (delete_own_profile, migration 20261002160000). Their name and playing
- * record stay. The app asks them to type DELETE first; so does this.
+ * record stay. The app asks them to type DELETE first; so does this. Their
+ * files are queued and leave R2 35 days later with the nightly run, like
+ * every removal's (migration 20261007000102), so a restored backup never
+ * points at a missing file.
  */
 export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
   requireSupabase(env);
   if (body.confirm !== "DELETE") throw new HttpError("Type DELETE to confirm.", 400, "INVALID_INPUT");
   const p = await loadPerson(env, user.personId);
   await db(env).rpc("delete_own_profile", { p_person: p.id });
-  // Their files go now rather than at the next nightly run; a failure is
-  // left queued for that run.
-  try {
-    await deleteQueuedFiles(env);
-  } catch (err) {
-    console.error("Delete my profile: files left queued:", err instanceof Error ? err.message : err);
-  }
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -277,7 +271,7 @@ export async function confirmDetails(env: Env, user: AuthorizedUser) {
   await db(env).update("people", `id=${eq(p.id)}`, { profile_updated_at: new Date().toISOString() });
   // The My Tasks line goes at once, not when its minute's cache runs out.
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -327,6 +321,6 @@ export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, b
     await d.remove("files", `id=in.(${old.map((o) => o.id).join(",")})`);
     await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
   }
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true, url: kind === "photo" ? await fileLink(env, file.id) : null };
 }

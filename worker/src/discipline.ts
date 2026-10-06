@@ -15,8 +15,7 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, inList, SupabaseError } from "./data/supabase";
 import { invalidateCachePrefix, invalidateShared } from "./cache";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidatePeople } from "./invalidation";
 import { currentSeason, getSeasonContext, MANUAL_SUSPENSIONS_KEY } from "./seasonContext";
 import { manualSuspensionProgress, servingFixtureDatesByTeam } from "./suspension";
 import {
@@ -233,7 +232,7 @@ function mapError(err: unknown): never {
 async function invalidate(env: Env, peopleChanged: boolean): Promise<void> {
   await invalidateShared(env, [MANUAL_SUSPENSIONS_KEY]);
   if (peopleChanged) {
-    await invalidateForTables(env, [TABLES.player]);
+    await invalidatePeople(env);
   } else {
     invalidateCachePrefix("season-index:");
     invalidateCachePrefix("players-for-match:");

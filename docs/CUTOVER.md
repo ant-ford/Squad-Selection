@@ -181,7 +181,8 @@ Save what only exists in the old tools:
 
 Then remove the Airtable side of Eddy (Claude PRs):
 
-- the Airtable client and repositories, shadow reads, the webhook and `register-airtable-webhook.mjs` (delete the webhook in Airtable first), the webhook refresh in the daily cron (keep the cron: it sends the review emails), the Airtable caching and the Airtable check in `/health?deep=1`;
+- ~~shadow reads, the webhook and `register-airtable-webhook.mjs`, the webhook refresh in the daily cron, the webhook-length cache TTLs and the Airtable check in `/health?deep=1`~~ (phase 1; the webhook itself is deleted in Airtable by the owner);
+- the Airtable client and repositories, and the `backendFor` gates;
 - the Fillout links in the field maps and My Tasks;
 - the `AIRTABLE_*` secrets and variables in the Worker and GitHub, and hkha-sync's Airtable target and code;
 - README and tests to match.

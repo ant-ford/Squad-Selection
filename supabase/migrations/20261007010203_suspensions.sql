@@ -167,24 +167,147 @@ grant execute on function public.admin_save_suspension(jsonb, text) to service_r
 grant execute on function public.admin_clear_suspension(uuid, text, text) to service_role;
 
 -- ── Removing personal data ──────────────────────────────────────────────
--- A suspension's reason is about the person: when retention or "Delete my
--- profile" removes their personal data (people.personal_data_removed_at is
--- set), their suspensions go too, as their is_suspended flag already does.
--- A trigger rather than a change to erase_personal_data, which is due to
--- be rewritten when the archive schema goes.
-create function public.suspensions_forget_person() returns trigger
+-- A suspension's reason is about the person, so the 13-month removal and
+-- "Delete my profile" delete their suspensions, as they already reset
+-- is_suspended. As in 20261007000102_retention_without_archive.sql, with
+-- that one line added; tests/retentionCoverage.test.ts checks it.
+create or replace function public.erase_personal_data(p_person uuid, p_action text) returns void
 language plpgsql
+security definer
 set search_path = ''
 as $$
+declare
+  v_person public.people;
+  v_files uuid[];
+  v_keys text[];
+  v_commitments uuid[];
 begin
-  delete from public.suspensions where person_id = new.id;
-  return new;
+  select * into v_person from public.people where id = p_person for update;
+  if not found then
+    raise exception 'Person not found' using errcode = 'P0002';
+  end if;
+
+  select coalesce(array_agg(id), '{}') into v_commitments from public.commitments where person_id = p_person;
+
+  -- Their files: filed on them (including event payment proofs), their
+  -- family or their commitment reviews, or attached to their applications
+  -- and declarations.
+  select coalesce(array_agg(distinct f.id), '{}') into v_files
+  from public.files f
+  where f.person_id = p_person
+     or f.family_member_id in (select id from public.family_members where person_id = p_person)
+     or f.commitment_id = any (v_commitments)
+     or f.id in (
+       select unnest(array[a.signature_file_id, a.spouse_signature_file_id, a.guardian_signature_file_id,
+                           a.guardian_account_signature_file_id, a.pdf_file_id])
+       from public.applications a where a.person_id = p_person
+       union
+       select d.guardian_signature_file_id from public.declarations d where d.person_id = p_person);
+
+  -- Signatures hold their file with "restrict": go first. That includes the
+  -- record of a signature they gave on someone else's form; that form keeps
+  -- who signed and when (sponsor_signed_by / sponsor_signed_at).
+  delete from public.signatures
+  where file_id = any (v_files) or subject_person_id = p_person or signer_person_id = p_person
+     or commitment_id = any (v_commitments);
+
+  -- Separate statements: within one, the existence check would still see
+  -- the rows being deleted. A key another files row still uses is kept.
+  -- The object itself goes 35 days later (r2_deletions.delete_after).
+  select coalesce(array_agg(distinct r2_key), '{}') into v_keys from public.files where id = any (v_files);
+  delete from public.files where id = any (v_files);
+  insert into public.r2_deletions (r2_key)
+  select k from unnest(v_keys) k
+  where not exists (select 1 from public.files f where f.r2_key = k)
+  on conflict (r2_key) do nothing;
+
+  delete from public.applications where person_id = p_person;
+  delete from public.declarations where person_id = p_person;
+  delete from public.commitments where person_id = p_person;
+  delete from public.steps where person_id = p_person;
+  delete from public.family_members where person_id = p_person;
+  delete from public.relatives where person_id = p_person;
+  delete from public.previous_clubs where person_id = p_person;
+  delete from public.applicant_trials where person_id = p_person;
+  delete from public.quiz_scores where person_id = p_person;
+  delete from public.kit_sizes where person_id = p_person;
+  delete from public.season_plans where person_id = p_person;
+  delete from public.course_signups where person_id = p_person;
+  delete from public.trial_availability where person_id = p_person;
+  delete from public.availability_exceptions where person_id = p_person;
+  delete from public.availability_rules where person_id = p_person;
+  delete from public.ranking_events where person_id = p_person;
+  delete from public.message_log where person_id = p_person;
+  delete from public.team_people where person_id = p_person;
+  -- Their suspensions: the reason is about them (20261007010203).
+  delete from public.suspensions where person_id = p_person;
+
+  -- Their event answers: guest names and dietary needs, answers and notes
+  -- go; whether they (and how many guests, adult or child) went and were
+  -- charged stays, so the event's bill and register stay whole.
+  update public.event_responses r set
+    guests = coalesce((
+      select jsonb_agg(jsonb_build_object('name', 'Guest', 'age', coalesce(g -> 'age', '"adult"'::jsonb)))
+      from jsonb_array_elements(case jsonb_typeof(r.guests) when 'array' then r.guests else '[]'::jsonb end) g), '[]'::jsonb),
+    answers = '{}'::jsonb,
+    notes = null
+  where r.person_id = p_person;
+
+  -- Their event payments: the proof file went above (file_id is now null);
+  -- what was read from it about their bank or PayMe transaction goes too.
+  -- What was owed, paid and confirmed stays, as the event's accounts.
+  update public.event_payments set reference = null, payee = null
+  where payer_id = p_person;
+
+  -- The raw Airtable copy of their People record, while the archive exists.
+  -- Dynamic, so this compiles and runs once the archive schema is dropped.
+  if v_person.airtable_id is not null and to_regclass('archive.airtable_records') is not null then
+    execute 'delete from archive.airtable_records where airtable_id = $1' using v_person.airtable_id;
+  end if;
+
+  -- Their sign-in account (the data and sign-in projects are the same one
+  -- in production). Not fatal: the email is cleared below either way.
+  if v_person.email is not null then
+    begin
+      delete from auth.users where lower(email) = lower(v_person.email);
+    exception when others then
+      raise warning 'remove_personal_data: sign-in account not removed (%)', sqlstate;
+    end;
+  end if;
+
+  update public.people set
+    salutation = null, email = null, membership_no = null,
+    date_of_birth = null, hkid_no = null, passport_no = null, nationality = null, place_of_birth = null,
+    marital_status = null, arrived_in_hk_on = null, academic_qualifications = '{}', ae_training = null,
+    emergency_contact = null, emergency_contact_no = null, medical_conditions = null,
+    telephone_no = null, mobile_no = null,
+    home_flat_type = null, home_unit = null, home_floor = null, home_block = null,
+    home_building = null, home_street = null, home_district = null, home_region = null,
+    company_name = null, business_flat_type = null, business_unit = null, business_floor = null,
+    business_block = null, business_building = null, business_street = null, business_district = null,
+    business_region = null, work_position = null, nature_of_business = null,
+    office_telephone_no = null, office_email = null,
+    guardian_surname = null, guardian_given_names = null, guardian_bank_account_name = null,
+    guardian_email = null, guardian_mobile_no = null,
+    bill_payer = null, bank_name = null, bank_branch_no = null, bank_account_no = null,
+    bank_contact_no = null, bank_payment_limit = null, bank_payment_limit_amount = null,
+    billing_channels = '{}', correspondence_channels = '{}',
+    shirt_number_id = null,
+    playing_level = '{}', section_rank = null, rank_updated_at = null, playing_ability = null,
+    selection_comments = null, opt_in_only = false, is_suspended = false, matches_to_serve = null,
+    qualified_coach = null, qualified_umpire = null,
+    hockey_committee_roles = '{}', mens_sub_committee = '{}', team_roles = '{}', touring_committee = '{}',
+    junior_hockey_volunteers = '{}', easter_5s_committee = '{}', general_volunteers = '{}',
+    improvement_ideas = null,
+    participation_details = null, sports_background = null, personal_interest = null,
+    training_comments_sponsor = null, sports_background_sponsor = null, applicant_level_sponsor = null,
+    training_comments_draft = null, sports_background_draft = null,
+    personal_data_removed_at = now()
+  where id = p_person;
+
+  -- Field names only, as everywhere in the activity log.
+  insert into public.activity_log (action, entity, entity_id, fields)
+  values (p_action, 'people', p_person, array['personal details', 'files', 'sign-in']);
 end;
 $$;
-revoke all on function public.suspensions_forget_person() from public, anon, authenticated;
-
-create trigger people_forget_suspensions
-  after update of personal_data_removed_at on public.people
-  for each row
-  when (old.personal_data_removed_at is null and new.personal_data_removed_at is not null)
-  execute function public.suspensions_forget_person();
+revoke all on function public.erase_personal_data(uuid, text) from public, anon, authenticated, service_role;
