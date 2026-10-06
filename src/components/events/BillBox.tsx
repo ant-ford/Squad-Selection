@@ -79,7 +79,7 @@ export default function BillBox({ event }: { event: MyEvent }) {
                 </p>
               )}
               {!payment.confirmedAt && <p className="text-muted-foreground">The social secretary will check it against their PayMe or bank record.</p>}
-              {payment.amountDue != null && bill.total !== payment.amountDue && <p className="text-amber-700 dark:text-amber-400">Your bill has changed since: now {total}. Upload a new screenshot once you've paid the difference.</p>}
+              {payment.amountDue != null && bill.total !== payment.amountDue && <p className="text-amber-700">Your bill has changed since: now {total}. Upload a new screenshot once you've paid the difference.</p>}
             </div>
           )}
           {bill.total > 0 && (
