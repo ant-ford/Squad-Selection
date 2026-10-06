@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,12 +50,7 @@ export default function MyVolunteeringPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="My volunteering">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="My volunteering" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
         {isLoading ? (
           <Skeleton className="h-96 w-full" />

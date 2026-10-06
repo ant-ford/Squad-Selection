@@ -23,7 +23,7 @@ vi.mock("../worker/src/umpiring", () => ({ umpiringAccess: mocks.umpiringAccess 
 import { getMyProfile } from "../worker/src/profile";
 import type { AuthorizedUser } from "../worker/src/auth";
 
-const ENV = { DATA_BACKEND: "supabase" } as any;
+const ENV = {} as any;
 
 const player: AuthorizedUser = {
   email: "ada@hkfc.com",

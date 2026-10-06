@@ -1,5 +1,5 @@
 /**
- * Commitment reviews in Eddy (Supabase backend): the member's report, the
+ * Commitment reviews in Eddy: the member's report, the
  * sponsor's review and the Membership Officer's review, replacing Fillout
  * forms 11-13 and their Make.com routes.
  *
@@ -13,14 +13,10 @@
  *  - the member: their own report, never the sponsor's or officer's review;
  *  - the sponsor: the member's report and their own review;
  *  - Membership Officers and the membership section: everything.
- *
- * Until the switch-over the reviews still run on the Fillout forms against
- * Airtable, so these routes answer 409 on the Airtable backend.
  */
 import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { API_ID_RE } from "./data/ids";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
@@ -134,12 +130,6 @@ interface NextStep {
   year_no: number | null;
 }
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "commitments") !== "supabase") {
-    throw new HttpError("Commitment reviews move into Eddy at the switch-over. Until then, use the form link in your email.", 409, "NOT_YET");
-  }
-}
-
 function reviewId(id: string): string {
   const clean = typeof id === "string" ? id.trim() : "";
   if (!REVIEW_ID.test(clean)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
@@ -173,7 +163,6 @@ async function loadRow(env: Env, id: string): Promise<ReviewRow> {
 const signed = async (env: Env, fileId: string | null) => (fileId ? fileLink(env, fileId) : null);
 
 export async function getReview(env: Env, user: AuthorizedUser, rawId: string): Promise<ReviewView> {
-  requireSupabase(env);
   const id = reviewId(rawId);
   const row = await loadRow(env, id);
   const roles = rolesFor(user, row);
@@ -454,7 +443,6 @@ async function notifyNext(env: Env, reviewApiId: string, next: NextStep | undefi
 }
 
 export async function submitMemberReport(env: Env, user: AuthorizedUser, rawId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const id = reviewId(rawId);
   const report = memberReportFrom(body);
   return reported("member", async (at) => {
@@ -471,7 +459,6 @@ export async function submitMemberReport(env: Env, user: AuthorizedUser, rawId: 
 }
 
 export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const id = reviewId(rawId);
   const { signature, ...review } = sponsorReviewFrom(body);
   return reported("sponsor", async (at) => {
@@ -493,7 +480,6 @@ export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId:
 }
 
 export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const id = reviewId(rawId);
   const { signature, ...review } = officerReviewFrom(body);
   if (!isOfficer(user)) throw new HttpError("Only a Membership Officer can complete the review.", 403, "FORBIDDEN");

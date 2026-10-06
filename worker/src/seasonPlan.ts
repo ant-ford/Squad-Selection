@@ -1,5 +1,5 @@
 /**
- * The season plan (Supabase backend): each player's answers for the current
+ * The season plan: each player's answers for the current
  * season, given in the member details update or the new joiner form, and
  * the view by team that helps allocate players to teams.
  *
@@ -9,7 +9,6 @@
 import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
 import {
   AVAILABILITY_HALVES,
@@ -49,12 +48,6 @@ const PLAN_COLUMNS = "id,person_id,season,availability_level,availability_half,p
 /** The team a player is shown in when there's none yet. */
 export const NO_TEAM = "No team yet";
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("The season plan moves into Eddy at the switch-over.", 409, "NOT_YET");
-  }
-}
-
 const toAnswers = (r: PlanRow): SeasonPlanAnswers => ({
   availabilityLevel: r.availability_level,
   availabilityHalf: r.availability_half,
@@ -67,7 +60,6 @@ async function currentSeason(env: Env): Promise<string> {
 }
 
 export async function getMySeasonPlan(env: Env, user: AuthorizedUser): Promise<MySeasonPlan> {
-  requireSupabase(env);
   const d = db(env);
   const [season, person] = await Promise.all([
     currentSeason(env),
@@ -100,7 +92,6 @@ export function parseSeasonPlan(body: Record<string, unknown>): SeasonPlanAnswer
  * new joiner forms call this with their season plan section.
  */
 export async function submitSeasonPlan(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const answers = parseSeasonPlan(body);
   try {
     await db(env).rpc("submit_season_plan", { p_actor: user.personId, p: answers });
@@ -115,20 +106,19 @@ export async function submitSeasonPlan(env: Env, user: AuthorizedUser, body: Rec
 }
 
 /** Every team for a Section Captain; a coach's own teams; otherwise none. */
-export function planTeamsFor(env: Env, user: AuthorizedUser): "all" | string[] {
-  if (sectionsFor(user, env).includes("planning") || user.isSectionCaptain) return "all";
+export function planTeamsFor(user: AuthorizedUser): "all" | string[] {
+  if (sectionsFor(user).includes("planning") || user.isSectionCaptain) return "all";
   return user.coachTeams;
 }
 
 /**
  * Whether the Season plans screen has anything for them, for the Officers
- * menu: Section Captains every team, coaches their own. Supabase backend
- * only. Sent with both /api/my-profile and /api/my-fixtures, since the
- * coach header reads one and the player header the other.
+ * menu: Section Captains every team, coaches their own. Sent with both
+ * /api/my-profile and /api/my-fixtures, since the coach header reads one
+ * and the player header the other.
  */
-export function canSeeSeasonPlans(env: Env, user: AuthorizedUser): boolean {
-  if (backendFor(env, "people") !== "supabase") return false;
-  const teams = planTeamsFor(env, user);
+export function canSeeSeasonPlans(user: AuthorizedUser): boolean {
+  const teams = planTeamsFor(user);
   return teams === "all" || teams.length > 0;
 }
 
@@ -137,8 +127,7 @@ const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos 
 
 /** Active players by the team they're shown in, with this season's plan. */
 export async function getSeasonPlanBoard(env: Env, user: AuthorizedUser): Promise<SeasonPlanBoard> {
-  requireSupabase(env);
-  const teams = planTeamsFor(env, user);
+  const teams = planTeamsFor(user);
   if (teams !== "all" && teams.length === 0) throw new HttpError("Coach or Section Captain access required.", 403, "COACH_ACCESS_REQUIRED");
   const d = db(env);
   const season = await currentSeason(env);

@@ -119,12 +119,18 @@ function RouteError() {
       <p className="text-sm text-muted-foreground max-w-sm">
         Reload to try again.
       </p>
-      <button
-        onClick={() => window.location.reload()}
-        className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-      >
-        Reload
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          onClick={() => window.location.reload()}
+          className="min-h-10 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+        >
+          Reload
+        </button>
+        {/* A full load rather than a router navigation: the router that failed may not recover. */}
+        <a href="/" className="min-h-10 inline-flex items-center px-4 py-2 rounded-md border border-border text-sm font-medium text-foreground">
+          Player view
+        </a>
+      </div>
     </div>
   );
 }
@@ -378,6 +384,8 @@ const router = createBrowserRouter([
           },
         ],
       },
+      // An address Eddy doesn't have (an old link, a typo) lands on the player page.
+      { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
 ]);
