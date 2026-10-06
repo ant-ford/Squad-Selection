@@ -2,13 +2,15 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Copy, MessageCircle, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, Download, MessageCircle, User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
+import { toCsv } from '@shared/csv';
+import { saveCsv } from '@/lib/saveCsv';
 import {
   assignDuty,
   confirmAssignment,
@@ -21,11 +23,15 @@ import {
 import {
   captainsMessage,
   confirmedOf,
+  reportCsvRows,
+  reportGrid,
   umpireMark,
   umpiresMessage,
   weekEnd,
   whatsappShareUrl,
   type DutyAssignment,
+  type TeamTally,
+  type UmpiringReport,
   type UmpireDuty,
   type UmpiringBoard,
 } from '@shared/umpiring';
@@ -361,71 +367,145 @@ function Messages({ board }: { board: UmpiringBoard }) {
 
 // ── Season record ──────────────────────────────────────────────────────
 
+const th = 'px-2 py-1.5 font-medium';
+const td = 'px-2 py-1.5';
+
+/** George's summary: per duty team, how its duties were covered. */
+function TeamTable({ report }: { report: UmpiringReport }) {
+  const rows: [string, (t: TeamTally) => number, number][] = [
+    ['Outside, paid', (t) => t.outside, report.coveredExternal],
+    ['Members, paid', (t) => t.paidMembers, report.coveredPaidMembers],
+    ['Free', (t) => t.free, report.coveredFree],
+    ['Uncovered', (t) => t.uncovered, report.uncovered],
+  ];
+  return (
+    <section className="rounded-xl border border-border bg-card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted-foreground text-right">
+            <th className={`${th} text-left`} />
+            {report.byTeam.map((t) => (
+              <th key={t.team} className={th}>
+                {t.team.replace(/^HKFC\s+/, '')}
+              </th>
+            ))}
+            <th className={th}>Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map(([label, get, total]) => (
+            <tr key={label} className="text-right">
+              <td className={`${td} text-left text-foreground whitespace-nowrap`}>{label}</td>
+              {report.byTeam.map((t) => (
+                <td key={t.team} className={td}>
+                  {get(t) || ''}
+                </td>
+              ))}
+              <td className={`${td} font-semibold`}>{total}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="text-right font-semibold text-foreground border-t-2 border-foreground/40 bg-muted/50">
+            <td className={`${td} text-left whitespace-nowrap`}>Total duties</td>
+            {report.byTeam.map((t) => (
+              <td key={t.team} className={td}>
+                {t.duties}
+              </td>
+            ))}
+            <td className={td}>{report.duties}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+  );
+}
+
+function UmpireTable({ report }: { report: UmpiringReport }) {
+  return (
+    <section className="rounded-xl border border-border bg-card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted-foreground text-left">
+            <th className={th}>Umpire</th>
+            <th className={th}>Affiliation</th>
+            <th className={`${th} text-right`}>Free</th>
+            <th className={`${th} text-right`}>Paid</th>
+            <th className={`${th} text-right`}>No-shows</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {report.umpires.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">
+                Nothing umpired yet.
+              </td>
+            </tr>
+          )}
+          {report.umpires.map((u) => (
+            <tr key={u.personId ?? `x-${u.name}`}>
+              <td className={`${td} text-foreground`}>{u.name}</td>
+              <td className={`${td} text-muted-foreground`}>{u.external ? 'Outside' : 'HKFC'}</td>
+              <td className={`${td} text-right`}>{u.free || ''}</td>
+              <td className={`${td} text-right`}>{u.paid || ''}</td>
+              <td className={`${td} text-right`}>{u.noShows || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** George's grid: a row per match day, a column per duty team. */
+function DayGrid({ report }: { report: UmpiringReport }) {
+  const grid = reportGrid(report);
+  if (grid.days.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-border bg-card overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-muted-foreground text-left">
+            <th className={th}>Date</th>
+            {grid.teams.map((t) => (
+              <th key={t} className={th}>
+                {t.replace(/^HKFC\s+/, '')}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {grid.days.map(({ day, cells }) => (
+            <tr key={day}>
+              <td className={`${td} text-foreground whitespace-nowrap`}>{safeFormat(noon(day), 'd MMM')}</td>
+              {grid.teams.map((t) => (
+                <td key={t} className={`${td} whitespace-nowrap`}>
+                  {(cells[t] ?? []).join(', ')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 function SeasonReport() {
   const { data, isLoading, error } = useQuery({ queryKey: ['umpiring', 'report'], queryFn: () => getUmpiringReport(null), staleTime: 60_000 });
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (error || !data) return <p className="text-sm text-muted-foreground">{errorText(error, 'Could not load the season.')}</p>;
-  const tiles: [string, number][] = [
-    ['Duties', data.duties],
-    ['Free', data.coveredFree],
-    ['Paid', data.coveredPaidMembers],
-    ['Outside', data.coveredExternal],
-    ['Uncovered', data.uncovered],
-  ];
+  const season = data.season.replace(/^(\d{4})-\d{2}(\d{2})$/, '$1-$2');
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {tiles.map(([label, n]) => (
-          <div key={label} className="rounded-lg border border-border bg-card py-2 text-center">
-            <p className="text-lg font-semibold text-foreground">{n}</p>
-            <p className="text-[11px] text-muted-foreground">{label}</p>
-          </div>
-        ))}
+      <div className="flex justify-end">
+        <button className={plainBtn} disabled={data.rows.length === 0} onClick={() => saveCsv(`umpiring-${season}.csv`, toCsv(reportCsvRows(data)))}>
+          <Download className="h-3.5 w-3.5" /> CSV
+        </button>
       </div>
-      <section className="rounded-xl border border-border bg-card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-muted-foreground text-left">
-              <th className="px-3 py-2 font-medium">Umpire</th>
-              <th className="px-3 py-2 font-medium text-right">Free</th>
-              <th className="px-3 py-2 font-medium text-right">Paid</th>
-              <th className="px-3 py-2 font-medium text-right">No-shows</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {data.umpires.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">
-                  Nothing umpired yet.
-                </td>
-              </tr>
-            )}
-            {data.umpires.map((u) => (
-              <tr key={u.personId ?? `x-${u.name}`}>
-                <td className="px-3 py-1.5 text-foreground">
-                  {u.name}
-                  {u.external && <span className="text-xs text-muted-foreground"> (outside)</span>}
-                </td>
-                <td className="px-3 py-1.5 text-right">{u.free || ''}</td>
-                <td className="px-3 py-1.5 text-right">{u.paid || ''}</td>
-                <td className="px-3 py-1.5 text-right">{u.noShows || ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      {data.byTeam.length > 0 && (
-        <section className="rounded-xl border border-border bg-card p-3">
-          <h3 className="text-sm font-semibold text-foreground mb-1">By duty team</h3>
-          <ul className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
-            {data.byTeam.map((t) => (
-              <li key={t.team} className="text-foreground">
-                {t.team}: {t.duties} {t.duties === 1 ? 'duty' : 'duties'}, {t.free} free
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {data.byTeam.length > 0 && <TeamTable report={data} />}
+      <UmpireTable report={data} />
+      <DayGrid report={data} />
     </div>
   );
 }

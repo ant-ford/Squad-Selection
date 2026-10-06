@@ -6,6 +6,8 @@ import { invalidateAll } from "../worker/src/cache";
 import {
   captainsMessage,
   clashingGame,
+  reportCsvRows,
+  reportGrid,
   dutyLine,
   isOnCommitment,
   umpiresMessage,
@@ -332,8 +334,45 @@ describe("the season's record", () => {
       ["Ann", 0, 0, 1],
     ]);
     expect(report.byTeam).toEqual([
-      { team: "HKFC D", duties: 2, free: 1 },
-      { team: "HKFC E", duties: 3, free: 0 },
+      { team: "HKFC D", duties: 2, free: 1, paidMembers: 1, outside: 0, uncovered: 0 },
+      { team: "HKFC E", duties: 3, free: 0, paidMembers: 0, outside: 1, uncovered: 2 },
     ]);
+    expect(report.rows.map((r) => r.outcome)).toEqual(["free", "paid", "outside", "no_show", "uncovered"]);
+  });
+
+  it("downloads every played duty for a spreadsheet", () => {
+    const report = tallyDuties(
+      [
+        duty({ assignments: [assignment({ name: "George", personId: "recGEORGE" })] }),
+        duty({ id: "d3", dutyTeam: "HKFC E", venue: "KP", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] }),
+        duty({ id: "d5", dutyTeam: "HKFC F", timeTbc: true, matchDate: "2026-10-10T16:00:00.000Z" }),
+      ],
+      "2026-2027",
+    );
+    expect(reportCsvRows(report)).toEqual([
+      ["Date", "Time", "Venue", "Division", "Home", "Away", "Duty team", "Umpire", "Affiliation", "Type"],
+      ["2026-10-11", "TBC", "HKFC", "3", "HKFC F", "Elite B", "HKFC F", "", "", "Uncovered"], // a TBC time sorts first
+      ["2026-10-11", "09:00", "HKFC", "3", "HKFC F", "Elite B", "HKFC D", "George", "HKFC", "Free"],
+      ["2026-10-11", "09:00", "KP", "3", "HKFC F", "Elite B", "HKFC E", "Pagey", "Outside", "Paid (outside)"],
+    ]);
+  });
+
+  it("lays out George's grid: a row per day, a column per duty team", () => {
+    const report = tallyDuties(
+      [
+        duty({ assignments: [assignment({ name: "George", personId: "recGEORGE" })] }),
+        duty({ id: "d2", matchDate: "2026-10-11T02:45:00.000Z", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] }),
+        duty({ id: "d3", dutyTeam: "HKFC E", assignments: [assignment({ name: "Ann", status: "no_show" })] }),
+        duty({ id: "d4", matchDate: "2026-10-18T01:00:00.000Z", dutyTeam: "HKFC A" }),
+      ],
+      "2026-2027",
+    );
+    expect(reportGrid(report)).toEqual({
+      teams: ["HKFC A", "HKFC D", "HKFC E"],
+      days: [
+        { day: "2026-10-11", cells: { "HKFC D": ["George", "💰Pagey"], "HKFC E": ["✗Ann"] } },
+        { day: "2026-10-18", cells: { "HKFC A": ["–"] } },
+      ],
+    });
   });
 });

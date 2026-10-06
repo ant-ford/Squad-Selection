@@ -23,7 +23,9 @@ import {
   weekOf,
   type AssignmentStatus,
   type DutyAssignment,
+  type DutyOutcome,
   type OwnGame,
+  type TeamTally,
   type UmpireDuty,
   type UmpireOption,
   type UmpireTally,
@@ -497,17 +499,23 @@ export async function setNoShow(env: Env, user: AuthorizedUser, id: string, body
  */
 export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringReport {
   const tallies = new Map<string, UmpireTally>();
-  const byTeam = new Map<string, { team: string; duties: number; free: number }>();
-  const report: UmpiringReport = { season, duties: 0, coveredFree: 0, coveredPaidMembers: 0, coveredExternal: 0, noShows: 0, uncovered: 0, umpires: [], byTeam: [] };
-  for (const d of duties) {
+  const byTeam = new Map<string, TeamTally>();
+  const report: UmpiringReport = { season, duties: 0, coveredFree: 0, coveredPaidMembers: 0, coveredExternal: 0, noShows: 0, uncovered: 0, umpires: [], byTeam: [], rows: [] };
+  for (const d of [...duties].sort((x, y) => x.matchDate.localeCompare(y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
     if (d.status === "cancelled") continue;
     report.duties++;
-    const team = byTeam.get(d.dutyTeam) ?? { team: d.dutyTeam, duties: 0, free: 0 };
+    const team = byTeam.get(d.dutyTeam) ?? { team: d.dutyTeam, duties: 0, free: 0, paidMembers: 0, outside: 0, uncovered: 0 };
     team.duties++;
     byTeam.set(d.dutyTeam, team);
     const a = d.assignments.find((x) => x.status === "confirmed" || x.status === "no_show");
+    const outcome: DutyOutcome = !a ? "uncovered" : a.status === "no_show" ? "no_show" : a.external ? "outside" : a.paid ? "paid" : "free";
+    report.rows.push({
+      matchDate: d.matchDate, timeTbc: d.timeTbc, venue: d.venue, division: d.division, homeTeam: d.homeTeam, awayTeam: d.awayTeam,
+      dutyTeam: d.dutyTeam, personId: a?.personId ?? null, umpire: a?.name ?? null, short: a?.name ?? null, outcome,
+    });
     if (!a) {
       report.uncovered++;
+      team.uncovered++;
       continue;
     }
     const key = a.personId ?? `external:${a.name.toLowerCase()}`;
@@ -517,13 +525,18 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
       t.noShows++;
       report.noShows++;
       report.uncovered++;
+      team.uncovered++;
       continue;
     }
     if (a.paid) t.paid++;
     else t.free++;
-    if (a.external) report.coveredExternal++;
-    else if (a.paid) report.coveredPaidMembers++;
-    else {
+    if (a.external) {
+      report.coveredExternal++;
+      team.outside++;
+    } else if (a.paid) {
+      report.coveredPaidMembers++;
+      team.paidMembers++;
+    } else {
       report.coveredFree++;
       team.free++;
     }
@@ -555,6 +568,7 @@ export async function getUmpiringReport(env: Env, user: AuthorizedUser, seasonPa
     const people = await db(env).select<PersonRow>("people", `select=${PERSON_COLUMNS}&api_id=${inList(ids)}`);
     const names = new Map(people.map((p) => [p.api_id, fullName(p)]));
     for (const u of report.umpires) if (u.personId) u.name = names.get(u.personId) || u.name;
+    for (const r of report.rows) if (r.personId) r.umpire = names.get(r.personId) || r.umpire;
   }
   return report;
 }

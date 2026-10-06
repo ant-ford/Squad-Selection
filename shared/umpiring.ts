@@ -139,6 +139,38 @@ export interface UmpireTally {
   noShows: number;
 }
 
+/** How a played duty was covered. */
+export type DutyOutcome = "free" | "paid" | "outside" | "no_show" | "uncovered";
+
+/** One played duty in the season report. */
+export interface ReportDuty {
+  matchDate: string;
+  timeTbc: boolean;
+  venue: string | null;
+  division: string | null;
+  homeTeam: string;
+  awayTeam: string;
+  dutyTeam: string;
+  /** People api id of a club umpire. */
+  personId: string | null;
+  /** Full name (club) or as entered (outside); null when uncovered. */
+  umpire: string | null;
+  /** First name, for the grid. */
+  short: string | null;
+  outcome: DutyOutcome;
+}
+
+/** Duties per HKFC team and how each was covered (George's season summary). */
+export interface TeamTally {
+  team: string;
+  duties: number;
+  free: number;
+  paidMembers: number;
+  outside: number;
+  /** Nobody, or a no-show. */
+  uncovered: number;
+}
+
 /** GET /api/umpiring/report. Played games of one season only. */
 export interface UmpiringReport {
   season: string;
@@ -150,8 +182,60 @@ export interface UmpiringReport {
   noShows: number;
   uncovered: number;
   umpires: UmpireTally[];
-  /** Duties per HKFC team, and how many of them the club umpires covered for free. */
-  byTeam: { team: string; duties: number; free: number }[];
+  byTeam: TeamTally[];
+  /** Every played duty, in date order. */
+  rows: ReportDuty[];
+}
+
+const OUTCOME_LABEL: Record<DutyOutcome, string> = {
+  free: "Free",
+  paid: "Paid (member)",
+  outside: "Paid (outside)",
+  no_show: "No-show",
+  uncovered: "Uncovered",
+};
+
+/** Every played duty as spreadsheet rows, with a header. */
+export function reportCsvRows(report: Pick<UmpiringReport, "rows">): string[][] {
+  const header = ["Date", "Time", "Venue", "Division", "Home", "Away", "Duty team", "Umpire", "Affiliation", "Type"];
+  return [
+    header,
+    ...report.rows.map((r) => [
+      hkDateKey(r.matchDate),
+      r.timeTbc ? "TBC" : hkTime(r.matchDate),
+      r.venue ?? "",
+      r.division ?? "",
+      r.homeTeam,
+      r.awayTeam,
+      r.dutyTeam,
+      r.umpire ?? "",
+      r.umpire ? (r.outcome === "outside" ? "Outside" : "HKFC") : "",
+      OUTCOME_LABEL[r.outcome],
+    ]),
+  ];
+}
+
+/** A grid cell: "George", "💰Pagey", "✗Ann" for a no-show, "–" for nobody. */
+export function gridCell(r: Pick<ReportDuty, "outcome" | "short">): string {
+  if (r.outcome === "uncovered" || !r.short) return "–";
+  if (r.outcome === "no_show") return `✗${r.short}`;
+  return r.outcome === "free" ? r.short : `💰${r.short}`;
+}
+
+/**
+ * George's grid: a row per match day, a column per duty team, who umpired
+ * in each cell (two duties for one team on a day share the cell).
+ */
+export function reportGrid(report: Pick<UmpiringReport, "rows">): { teams: string[]; days: { day: string; cells: Record<string, string[]> }[] } {
+  const teams = [...new Set(report.rows.map((r) => r.dutyTeam))].sort();
+  const days = new Map<string, Record<string, string[]>>();
+  for (const r of report.rows) {
+    const day = hkDateKey(r.matchDate);
+    const cells = days.get(day) ?? {};
+    (cells[r.dutyTeam] ??= []).push(gridCell(r));
+    days.set(day, cells);
+  }
+  return { teams, days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, cells]) => ({ day, cells })) };
 }
 
 /**
