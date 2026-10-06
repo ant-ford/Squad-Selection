@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
@@ -103,13 +103,15 @@ export function useAllSeasonStats(seasons: string[], enabled: boolean) {
  * the app this refetches when the tab regains focus: the member has usually
  * just come back from filling the form in.
  */
+export const myTasksQuery = queryOptions({
+  queryKey: ['myTasks'],
+  queryFn: getMyTasks,
+  staleTime: 60_000,
+  refetchOnWindowFocus: true,
+});
+
 export function useMyTasks() {
-  return useQuery({
-    queryKey: ['myTasks'],
-    queryFn: getMyTasks,
-    staleTime: 60_000,
-    refetchOnWindowFocus: true,
-  });
+  return useQuery(myTasksQuery);
 }
 
 export function useUpcomingFixtures(teamFilter?: string, includePast = false) {
@@ -195,8 +197,8 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
 
 // ── Player dashboard ─────────────────────────────────────────────────────
 
-export function useMyFixtures(includePast = false) {
-  return useQuery({
+export const myFixturesQuery = (includePast = false) =>
+  queryOptions({
     // The flag is part of the key: the two responses differ, so they must not
     // share an entry. Every write below matches on the ['myFixtures'] PREFIX
     // rather than an exact key, so an optimistic patch still reaches whichever
@@ -205,6 +207,9 @@ export function useMyFixtures(includePast = false) {
     queryFn: () => getMyFixtures(includePast),
     staleTime: 60_000,
   });
+
+export function useMyFixtures(includePast = false) {
+  return useQuery(myFixturesQuery(includePast));
 }
 
 /** Patch one fixture, by id, across all three sections of the cached dashboard data. */

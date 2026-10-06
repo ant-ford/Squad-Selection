@@ -125,7 +125,8 @@ export default function PlayerDashboard() {
   // Open by default (owner request, 2026-09-23) - players want to see how the
   // last games went. Results are always fetched (a few recent fixtures, read
   // from the cached season context) and hiding them is display-only, so the
-  // toggle never swaps the page back to the skeleton for a refetch.
+  // toggle never swaps the page back to the skeleton for a refetch. Home
+  // (App.tsx) starts this same query alongside the profile.
   const [showPast, setShowPast] = useState(true);
   const { data, isLoading: loading } = useMyFixtures(true);
   const quickAvailability = useQuickAvailability();
@@ -134,7 +135,8 @@ export default function PlayerDashboard() {
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile).
+  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
+  // still be on its way: the menu fills in when it lands.
   const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
