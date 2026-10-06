@@ -1,11 +1,9 @@
-// Shared plumbing for the Airtable import and the parity check.
+// Shared plumbing for the loader scripts in this folder.
 //
 // Safety rules these scripts keep (see README.md in this folder):
-//  - Airtable is only ever READ, with the read-only token.
 //  - Secrets come from eddy-secrets.txt (or the environment) and are never
 //    printed. Reports name tables, record ids and field names, never values.
-//  - Writes are upserts. The only deletes are pruneStale()'s: rows of a
-//    rebuilt table (links, People's column groups) that Airtable no longer has.
+//  - Writes are upserts. The only deletes are pruneStale()'s.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,10 +13,8 @@ import { S3Client, HeadObjectCommand, PutObjectCommand, GetObjectCommand } from 
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(here, "../..");
-export const CACHE_DIR = path.join(REPO, ".migration-cache");
 export const REPORT_DIR = path.join(here, "reports");
 
-export const BASE_ID = "appG6amyHthm3Nnde";
 export const R2_ACCOUNT_ID = "c04da0bddfb69252c9f837a37305cd30";
 
 // ── Secrets ──────────────────────────────────────────────────────────────
@@ -65,81 +61,13 @@ export function targetDatabase(args) {
   return { label: "eddy-preview", url: secret("PREVIEW_DB_URL"), bucket: "eddy-files-preview" };
 }
 
-// ── Airtable (read-only) ─────────────────────────────────────────────────
-
-export function airtableClient({ rate = 2 } = {}) {
-  const token = secret("AIRTABLE_READONLY_TOKEN");
-  const gap = 1000 / Math.min(Math.max(Number(rate) || 2, 0.5), 4); // never faster than 4 req/s
-  let last = 0;
-  let calls = 0;
-
-  async function get(url) {
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const wait = last + gap - Date.now();
-      if (wait > 0) await sleep(wait);
-      last = Date.now();
-      calls++;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.status === 429) {
-        await sleep(30_000); // Airtable asks for 30 s after a 429
-        continue;
-      }
-      if (res.status >= 500) {
-        await sleep(2_000 * (attempt + 1));
-        continue;
-      }
-      if (!res.ok) throw new Error(`Airtable GET ${new URL(url).pathname} -> ${res.status}`);
-      return res.json();
-    }
-    throw new Error(`Airtable GET ${new URL(url).pathname} kept failing`);
-  }
-
-  return {
-    get calls() { return calls; },
-    async schema() {
-      return get(`https://api.airtable.com/v0/meta/bases/${BASE_ID}/tables`);
-    },
-    /** Every record of a table (all fields), following pagination. */
-    async listAll(table) {
-      const records = [];
-      let offset;
-      do {
-        const p = new URLSearchParams({ pageSize: "100" });
-        if (offset) p.set("offset", offset);
-        const page = await get(`https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}?${p}`);
-        records.push(...page.records);
-        offset = page.offset;
-      } while (offset);
-      return records;
-    },
-  };
-}
-
-/** Cached snapshot of every table, so a run can resume or be re-checked without re-reading Airtable. */
-export async function snapshot(at, tables, { useCache = false, log = console.log } = {}) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-  const out = {};
-  for (const table of tables) {
-    const file = path.join(CACHE_DIR, `${table.replace(/[^A-Za-z0-9]+/g, "_")}.json`);
-    if (useCache && fs.existsSync(file)) {
-      out[table] = JSON.parse(fs.readFileSync(file, "utf8"));
-      log(`  ${table}: ${out[table].length} records (cached)`);
-      continue;
-    }
-    out[table] = await at.listAll(table);
-    fs.writeFileSync(file, JSON.stringify(out[table]));
-    log(`  ${table}: ${out[table].length} records`);
-  }
-  return out;
-}
-
 // ── Postgres ─────────────────────────────────────────────────────────────
 
 export async function connect(url) {
   const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
   await client.connect();
   // The database automations (status on acceptance, card linking, commitment
-  // periods) stand aside for this session: the import copies Airtable exactly.
+  // periods) stand aside for this session: a loader writes rows exactly as given.
   await client.query("set eddy.importing = 'on'");
   return client;
 }

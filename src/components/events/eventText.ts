@@ -18,6 +18,10 @@ export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'>): string 
 /** The price lines: member, then guests, then how it's paid. Empty when free. */
 export function priceLines(e: EventDetails): string[] {
   if (e.paymentMode === 'free') return [];
+  if (e.paymentMode === 'self_funded') {
+    const cost = priceText(e.memberPrice);
+    return [cost ? `Self-funded, about ${cost} each` : 'Self-funded'];
+  }
   const lines: string[] = [];
   const member = priceText(e.memberPrice);
   if (member) lines.push(`Members ${member}`);

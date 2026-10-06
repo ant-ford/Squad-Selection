@@ -19,7 +19,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
@@ -35,6 +34,8 @@ import {
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
   answerRefusal,
+  billed,
+  cleanLink,
   checkInOpen,
   guestsCameOf,
   needsRegister,
@@ -71,10 +72,6 @@ import {
   type SocialFunction,
 } from "../../shared/events";
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") throw new HttpError("Events are only on Eddy's own data.", 409, "NOT_YET");
-}
-
 const text = (v: unknown, max = 200) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
 const validId = (id: string) => {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError("Event not found.", 404, "NOT_FOUND");
@@ -98,6 +95,7 @@ interface EventRow {
   guest_child_price: number | string | null;
   payment_mode: PaymentMode;
   payment_details: string | null;
+  link_url: string | null;
   charges_sent_at: string | null;
   register_taken_at: string | null;
   checkin_code: string | null;
@@ -112,7 +110,7 @@ interface EventRow {
   team: { team_name: string } | null;
 }
 const EVENT_COLS =
-  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
+  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,link_url,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
 
 interface ResponseRow {
   event_id: string;
@@ -154,6 +152,7 @@ function toDetails(r: EventRow, posterUrl: string | null): EventDetails {
     guestChildPrice: money(r.guest_child_price),
     paymentMode: r.payment_mode,
     paymentDetails: r.payment_details,
+    linkUrl: r.link_url,
     guestsAllowed: r.guests_allowed,
     maxGuests: r.max_guests,
     helpNeeded: r.help_needed,
@@ -262,7 +261,6 @@ async function posterLinks(env: Env, eventIds: string[]): Promise<Record<string,
 // ── Who keeps them (eventAccess.ts) ─────────────────────────────────────
 
 async function requireManager(env: Env, user: AuthorizedUser): Promise<EventRights> {
-  requireSupabase(env);
   const r = await eventRights(env, user);
   if (!r.club && !r.teams.length) throw new HttpError("Events are kept by the social secretaries and Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
   return r;
@@ -279,7 +277,6 @@ async function requireManages(env: Env, user: AuthorizedUser, id: string): Promi
 
 /** Published (or cancelled) events they're invited to or answered, until the day after each ends. */
 export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ events: MyEvent[] }> {
-  requireSupabase(env);
   const [rights, dir] = await Promise.all([eventRights(env, user), directory(env)]);
   const me = rights.personUuid;
   if (!me) return { events: [] };
@@ -306,7 +303,7 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
     const details = toDetails(r, posters[r.id] ?? null);
     // Their bill: their own place unless someone else signed them up, and everyone they signed up.
     const paying = [...(mine && !mine.signed_up_by_id ? [mine] : []), ...signedUp];
-    const charge = r.payment_mode === "free" ? undefined : computeCharges(details, paying.map(toChargeInput)).find((c) => c.payerId === user.personId);
+    const charge = !billed(r.payment_mode) ? undefined : computeCharges(details, paying.map(toChargeInput)).find((c) => c.payerId === user.personId);
     const payment = payments.find((x) => x.event_id === r.id);
     return {
         ...details,
@@ -332,7 +329,6 @@ const STATUSES: readonly ResponseStatus[] = ["going", "maybe", "not_going"];
  * (asManager) does it on the person's behalf: nobody else pays.
  */
 export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: string, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireSupabase(env);
   const d = db(env);
   const [rights, ev, dir] = await Promise.all([eventRights(env, user), loadEvent(env, eventId), directory(env)]);
   if (!rights.personUuid) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
@@ -414,7 +410,6 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
 
 /** Invited people matching a name, with their answer so far: for signing others up. */
 export async function searchEventPeople(env: Env, user: AuthorizedUser, eventId: string, q: string): Promise<{ people: EventPerson[] }> {
-  requireSupabase(env);
   const [rights, ev, dir] = await Promise.all([eventRights(env, user), loadEvent(env, eventId), directory(env)]);
   if (ev.status !== "published") return { people: [] };
   const manager = managesEvent(rights, ev);
@@ -459,7 +454,6 @@ const TASKS_TTL_MS = 60 * 1000;
 
 /** Open events they're invited to and haven't answered (myTasks.ts). */
 export async function eventTasks(env: Env, user: AuthorizedUser): Promise<EventTask[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const { data } = await getCached(
     `event-tasks:${user.personId}`,
     async (): Promise<EventTask[]> => {
@@ -503,7 +497,6 @@ export interface CalendarEvent extends EventDetails {
 
 /** Events they're Going or Maybe to (calendar.ts adds them to their feed). */
 export async function calendarEventsFor(env: Env, personApiId: string): Promise<CalendarEvent[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const d = db(env);
   const p = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
   if (!p) return [];
@@ -629,7 +622,10 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
   if (max !== null && (!Number.isInteger(max) || max < 1 || max > 10)) throw new HttpError("Guests per person: 1 to 10.", 400, "INVALID_INPUT");
   const socialFunction = type === "social_function" && body.socialFunction ? body.socialFunction : null;
   if (socialFunction && !(SOCIAL_FUNCTIONS as readonly string[]).includes(socialFunction)) throw new HttpError("Choose the social function from the list.", 400, "INVALID_INPUT");
-  const free = paymentMode === "free";
+  // Free and self-funded bill nobody; self-funded may show an estimated cost per person.
+  const free = !billed(paymentMode);
+  const link = cleanLink(body.linkUrl);
+  if (link && typeof link === "object") throw new HttpError(link.error, 400, "INVALID_INPUT");
   const paymentDetails = paymentMode === "payme_fps" ? text(body.paymentDetails, 300) : "";
   if (paymentMode === "payme_fps" && !paymentDetails) throw new HttpError("Give the PayMe link or FPS ID people should pay to.", 400, "INVALID_INPUT");
   return {
@@ -640,11 +636,12 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
     starts_at: startsAt,
     ends_at: endsAt,
     respond_by: respondBy,
-    member_price: free ? null : toPrice(body.memberPrice),
+    member_price: paymentMode === "free" ? null : toPrice(body.memberPrice),
     guest_adult_price: free || !guestsAllowed ? null : toPrice(body.guestAdultPrice),
     guest_child_price: free || !guestsAllowed ? null : toPrice(body.guestChildPrice),
     payment_mode: paymentMode,
     payment_details: paymentDetails || null,
+    link_url: link,
     guests_allowed: guestsAllowed,
     max_guests: max,
     help_needed: text(body.helpNeeded, 200) || null,
@@ -791,7 +788,6 @@ export async function setSocialSecretaries(env: Env, user: AuthorizedUser, body:
  * another payment is flagged. The social secretary still confirms it.
  */
 export async function uploadPaymentProof(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<PaymentInfo> {
-  requireSupabase(env);
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const [rights, ev] = await Promise.all([eventRights(env, user), loadEvent(env, id)]);
   if (ev.payment_mode !== "payme_fps" || ev.status !== "published") throw new HttpError("This event isn't paid by PayMe or FPS.", 409, "NOT_PAYME");
@@ -997,7 +993,6 @@ async function loadForCheckIn(env: Env, id: string, code: unknown): Promise<Even
 
 /** What someone sees when they scan the QR code: themselves, and anyone they signed up. */
 export async function getCheckIn(env: Env, user: AuthorizedUser, id: string, code: string): Promise<CheckInView> {
-  requireSupabase(env);
   const [rights, event] = await Promise.all([eventRights(env, user), loadForCheckIn(env, id, code)]);
   const me = rights.personUuid;
   if (!me) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
@@ -1023,7 +1018,6 @@ export async function getCheckIn(env: Env, user: AuthorizedUser, id: string, cod
  * Turning up counts as Going, even without an answer: they came.
  */
 export async function checkIn(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; checkedIn: number }> {
-  requireSupabase(env);
   const [rights, event] = await Promise.all([eventRights(env, user), loadForCheckIn(env, id, body.code)]);
   if (!checkInOpen(toDetails(event, null))) throw new HttpError("Check-in opens an hour before the start and closes an hour after the end.", 409, "CHECKIN_CLOSED");
   const me = rights.personUuid;
@@ -1053,7 +1047,6 @@ const REGISTER_TASKS_TTL_MS = 5 * 60 * 1000;
 
 /** Events over in the last month whose register isn't marked taken, for their creator and team social secretaries (myTasks.ts). */
 export async function registerTasks(env: Env, user: AuthorizedUser): Promise<EventTask[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const { data } = await getCached(
     `register-tasks:${user.personId}`,
     async (): Promise<EventTask[]> => {

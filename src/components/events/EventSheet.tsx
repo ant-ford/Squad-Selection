@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarDays, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
+import { CalendarDays, ExternalLink, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
 import { respondToEvent, searchEventPeople } from '@/api/events';
-import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
+import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, billed, linkLabel, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
 import { eventWhen, priceLines, statusChip } from './eventText';
 import BillBox from './BillBox';
 import PosterImage from './PosterImage';
@@ -225,6 +225,11 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               </p>
             )}
             {event.description && <p className="whitespace-pre-line pt-1">{event.description}</p>}
+            {event.linkUrl && !cancelled && (
+              <a href={event.linkUrl} target="_blank" rel="noopener noreferrer" className={`${secondary} inline-flex items-center gap-1.5 mt-1`}>
+                <ExternalLink className="h-4 w-4" /> {linkLabel(event.linkUrl)}
+              </a>
+            )}
           </div>
 
           {!cancelled && (
@@ -235,7 +240,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
                   {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
                 </p>
               </div>
-              {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}, who pays for you.</p>}
+              {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}
               {event.open && (!mine || editingMe) ? (
                 <ResponseEditor
                   key={`me-${mine?.status ?? 'none'}`}
@@ -262,12 +267,12 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
             </section>
           )}
 
-          {event.bill && event.paymentMode !== 'free' && !cancelled && <BillBox event={event} />}
+          {event.bill && billed(event.paymentMode) && !cancelled && <BillBox event={event} />}
 
           {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
             <section className="rounded-xl border border-border p-3 space-y-2">
               <h3 className="text-sm font-semibold text-foreground">Other players you're signing up</h3>
-              <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>
+              {billed(event.paymentMode) && <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>}
               {event.signedUp.map((p) =>
                 editing?.personId === p.personId ? (
                   <div key={p.personId} className="space-y-2">
