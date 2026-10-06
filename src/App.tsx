@@ -28,6 +28,8 @@ const Waivers = lazy(() => import('./pages/Waivers'));
 const Kit = lazy(() => import('./pages/Kit'));
 // HKHA registration details (the Hockey Convenor only).
 const Registration = lazy(() => import('./pages/Registration'));
+const People = lazy(() => import('./pages/People'));
+const PersonAdmin = lazy(() => import('./pages/PersonAdmin'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
@@ -334,6 +336,22 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <Registration />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/people',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <People />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/people/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <PersonAdmin />
           </Suspense>
         ),
       },
