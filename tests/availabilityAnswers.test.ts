@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ANSWERS, answerOptions, preferenceTagLabel } from "../src/lib/availabilityAnswers";
+import { ANSWERS, answerOptions, dayAnswerOptions, preferenceTagLabel } from "../src/lib/availabilityAnswers";
 
 // The segmented control on a fixture card and in the coach's sheet.
 
@@ -28,6 +28,17 @@ describe("answerOptions", () => {
     for (const current of ["", null, undefined, "Pending"]) {
       expect(answerOptions(current).some((o) => o.pressed)).toBe(false);
     }
+  });
+});
+
+describe("dayAnswerOptions", () => {
+  it('reads "All available / All maybe / All no"', () => {
+    expect(dayAnswerOptions(null).map((o) => o.label)).toEqual(["All available", "All maybe", "All no"]);
+    expect(dayAnswerOptions(null).some((o) => o.pressed)).toBe(false);
+  });
+
+  it("presses the answer the whole day already shares", () => {
+    expect(dayAnswerOptions("Unavailable").filter((o) => o.pressed).map((o) => o.value)).toEqual(["Unavailable"]);
   });
 });
 
