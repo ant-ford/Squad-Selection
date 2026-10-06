@@ -51,12 +51,6 @@ ALLOWED_ORIGIN = "https://app.eddy.global,https://hkfc-squad-selection.squad-sel
 
 SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
-# The Airtable webhook from scripts/register-airtable-webhook.mjs. Its MAC
-# secret is the AIRTABLE_WEBHOOK_SECRET Worker secret (set with
-# `wrangler secret put`, never in this file). See README, "Airtable Webhook".
-# Both must be present before the webhook does anything: the route stays 404
-# and the cache TTLs stay short until then.
-AIRTABLE_WEBHOOK_ID = "achSyLxyJ3s1MWk33"
 # Where the Worker reads and writes club data: "airtable" or "supabase", with
 # per-module exceptions in DATA_BACKEND_OVERRIDES ("people=supabase,...").
 # See worker/src/data/backend.ts. Supabase from the October 2026 switch-over;
@@ -96,28 +90,26 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # list is the retention_due_v view). Report until the first list is checked.
 RETENTION_MODE = "report"
 
-# Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
-# does not lapse over a quiet fortnight. Harmless when no webhook is set up.
-# The second runs the data retention job (src/retention.ts RETENTION_CRON).
+# The first sends the commitment review emails that are due
+# (src/reviewEmails.ts); the second runs the data retention job
+# (src/retention.ts RETENTION_CRON).
 # Last in the file on purpose: a TOML table header claims every key after it.
 [triggers]
 crons = ["0 3 * * *", "30 3 * * *"]
 
 # ── Branch preview (.github/workflows/preview.yml) ──────────────────────
 # A separate Worker, hkfc-api-preview, deployed by hand from the Actions
-# tab so a branch can be checked in a browser before it merges. It reads the
-# production Airtable base with its own READ-ONLY token (the AIRTABLE_TOKEN
-# secret of the `preview` GitHub environment), so it cannot change club
-# data even by mistake; saving a squad through it fails, by design.
+# tab so a branch can be checked in a browser before it merges. It reads and
+# writes eddy-preview (DATA_SUPABASE_URL below), so it cannot change club
+# data even by mistake.
 #
 # Kept away from production on purpose:
 #   - no custom domain (routes are inherited unless overridden);
-#   - no cron (it would refresh the production Airtable webhook);
+#   - no cron (the daily jobs are production's);
 #   - its OWN KV cache namespace (hkfc-api-preview-cache), so a branch never
 #     writes entries production reads. Without one every preview request
 #     re-read the season from Airtable, which was slow and ate into the
 #     5-requests-a-second limit production shares with it;
-#   - no AIRTABLE_WEBHOOK_ID, so the webhook route answers 404;
 #   - CORS only for the local dev frontend (npm run dev:preview-api).
 # vars and kv_namespaces are not inherited by an environment, so the ones it
 # needs are restated here.
@@ -148,8 +140,7 @@ SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 # Preview reads and writes eddy-preview, as production will after the
 # switch-over. eddy-preview holds an imported copy of the club's data, so
-# preview saves change that copy, never Airtable. Setting this back to
-# "airtable" (with DATA_SHADOW_READ = "on") returns to shadow reads.
+# preview saves change that copy, never Airtable.
 DATA_BACKEND = "supabase"
 DATA_BACKEND_OVERRIDES = ""
 # Sign-in stays on eddy-production (SUPABASE_URL above); the data comes from
