@@ -4,9 +4,10 @@ import { isFriendly } from "./playUp";
 import { getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { getSeasonContext, currentSeason } from "./seasonContext";
 import { getAllAvailabilityRules } from "./availabilityRules";
-import { computePlayerAttendance, type AttendanceStatus, type AvailabilitySource } from "./playerAttendance";
+import { cardSide, computePlayerAttendance, type AttendanceStatus, type AvailabilitySource } from "./playerAttendance";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { linkId } from "../../shared/airtableValueUtils";
 
 /**
  * Every squad's season as one grid, for the coach view: teams down the side,
@@ -54,6 +55,8 @@ export interface TeamFixture {
   off: boolean;
   /** Everyone picked for this side, squad member or not. */
   selectedCount: number;
+  /** Players on this side's Match Card, from any squad. Absent when it has none. */
+  cardCount?: number;
   goalsFor?: number;
   goalsAgainst?: number;
 }
@@ -108,6 +111,21 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
   const rankOf = (t: string) => teamRankMap[t] ?? UNRANKED_TEAM_RANK;
 
   const seasonMatches = matches.filter((m) => (m.season || season) === season && hkDateKey(m.matchDate));
+  const matchesById = new Map(seasonMatches.map((m) => [m.id, m]));
+
+  // Who is on each side's Match Card - play-ups and fill-ins included, so
+  // the count is the side that took the field, not just the squad's share.
+  const carded = new Map<string, Set<string>>();
+  for (const [playerId, cards] of cardsByPlayer) {
+    for (const card of cards) {
+      const match = matchesById.get(linkId(card.match) ?? "");
+      if (!match) continue;
+      const key = `${match.id}:${cardSide(card, match, isOurs)}`;
+      const players = carded.get(key) ?? new Set<string>();
+      players.add(playerId);
+      carded.set(key, players);
+    }
+  }
 
   const fixtures: TeamFixture[] = [];
   for (const m of seasonMatches) {
@@ -127,6 +145,8 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
         off: OFF_STATUSES.has(m.matchStatus),
         selectedCount: (isHome ? m.selectedPlayersHome : m.selectedPlayersAway)?.length ?? 0,
       };
+      const cardCount = carded.get(`${m.id}:${side}`)?.size;
+      if (cardCount) fixture.cardCount = cardCount;
       if (played && typeof m.homeTeamScore === "number" && typeof m.awayTeamScore === "number") {
         fixture.goalsFor = isHome ? m.homeTeamScore : m.awayTeamScore;
         fixture.goalsAgainst = isHome ? m.awayTeamScore : m.homeTeamScore;
