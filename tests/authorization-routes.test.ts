@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     setMyAvailabilityForDate: vi.fn(),
     setPlayerAvailability: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
+    getTeamAvailabilityForMatch: vi.fn(),
     handleGetCalendarLink: vi.fn(),
     handlePlayerCalendarFeed: vi.fn(),
     handleGetTeamCalendarLink: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock("../worker/src/availability", () => ({
 }));
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
+  getTeamAvailabilityForMatch: mocks.getTeamAvailabilityForMatch,
 }));
 vi.mock("../worker/src/calendar", () => ({
   handleGetCalendarLink: mocks.handleGetCalendarLink,
@@ -525,6 +527,23 @@ describe("read routes require authentication", () => {
     mocks.getSquadForMatch.mockResolvedValue({ players: [] });
     await call("/api/match/recM1/squad?side=away");
     expect(mocks.getSquadForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
+  });
+
+  it("lets an authorized player read a fixture's team availability, forwarding ?side=", async () => {
+    mocks.getTeamAvailabilityForMatch.mockResolvedValue({ selected: [], restOfTeam: [], suggestions: [] });
+    const res = await call("/api/match/recM1/team-availability?side=away");
+    expect(res.status).toBe(200);
+    expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
+    expect(mocks.getTeamAvailabilityForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
+  });
+
+  it("rejects an unauthenticated team availability read", async () => {
+    mocks.requireAuthorizedUser.mockRejectedValue(
+      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
+    );
+    const res = await call("/api/match/recM1/team-availability");
+    expect(res.status).toBe(401);
+    expect(mocks.getTeamAvailabilityForMatch).not.toHaveBeenCalled();
   });
 
   it("rejects an unauthenticated match squad read", async () => {

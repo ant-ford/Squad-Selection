@@ -24,6 +24,8 @@ const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
 const Waivers = lazy(() => import('./pages/Waivers'));
 // Kit: orders, handing out and spares (Kit Convenor, Section Captains).
 const Kit = lazy(() => import('./pages/Kit'));
+// HKHA registration details (the Hockey Convenor only).
+const Registration = lazy(() => import('./pages/Registration'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
@@ -39,9 +41,11 @@ const QuizTake = lazy(() => import('./pages/QuizTake'));
 const Join = lazy(() => import('./pages/Join'));
 const TrialSessions = lazy(() => import('./pages/TrialSessions'));
 const ManageEvents = lazy(() => import('./pages/ManageEvents'));
+const CheckIn = lazy(() => import('./pages/CheckIn'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
+const Umpiring = lazy(() => import('./pages/Umpiring'));
 
 /** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
 function pendingJoin(): boolean {
@@ -188,6 +192,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: '/checkin/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <CheckIn />
+          </Suspense>
+        ),
+      },
+      {
         path: '/events/manage',
         element: (
           <Suspense fallback={<RouteSkeleton />}>
@@ -260,6 +272,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: '/umpiring',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Umpiring />
+          </Suspense>
+        ),
+      },
+      {
         path: '/season-plans',
         element: (
           <Suspense fallback={<RouteSkeleton />}>
@@ -272,6 +292,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <Kit />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/registration',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Registration />
           </Suspense>
         ),
       },

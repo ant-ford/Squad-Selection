@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import HandOutSheet from '@/components/kit/HandOutSheet';
 import SetSheet from '@/components/kit/SetSheet';
 import NeedsKit from '@/components/kit/NeedsKit';
+import KitInsights from '@/components/kit/KitInsights';
 import { PlaceBadge, inputClass, primaryButton, secondaryButton, sizesLine } from '@/components/kit/kitUi';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
@@ -40,7 +41,7 @@ export default function Kit() {
   const allowed = profile?.sections?.includes('kit') ?? false;
   const [params, setParams] = useSearchParams();
   const orderId = params.get('order');
-  const view = params.get('view') === 'needs' ? 'needs' : 'sets';
+  const view = (['needs', 'insights'] as const).find((v) => v === params.get('view')) ?? 'sets';
   const filter = FILTERS.find((f) => f.key === params.get('show')) ?? FILTERS[0];
   const team = params.get('team') ?? '';
   const q = params.get('q') ?? '';
@@ -166,18 +167,35 @@ export default function Kit() {
         </section>
 
         <div className="flex gap-1 border-b border-border">
-          {(['sets', 'needs'] as const).map((v) => (
+          {(['sets', 'needs', 'insights'] as const).map((v) => (
             <button
               key={v}
               onClick={() => setParam('view', v === 'sets' ? null : v)}
-              className={`px-3 py-2 text-sm -mb-px border-b-2 ${view === v ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground'}`}
+              className={`px-3 py-2 text-sm whitespace-nowrap -mb-px border-b-2 ${view === v ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground'}`}
             >
-              {v === 'sets' ? `Sets (${board.sets.length})` : `Needs kit (${board.people.filter((p) => p.active && !p.hasSet).length})`}
+              {v === 'sets'
+                ? `Sets (${board.sets.length})`
+                : v === 'needs'
+                ? `Needs kit (${board.people.filter((p) => p.active && !p.hasSet).length})`
+                : 'Insights'}
             </button>
           ))}
         </div>
 
-        {view === 'needs' ? (
+        {view === 'insights' ? (
+          <KitInsights
+            board={board}
+            onOpenSet={setOpenId}
+            onShowSets={(show) => {
+              // One update: two setParam calls would each start from the same old params.
+              const next = new URLSearchParams(params);
+              next.delete('view');
+              if (show === 'all') next.delete('show');
+              else next.set('show', show);
+              setParams(next, { replace: true });
+            }}
+          />
+        ) : view === 'needs' ? (
           <NeedsKit board={board} onChanged={changed} />
         ) : (
           <>

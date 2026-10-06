@@ -87,13 +87,15 @@ export interface GetMyFixturesOutput {
   captainTeams: string[];
   isSectionCaptain: boolean;
   /** Officers' sections this person may open, decided by the Worker. */
-  sections?: ('membership' | 'chairman' | 'kit' | 'planning')[];
+  sections?: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials' | 'registration')[];
   /** Whether the Season plans screen has anything for them (coaches, Section Captains). */
   seasonPlans?: boolean;
   /** Whether the Volunteers screen is theirs (officers, coaches, captains). */
   volunteers?: boolean;
   /** Whether the Events screen is theirs (social secretaries, Section Captains). */
   events?: boolean;
+  /** The umpiring duties screen: the club's umpires, and the Umpire Coordinator who runs it. */
+  umpiring?: 'umpire' | 'coordinator' | null;
   /** Whether their details are kept in Eddy (the Supabase backend): shows "My details". */
   eddyProfile?: boolean;
   /** Today (Hong Kong time) is this player's birthday. */

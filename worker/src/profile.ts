@@ -5,6 +5,7 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
+import { umpiringAccess } from "./umpiring";
 import { backendFor } from "./data/backend";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 
@@ -90,6 +91,9 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Whether the Events screen is theirs: social secretaries and Section Captains.
     events: await canManageEvents(env, authUser),
+
+    // The umpiring duties: the club's umpires, and the Umpire Coordinator.
+    umpiring: await umpiringAccess(env, authUser),
 
     captainTeams,
 

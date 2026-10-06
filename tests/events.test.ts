@@ -6,13 +6,13 @@ import type { DirectoryPerson } from "../shared/emailLists";
 const DIR: DirectoryPerson[] = [];
 vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ people: DIR, generatedAt: "" }) }));
 
-import { eventTasks, getMyEvents, markNoShow, respondToEvent, saveEvent, uploadPaymentProof } from "../worker/src/events";
+import { checkIn, eventTasks, getMyEvents, respondToEvent, saveEvent, setAttendance, uploadPaymentProof } from "../worker/src/events";
 import { attendedEvents } from "../worker/src/eventAttendance";
 import { recordedSocialFunctions } from "../shared/commitmentReview";
 import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
+import { checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
 const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -443,27 +443,76 @@ describe("attendance and the commitment review", () => {
     expect(recordedSocialFunctions(undefined)).toEqual([]);
   });
 
-  it("counts Going at published events in the period that have started, not no-shows", async () => {
+  it("counts only those ticked on the register or checked in, at published events in the period that have started", async () => {
     const calls = fake({ responses: [{ person_id: "uuid-dad", event: { id: "e1", event_type: "social_function", title: "Xmas", starts_at: "2026-01-10T11:00:00Z", social_function: "Christmas Party" } }] });
     const out = await attendedEvents(env, "recDAD", "2025-07-01", "2026-06-30");
     expect(out).toEqual([{ id: "e1", type: "social_function", title: "Xmas", startsAt: "2026-01-10T11:00:00Z", socialFunction: "Christmas Party" }]);
     const q = calls.find((c) => c.url.pathname.endsWith("/event_responses"))!.url.searchParams;
-    expect(q.get("status")).toBe("eq.going");
-    expect(q.get("no_show")).toBe("is.false");
+    expect(q.get("attended")).toBe("is.true");
     expect(q.get("event.status")).toBe("eq.published");
     expect(q.getAll("event.starts_at")[0]).toBe("gte.2025-07-01T00:00:00+08:00");
     // No period, nothing to look up.
     expect(await attendedEvents(env, "recDAD", null, "2026-06-30")).toEqual([]);
   });
+});
 
-  it("marks who didn't come only once the event has started", async () => {
-    fake({ events: [event()], offices: { "uuid-sec": [{ id: "office" }] } });
-    await expect(markNoShow(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", noShow: true })).rejects.toThrow(/once the event has started/);
+describe("the register and check-in", () => {
+  const hour = 3_600_000;
+  const iso = (t: number) => new Date(t).toISOString();
+  const sec = { offices: { "uuid-sec": [{ id: "office" }] } };
+  const patchOf = (calls: Call[]) => calls.filter((c) => c.url.pathname.endsWith("/event_responses") && c.method === "PATCH");
+  const insertOf = (calls: Call[]) => calls.find((c) => c.url.pathname.endsWith("/event_responses") && c.method === "POST");
+  const dadRow = { event_id: EVENT_ID, person_id: "uuid-dad", status: "going", guests: [{ name: "Jane", age: "adult" }, { name: "Tom", age: "child" }], signed_up_by_id: null, attended: false, person: { api_id: "recDAD", preferred_name: "Dave", given_names: null, surname: "Smith", membership_no: "M1" }, signer: null };
+  const sonRow = { ...dadRow, person_id: "uuid-son", guests: [], signed_up_by_id: "uuid-dad", person: { api_id: "recSON", preferred_name: "Sam", given_names: null, surname: "Smith", membership_no: "M2" } };
+  const live = (over: Record<string, unknown> = {}) => event({ starts_at: iso(Date.now() - 10 * 60_000), ends_at: iso(Date.now() + 2 * hour), checkin_code: "secret123", ...over });
+
+  it("opens an hour before the start, and check-in closes an hour after the end", () => {
+    const now = Date.now();
+    const e = { status: "published" as const, startsAt: iso(now + 2 * hour), endsAt: null, registerTakenAt: null };
+    expect(registerOpen(e, now)).toBe(false);
+    expect(registerOpen(e, now + 61 * 60_000)).toBe(true);
+    expect(checkInOpen(e, now + 61 * 60_000)).toBe(true);
+    // No end: three hours, then an hour's grace.
+    expect(checkInOpen(e, now + 2 * hour + 3 * hour + 59 * 60_000)).toBe(true);
+    expect(checkInOpen(e, now + 2 * hour + 4 * hour + 60_000)).toBe(false);
+    expect(needsRegister(e, now + 6 * hour)).toBe(true);
+    expect(needsRegister({ ...e, registerTakenAt: iso(now) }, now + 6 * hour)).toBe(false);
+    expect(guestsCameOf("5", 2)).toBe(2);
+    expect(guestsCameOf(null, 2)).toBeNull();
+  });
+
+  it("ticks someone on the register, or adds a walk-in as Going", async () => {
+    fake({ events: [event()], ...sec });
+    await expect(setAttendance(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", attended: true })).rejects.toThrow(/opens an hour before/);
     invalidateAll();
-    const calls = fake({ events: [event({ starts_at: new Date(Date.now() - day).toISOString() })], offices: { "uuid-sec": [{ id: "office" }] } });
-    await markNoShow(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", noShow: true });
-    const write = calls.find((c) => c.url.pathname.endsWith("/event_responses") && c.method === "PATCH")!;
-    expect(write.body).toEqual({ no_show: true });
-    expect(write.url.searchParams.get("status")).toBe("eq.going");
+    let calls = fake({ events: [live()], responses: [dadRow], ...sec });
+    await setAttendance(env, userOf("recSEC"), EVENT_ID, { personId: "recDAD", attended: true, guestsCame: 1 });
+    expect(patchOf(calls)[0].body).toEqual({ attended: true, status: "going", guests_came: 1 });
+    invalidateAll();
+    calls = fake({ events: [live()], responses: [], ...sec });
+    await setAttendance(env, userOf("recSEC"), EVENT_ID, { personId: "recAPP", attended: true });
+    expect(insertOf(calls)!.body[0]).toMatchObject({ person_id: "uuid-app", status: "going", attended: true });
+  });
+
+  it("checks in someone who scanned the code, with those they signed up and their guests", async () => {
+    fake({ events: [live()], responses: [dadRow, sonRow] });
+    await expect(checkIn(env, userOf("recDAD"), EVENT_ID, { code: "wrong", people: [{ personId: "recDAD" }] })).rejects.toThrow(/code isn't right/);
+    invalidateAll();
+    fake({ events: [live({ starts_at: iso(Date.now() + 3 * hour) })], responses: [dadRow] });
+    await expect(checkIn(env, userOf("recDAD"), EVENT_ID, { code: "secret123", people: [{ personId: "recDAD" }] })).rejects.toThrow(/opens an hour before/);
+    invalidateAll();
+    const calls = fake({ events: [live()], responses: [dadRow, sonRow] });
+    const out = await checkIn(env, userOf("recDAD"), EVENT_ID, { code: "secret123", people: [{ personId: "recDAD", guestsCame: 1 }, { personId: "recSON" }, { personId: "recAPP" }] });
+    expect(out.checkedIn).toBe(2);
+    const [dad, son] = patchOf(calls);
+    expect(dad.body).toMatchObject({ status: "going", attended: true, guests_came: 1 });
+    expect(dad.body.checked_in_at).toBeTruthy();
+    expect(son.url.searchParams.get("person_id")).toBe("eq.uuid-son");
+  });
+
+  it("puts someone who turns up without answering down as Going", async () => {
+    const calls = fake({ events: [live()], responses: [] });
+    await checkIn(env, userOf("recDAD"), EVENT_ID, { code: "secret123", people: [{ personId: "recDAD" }] });
+    expect(insertOf(calls)!.body[0]).toMatchObject({ person_id: "uuid-dad", status: "going", attended: true });
   });
 });

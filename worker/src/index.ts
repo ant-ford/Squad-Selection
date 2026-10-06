@@ -24,6 +24,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
+import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
@@ -46,7 +47,12 @@ import {
   findPeople,
   getCharges,
   markChargesSent,
-  markNoShow,
+  checkIn,
+  checkinLink,
+  getCheckIn,
+  setAttendance,
+  setRegisterTaken,
+  tickEveryone,
   uploadPaymentProof,
   waiveCharge,
   getEventResponses,
@@ -86,6 +92,7 @@ import {
   swapItem,
   topUpCsv,
 } from "./kit";
+import { getRegistrationBoard, markRegistered, registrationCsv, unmarkRegistered } from "./registration";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -103,7 +110,7 @@ import {
 } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
-import { getRecommendationsForMatch } from "./recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
 import {
   handleGetCalendarLink,
   handlePlayerCalendarFeed,
@@ -287,6 +294,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       await requireAuthorizedUser(request, env);
       const side = url.searchParams.get("side") as "home" | "away" | null;
       return json(await getSquadForMatch(env, matchSquadMatch[1], side ?? undefined), 200, origin);
+    }
+
+    // Also player-facing: the fixture sheet's selected / rest-of-team /
+    // suggestions lists. Names, positions and statuses only - see
+    // getTeamAvailabilityForMatch for what is left out and why.
+    const matchTeamAvailMatch = pathname.match(/^\/api\/match\/([^/]+)\/team-availability$/);
+    if (method === "GET" && matchTeamAvailMatch) {
+      await requireAuthorizedUser(request, env);
+      const side = url.searchParams.get("side") as "home" | "away" | null;
+      return json(await getTeamAvailabilityForMatch(env, matchTeamAvailMatch[1], side ?? undefined), 200, origin);
     }
 
     // The remaining match reads back the coach-only selection screens.
@@ -828,10 +845,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "GET" && pathname === "/api/events/mine") return json(await getMyEvents(env, user), 200, origin);
       if (method === "GET" && pathname === "/api/events/manage") return json(await getManageView(env, user), 200, origin);
       if (method === "GET" && pathname === "/api/events/find-people") return json(await findPeople(env, user, q), 200, origin);
-      const ev = pathname.match(/^\/api\/events\/([0-9a-f-]{36})\/(respond|people|responses|status|poster|delete|charges|charges-sent|payment-proof|confirm-payment|waive|no-show)$/);
+      const ev = pathname.match(/^\/api\/events\/([0-9a-f-]{36})\/(respond|people|responses|status|poster|delete|charges|charges-sent|payment-proof|confirm-payment|waive|attendance|tick-everyone|register-taken|checkin|checkin-link)$/);
       if (method === "GET" && ev?.[2] === "people") return json(await searchEventPeople(env, user, ev[1], q), 200, origin);
       if (method === "GET" && ev?.[2] === "responses") return json(await getEventResponses(env, user, ev[1]), 200, origin);
       if (method === "GET" && ev?.[2] === "charges") return json(await getCharges(env, user, ev[1]), 200, origin);
+      if (method === "GET" && ev?.[2] === "checkin") return json(await getCheckIn(env, user, ev[1], url.searchParams.get("c") ?? ""), 200, origin);
+      if (method === "GET" && ev?.[2] === "checkin-link") return json(await checkinLink(env, user, ev[1]), 200, origin);
       if (method === "POST") {
         const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
         if (pathname === "/api/events") return json(await saveEvent(env, user, body), 200, origin);
@@ -845,7 +864,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (ev?.[2] === "payment-proof") return json(await uploadPaymentProof(env, user, ev[1], body), 200, origin);
         if (ev?.[2] === "confirm-payment") return json(await confirmPayment(env, user, ev[1], body), 200, origin);
         if (ev?.[2] === "waive") return json(await waiveCharge(env, user, ev[1], body), 200, origin);
-        if (ev?.[2] === "no-show") return json(await markNoShow(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "attendance") return json(await setAttendance(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "tick-everyone") return json(await tickEveryone(env, user, ev[1]), 200, origin);
+        if (ev?.[2] === "register-taken") return json(await setRegisterTaken(env, user, ev[1], body), 200, origin);
+        if (ev?.[2] === "checkin") return json(await checkIn(env, user, ev[1], body), 200, origin);
       }
     }
 
@@ -878,6 +900,22 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
     }
 
+    // ── HKHA registration (Supabase backend; src/registration.ts) ─────────
+    // HKID and passport numbers: the Hockey Convenor only.
+    if (pathname.startsWith("/api/registration/")) {
+      const user = await requireSection(request, env, "registration");
+      if (method === "GET" && pathname === "/api/registration/board") return json(await getRegistrationBoard(env), 200, origin);
+      if (method === "GET" && pathname === "/api/registration/export") {
+        const opts = { todo: url.searchParams.get("todo") === "1", team: url.searchParams.get("team") || null };
+        return json(await registrationCsv(env, user, opts), 200, origin);
+      }
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
+        if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
+      }
+    }
+
     // ── Volunteering (Supabase backend; src/volunteering.ts) ──────────────
     if (method === "GET" && pathname === "/api/volunteering/me") {
       const user = await requireAuthorizedUser(request, env);
@@ -891,6 +929,31 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/volunteering/board") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getVolunteersBoard(env, user), 200, origin);
+    }
+
+    // ── Umpiring duties (Supabase backend; src/umpiring.ts) ───────────────
+    // The club's umpires take duties; the Umpire Coordinator (and the
+    // Section Captains) confirms, assigns, marks no-shows and reports.
+    if (pathname.startsWith("/api/umpiring")) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET" && pathname === "/api/umpiring") {
+        return json(await getUmpiringBoard(env, user, url.searchParams.get("week")), 200, origin);
+      }
+      if (method === "GET" && pathname === "/api/umpiring/report") {
+        return json(await getUmpiringReport(env, user, url.searchParams.get("season")), 200, origin);
+      }
+      const duty = pathname.match(/^\/api\/umpiring\/duties\/([0-9a-f-]{36})\/(take|assign)$/);
+      if (duty && method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(duty[2] === "take" ? await takeDuty(env, user, duty[1], body) : await assignDuty(env, user, duty[1], body), 200, origin);
+      }
+      const entry = pathname.match(/^\/api\/umpiring\/assignments\/([0-9a-f-]{36})\/(withdraw|confirm|no-show)$/);
+      if (entry && method === "POST") {
+        if (entry[2] === "withdraw") return json(await withdrawAssignment(env, user, entry[1]), 200, origin);
+        if (entry[2] === "confirm") return json(await confirmAssignment(env, user, entry[1]), 200, origin);
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(await setNoShow(env, user, entry[1], body), 200, origin);
+      }
     }
 
     // ── Kit (Supabase backend; src/kit.ts) ────────────────────────────────

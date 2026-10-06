@@ -5,6 +5,7 @@ import { safeFormat, isPastFixture } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
 import FixtureCard from '@/components/FixtureCard';
+import { DateHeading } from '@/components/shared';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
 import { CoachCalendarExport } from '@/components/CoachCalendarExport';
@@ -150,12 +151,10 @@ export default function FixtureList() {
           )}
         </div>
       ) : (
-        <div className="pt-4 space-y-4">
+        <div className="pt-4 space-y-6">
           {sortedDates.map(dateKey => (
             <div key={dateKey}>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                {safeFormat(dateKey, 'EEE d MMM yyyy')}
-              </p>
+              <DateHeading date={dateKey} />
               <div className="space-y-2">
                 {grouped[dateKey].map(f => (
                   <FixtureCard key={f.id} fixture={f} conflicts={conflictsByFixture.get(f.id) ?? []} />

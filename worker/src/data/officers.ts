@@ -18,7 +18,8 @@ export type Office =
   | "sponsor"
   | "kitConvenor"
   | "hockeyConvenor"
-  | "assistantDirector";
+  | "assistantDirector"
+  | "umpireCoordinator";
 
 export const OFFICE_TABLES: Record<Office, string> = {
   membershipOfficer: TABLES.membershipOfficer,
@@ -34,6 +35,8 @@ export const OFFICE_TABLES: Record<Office, string> = {
   // Supabase only: coach rights for every team and the trial sessions
   // (auth.ts).
   assistantDirector: "Assistant Director of Hockey",
+  // Supabase only: runs the umpiring duties (umpiring.ts).
+  umpireCoordinator: "Umpire Coordinator",
 };
 
 /** One office row: who holds it (People ids) and its Designation. */

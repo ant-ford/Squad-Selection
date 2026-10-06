@@ -87,15 +87,16 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
         <StatusBadge status={fixture.selectionStatus} />
       </div>
 
-      {/* Meta & squad size + availability segmented control */}
-      <div className="mt-2 flex justify-between items-start">
-        <div>
-          <MetaLine date={fixture.date} venue={fixture.venue} />
-          <span className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-            <Users className="h-3 w-3" />
-            {fixture.selectedCount}/{fixture.targetSquadSize}
-          </span>
-        </div>
+      {/* Meta across the full width so it stays on one line on a phone; squad
+          size and the availability segmented control share the row below. */}
+      <div className="mt-1.5">
+        <MetaLine date={fixture.date} venue={fixture.venue} />
+      </div>
+      <div className="mt-1.5 flex justify-between items-center">
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Users className="h-3 w-3" />
+          {fixture.selectedCount}/{fixture.targetSquadSize}
+        </span>
         <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
           {[
             { value: 'Available', label: availableLabel(isSelected) },

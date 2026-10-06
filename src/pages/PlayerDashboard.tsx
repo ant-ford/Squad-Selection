@@ -7,27 +7,27 @@ import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability 
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LogOut, Shield, CalendarDays, Info, ChevronDown, BarChart3, Settings, Trophy, UserPlus, BookOpenCheck } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, IdCard, Info, Settings, Shield } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
+import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
 import { otherGamesThatDay, needsSameDayPrompt } from '@/lib/sameDayGames';
-import { SectionHeader } from '@/components/shared';
+import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
-import AppHeader, { headerNavClass, headerIconClass } from '@/components/AppHeader';
+import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
-import InviteDialog from '@/components/InviteDialog';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import EventsSection from '@/components/events/EventsSection';
-import OfficersMenu, { officerItems } from '@/components/OfficersMenu';
-import HelpLink from '@/components/HelpLink';
+import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
+import UmpireViewButton from '@/components/UmpireViewButton';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
@@ -131,15 +131,11 @@ export default function PlayerDashboard() {
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
-  const [conflictHint, setConflictHint] = useState<string | null>(null);
+  // Maybe / No just tapped on a card: offer the optional note.
+  const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
-  // Members' own link for inviting someone to join (my-profile; Supabase only),
-  // on whichever address the app is open at.
+  // The burger's quizzes, umpiring duties and invite link (my-profile).
   const myProfile = useMyProfile().data;
-  const profileInvite = myProfile?.inviteLink;
-  const quizzesOn = myProfile?.quizzes ?? false;
-  const inviteLink = profileInvite ? `${window.location.origin}/join${new URL(profileInvite).search}` : null;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -158,11 +154,11 @@ export default function PlayerDashboard() {
       return next;
     });
 
-  const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus) => {
+  const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus, notes?: string) => {
     // A fresh "No" is a new moment to ask about the rest of the day.
     if (status === 'Unavailable') setPromptDismissed(fixtureId, false);
     quickAvailability.mutate(
-      { fixtureId, status },
+      { fixtureId, status, notes },
       {
         onSuccess: () => toast.success('Availability updated'),
         onError: () => toast.error('Failed to update availability'),
@@ -189,19 +185,28 @@ export default function PlayerDashboard() {
     );
   };
 
-  // Opening a Support Fixture: if the player is Available for their My Team
-  // fixture on the same date, pass a soft hint to the availability sheet.
-  const openFixture = (f: MyFixture) => {
-    let hint: string | null = null;
-    if (f.fixtureCategory === 'support') {
-      const ownAvailable = (data?.fixtures ?? []).some(
-        (x) => dateKey(x.date) === dateKey(f.date) && x.availabilityStatus === 'Available'
-      );
-      if (ownAvailable) hint = data?.displayTeam || data?.registeredTeam || '';
-    }
-    setConflictHint(hint);
-    setSelectedFixture(f);
+  // Saying No to a Support Fixture while Available for their My Team fixture
+  // that day: the note pop-up suggests explaining why.
+  const supportConflictHint = (f: MyFixture): string | undefined => {
+    if (f.fixtureCategory !== 'support') return undefined;
+    const ownAvailable = (data?.fixtures ?? []).some(
+      (x) => dateKey(x.date) === dateKey(f.date) && x.availabilityStatus === 'Available'
+    );
+    return ownAvailable ? data?.displayTeam || data?.registeredTeam || '' : undefined;
   };
+
+  // A card's own Maybe / No: saved at once (keeping any note already there),
+  // then the note pop-up offers to add or change it.
+  const handleCardAvailability = (f: MyFixture, status: AvailabilityStatus) => {
+    if (status === 'Available') {
+      handleQuickAvailability(f.id, status);
+      return;
+    }
+    handleQuickAvailability(f.id, status, f.playerNotes);
+    setNotePrompt({ fixture: f, status });
+  };
+
+  const openFixture = (f: MyFixture) => setSelectedFixture(f);
 
   // Lowest-ranked-team goalkeepers see every upcoming HKFC fixture,
   // grouped by date.
@@ -260,7 +265,7 @@ export default function PlayerDashboard() {
       key={`${f.id}-${f.hkfcTeam}`}
       fixture={f}
       onTap={() => openFixture(f)}
-      onAvailabilityChange={(status) => handleQuickAvailability(f.id, status)}
+      onAvailabilityChange={(status) => handleCardAvailability(f, status)}
     />
   );
 
@@ -296,54 +301,25 @@ export default function PlayerDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader>
-        <button onClick={() => navigate('/stats')} className={headerNavClass()}>
-          <Trophy className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Stats</span>
-        </button>
-        <OfficersMenu
-          items={officerItems(data)}
-          extras={quizzesOn ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []}
-          action={inviteLink ? { label: 'Invite someone to join', icon: UserPlus, onSelect: () => setShowInvite(true) } : undefined}
-        />
+      <AppHeader menu={<MainMenu officer={officerItems(data)} profile={myProfile} />}>
         {(data.isCoach || data.isSectionCaptain) && (
           <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
             <Shield className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Coach View</span>
           </button>
         )}
-        {data.playerId && (
-          <button
-            onClick={() => setStatsPlayerId(data.playerId!)}
-            className={headerIconClass}
-            title="My season stats"
-            aria-label="My season stats"
-          >
-            <BarChart3 className="h-4 w-4" />
-          </button>
-        )}
-        <button
-          onClick={() => setShowRules(true)}
-          className={headerIconClass}
-          title="Availability preferences"
-          aria-label="Availability preferences"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => setShowCalendarSync(true)}
-          className={headerIconClass}
-          title="Sync to Calendar"
-          aria-label="Sync to Calendar"
-        >
-          <CalendarDays className="h-4 w-4" />
-        </button>
-        <HelpLink guide="player" />
-        <button onClick={() => logout()} className={headerIconClass} aria-label="Log out">
-          <LogOut className="h-4 w-4" />
-        </button>
+        {data.umpiring && <UmpireViewButton />}
+        <ProfileMenu
+          guide="player"
+          onLogout={() => logout()}
+          entries={[
+            { to: '/my-details', label: 'My details', icon: IdCard },
+            ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
+            { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
+            { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
+          ]}
+        />
       </AppHeader>
-      {showInvite && inviteLink && <InviteDialog link={inviteLink} onClose={() => setShowInvite(false)} />}
 
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
@@ -405,7 +381,7 @@ export default function PlayerDashboard() {
               <div className="space-y-4">
                 {gkFixturesByDate?.map(([date, list]) => (
                   <div key={date}>
-                    <SectionHeader title={safeFormat(date, 'EEEE d MMM')} count={list.length} />
+                    <DateHeading date={date} suffix={` (${list.length})`} />
                     <DayAvailabilityControl
                       date={date}
                       busy={bulkBusy}
@@ -503,12 +479,29 @@ export default function PlayerDashboard() {
       {selectedFixture && (
         <PlayerAvailabilitySheet
           fixture={selectedFixture}
-          conflictHint={conflictHint ?? undefined}
+          viewerId={data.playerId}
           onClose={() => setSelectedFixture(null)}
-          onSaved={() => {
-            setPromptDismissed(selectedFixture.id, false);
-            setSelectedFixture(null);
-            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
+        />
+      )}
+      {notePrompt && (
+        <AvailabilityNoteSheet
+          // A second tap on another card starts a fresh note.
+          key={`${notePrompt.fixture.id}-${notePrompt.status}`}
+          fixture={notePrompt.fixture}
+          status={notePrompt.status}
+          conflictHint={supportConflictHint(notePrompt.fixture)}
+          busy={quickAvailability.isPending}
+          onClose={() => setNotePrompt(null)}
+          onSave={(notes) => {
+            const { fixture, status } = notePrompt;
+            setNotePrompt(null);
+            quickAvailability.mutate(
+              { fixtureId: fixture.id, status, notes },
+              {
+                onSuccess: () => toast.success('Note saved'),
+                onError: () => toast.error('Failed to save note'),
+              },
+            );
           }}
         />
       )}
