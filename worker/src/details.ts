@@ -13,7 +13,6 @@ import { fileLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
 import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
-import { deleteQueuedFiles } from "./retention";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
@@ -250,20 +249,16 @@ export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<
  * "Delete my profile": removes the signed-in person's personal details,
  * files and sign-in at once, the same removal as the 13-month retention job
  * (delete_own_profile, migration 20261002160000). Their name and playing
- * record stay. The app asks them to type DELETE first; so does this.
+ * record stay. The app asks them to type DELETE first; so does this. Their
+ * files are queued and leave R2 35 days later with the nightly run, like
+ * every removal's (migration 20261007000102), so a restored backup never
+ * points at a missing file.
  */
 export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
   requireSupabase(env);
   if (body.confirm !== "DELETE") throw new HttpError("Type DELETE to confirm.", 400, "INVALID_INPUT");
   const p = await loadPerson(env, user.personId);
   await db(env).rpc("delete_own_profile", { p_person: p.id });
-  // Their files go now rather than at the next nightly run; a failure is
-  // left queued for that run.
-  try {
-    await deleteQueuedFiles(env);
-  } catch (err) {
-    console.error("Delete my profile: files left queued:", err instanceof Error ? err.message : err);
-  }
   invalidateCache(`my-details-check:${user.personId}`);
   await invalidatePeople(env);
   return { ok: true };
