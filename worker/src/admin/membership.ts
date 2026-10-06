@@ -22,7 +22,7 @@ import { readPerson } from "./people";
 interface UpdateResult {
   status: "ok";
   changed: string[];
-  /** Untouched commitment periods removed because new dates left them out (20261007010503). */
+  /** Untouched commitment periods removed because new dates left them out (20261007130503). */
   removedPeriods?: number;
 }
 
