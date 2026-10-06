@@ -1,7 +1,10 @@
 import { safeFormat } from '@/lib/dateUtils';
 
-/** How a fixture's date reads everywhere: "Sun 18 Oct 2026" (shown in caps). */
-export const FIXTURE_DATE = 'EEE d MMM yyyy';
+/**
+ * How a fixture's date reads everywhere: "Sun 18 Oct" (shown in caps). No
+ * year: the lists cover one season, and the space matters on a phone.
+ */
+export const FIXTURE_DATE = 'EEE d MMM';
 
 /**
  * A day's heading in a list of fixtures or duties: bold caps, ruled to the
