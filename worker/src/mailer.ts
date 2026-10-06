@@ -51,13 +51,42 @@ const unverifiedSender = (status: number, message: string) =>
 
 export class MailerError extends Error {}
 
-export async function sendEmail(env: Env, email: Email): Promise<{ id: string }> {
+/**
+ * Several emails in one Worker run (the daily review emails): the day's
+ * count is read once at the start and kept up to date here, and the log
+ * rows are written together at the end (flushMailBatch), so each email
+ * costs only its Resend call. A free-plan run may make 50 outside calls.
+ */
+export interface MailBatch {
+  /** Addresses emailed today: the count at the start plus what this batch has sent. */
+  sentToday: number;
+  /** Calls made to Resend, for the run's count of outside calls. */
+  resendCalls: number;
+  /** email_log rows not yet written. */
+  log: object[];
+}
+
+export async function openMailBatch(env: Env): Promise<MailBatch> {
+  return { sentToday: await db(env).rpc<number>("emails_sent_today", {}), resendCalls: 0, log: [] };
+}
+
+/** Writes the batch's log rows in one insert. Like a single email's log, a failed write is logged, not thrown. */
+export async function flushMailBatch(env: Env, batch: MailBatch): Promise<void> {
+  const rows = batch.log.splice(0);
+  if (!rows.length) return;
+  await db(env).insert("email_log", rows).catch((err) => console.error("email_log write failed:", err instanceof Error ? err.message : err));
+}
+
+/** Room for this many more addresses today. */
+export const roomToday = (batch: MailBatch, recipients: number) => batch.sentToday + recipients <= DAILY_LIMIT;
+
+export async function sendEmail(env: Env, email: Email, batch?: MailBatch): Promise<{ id: string }> {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) throw new MailerError("Email is not configured (RESEND_API_KEY / MAIL_FROM)");
   const d = db(env);
   const redirect = env.MAIL_REDIRECT_TO;
   // What Resend will count: the one preview address, or the To and each CC.
   const recipients = redirect ? 1 : 1 + (email.cc?.length ?? 0);
-  const sentToday = await d.rpc<number>("emails_sent_today", {});
+  const sentToday = batch ? batch.sentToday : await d.rpc<number>("emails_sent_today", {});
   if (sentToday + recipients > DAILY_LIMIT) throw new MailerError(`Daily email limit (${DAILY_LIMIT}) reached; will try again tomorrow`);
 
   const attachments = email.attachments?.length ? email.attachments : undefined;
@@ -70,12 +99,14 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
       }
     : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, subject: email.subject, text: email.text, attachments };
 
-  const post = (from: string, replyTo?: string) =>
-    fetch("https://api.resend.com/emails", {
+  const post = (from: string, replyTo?: string) => {
+    if (batch) batch.resendCalls++;
+    return fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, reply_to: replyTo, ...message }),
     });
+  };
   let sender = email.from ?? env.MAIL_FROM;
   let res = await post(sender, email.replyTo);
   let body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
@@ -87,7 +118,7 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
     body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
   }
   const ok = res.ok && typeof body.id === "string";
-  await d.insert("email_log", [{
+  const row = {
     to_person_id: email.toPersonId,
     sender,
     template: email.template,
@@ -97,7 +128,14 @@ export async function sendEmail(env: Env, email: Email): Promise<{ id: string }>
     recipients,
     // Resend's error message describes the request, not the recipient.
     error: ok ? null : `${res.status} ${String(body.message ?? "").slice(0, 200)}`,
-  }]).catch((err) => console.error("email_log write failed:", err instanceof Error ? err.message : err));
+  };
+  if (batch) {
+    // Written later, so it carries the time it went rather than the insert's.
+    batch.log.push({ ...row, sent_at: new Date().toISOString() });
+    if (ok) batch.sentToday += recipients;
+  } else {
+    await d.insert("email_log", [row]).catch((err) => console.error("email_log write failed:", err instanceof Error ? err.message : err));
+  }
   if (!ok) throw new MailerError(`Resend refused the email (${res.status})`);
   return { id: body.id! };
 }
