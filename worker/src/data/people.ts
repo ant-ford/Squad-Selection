@@ -64,8 +64,17 @@ export type MyTaskRow = Row<typeof MY_TASK_FIELDS>;
 export const APPLICANT_TASK_FIELDS = ["stage"] as const;
 export type ApplicantTaskRow = Row<typeof APPLICANT_TASK_FIELDS>;
 
+/** A name for a list (ranking history): who, and the email to match an actor by. */
+export interface PersonName {
+  id: string;
+  preferredName: string | null;
+  givenNames: string | null;
+  /** Lower case. */
+  email: string | null;
+}
+
 export interface PeopleRepo {
-  /** Every person with Active ticked. */
+  /** Every person with Active ticked, with the squad screens' fields only (no photo, CV, coach notes, Player/Coach or rank date). */
   listActive(): Promise<Player[]>;
   /**
    * The person whose Email matches, case-insensitively on both sides. Where
@@ -97,6 +106,8 @@ export interface PeopleRepo {
   getApplicantStage(id: string): Promise<ApplicantStageRow | null>;
   /** Everyone not Resigned (a superset; the caller re-checks). */
   listDirectory(): Promise<DirectoryRow[]>;
+  /** One person's directory row (events: is the viewer invited?); null when there is no such person. */
+  getDirectoryRow(id: string): Promise<DirectoryRow | null>;
   /**
    * Contact details for the given ids. Anything that is not a row id is
    * ignored; each person comes back once, in no particular order.
@@ -104,6 +115,11 @@ export interface PeopleRepo {
   listContactsByIds(ids: Iterable<string>): Promise<ContactRow[]>;
   /** Everyone in People, with their names. */
   listNames(): Promise<NameRow[]>;
+  /**
+   * The names of the people with these ids or emails (any case), in one
+   * read. Ids that aren't row ids and blank emails are ignored.
+   */
+  listNamesFor(ids: Iterable<string>, emails: Iterable<string>): Promise<PersonName[]>;
   /** The person's own-forms fields; null when there is no such person. */
   getMyTaskFields(id: string): Promise<MyTaskRow | null>;
   /** Applicants at any of the given Applicant Stage values. */

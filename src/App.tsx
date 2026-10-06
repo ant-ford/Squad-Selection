@@ -16,6 +16,7 @@ const CoachLayout    = lazy(() => import('./components/CoachLayout'));
 const CoachDashboard = lazy(() => import('./pages/CoachDashboard'));
 const SquadSelection = lazy(() => import('./pages/SquadSelection'));
 const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
+const TeamAvailability = lazy(() => import('./pages/TeamAvailability'));
 // Officers' sections - deferred for the same reason.
 const MembershipBoard = lazy(() => import('./pages/MembershipBoard'));
 const EmailLists = lazy(() => import('./pages/EmailLists'));
@@ -434,6 +435,14 @@ const router = createBrowserRouter([
             element: (
               <Suspense fallback={<RouteSkeleton />}>
                 <PlayerRanking />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'availability',
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <TeamAvailability />
               </Suspense>
             ),
           },

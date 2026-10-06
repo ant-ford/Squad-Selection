@@ -1,6 +1,7 @@
 import {
   Ban,
   BookOpenCheck,
+  CalendarCheck,
   CalendarClock,
   ClipboardList,
   Contact,
@@ -49,10 +50,15 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
   return all.filter((i): i is MenuEntry => !!i);
 }
 
-/** Screens a person opens often that used to be header buttons: the coaches' ranking. Umpire view is on the header switch. */
+/** Screens a person opens often that used to be header buttons: the coaches' ranking and team availability. Umpire view is on the header switch. */
 export function viewItems(p: MenuProfile): MenuEntry[] {
   return [
-    ...(p.isCoach ? [{ to: '/coach/ranking', label: 'Ranking', icon: ListChecks }] : []),
+    ...(p.isCoach
+      ? [
+          { to: '/coach/ranking', label: 'Ranking', icon: ListChecks },
+          { to: '/coach/availability', label: 'Team availability', icon: CalendarCheck },
+        ]
+      : []),
   ];
 }
 
