@@ -542,6 +542,6 @@ describe("the Assistant Director of Hockey", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
+    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["membership", "chairman", "kit", "planning", "trials", "dataChecks"]);
   });
 });
