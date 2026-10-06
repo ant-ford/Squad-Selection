@@ -9,7 +9,7 @@
  * match+side opened that season.
  *
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
- * reads underneath it are shared through KV and live much longer).
+ * reads underneath it are cached for 30 s).
  * Invalidated by: syncSquad (selections changed), setAvailability and
  * setMyAvailability (exceptions changed), and People writes (invalidation.ts).
  */
@@ -34,6 +34,7 @@ import type {
   Player,
   Team,
   AvailabilityException,
+  AvailabilityRule,
 } from "../../shared/schema/domainTypes";
 
 // ── Season-scoped fetches ───────────────────────────────────────────────
@@ -123,6 +124,8 @@ export interface SeasonContext {
   exceptionsRaw: AvailabilityException[];
   exceptionIndex: { playerId: string; matchId: string; status: string }[];
   unavailablePlayerMatchKeys: Set<string>;
+  /** `player:match` for every explicit answer, whatever it says. */
+  answeredPlayerMatchKeys: Set<string>;
   matchCards: MatchCard[];
   allMatches: Match[];
   matchesById: Map<string, Match>;
@@ -141,11 +144,11 @@ export interface SeasonContext {
 }
 
 /**
- * The derived indexes live in this isolate only (Maps and Sets do not
- * survive KV's JSON round trip), so their lifetime is short: every input is
- * a shared raw read, and rebuilding from KV costs a few parallel gets plus
- * some CPU. A longer lifetime here is what let one isolate keep showing
- * selections another isolate's write had already replaced.
+ * The derived indexes live in this isolate only, and their lifetime is
+ * short: every input is a cached raw read, and rebuilding costs a few
+ * parallel reads plus some CPU. A longer lifetime here is what let one
+ * isolate keep showing selections another isolate's write had already
+ * replaced.
  */
 const SEASON_INDEX_TTL_MS = 60 * 1000;
 
@@ -207,6 +210,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
     const unavailablePlayerMatchKeys = new Set(
       exceptionIndex.filter((item) => item.status === "Unavailable").map((item) => `${item.playerId}:${item.matchId}`)
     );
+    const answeredPlayerMatchKeys = new Set(exceptionIndex.map((e) => `${e.playerId}:${e.matchId}`));
 
     // Automatic card-suspension state, computed once per cache lifetime
     // rather than once per candidate side (buildEvaluationContext is called
@@ -227,6 +231,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       exceptionsRaw,
       exceptionIndex,
       unavailablePlayerMatchKeys,
+      answeredPlayerMatchKeys,
       matchCards,
       allMatches,
       matchesById,
@@ -245,6 +250,111 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
   return data;
 }
 
+// ── Per-request inputs, shared across fixtures ──────────────────────────
+// buildEvaluationContext runs once per candidate fixture - well over a
+// hundred times for one lower-team player's /api/my-fixtures - and the
+// pieces below depend only on the player list and the rules, which come
+// from the cache and are the same array for every one of those calls. They
+// are built once per array and kept, through WeakMaps, as long as the array.
+// The length checks rebuild if an array has been grown or shrunk since;
+// nothing in the worker changes these lists after reading them.
+
+const playersByIdCache = new WeakMap<readonly Player[], { length: number; byId: Map<string, Player> }>();
+
+function playersByIdFor(allPlayers: readonly Player[]): Map<string, Player> {
+  const cached = playersByIdCache.get(allPlayers);
+  if (cached && cached.length === allPlayers.length) return cached.byId;
+  const byId = new Map<string, Player>();
+  for (const p of allPlayers) byId.set(p.id, p);
+  playersByIdCache.set(allPlayers, { length: allPlayers.length, byId });
+  return byId;
+}
+
+/**
+ * Everyone whose default is not simply "Available": someone with a standing
+ * rule, and someone a coach has set to Opt-In Only. The latter need not have
+ * a single rule to their name, so iterating the rule index alone would have
+ * advertised them to every higher team playing that day - the exact opposite
+ * of what the flag is for.
+ */
+type NonDefaultPlayers = { player: Player; rules: AvailabilityRule[] }[];
+
+const nonDefaultCache = new WeakMap<
+  readonly AvailabilityRule[],
+  WeakMap<readonly Player[], { length: number; players: NonDefaultPlayers }>
+>();
+
+function nonDefaultPlayersFor(
+  allRules: readonly AvailabilityRule[],
+  allPlayers: readonly Player[],
+  playersById: Map<string, Player>,
+): NonDefaultPlayers {
+  let byPlayers = nonDefaultCache.get(allRules);
+  if (!byPlayers) nonDefaultCache.set(allRules, (byPlayers = new WeakMap()));
+  const cached = byPlayers.get(allPlayers);
+  if (cached && cached.length === allPlayers.length) return cached.players;
+
+  const rulesByPlayer = indexRulesByPlayer(allRules as AvailabilityRule[]);
+  const ids = new Set<string>([
+    ...rulesByPlayer.keys(),
+    ...allPlayers.filter((p) => p.optInOnly).map((p) => p.id),
+  ]);
+  const players: NonDefaultPlayers = [];
+  for (const id of ids) {
+    const player = playersById.get(id);
+    if (player) players.push({ player, rules: rulesByPlayer.get(id) ?? [] });
+  }
+  byPlayers.set(allPlayers, { length: allPlayers.length, players });
+  return players;
+}
+
+/**
+ * For one HKFC side of one match: the `player:match` keys of everyone whose
+ * standing preference makes them Unavailable for it and who has not answered
+ * it explicitly. It does not depend on the fixture being evaluated, so every
+ * candidate on the same day - and every request - reuses it.
+ *
+ * Kept per season context, for one rule/player list and one rank map at a
+ * time (the inputs besides the fixture itself); a new one of either starts
+ * the map again.
+ */
+const preferenceUnavailableCache = new WeakMap<
+  SeasonContext,
+  { players: NonDefaultPlayers; rankMap: Record<string, number>; byFixture: Map<string, string[]> }
+>();
+
+function preferenceUnavailableFor(
+  season: SeasonContext,
+  players: NonDefaultPlayers,
+  rankMap: Record<string, number>,
+  fixture: { matchId: string; teamName: string },
+  day: string,
+): string[] {
+  let slot = preferenceUnavailableCache.get(season);
+  if (!slot || slot.players !== players || slot.rankMap !== rankMap) {
+    slot = { players, rankMap, byFixture: new Map() };
+    preferenceUnavailableCache.set(season, slot);
+  }
+  const fixtureKey = `${fixture.matchId}|${fixture.teamName}`;
+  let keys = slot.byFixture.get(fixtureKey);
+  if (keys) return keys;
+  keys = [];
+  const fixtureRank = rankMap[fixture.teamName] ?? UNRANKED_TEAM_RANK;
+  for (const { player, rules } of players) {
+    const key = `${player.id}:${fixture.matchId}`;
+    if (season.answeredPlayerMatchKeys.has(key)) continue;
+    const playerRank = rankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
+    const { status } = effectiveAvailability("", rules, {
+      date: day,
+      isPlayUp: fixtureRank < playerRank,
+      isSupport: fixtureRank > playerRank,
+    }, { optInOnly: player.optInOnly });
+    if (status === "Unavailable") keys.push(key);
+  }
+  slot.byFixture.set(fixtureKey, keys);
+  return keys;
+}
+
 export async function buildEvaluationContext(
   env: Env,
   match: Match,
@@ -256,8 +366,7 @@ export async function buildEvaluationContext(
   const currentSeason = match.season || "";
   const matchDate = match.matchDate || "";
   const season = await getSeasonContext(env, currentSeason);
-  const playersById = new Map<string, Player>();
-  for (const p of allPlayers) playersById.set(p.id, p);
+  const playersById = playersByIdFor(allPlayers);
 
   // Same-day slice (excludes the target match).
   const sameDayMatches = getSameDayMatches(season.allMatches, matchDate).filter((m) => m.id !== match.id);
@@ -291,37 +400,21 @@ export async function buildEvaluationContext(
   //
   // An explicit answer of any kind wins over a preference, exactly as it
   // does everywhere else the two meet.
-  const unavailablePlayerMatchKeys = new Set(season.unavailablePlayerMatchKeys);
-  const rulesByPlayer = indexRulesByPlayer(await getAllAvailabilityRules(env));
-  // Everyone whose default is not simply "Available": someone with a standing
-  // rule, and someone a coach has set to Opt-In Only. The latter need not have
-  // a single rule to their name, so iterating the rule index alone would have
-  // advertised them to every higher team playing that day - the exact opposite
-  // of what the flag is for.
-  const nonDefaultPlayerIds = new Set<string>([
-    ...rulesByPlayer.keys(),
-    ...allPlayers.filter((p) => p.optInOnly).map((p) => p.id),
-  ]);
-  if (nonDefaultPlayerIds.size > 0 && sameDayFixtures.length > 0) {
-    const answered = new Set(season.exceptionIndex.map((e) => `${e.playerId}:${e.matchId}`));
+  //
+  // The season's own set is used as it is until a preference adds to it,
+  // and copied only then. Nothing downstream writes to it.
+  let unavailablePlayerMatchKeys = season.unavailablePlayerMatchKeys;
+  const nonDefault = nonDefaultPlayersFor(await getAllAvailabilityRules(env), allPlayers, playersById);
+  if (nonDefault.length > 0 && sameDayFixtures.length > 0) {
     // Every same-day fixture shares the target's Hong Kong day.
     const sameDay = hkDateKey(matchDate);
-    for (const playerId of nonDefaultPlayerIds) {
-      const player = playersById.get(playerId);
-      if (!player) continue;
-      const rules = rulesByPlayer.get(playerId) ?? [];
-      const playerRank = teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
-      for (const fixture of sameDayFixtures) {
-        const key = `${playerId}:${fixture.matchId}`;
-        if (answered.has(key)) continue;
-        const fixtureRank = teamRankMap[fixture.teamName] ?? UNRANKED_TEAM_RANK;
-        const { status } = effectiveAvailability("", rules, {
-          date: sameDay,
-          isPlayUp: fixtureRank < playerRank,
-          isSupport: fixtureRank > playerRank,
-        }, { optInOnly: player.optInOnly });
-        if (status === "Unavailable") unavailablePlayerMatchKeys.add(key);
+    for (const fixture of sameDayFixtures) {
+      const keys = preferenceUnavailableFor(season, nonDefault, teamRankMap, fixture, sameDay);
+      if (keys.length === 0) continue;
+      if (unavailablePlayerMatchKeys === season.unavailablePlayerMatchKeys) {
+        unavailablePlayerMatchKeys = new Set(unavailablePlayerMatchKeys);
       }
+      for (const key of keys) unavailablePlayerMatchKeys.add(key);
     }
   }
 

@@ -362,7 +362,7 @@ export async function syncSquad(
   if (!match) throw new HttpError("Match not found", 404);
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
-  const cleanIds = targetPlayerIds.filter((id) => isRowId(env, "people", id));
+  const cleanIds = targetPlayerIds.filter((id) => isRowId(id));
 
     // ── Server-side eligibility revalidation (INV-003) ──────────────────
   const currentSelectedBefore = getSelectedPlayerIds(match, ref.teamRankMap, side);
@@ -413,24 +413,24 @@ export type SquadChangesOutcome =
   | { status: "ok"; version: number; selectedIds: string[]; displaced: DisplacedSelection[] }
   | { status: "conflict"; version: number; selectedIds: string[]; players: { id: string; name: string }[] };
 
-function playerIdList(env: Env, value: unknown, name: string): string[] {
+function playerIdList(value: unknown, name: string): string[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new HttpError(`${name} must be a list of player ids`, 400);
   if (value.length > MAX_SQUAD_CHANGES) throw new HttpError(`${name} can list at most ${MAX_SQUAD_CHANGES} players`, 400);
   for (const id of value) {
-    if (!isRowId(env, "people", id)) throw new HttpError(`${name} has an invalid player id`, 400);
+    if (!isRowId(id)) throw new HttpError(`${name} has an invalid player id`, 400);
   }
   return [...new Set(value as string[])];
 }
 
 /** Checks a POST /api/squad/changes body; 400 on anything malformed. */
-export function parseSquadChanges(env: Env, body: SquadChangesBody) {
-  if (!isRowId(env, "matches", body.matchId)) throw new HttpError("matchId is invalid", 400);
+export function parseSquadChanges(body: SquadChangesBody) {
+  if (!isRowId(body.matchId)) throw new HttpError("matchId is invalid", 400);
   if (body.side !== undefined && body.side !== null && body.side !== "home" && body.side !== "away") {
     throw new HttpError('side must be "home" or "away"', 400);
   }
-  const add = playerIdList(env, body.add, "add");
-  const remove = playerIdList(env, body.remove, "remove");
+  const add = playerIdList(body.add, "add");
+  const remove = playerIdList(body.remove, "remove");
   if (add.some((id) => remove.includes(id))) throw new HttpError("A player cannot be added and removed in one save", 400);
   const version = body.version;
   if (typeof version !== "number" || !Number.isInteger(version) || version < 0) {
@@ -456,7 +456,7 @@ export async function applySquadChanges(
   body: SquadChangesBody,
   actor: { email: string; personId?: string },
 ): Promise<SquadChangesOutcome> {
-  const { matchId, side, add, remove, version } = parseSquadChanges(env, body);
+  const { matchId, side, add, remove, version } = parseSquadChanges(body);
 
   // Fresh, never the 30s cache: which adds are new decides what is revalidated.
   const match = await matches(env).getById(matchId);
@@ -578,7 +578,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   const team = ref.teams.find(t => t.teamName === teamName);
   if (!team) throw new HttpError("Team not found", 404);
 
-  const validIds = playerIds.filter((id) => isRowId(env, "people", id));
+  const validIds = playerIds.filter((id) => isRowId(id));
 
   // Use team.id from reference data — avoids a redundant Airtable lookup
   await teamsRepo(env).setAutoSelectPlayers(team.id, validIds);

@@ -1,7 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Ranking Events module (worker/src/rankingEvents.ts)
+//
+// The reads and writes run on the Supabase path: the real repositories
+// against fakePostgrest (tests/helpers/rankingDb.ts). A write is one
+// insert_ranking_events call; the read is api_ranking_events.
 // ---------------------------------------------------------------------------
 
 import {
@@ -12,94 +16,33 @@ import {
   recordRankingEvents,
   getRankingEvents,
   MAX_JUSTIFICATION_CHARS,
-  RANKING_EVENTS_TABLE,
 } from "../worker/src/rankingEvents";
 import { invalidateAll, getCached } from "../worker/src/cache";
 import { getRecentChanges } from "../worker/src/dashboard";
 import { HttpError } from "../worker/src/http";
+import { SupabaseError } from "../worker/src/data/supabase";
+import type { Env } from "../worker/src/env";
+import { SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { recId } from "./helpers/factories";
+import { personRow, rankingDb, rankingEventRow, type RankingDb } from "./helpers/rankingDb";
+import type { PgRow } from "./helpers/postgrest";
 
-const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
-  CALENDAR_SECRET: "***",
-  SUPABASE_URL: "https://test.supabase.co",
-  SUPABASE_ANON_KEY: "***",
-} as any;
+const ENV = { ...SUPABASE_TEST_ENV } as unknown as Env;
 
-function airtableResponse(body: unknown) {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+const COACH = recId("Coach");
+const P1 = recId("P1");
 
-function installFakeAirtable(opts: {
-  people?: any[];
-  teams?: any[];
-  events?: any[];
-  failEvents?: boolean;
-  failEventsWith?: number;
-}) {
-  const calls: string[] = [];
-  const people = opts.people ?? [];
-  const teams = opts.teams ?? [];
-  const events = opts.events ?? [];
-  const failEvents = opts.failEvents ?? false;
+const failWith = (status: number) => () =>
+  new Response(JSON.stringify({ code: "XX000", message: "upstream error" }), { status, headers: { "Content-Type": "application/json" } });
 
-  const fetchMock = vi.fn((url: any, init?: any) => {
-    const u = String(url);
-    calls.push(u);
-    if (!u.includes("api.airtable.com")) {
-      return Promise.resolve(new Response("{}", { status: 404 }));
-    }
-    const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-    const method = init?.method ?? "GET";
-
-    if (table === RANKING_EVENTS_TABLE && failEvents) {
-      return Promise.resolve(new Response("Table not found", { status: 404 }));
-    }
-    if (table === RANKING_EVENTS_TABLE && method === "GET" && u.includes("sort=%5B")) {
-      // Regression guard for the live root cause: Airtable rejects a single
-      // JSON-encoded `sort` parameter with HTTP 422.
-      return Promise.resolve(
-        new Response(JSON.stringify({ error: { message: "Invalid request: parameter validation failed. Check your request data." } }), { status: 422 }),
-      );
-    }
-    if (table === RANKING_EVENTS_TABLE && method === "GET" && opts.failEventsWith) {
-      return Promise.resolve(new Response("Airtable error", { status: opts.failEventsWith }));
-    }
-    if (table === RANKING_EVENTS_TABLE && method === "POST" && opts.failEventsWith) {
-      return Promise.resolve(new Response("Airtable error", { status: opts.failEventsWith }));
-    }
-
-    let records: any[] = [];
-    if (table === "People") records = people;
-    else if (table === "Teams") records = teams;
-    else if (table === RANKING_EVENTS_TABLE) records = events;
-
-    if (method === "POST" && table === RANKING_EVENTS_TABLE) {
-      const body = JSON.parse(init.body);
-      const created = (body.records ?? []).map((r: any, i: number) => ({
-        id: `recE${i}`,
-        fields: r.fields,
-      }));
-      events.push(...created);
-      return Promise.resolve(airtableResponse({ records: created }));
-    }
-
-    const byId = u.match(/\/rec[A-Z0-9]+/);
-    if (byId) {
-      const found = records.find((r) => u.includes(r.id));
-      return Promise.resolve(airtableResponse(found ?? { id: "x", fields: {} }));
-    }
-    return Promise.resolve(airtableResponse({ records }));
-  }) as any;
-  vi.stubGlobal("fetch", fetchMock);
-  return { calls, fetchMock };
-}
+let db: RankingDb;
 
 beforeEach(() => {
   invalidateAll();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("validateJustification", () => {
@@ -239,22 +182,32 @@ describe("buildRankingEventRecords", () => {
   });
 });
 
+
+/** The coach whose session email resolves to the actor, and P1, a player with no name on file. */
+function coachAndPlayer() {
+  return [
+    personRow("Coach", { email: "coach@hkfc.com", preferred_name: "C", active: true }),
+    // In People (insert_ranking_events resolves the id) but not Active, and
+    // with no name: the read falls back to "Player".
+    personRow("P1", { email: null, preferred_name: null, active: false }),
+  ];
+}
+
 describe("recordRankingEvents", () => {
   it("resolves the actor id from the session email and writes to the table", async () => {
-    const { calls } = installFakeAirtable({
-      people: [{ id: "recCoach", fields: { Email: "coach@hkfc.com", "Preferred Name": "C" } }],
-      events: [],
-    });
+    db = rankingDb({ people: coachAndPlayer() });
     await recordRankingEvents(ENV, [
-      { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 10, newRank: 3, justification: "new form" },
+      { playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 10, newRank: 3, justification: "new form" },
     ]);
-    expect(calls.some((u) => u.includes("Ranking%20Events") && u.includes("api.airtable.com"))).toBe(true);
+    // Supabase: the write is the insert_ranking_events call, with the actor
+    // resolved from the session email (was: a POST to the Airtable table).
+    expect(db.pg.rpcCalls("insert_ranking_events")[0].p[0]).toMatchObject({ playerId: P1, actorId: COACH, actorEmail: "coach@hkfc.com" });
     const { getRankingEvents: read } = await import("../worker/src/rankingEvents");
     invalidateAll();
     const changes = await read(ENV, 7);
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
-      playerId: "recP1",
+      playerId: P1,
       kind: "move",
       playerName: "Player",
       actorName: "C",
@@ -266,99 +219,74 @@ describe("recordRankingEvents", () => {
   });
 
   it("propagates a real failed write instead of swallowing it (no more fire-and-forget)", async () => {
-    installFakeAirtable({ events: [], failEventsWith: 500 });
+    db = rankingDb({ people: coachAndPlayer(), handlers: { "rpc/insert_ranking_events": failWith(500) } });
     await expect(
       recordRankingEvents(ENV, [
-        { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
+        { playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
 
-  it("degrades gracefully when the table does not exist (404) — the rank change is already committed", async () => {
-    // The caller has ALREADY written the new Section Rank to People by the
-    // time this runs. Rejecting on a 404 would report a successful move as a
-    // 502 and invite the coach to redo it, so a missing audit table must not
-    // fail the request - matching getRankingEvents' documented 404 carve-out.
-    installFakeAirtable({ events: [], failEvents: true });
-    await expect(
-      recordRankingEvents(ENV, [
-        { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
-      ]),
-    ).resolves.toBeUndefined();
-  });
-
   it("commits the event batch before the call resolves (no background write)", async () => {
-    const { fetchMock } = installFakeAirtable({
-      people: [{ id: "recCoach", fields: { Email: "coach@hkfc.com" } }],
-      events: [],
-    });
+    db = rankingDb({ people: coachAndPlayer() });
     await recordRankingEvents(ENV, [
-      { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 5, newRank: 1 },
+      { playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 5, newRank: 1 },
     ]);
-    // If the write were still fire-and-forget, the POST would still be
-    // in flight (or not yet issued) the instant recordRankingEvents resolves.
-    const posted = fetchMock.mock.calls.some(
-      ([url, init]: [string, any]) =>
-        String(url).includes("Ranking%20Events") && init?.method === "POST",
-    );
-    expect(posted).toBe(true);
+    // If the write were still fire-and-forget, the call would still be in
+    // flight (or not yet issued) the instant recordRankingEvents resolves.
+    expect(db.pg.rpcCalls("insert_ranking_events")).toHaveLength(1);
+    expect(db.events).toHaveLength(1);
   });
 
-  it("chunks large audits into batches of 10 create requests", async () => {
-    const { calls } = installFakeAirtable({ people: [], events: [] });
+  it("writes a large audit in full, in one insert_ranking_events call", async () => {
+    // Supabase: one call (one transaction) for every event. Airtable took 10
+    // records per create request, so this used to assert 3 requests (10+10+5).
+    db = rankingDb({ people: Array.from({ length: 25 }, (_, i) => personRow(`P${i}`, { active: false })) });
     const events = Array.from({ length: 25 }, (_, i) => ({
-      playerId: `recP${i}`,
+      playerId: recId(`P${i}`),
       actorEmail: "coach@hkfc.com",
       kind: "move" as const,
       oldRank: i + 1,
       newRank: i + 2,
     }));
     await recordRankingEvents(ENV, events);
-    const posts = calls.filter((u) => u.includes("Ranking%20Events") && u.includes("api.airtable.com"));
-    expect(posts).toHaveLength(3); // 10 + 10 + 5
+    const calls = db.pg.rpcCalls("insert_ranking_events");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].p).toHaveLength(25);
     invalidateAll();
     const changes = await getRankingEvents(ENV, 7);
-    // All 25 were written; the read is capped at the 20 newest (if only one
-    // batch had been written, the read would return 10, not 20).
+    // All 25 were written; the read is capped at the 20 newest.
     expect(changes).toHaveLength(20);
   });
 });
 
 describe("getRankingEvents", () => {
-  it("returns [] when the table does not exist", async () => {
-    installFakeAirtable({ events: [], failEvents: true });
-    const changes = await getRankingEvents(ENV, 7);
-    expect(changes).toEqual([]);
-  });
-
   it("filters by the requested window and returns newest first", async () => {
     const now = Date.now();
-    const events = [
-      { id: "recE1", fields: { "Old Rank": 1, "New Rank": 5, Timestamp: new Date(now - 2 * 86400_000).toISOString(), "Actor Email": "c@hkfc.com", Kind: "move" } },
-      { id: "recE2", fields: { "Old Rank": 5, "New Rank": 1, Timestamp: new Date(now - 400 * 86400_000).toISOString(), "Actor Email": "c@hkfc.com", Kind: "move" } },
-    ];
-    installFakeAirtable({
-      events,
-      people: [{ id: "recP1", fields: { "Preferred Name": "Bob" } }],
-      teams: [],
+    db = rankingDb({
+      events: [
+        rankingEventRow({ id: recId("E1"), old_rank: 1, new_rank: 5, occurred_at: new Date(now - 2 * 86400_000).toISOString(), actor_email: "c@hkfc.com", kind: "move" }),
+        rankingEventRow({ id: recId("E2"), old_rank: 5, new_rank: 1, occurred_at: new Date(now - 400 * 86400_000).toISOString(), actor_email: "c@hkfc.com", kind: "move" }),
+      ],
+      people: [personRow("P1", { preferred_name: "Bob", email: null, active: true })],
     });
     const changes = await getRankingEvents(ENV, 7);
-    expect(changes.map((c) => c.id)).toEqual(["recE1"]);
+    expect(changes.map((c) => c.id)).toEqual([recId("E1")]);
     expect(changes[0]).toMatchObject({ oldRank: 1, newRank: 5, kind: "move" });
   });
 
   it("caps the returned list at the 20 newest changes", async () => {
     const now = Date.now();
-    const events = Array.from({ length: 25 }, (_, i) => ({
-      id: `recE${i}`,
-      fields: {
-        "Old Rank": i,
-        "New Rank": i + 1,
-        Kind: "move",
-        Timestamp: new Date(now - i * 3600_000).toISOString(),
-      },
-    }));
-    installFakeAirtable({ events, people: [], teams: [] });
+    const events: PgRow[] = Array.from({ length: 25 }, (_, i) =>
+      rankingEventRow({
+        id: recId(`E${i}`),
+        old_rank: i,
+        new_rank: i + 1,
+        kind: "move",
+        occurred_at: new Date(now - i * 3600_000).toISOString(),
+      }),
+    );
+    db = rankingDb({ events });
     const changes = await getRankingEvents(ENV, 30);
     expect(changes).toHaveLength(20);
   });
@@ -369,64 +297,59 @@ describe("getRankingEvents", () => {
 // ---------------------------------------------------------------------------
 
 describe("getRankingEvents read path", () => {
-  it("requests the sort in Airtable's bracket format (regression: the JSON-blob sort was rejected with 422)", async () => {
-    const { calls } = installFakeAirtable({
-      events: [{ id: "recE1", fields: { Kind: "move", "Old Rank": 4, "New Rank": 2, Timestamp: new Date().toISOString() } }],
-      people: [],
-      teams: [],
+  it("asks for newest first, with a total order for paging (was: Airtable's bracket sort format)", async () => {
+    // Supabase: the sort is PostgREST's order=occurred_at.desc. The old
+    // regression (Airtable rejected a JSON-blob sort with 422) has no
+    // equivalent; what matters now is the direction and the id tiebreaker
+    // that keeps pages from skipping rows that share a timestamp.
+    db = rankingDb({
+      events: [rankingEventRow({ id: recId("E1"), kind: "move", old_rank: 4, new_rank: 2, occurred_at: new Date().toISOString() })],
     });
     const changes = await getRankingEvents(ENV, 7);
     expect(changes).toHaveLength(1);
-    expect(calls.some((u) => u.includes("sort%5B0%5D%5Bfield%5D=Timestamp"))).toBe(true);
-    expect(calls.some((u) => u.includes("sort%5B0%5D%5Bdirection%5D=desc"))).toBe(true);
-    // The old broken format must never be sent again.
-    expect(calls.some((u) => u.includes("sort=%5B"))).toBe(false);
+    const order = db.pg.reads("api_ranking_events").map((c) => c.params.get("order"));
+    expect(order.every((o) => o?.startsWith("occurred_at.desc"))).toBe(true);
+    expect(order.every((o) => o?.split(",").includes("id"))).toBe(true);
+    // Airtable's sort parameters must never be sent.
+    expect(db.pg.reads("api_ranking_events").some((c) => [...c.params.keys()].some((k) => k.startsWith("sort")))).toBe(false);
   });
 
   it("returns [] for an existing but empty table", async () => {
-    installFakeAirtable({ events: [], people: [], teams: [] });
+    db = rankingDb();
     const changes = await getRankingEvents(ENV, 7);
     expect(changes).toEqual([]);
   });
 
-  it("propagates an Airtable read failure instead of silently returning an empty success", async () => {
-    installFakeAirtable({ events: [], failEventsWith: 500 });
+  it("propagates a read failure instead of silently returning an empty success", async () => {
+    db = rankingDb({ handlers: { api_ranking_events: failWith(500) } });
     await expect(getRankingEvents(ENV, 7)).rejects.toMatchObject({
       code: "RANKING_EVENTS_UNAVAILABLE",
       status: 502,
     });
-  });
-
-  it("keeps the graceful [] degradation only for a missing table (404)", async () => {
-    installFakeAirtable({ events: [], failEvents: true });
-    await expect(getRankingEvents(ENV, 7)).resolves.toEqual([]);
   });
 });
 
 describe("getRecentChanges API layer", () => {
   it("returns recorded events for the API response", async () => {
     const now = Date.now();
-    installFakeAirtable({
+    db = rankingDb({
       events: [
-        {
-          id: "recE1",
-          fields: {
-            Kind: "move",
-            "Old Rank": 4,
-            "New Rank": 2,
-            Timestamp: new Date(now - 3_600_000).toISOString(),
-            "Actor Email": "c@hkfc.com",
-            Player: ["recP1"],
-          },
-        },
+        rankingEventRow({
+          id: recId("E1"),
+          kind: "move",
+          old_rank: 4,
+          new_rank: 2,
+          occurred_at: new Date(now - 3_600_000).toISOString(),
+          actor_email: "c@hkfc.com",
+          player: P1,
+        }),
       ],
-      people: [{ id: "recP1", fields: { "Preferred Name": "Bob", Email: "c@hkfc.com" } }],
-      teams: [],
+      people: [personRow("P1", { preferred_name: "Bob", email: "c@hkfc.com", active: true })],
     });
     const out = await getRecentChanges(ENV, 7);
     expect(out.changes).toHaveLength(1);
     expect(out.changes[0]).toMatchObject({
-      playerId: "recP1",
+      playerId: P1,
       kind: "move",
       oldRank: 4,
       newRank: 2,
@@ -435,23 +358,32 @@ describe("getRecentChanges API layer", () => {
   });
 
   it("propagates read failures to the API layer instead of returning { changes: [] }", async () => {
-    installFakeAirtable({ events: [], failEventsWith: 422 });
+    db = rankingDb({ handlers: { api_ranking_events: failWith(422) } });
     await expect(getRecentChanges(ENV, 7)).rejects.toBeInstanceOf(HttpError);
   });
 });
 
 describe("ranking-events cache invalidation", () => {
   it("drops the cached read after events are recorded (no 60s staleness)", async () => {
-    installFakeAirtable({
-      people: [{ id: "recCoach", fields: { Email: "coach@hkfc.com" } }],
-      events: [],
-    });
+    db = rankingDb({ people: coachAndPlayer() });
     await getCached("ranking-events:7", async () => "STALE", 60_000);
     await recordRankingEvents(ENV, [
-      { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 3, newRank: 2 },
+      { playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 3, newRank: 2 },
     ]);
     const { data, fromCache } = await getCached("ranking-events:7", async () => "FRESH");
     expect(fromCache).toBe(false);
     expect(data).toBe("FRESH");
+  });
+});
+
+// A failed audit write or read is never forgiven: there is no missing-table
+// carve-out (the table always exists), so a write rejects and a read is a 502.
+describe("a failing Ranking Events table", () => {
+  it("is not forgiven: the write rejects and the read is a 502", async () => {
+    db = rankingDb({ people: coachAndPlayer(), handlers: { "rpc/insert_ranking_events": failWith(404), api_ranking_events: failWith(404) } });
+    await expect(
+      recordRankingEvents(ENV, [{ playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 }]),
+    ).rejects.toBeInstanceOf(SupabaseError);
+    await expect(getRankingEvents(ENV, 7)).rejects.toMatchObject({ status: 502, code: "RANKING_EVENTS_UNAVAILABLE" });
   });
 });

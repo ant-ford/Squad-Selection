@@ -7,8 +7,9 @@ export interface CacheKv {
   get(key: string, options: { type: "json" }): Promise<unknown>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
   delete(key: string): Promise<void>;
-  // No list(): the cache never lists keys (see SHARED_PREFIXES in cache.ts).
-  // Leaving it out of this slice means a new list() call does not compile.
+  // No list(): the cache never lists keys (the free plan allows 1,000 lists
+  // a day per account). Leaving it out of this slice means a new list() call
+  // does not compile.
 }
 
 // Compile-time proof that the real binding satisfies the slice above. If
@@ -19,28 +20,18 @@ export const realBindingFits: RealBindingFits = true;
 
 /** Cloudflare Worker environment bindings (wrangler.toml vars + secrets). */
 export interface Env {
-  AIRTABLE_TOKEN: string;
-  AIRTABLE_BASE_ID: string;
   CALENDAR_SECRET: string;
   ALLOWED_ORIGIN: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   /**
-   * Shared cache for raw Airtable reads, across isolates.
+   * Shared cache for the Stats summaries, across isolates (cache.ts).
    *
-   * Optional on purpose: with no binding every read falls back to the
-   * in-isolate cache, which is exactly how this worked before. That keeps
-   * the tests, local dev, and a deploy made before the namespace exists all
-   * working rather than failing at the first cache read.
+   * Optional on purpose: with no binding they fall back to the in-isolate
+   * cache. That keeps the tests, local dev, and a deploy made before the
+   * namespace exists all working rather than failing at the first cache read.
    */
   CACHE?: CacheKv;
-  /**
-   * Which store the data modules use: "airtable" (the default when unset)
-   * or "supabase". See worker/src/data/backend.ts.
-   */
-  DATA_BACKEND?: string;
-  /** Per-module exceptions to DATA_BACKEND, e.g. "people=supabase,matches=airtable". */
-  DATA_BACKEND_OVERRIDES?: string;
   /**
    * The Supabase project holding Eddy's DATA (eddy-production, or
    * eddy-preview for the preview Worker). Separate from SUPABASE_URL, which

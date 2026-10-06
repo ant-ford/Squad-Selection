@@ -7,7 +7,6 @@
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { getCached } from "./cache";
 
@@ -52,7 +51,6 @@ export const managesEvent = (r: EventRights, e: { team_id: string | null }) => r
 
 /** Whether the Events screen is theirs (the officers' menu). */
 export async function canManageEvents(env: Env, user: AuthorizedUser): Promise<boolean> {
-  if (backendFor(env, "people") !== "supabase") return false;
   try {
     const r = await eventRights(env, user);
     return r.club || r.teams.length > 0;
