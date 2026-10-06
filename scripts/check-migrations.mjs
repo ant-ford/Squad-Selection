@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Guards on supabase/migrations, run by CI (.github/workflows/ci.yml) and
 // runnable locally:
 //
