@@ -366,6 +366,23 @@ export function computeCompletedLeagueMatchCounts(
   return counts;
 }
 
+/**
+ * The same counts from a per-match summary of the teams on its cards
+ * (season_context's), so a context narrowed to one player, which does not
+ * carry everyone's cards, counts exactly what the whole season does.
+ */
+export function completedLeagueMatchCountsFromSummary(
+  summary: ReadonlyMap<string, { teams: readonly string[] }>,
+  matchesById: ReadonlyMap<string, Match>,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [matchId, { teams }] of summary) {
+    if (!isLeague(matchesById.get(matchId))) continue;
+    for (const team of new Set(teams)) if (team) counts.set(team, (counts.get(team) ?? 0) + 1);
+  }
+  return counts;
+}
+
 // ── Step 6: Play-Up Rules (§9-11, §13) ─────────────────────────────────
 function checkPlayUpRules(
   player: Player,
