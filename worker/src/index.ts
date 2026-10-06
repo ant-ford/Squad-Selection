@@ -13,7 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
-import { requireAuthorizedUser, requireCoach, requireSection, requireVerifiedEmail } from "./auth";
+import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
@@ -89,6 +89,7 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { getDataChecks } from "./dataChecks";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -633,13 +634,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         origin,
       );
     }
+    // Making a player active or inactive: Section Captains only (owner
+    // decision, 2026-10-06), not every coach.
     if (method === "POST" && pathname === "/api/ranking/activate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await activatePlayer(env, body.playerId, user.email), 200, origin);
     }
     if (method === "POST" && pathname === "/api/ranking/deactivate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await deactivatePlayer(env, body.playerId, user.email), 200, origin);
     }
@@ -889,6 +892,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
       }
+    }
+
+    // ── Data checks (src/dataChecks.ts) ───────────────────────────────────
+    // The Men's Convenor and the Section Captains.
+    if (method === "GET" && pathname === "/api/admin/data-checks") {
+      await requireSection(request, env, "dataChecks");
+      return json(await getDataChecks(env), 200, origin);
     }
 
     // ── Volunteering (src/volunteering.ts) ────────────────────────────────

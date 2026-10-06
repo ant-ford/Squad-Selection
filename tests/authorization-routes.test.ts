@@ -123,6 +123,12 @@ const GK_A = recId("GKA");
 const CHAIR = recId("Chair");
 /** The Assistant Director of Hockey: an office row, no Teams link. */
 const ADH = recId("Adh");
+/** Linked as Section Captain on a team (Teams link). */
+const CAPTAIN = recId("Captain");
+/** Holds the Section Captain office, with no Teams link. */
+const VICE = recId("Vice");
+/** Holds the Hockey Convenor office (the Men's Convenor). */
+const CONVENOR = recId("Convenor");
 
 const TOKENS = {
   player: "player.jwt",
@@ -130,6 +136,9 @@ const TOKENS = {
   gkA: "gk-a.jwt",
   chair: "chair.jwt",
   adh: "adh.jwt",
+  captain: "captain.jwt",
+  vice: "vice.jwt",
+  convenor: "convenor.jwt",
   /** A verified email with no People record. */
   stranger: "stranger.jwt",
   /** Supabase rejects this one. */
@@ -142,6 +151,9 @@ const SESSION_EMAILS: Record<string, string> = {
   [TOKENS.gkA]: "gk-a@example.com",
   [TOKENS.chair]: "chair@hkfc.com",
   [TOKENS.adh]: "adh@hkfc.com",
+  [TOKENS.captain]: "captain@hkfc.com",
+  [TOKENS.vice]: "vice@hkfc.com",
+  [TOKENS.convenor]: "convenor@hkfc.com",
   [TOKENS.stranger]: "stranger@hkfc.com",
 };
 
@@ -161,14 +173,19 @@ const db = useFakeRepos(() => ({
     person({ id: GK_A, preferredName: "Keeper A", email: "gk-a@example.com", registeredTeam: "Men's 3s", playingPosition: "Goalkeeper" }),
     person({ id: CHAIR, preferredName: "Test Chair", email: "chair@hkfc.com", active: false }),
     person({ id: ADH, preferredName: "Test ADH", email: "adh@hkfc.com", registeredTeam: "Men's 3s" }),
+    person({ id: CAPTAIN, preferredName: "Test Captain", email: "captain@hkfc.com", registeredTeam: "Men's 1s" }),
+    person({ id: VICE, preferredName: "Test Vice", email: "vice@hkfc.com", active: false }),
+    person({ id: CONVENOR, preferredName: "Test Convenor", email: "convenor@hkfc.com", registeredTeam: "Men's 3s" }),
   ],
   teams: [
     team({ teamName: "Men's 1s", teamRank: 1, coach: [COACH] }),
-    team({ teamName: "Men's 3s", teamRank: 3 }),
+    team({ teamName: "Men's 3s", teamRank: 3, sectionCaptain: [CAPTAIN] }),
   ],
   officers: [
     office("sectionChair", CHAIR, { designation: "Chairman" }),
     office("assistantDirector", ADH),
+    office("sectionCaptain", VICE, { designation: "Men's Vice Captain" }),
+    office("hockeyConvenor", CONVENOR),
   ],
 }));
 
@@ -415,6 +432,48 @@ describe("session-derived identity (IDOR prevention)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Making players active / inactive: Section Captains only (owner, 2026-10-06).
+// A Teams link as Section Captain or the Section Captain office; not coaches,
+// the Men's Convenor or the ADH.
+// ---------------------------------------------------------------------------
+
+describe("activate / deactivate: Section Captains only", () => {
+  const routes = [
+    { path: "/api/ranking/activate", fn: () => mocks.activatePlayer },
+    { path: "/api/ranking/deactivate", fn: () => mocks.deactivatePlayer },
+  ];
+  const refused = [
+    ["a player", TOKENS.player],
+    ["a coach", TOKENS.coach],
+    ["the Men's Convenor", TOKENS.convenor],
+    ["the Assistant Director of Hockey", TOKENS.adh],
+    ["a Section Chair", TOKENS.chair],
+  ] as const;
+  const allowed = [
+    ["a Teams-linked Section Captain", TOKENS.captain, "captain@hkfc.com"],
+    ["a Section Captain office holder", TOKENS.vice, "vice@hkfc.com"],
+  ] as const;
+
+  for (const { path, fn } of routes) {
+    it.each(refused)(`refuses %s on ${path} with SECTION_CAPTAIN_REQUIRED, writing nothing`, async (_who, token) => {
+      signInAs(token);
+      const res = await call(path, jsonInit({ playerId: "recP9" }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: "SECTION_CAPTAIN_REQUIRED" });
+      expect(fn()).not.toHaveBeenCalled();
+    });
+
+    it.each(allowed)(`lets %s through on ${path}, auditing as the session`, async (_who, token, email) => {
+      signInAs(token);
+      fn().mockResolvedValue({ players: [], activeCount: 0, config: {} });
+      const res = await call(path, jsonInit({ playerId: "recP9", actingEmail: "attacker@evil.com" }));
+      expect(res.status).toBe(200);
+      expect(fn()).toHaveBeenCalledWith(ENV, "recP9", email);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Coach-only routes
 // ---------------------------------------------------------------------------
 
@@ -422,8 +481,6 @@ describe("coach-only routes", () => {
   const coachOnlyCalls: { path: string; init: RequestInit }[] = [
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
-    { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
-    { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
     { path: "/api/squad/changes", init: jsonInit({ matchId: "recM1", add: ["a"], remove: [], version: 0 }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
