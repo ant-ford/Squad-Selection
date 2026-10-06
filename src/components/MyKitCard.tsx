@@ -6,7 +6,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { confirmKit, getMyKit, moveKit } from '@/api/kit';
-import { reportMove } from '@/components/kit/HandOutSheet';
+import { reportMove } from '@/lib/kitMoves';
 import type { MyKit } from '@shared/kit';
 
 /** A captain holding a team's kit sees the first few; the rest are a tap away. */

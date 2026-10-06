@@ -38,6 +38,12 @@ const INVALIDATION = {
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
+  // Appearances feed eligibility and play-up counts. The current Stats
+  // summary needs nothing here: it is keyed on match_cards.updated_at.
+  matchCards: {
+    sharedPrefixes: ["match-cards:"],
+    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
+  },
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */
@@ -52,3 +58,6 @@ export const invalidatePeople = (env: Env) => invalidate(env, "people");
 
 /** After a write to Commitments. */
 export const invalidateCommitments = (env: Env) => invalidate(env, "commitments");
+
+/** After a write to Match Cards (e.g. linking cards to a player). */
+export const invalidateMatchCards = (env: Env) => invalidate(env, "matchCards");

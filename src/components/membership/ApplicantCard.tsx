@@ -7,7 +7,7 @@ import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 export function ageTone(days: number | null): string {
   if (days === null) return 'bg-muted text-muted-foreground';
   if (days >= 30) return 'bg-destructive/15 text-destructive';
-  if (days >= 14) return 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
+  if (days >= 14) return 'bg-amber-500/15 text-amber-700';
   return 'bg-muted text-muted-foreground';
 }
 

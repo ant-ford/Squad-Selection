@@ -90,7 +90,7 @@ import {
   swapItem,
   topUpCsv,
 } from "./kit";
-import { getRegistrationBoard, markRegistered, registrationCsv, unmarkRegistered } from "./registration";
+import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -887,6 +887,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
         if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
+        if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
       }
     }
 

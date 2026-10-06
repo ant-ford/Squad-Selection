@@ -118,8 +118,8 @@ function ByPerson({ people }: { people: Volunteer[] }) {
                 </p>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {VOLUNTEER_GROUPS.flatMap((g) => v.roles[g.key].map((r) => <span key={`${g.key}-${r}`} className={chip}>{r}</span>))}
-                  {v.qualifiedCoach && <span className={`${chip} bg-primary/15 text-primary`}>Coach {v.qualifiedCoach}</span>}
-                  {v.qualifiedUmpire && <span className={`${chip} bg-primary/15 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
+                  {v.qualifiedCoach && <span className={`${chip} bg-primary-tint/10 text-primary`}>Coach {v.qualifiedCoach}</span>}
+                  {v.qualifiedUmpire && <span className={`${chip} bg-primary-tint/10 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
                 </div>
                 {v.updatedAt && <p className="text-[11px] text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
               </li>

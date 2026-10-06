@@ -1,731 +1,206 @@
-# HKFC Squad Selection
+# Eddy (HKFC Squad Selection)
 
-**Mobile-first web application for managing player eligibility, availability, squad selection, and rankings across eight interconnected hockey teams.**
+Eddy is the Hong Kong Football Club men's hockey section's web app. It covers player availability, squad selection, the section ranking and eligibility for eight league teams, plus the section's membership work: applications and signing, commitment reviews, waivers, kit, season plans, volunteering, events, umpiring duties, HKHA registration and club stats.
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/ant-ford/Squad-Selection)
+- App: https://app.eddy.global (a phone-first PWA). API: https://api.eddy.global.
+- Repo: `ant-ford/Squad-Selection`. Results come from a separate repo, `ant-ford/hkha-sync`.
+
+**For AI sessions:** this README and the code are the current truth. Everything under `docs/archive/` is history. Read [Working rules](#working-rules) before changing anything.
 
 ---
 
-## Quick Start
+## Architecture
 
-**New to this project? Read in this order:**
+```
+ Browser (React 19 + Vite PWA, app.eddy.global)
+   │  Supabase Auth only: email one-time code -> session JWT
+   │  every data call: HTTPS + Bearer JWT
+   ▼
+ API Worker  (worker/src, Cloudflare Workers free plan, api.eddy.global)
+   │  verifies the JWT, finds the person, applies every business rule
+   │  in-memory + KV cache · crons · email (Resend) · AI drafts (OpenRouter)
+   ├──► Supabase Postgres via PostgREST (secret key)   eddy-production / eddy-preview
+   ├──► R2 bucket FILES (photos, IDs, signatures, PDFs) eddy-files / eddy-files-preview
+   └──► Supabase Edge Function render-pdf (fills PDF templates)
 
-| Step | Document | Time |
-|---|---|---|
-| 1 | This README | 10 min |
-| 2 | [`docs/Implementation_Roadmap_v4.md`](docs/Implementation_Roadmap_v4.md) â€” architecture overview (historical; this README and the code are authoritative) | 30â€“45 min |
-| 3 | `worker/src/eligibility.ts` â€” eligibility engine source | 15 min |
-| 4 | `tests/golden-eligibility.test.ts` â€” the critical test suite | 10 min |
-
-Then get running:
-
-```bash
-git clone https://github.com/ant-ford/Squad-Selection.git
-cd Squad-Selection
-npm install
-npx vitest run    # run the test suite - all should pass
-npx vite dev      # opens at http://localhost:5173
+ hkha-sync (GitHub Actions, other repo) ──► writes fixtures and results to Postgres
+ backup.yml (GitHub Actions) ──► nightly encrypted pg_dump to R2 eddy-backups
 ```
 
+- **Browser (`src/`).** Presentation only. It talks to Supabase for sign-in and to the Worker for everything else. It never reads tables, and never decides eligibility, play-up counts or rankings.
+- **Worker (`worker/src/`).** The authoritative backend. Free plan limits shape the code: **10 ms CPU and 50 subrequests per request or cron run**. Every Postgres call, R2 call and email is a subrequest, and long jobs work in capped batches.
+- **Postgres.** All club data since the switch from Airtable on **2 Oct 2026**. Multi-row writes that must succeed together are SQL functions called through `rpc()`, so each is one transaction.
+- **Shared code (`shared/`).** Rules and formats used by both sides (display team, ability groups, stages, profile field specs, etc.). `worker/src` must not import `src/`, and `src/` must not import `worker/`.
+
+### Airtable (legacy, being removed in October 2026)
+
+Airtable stopped being read or written on 2 Oct 2026, and its subscription ends on 20 Oct 2026. Until the removal PRs land, the Worker still contains Airtable code:
+- `worker/src/airtable.ts`;
+- the Airtable halves of `worker/src/data/*.ts`;
+- `backendFor(...) === "airtable"` branches;
+- `shared/mappers`.
+
+Production runs `DATA_BACKEND="supabase"`. Treat Airtable branches as dead, and don't add to them.
+
+What stays for good:
+- **`rec…` ids.** Imported rows keep their Airtable id in `airtable_id`, and every public id is `api_id = coalesce(airtable_id, id::text)`. Calendar feed URLs, `/join?ref=`, `/review/:id` links in sent emails and bookmarked matches all carry `rec…` ids. Rows created in Eddy have uuid ids.
+- **The `archive` schema** holds the raw Airtable JSON until it's dropped after 20 Oct. Nothing new may depend on it.
+
 ---
 
-## Project Overview
+## Data model (Supabase Postgres)
 
-HKFC Squad Selection enables coaches and administrators of the Hong Kong Football Club Men's Hockey Section to:
+Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for every table with **no policies and no grants to `anon`/`authenticated`**, so only the service role can read or write. The Worker authenticates with the project's secret key (`DATA_SUPABASE_SECRET_KEY`) and goes through `worker/src/data/supabase.ts` (paging, a retry on 500/502/503/504, `SupabaseError`).
 
-- **Assemble legal squads** for any fixture, with automatic eligibility enforcement
-- **Manage player availability** through an exception-based model (players are assumed available unless they indicate otherwise)
-- **Maintain a Section Ranking** that drives all secondary rankings and ability group assignments
-- **Receive recommendations** when squads are short, weighted by ability, position, play-up capacity, and team distance
-- **Coordinate across eight teams** with visibility into cross-team selections, same-day conflicts, and play-up compliance
-- **Sync to calendars** via ICS feed generation
-
-The application enforces HKHA competition bye-laws and HKFC-specific operational interpretations. Coaches see exactly why a player is eligible, warned, or blocked â€” with source-citable rule references.
-
-**Regression-first development:** The Eligibility Engine is protected by golden tests. Behavioural changes require specification updates and corresponding test updates. The test suite is part of the architecture, not an afterthought.
-
----
-
-## Design Philosophy in One Page
-
-This application intentionally optimises for **coach workflow** over technical purity:
-
-| Decision | Rationale |
+| Area | Tables |
 |---|---|
-| **Default availability** | Players are assumed available unless they say otherwise. No one fills out forms for 30 fixtures. |
-| **Single ranking** | Section Rank is the only persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived â€” no sync problems, no inconsistency. |
-| **Deterministic rules** | Same inputs always produce the same eligibility result. Coaches trust the output; golden tests enforce it. |
-| **Advisory recommendations** | The engine suggests; coaches decide. Automation never overrides human judgment. |
-| **Mobile-first** | Designed for a phone at the side of a pitch. Desktop is secondary. |
-| **Minimal administration** | Exceptions, not records. Derived, not duplicated. One save, not three. |
+| People and offices | `people`, `offices`, `team_people`, `family_members`, `relatives`, `previous_clubs`, `shirt_numbers` |
+| Teams and fixtures | `teams`, `matches`, `match_cards`, `match_selections`, `hkha_sync_state` |
+| Availability | `availability_exceptions`, `availability_rules` |
+| Ranking | `ranking_events`, `ability_group_config` |
+| Membership | `applications`, `signatures`, `commitments`, `declarations`, `steps`, `registration_events` |
+| Trials and joiners | `trial_sessions`, `trial_availability`, `applicant_trials` |
+| Season | `season_plans`, `season_plan_options`, `course_signups` |
+| Kit | `kit_orders`, `kit_sets`, `kit_moves`, `kit_sizes` |
+| Events | `events`, `event_responses`, `event_payments` |
+| Umpiring and HKHA | `umpire_duties`, `umpire_assignments`, `hkha_registrations` |
+| Quizzes | `quizzes`, `quiz_scores` |
+| Messages and logs | `email_log`, `message_templates`, `message_log`, `activity_log`, `files` |
+
+- **Views.** `api_*` views (`api_players`, `api_matches`, `api_match_cards`, `api_people_crm`, `api_reviews`, …) are the shapes the Worker reads, and carry `api_id`. `*_v` views are derived reads (`people_v`, `commitments_v`, `kit_sets_v`, `reviews_due_v`, `retention_due_v`, …).
+- **Functions (RPCs).**
+  - Selection and ranking: `set_match_selection`, `update_people_ranks`, `insert_ranking_events`, `apply_availability_changes`.
+  - Reviews: `start_review`, `submit_member_report`, `submit_sponsor_review`, `submit_officer_review`.
+  - Applications and declarations: `submit_application`, `sign_application`, `submit_declarations`, `submit_season_plan`.
+  - Kit: `kit_allocate`, `kit_move`, `kit_confirm`, `kit_swap`.
+  - Profiles and retention: `delete_own_profile`, `erase_personal_data`, `retention_stamp`.
+- **Triggers.** `updated_at` on every mutable table, plus the rules that live in the database:
+  - automatic re-registration after the last allowed play-up (`match_cards_auto_reregister`);
+  - linking match cards to people;
+  - stamping `inactive_since` and the membership stage;
+  - commitment periods.
+- **Files.** In R2 (binding `FILES`), referenced from `files`. The browser only ever gets short-lived signed links (`worker/src/files.ts`). Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
+
+The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments). Newer features call PostgREST directly from their own module (`kit.ts`, `events.ts`, `apply.ts`, …).
 
 ---
 
-## Why These Choices?
+## Where business rules live
 
-**Why Airtable?** Non-technical administrators (the Section Captain) manage data directly in a spreadsheet-like interface. No CMS training required.
-
-**Why Cloudflare Workers?** Serverless, globally distributed, zero cold-start overhead. The Worker is close to Airtable's API, not close to a particular user's browser.
-
-**Why Supabase (auth only)?** Provides email one-time-code / magic-link auth â€” no passwords to manage. No application data is stored in Supabase â€” it's purely an identity provider.
-
-**Why React Query over Redux?** The application's state is server-derived (fixtures, players, rankings). TanStack Query caches, invalidates, and refetches declaratively â€” no manual synchronisation.
-
-**Why exception-based availability?** Storing "Available" for every playerÃ—match combination would create ~28,000 records per season. Exception-based storage reduces this to ~500.
-
-**Why a Worker-first architecture?** Client-side eligibility evaluation could be bypassed by modifying JavaScript. Server-side revalidation on every write is non-negotiable.
-
----
-
-## Engineering Maturity
-
-**Production-ready (CURRENT IMPLEMENTATION):**
-
-- âœ” Production architecture (React + Worker + Airtable)
-- âœ” Regression-tested eligibility, including a frozen golden test matrix
-- âœ” Hand-maintained Airtable types, kept in sync with [`docs/Airtable Schema.json`](docs/Airtable%20Schema.json) (the schema source of truth)
-- âœ” Mobile-first responsive layout
-- âœ” Cached Worker with targeted invalidation
-- âœ” Audit logging (rankings, selections)
-
-- âœ” Per-request instrumentation: `Server-Timing` header and one structured log line per request (Airtable calls, bytes, wait time, cache hits)
-- âœ” Airtable reads project only the fields the app maps (People is a 300-field CRM; the app reads 27)
-
-**Active development focus:**
-
-- â€¢ Feature flags for dark launches
-- â€¢ Correlation IDs across frontend and Worker logs
-
----
-
-## How Features Flow
-
-Runtime view complementing the static architecture:
-
-```
-Coach taps "Save Squad"
-        â”‚
-        â–¼
-    React (POST /api/squad/sync)
-        â”‚
-        â–¼
-    Cloudflare Worker
-        â”‚
-        â”œâ”€â–º Eligibility Engine â”€â”€â–º revalidates every player
-        â”œâ”€â–º Recommendation Engine â”€â”€â–º scores shortfall candidates
-        â”œâ”€â–º Selection Engine â”€â”€â–º derby safety, fresh Airtable read
-        â”‚
-        â–¼
-    Airtable (single source of truth)
-        â”‚
-        â–¼
-    Cache Invalidation (6+ namespaces)
-        â”‚
-        â–¼
-    React (refetch, re-render)
-```
-
-Every write goes through this pipeline. React MUST NOT bypass any step.
-
----
-
-## High-Level Architecture
-
-```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                  BROWSER                      â”‚
-â”‚  React 19 Â· Vite 7 Â· Tailwind CSS v4         â”‚
-â”‚  TanStack Query Â· TanStack Virtual Â· dnd-kit â”‚
-â”‚                                               â”‚
-â”‚  Pages: /  Â· /coach  Â· /coach/match/:id      â”‚
-â”‚         /coach/ranking                       â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                   â”‚ HTTPS (Worker URL)
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚           CLOUDFLARE WORKER                   â”‚
-â”‚                                               â”‚
-â”‚  Eligibility Engine Â· Ranking Engine          â”‚
-â”‚  Recommendation Engine Â· Selection Sync       â”‚
-â”‚  Fixture Queries Â· Availability Â· Calendar    â”‚
-â”‚                                               â”‚
-â”‚  Cache Layer (in-memory, TTL-based)           â”‚
-â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-       â”‚                           â”‚
-â”Œâ”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”           â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚  Supabase   â”‚           â”‚    Airtable     â”‚
-â”‚  Auth only  â”‚           â”‚  9 tables       â”‚
-â”‚  (no data)  â”‚           â”‚  All app data   â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜           â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-**React:** Presentation layer. Renders Worker-provided data, manages UI state (filters, drafts, modals), submits mutations. MUST NOT determine eligibility.
-
-**Cloudflare Worker:** The authoritative backend. MUST own all business logic. The only component with Airtable access.
-
-**Airtable:** Single source of truth â€” 9 tables (People, Teams, Matches, Match Cards, Availability Exceptions, Availability Rules, Ability Group Configuration, Selection Events, Ranking Events).
-
-**Ranking Events table (ranking history):** the Worker records rank changes (move / reorder / activate / deactivate) with the actor, old/new rank, an optional justification of at most 280 characters, and a server-side timestamp, awaited as part of the same write - a failed audit write now fails the mutation (502) rather than being silently dropped. Reads degrade gracefully to "no changes recorded yet" only when the table itself does not exist (404); any other read failure still propagates. Field names must match exactly: `Player` (link to People), `Actor` (link to People), `Actor Email` (text), `Kind` (select: move / reorder / activate / deactivate), `Old Rank` (number), `New Rank` (number), `Justification` (long text), `Timestamp` (date/time). Rationale: no existing table can represent rank changes - Selection Events has no timestamp/rank fields and is a per-selection log; audit fields on People would keep only the latest change per player.
-
-**Supabase:** Authentication only. No application data stored in Supabase tables.
-
----
-
-## Repository Structure
-
-```
-Squad-Selection/
-â”œâ”€â”€ docs/                          # Historical background + Airtable schema export
-â”‚   â”œâ”€â”€ Implementation_Roadmap_v4.md   # Architecture overview (historical) - this README and the code are authoritative
-â”‚   â””â”€â”€ Airtable Schema.json           # â˜… SOURCE OF TRUTH for shared/schema/
-â”œâ”€â”€ shared/                        # Code shared by the frontend AND the Worker
-â”‚   â”œâ”€â”€ schema/                    # Hand-maintained Airtable schema mapping
-â”‚   â”‚   â”œâ”€â”€ domainTypes.ts             # TypeScript interfaces
-â”‚   â”‚   â”œâ”€â”€ tableNames.ts              # TABLES constant
-â”‚   â”‚   â””â”€â”€ fieldMaps.ts               # *_FIELDS constants
-â”‚   â”œâ”€â”€ mappers/                   # Airtable record â†’ domain type conversion
-â”‚   â”œâ”€â”€ displayTeam.ts             # Selected Team display fallback chain
-â”‚   â”œâ”€â”€ abilityGroup.ts            # Ability group/sub-group math
-â”‚   â”œâ”€â”€ abilityRank.ts             # A+ = 24 â†’ H- = 1 mapping
-â”‚   â”œâ”€â”€ airtableValueUtils.ts      # linkId() and friends
-â”‚   â””â”€â”€ hkDateKey.ts                # One Hong Kong date key (Asia/Hong_Kong)
-â”œâ”€â”€ src/                           # React frontend
-â”‚   â”œâ”€â”€ pages/                     # Route-level components
-â”‚   â”‚   â”œâ”€â”€ PlayerDashboard.tsx        # Player fixture/availability view
-â”‚   â”‚   â”œâ”€â”€ CoachDashboard.tsx         # Coach landing: fixture list
-â”‚   â”‚   â”œâ”€â”€ FixtureList.tsx            # Browse fixtures by team (embedded in CoachDashboard)
-â”‚   â”‚   â”œâ”€â”€ SquadSelection.tsx         # Core squad building workflow
-â”‚   â”‚   â””â”€â”€ PlayerRanking.tsx          # Section ranking management
-â”‚   â”œâ”€â”€ components/                # Reusable UI components
-â”‚   â”‚   â”œâ”€â”€ AppHeader.tsx              # Coach nav header
-â”‚   â”‚   â”œâ”€â”€ FixtureCard.tsx            # Coach fixture card
-â”‚   â”‚   â”œâ”€â”€ PlayerRow.tsx              # Selection player row
-â”‚   â”‚   â”œâ”€â”€ PlayerFilters.tsx          # Multi-dimensional filter bar
-â”‚   â”‚   â”œâ”€â”€ RecommendationsPanel.tsx   # Match recommendations
-â”‚   â”‚   â”œâ”€â”€ ui/sheet.tsx               # â˜… The one bottom-sheet/dialog primitive
-â”‚   â”‚   â””â”€â”€ shared/                    # Shared presentational components
-â”‚   â”œâ”€â”€ api/                       # Typed API client functions
-â”‚   â””â”€â”€ lib/                       # Frontend-only utilities
-â”‚       â”œâ”€â”€ queries.ts                 # TanStack Query hooks
-â”‚       â”œâ”€â”€ apiClient.ts               # Authenticated fetch wrapper
-â”‚       â”œâ”€â”€ auth.tsx                   # AuthProvider / useAuth (one session subscription)
-â”‚       â”œâ”€â”€ format.ts                  # POS_SHORT, initials()
-â”‚       â”œâ”€â”€ useMediaQuery.ts           # Shared responsive-breakpoint hook
-â”‚       â”œâ”€â”€ dateUtils.ts               # safeFormat, isPastFixture
-â”‚       â””â”€â”€ readiness.ts               # Team readiness scoring
-â”œâ”€â”€ worker/                        # Cloudflare Worker backend
-â”‚   â””â”€â”€ src/
-â”‚       â”œâ”€â”€ index.ts                   # HTTP router
-â”‚       â”œâ”€â”€ env.ts                     # Env (Worker bindings) interface
-â”‚       â”œâ”€â”€ eligibility.ts             # â˜… Eligibility engine (8 steps)
-â”‚       â”œâ”€â”€ ranking.ts                 # â˜… Ranking engine
-â”‚       â”œâ”€â”€ recommendations.ts         # Recommendation scoring
-â”‚       â”œâ”€â”€ squad.ts                   # Selection sync
-â”‚       â”œâ”€â”€ seasonContext.ts           # Season-level evaluation context (cached)
-â”‚       â”œâ”€â”€ fixtures.ts                # Fixture queries
-â”‚       â”œâ”€â”€ availability.ts            # Exception management
-â”‚       â”œâ”€â”€ availabilityRules.ts       # Standing availability rules
-â”‚       â”œâ”€â”€ calendar.ts                # ICS feed generation
-â”‚       â”œâ”€â”€ suspension.ts              # Automatic card-suspension calculation
-â”‚       â”œâ”€â”€ match.ts                   # hkfcSides() - the one HKFC-side resolver
-â”‚       â”œâ”€â”€ reference.ts               # Cached club reference data
-â”‚       â”œâ”€â”€ airtable.ts                # Airtable API client
-â”‚       â”œâ”€â”€ cache.ts                   # In-memory per-isolate cache
-â”‚       â”œâ”€â”€ playUp.ts                  # Shared qualifying play-up definition
-â”‚       â””â”€â”€ http.ts                    # HTTP utilities (CORS, JSON responses)
-â”œâ”€â”€ tests/                         # Vitest unit tests
-â”‚   â”œâ”€â”€ helpers/                   # Shared fakeAirtable() stub + eligibility factories
-â”‚   â”œâ”€â”€ eligibility.test.ts            # Full rule matrix (all 8 steps)
-â”‚   â”œâ”€â”€ golden-eligibility.test.ts     # â˜… Frozen golden matrix
-â”‚   â”œâ”€â”€ ranking.test.ts                # Reorder/activate/deactivate/config
-â”‚   â”œâ”€â”€ authorization.test.ts          # Supabase auth, access rules, parallel lookups
-â”‚   â”œâ”€â”€ authorization-routes.test.ts   # Route-level authorization
-â”‚   â”œâ”€â”€ cache.test.ts                  # Cache hits and Airtable call counts
-â”‚   â”œâ”€â”€ gkFixtures.test.ts             # H-registered GK all-fixtures view
-â”‚   â””â”€â”€ ...                            # one file per module - run `npx vitest run`
-â””â”€â”€ public/                        # Static assets (favicon, logo)
-```
-
-**Import boundary:** `worker/src/` MUST NOT import from `src/`, and `src/` MUST NOT import from `worker/`. Anything both sides need lives in `shared/` instead. `worker/src/cache.ts` is the one exception in the other direction â€” it looks shared by name but is Worker-only (a per-isolate in-memory cache), so it lives in `worker/src/`, not `shared/`.
-
----
-
-## Major Subsystems
-
-### Eligibility Engine (`worker/src/eligibility.ts`)
-
-The **sole authority** on whether a player can be selected. Evaluates every active player against a fixed 7-step pipeline, then generates warnings:
-
-1. Admin Data Validation
-2. Suspension Checks
-3. Visiting Player Restrictions
-4. Same-Day Team Movement
-5. Premier Division Restrictions
-6. Play-Up Rules
-7. Cup Eligibility
-
-The U21 double-game step (formerly step 8) was removed for the September 2026 bye-laws: Bye-Law 7.1 no longer exempts U21s. Play-up limits are per player - 3, or 8 for a U21 (Bye-Law 7.2(b)) - and come from `playUpAllowance()` in `worker/src/playUp.ts`.
-
-Each blocked result includes an exact reason string (e.g., `"Suspended"`) and a source-citable rule tag. **MUST NOT reword these strings** â€” coaches and golden tests depend on them.
-
-Same-day availability is reported as **one** warning naming every higher team, ordered by team rank: `"Available for HKFC A, HKFC B, HKFC C on same day"`. A player registered to a low team can be available for most of the club on a busy Saturday, and one warning per team buried the rest of their row on the selection screen. With a single team the string is byte-identical to the original wording, which is what the golden matrix pins.
-
-â†’ Background: [`Implementation_Roadmap_v4.md Â§7.1`](docs/Implementation_Roadmap_v4.md)
-
-### Ranking Engine (`worker/src/ranking.ts`)
-
-Manages the **Section Ranking** â€” the single persisted ordering. Team Rank, Positional Rank, and Playing Ability are derived in-memory. Drag-and-drop reordering, up/down step buttons, batch moves. Stale detection via 409 Conflict on version mismatch.
-
-â†’ Background: [`Implementation_Roadmap_v4.md Â§7.2`](docs/Implementation_Roadmap_v4.md)
-
-### Recommendation Engine (`worker/src/recommendations.ts`)
-
-Read-only, advisory. Consumes eligibility output. Scores candidates by ability (50%), position fit (20%), play-up capacity (10%), and team distance (20%). Maybe players penalised by âˆ’45. Each recommendation carries up to 3 reason tags. MUST NOT auto-select.
-
-â†’ Background: [`Implementation_Roadmap_v4.md Â§7.3`](docs/Implementation_Roadmap_v4.md)
-
-### Selection Engine (`worker/src/squad.ts`)
-
-Selections stored directly on `Matches.Selected Players Home/Away`. The `syncSquad` endpoint handles: fresh Airtable read (never cached on write path), HKFC side resolution, derby safety, Airtable update, audit logging, and cache invalidation across 6+ namespaces.
-
-**Higher team priority (Bye-Law 7.1).** When a save adds a player that a same-day lower-ranked HKFC team has already selected, `syncSquad` takes them out of that lower squad after the higher squad is written, and returns them as `displaced` so the saving coach is told. A lower match already marked Played is left alone.
-
-â†’ Background: [`Implementation_Roadmap_v4.md Â§7.5`](docs/Implementation_Roadmap_v4.md)
-
-### Availability Engine (`worker/src/availability.ts`)
-
-Exception-based: no record = Available. Only "Maybe" and "Unavailable" are stored. Self-service writes derive the player's identity from the verified Supabase session, never from a client-supplied email or player id. Polled every 30 seconds on the Squad Selection page.
-
-**Date-level availability** (`POST /api/set-my-availability-for-date`) applies one status to every HKFC fixture on a date, so "I'm away this Saturday" is a single tap rather than one per card — including the play-up and support pools. It began as a goalkeeper-cohort shortcut and is now open to every authorized player; the player dashboard surfaces the control on any date where the player has more than one fixture in play. Individual fixtures stay independently overridable afterwards.
-
-### Opt-In Only (inverting the default for one player)
-
-The club runs on opt-out: a player is Available unless they say otherwise, because nobody fills in forms for thirty fixtures. That assumption fails for the player who is out most of the season and never opens the app. They show Available on every squad sheet, which is worse than silence, because it reads as an answer.
-
-`People."Opt-In Only"` (checkbox) inverts the default for that player alone. Every fixture they have not answered counts as Unavailable, and they have to actively say they are available. Coaches set it from the same sheet they already use to answer on a player's behalf, via `POST /api/player/:id/opt-in-only` (coach-only, audit-logged).
-
-Resolution order, in [`availabilityRules.ts`](worker/src/availabilityRules.ts):
-
-1. an explicit answer for that fixture, from the player or a coach
-2. the Opt-In Only flag
-3. the player's own standing rules
-4. the club default, Available
-
-The flag deliberately outranks the player's own standing rules. It exists because the player is not keeping their status current, so a rule of theirs — particularly one that merely restates the club default — must not switch it back off. Answering a real fixture still wins, because that is the opting in it is named for, and it is the one action that proves the player is actually there.
-
-Two consequences worth knowing. The payload carries `optInOnly` alongside `availabilityFromRule`, so a coach can tell "set to opt-in only" from "actually declined" from "never asked". And because absence no longer means Available for these players, an Available answer is stored as a real record — see invariant 5.
-
-**This needs two Airtable changes, both additive.** Add `Opt-In Only` as a checkbox on `People`, and add `Available` to the `Availability Status` single-select on `Availability Exceptions`. Until the checkbox exists the toggle returns a 501 naming the missing field, and everything else behaves exactly as before.
-
-### Season Statistics (`worker/src/playerStats.ts`)
-
-`GET /api/player-stats/:playerId` (self or coach) backs the panel on the player dashboard and the coach drill-in from the ranking row menu. It reads entirely off the cached season context, so it costs no extra Airtable calls.
-
-- **Form** — last five results as coloured tiles (green win, white draw, red loss). Tapping one shows that game's score, goals and cards. A fixture without a recorded score is left out of the form rather than shown as a 0–0 draw.
-- **Appearances** come from Match Cards: the card *is* the appearance record, so selections are never used to infer that someone played.
-- **Card points** reuse `yellowPointsFor()` from the suspension engine, so the Bye-Law 16.3 scale (including `"Y2 (2)"` quantity suffixes) has exactly one implementation. Red cards are shown but carry no yellow points.
-- **Participation** is `gamesPlayed / teamGames`, with `(gamesPlayed + gamesAvailableNotSelected) / teamGames` in brackets. `teamGames` counts only fixtures with `Match Status = Played`. "Maybe" is treated as available, not a refusal.
-- **Friendlies are excluded** throughout, consistent with the eligibility counts — a warm-up game must not move a participation percentage.
-
-Participation can exceed 100%: appearances for other teams (play-ups and support games) count towards `gamesPlayed`, while `teamGames` only counts the player's own team's fixtures. That is deliberate — it reads as "turned out more often than their own team played".
-
-### Standing Availability Rules
-
-Players set standing preferences from the gear icon on their dashboard, instead of answering every fixture: not available for play-ups, for support games, midweek, between two dates, or for everything from now on. They live in the `Availability Rules` Airtable table (`Player`, `Rule Type`, `Availability`, `Active`, `Start Date`, `End Date`, `Notes`).
-
-Two rules govern how they resolve, both in [`worker/src/availabilityRules.ts`](worker/src/availabilityRules.ts):
-
-1. **An explicit Availability Exception always wins.** A rule is only the *default* for a fixture the player never answered, so setting a rule can never silently undo a tap. `Availability Exceptions` keeps meaning exactly what it meant before.
-2. **The more specific rule wins** where several apply: `Date range` → `Midweek` → `Play-ups`/`Support games` → `All future`, with ties broken by `Last Modified`. "Out from March, but around midweek" resolves the way a person would read it.
-
-Rules feed both the player's own dashboard and the coach's selection screen, and the payload carries `availabilityFromRule` so a coach can tell a standing preference from an actual answer — "hasn't been asked" reads very differently from "said no". Midweek means Monday–Friday. A missing table is not an error: every fixture just falls back to its normal default.
-
-### Season Statistics
-
-`GET /api/player-stats/:id` (that player, or any coach) returns the season's form guide and totals. Always presented as a **drill-down**, never inline: stats are reference material, and on a phone an inline panel pushed the fixture list — the thing players actually action — below the fold. `SeasonStatsSheet` is the single entry point, opened from the player dashboard header, from a squad-selection player row, and from the ranking row menu, so the three views cannot drift apart.
-
-Participation is `games played / team games`, with `(played + available-but-not-selected) / team games` in brackets — the second number separates "wasn't picked" from "wasn't around". Card points come from `Match Cards.Cards`; friendlies are excluded from every total, consistent with the eligibility engine.
-
-### Notifying the Squad (WhatsApp click-to-chat)
-
-Coaches open **Notify** on the squad-selection screen to tell the selected squad they are playing. No WhatsApp Business account, API or approval is involved — a `wa.me` link opens WhatsApp on the coach's own device with the message pre-filled and **the coach presses send**. The app never sends anything.
-
-`wa.me` addresses exactly one recipient, so there is no link that messages a whole squad. The sheet therefore offers both routes: one tap per player, and a copyable announcement to paste into the team's existing group chat. The announcement lists the squad like a team sheet: grouped GK, DEF, MID, FWD, FLEX (then anyone without a position), with shirt numbers, in the squad screen's strongest-first order within each group.
-
-Both messages end with a fixture link, `/?fixture=<match id>`, built on whichever address the coach has open. It stands in for a WhatsApp poll, which no link or official API can create: a player taps it, their page opens with that fixture's availability sheet up, and they answer against their own name. A game that isn't on their page (already played, or not their team) shows a short notice instead. Players who sign in with the emailed code land on the fixture. Signing in through the magic link returns them to the home page instead, the same as `?event=` links.
-
-**Notify** shows before anyone is selected too. With nobody picked, the sheet becomes **Ask for availability**: a single team-group message with the fixture and its link, and no squad list or per-player messages. The intended flow is ask for availability, select from those who say yes, then Notify again to send the squad.
-
-Numbers come from `People.Mobile No.` on the coach-only match payload (the player-facing squad list never includes them). `toWhatsAppNumber()` in [`src/lib/whatsapp.ts`](src/lib/whatsapp.ts) normalises them and **returns null rather than guessing** — bare 8-digit numbers are assumed Hong Kong, `+`/`00` prefixes are treated as international, and anything else is refused. That strictness is deliberate: `wa.me` opens happily with an unusable recipient, so a bad number would look to the coach exactly like a message that sent. Players whose number cannot be normalised are listed as unreachable with a pointer to fix the Airtable field.
-
-### Kit Colour
-
-`Matches.Home Kit` and `Matches.Away Kit` are single-selects (`Blue` / `White`, blank = undecided). **Two fields, not one**, so a derby (HKFC B v HKFC C) gives each side its own colour. Coaches set it from the squad-selection header via `POST /api/match/:id/kit` (coach-only); the screen writes whichever side it is currently selecting, resolved with the same `resolveHkfcSide` helper the selection write uses, so a derby can never read one side's kit while writing the other's.
-
-Players see it as a coloured dot on their fixture card, and the calendar feeds carry it as a 🔵/⚪ in the event title plus a `Kit:` line in the description. The iCalendar `COLOR` property (RFC 7986) is deliberately **not** used: few clients honour it, and a white event on a white calendar grid is invisible in the ones that do.
-
-**Endpoint access levels.** Every `/api` route requires a verified session. Reads that back the coach screens (squad selection, availability polling, recommendations, the ability ranking) additionally require coach rights; `GET /api/player-stats/:id` is restricted to the player themselves or a coach. Only three routes are deliberately public: `/health`, and the two HMAC-signed `.ics` calendar feeds, which calendar clients subscribe to without being able to send an `Authorization` header. `tests/authorization-routes.test.ts` locks this down.
-
-â†’ Background: [`Implementation_Roadmap_v4.md Â§7.4`](docs/Implementation_Roadmap_v4.md)
-
----
-
-## Business Rule Ownership
-
-| Responsibility | Owner | MUST NOT Implement In |
-|---|---|---|
-| **Eligibility** | Worker (`eligibility.ts`) | React |
-| **Play-up counts** | Worker (from `Match Cards`) | React |
-| **Ranking** | Worker (`ranking.ts`) + Airtable | React |
-| **Ability group** | Worker (`abilityGroup.ts`) | React |
-| **Recommendations** | Worker (`recommendations.ts`) | React |
-| **Selection sync** | Worker (`squad.ts`) | React |
-| **Caching** | Worker | React |
-| **Auth** | Supabase | Worker |
-| **Filter state** | React (`useState`) | Worker |
-| **Drag-and-drop** | React (local state) | Worker |
-| **UI visibility** | React | Worker |
-| **Optimistic updates** | React (TanStack Query) | Worker |
-
----
-
-## Critical Invariants
-
-These MUST NOT be broken. For the fuller historical list of invariants with stable IDs, see [`Implementation_Roadmap_v4.md` Â§3](docs/Implementation_Roadmap_v4.md#3-architectural-invariants) â€” background reading, not authoritative; treat this README and the code as current.
-
-1. **Eligibility evaluation order is fixed.** Steps 1â€“8 MUST execute in sequence. Golden tests enforce this.
-
-2. **Exact reason strings MUST be preserved.** `"Suspended"`, `"Visiting player â€” fixed to registered team"`, etc. Add only, never modify.
-
-3. **All selection writes MUST be revalidated server-side.** Client UI cannot be trusted to enforce eligibility.
-
-4. **Section Rank is the only persisted ranking.** Team Rank, Positional Rank, Playing Ability MUST be derived. Never persist independently.
-
-5. **Availability is exception-based.** No record = Available, and an "Available" record MUST NOT be created where that already says it. The one exception is where something else supplies a different default for that fixture — the player's own standing rule, or a coach setting them Opt-In Only. There, deleting the record hands the fixture straight back to that default, so the answer has to be stored. `needsExplicitAvailable()` is the single place that decides, and `setAvailability` is its only caller.
-
-6. **Selections live on `Matches.Selected Players Home/Away`.** MUST NOT reintroduce a separate selections table.
-
-7. **Worker MUST own all business rules.** React MUST NOT determine eligibility, play-up counts, or ranking logic.
-
-8. **`shared/schema/` MUST stay in sync with the Airtable schema.** It is hand-maintained, not generated â€” [`docs/Airtable Schema.json`](docs/Airtable%20Schema.json) is the source of truth; update the mapping by hand when the schema changes.
-
-9. **Play-up count MUST use `Match Cards.Goalkeeper`, not `People.Playing Position`.** The Goalkeeper field is per-appearance â€” the only authoritative source for the GK exemption.
-
-10. **Team hierarchy MUST come from `Teams.Team Rank`.** Do not infer rank from team name.
-11. **Displayed team is optics.** Team payloads show `Selected Team EOS` (then SOS, then Registered Team); all business rules keep using the true `People.Registered Team`.
-
----
-
-## Technology Stack
-
-| Layer | Technology |
+| Rule | Place |
 |---|---|
-| **Frontend framework** | React 19 |
-| **Build tool** | Vite 7 |
-| **CSS** | Tailwind CSS v4 |
-| **State management** | TanStack Query v5 |
-| **Virtualization** | TanStack Virtual v3 |
-| **Drag-and-drop** | dnd-kit v6 |
-| **Icons** | lucide-react |
-| **Language** | TypeScript 5.x |
-| **Backend runtime** | Cloudflare Workers |
-| **Auth** | Supabase Auth (email one-time code / magic link) |
-| **Database** | Airtable (9 tables) |
-| **Testing** | Vitest v4 |
-| **Data sync** | hkha-sync (GitHub Actions) |
+| Eligibility (fixed 7-step order, exact reason strings, `RULE_IDS`) | `worker/src/eligibility.ts`; golden matrix `tests/golden-eligibility.test.ts`; spec `docs/HKFC Eligibility & Selection Rules Specification v1.0.md` |
+| Play-up counting and allowances (3, or 8 for U21) | `worker/src/playUp.ts`, `shared/playUpAllowance.ts`; re-registration trigger in migration `20261003090000` |
+| Suspensions (Bye-Law 16.3 card points) | `worker/src/suspension.ts` |
+| Section ranking, ability groups | `worker/src/ranking.ts`, `shared/abilityGroup.ts`, `shared/abilityRank.ts`; spec `docs/Coaches Ranking System.md` |
+| Recommendations (advisory, never auto-select) | `worker/src/recommendations.ts` |
+| Squad saves, derby safety, higher-team priority | `worker/src/squad.ts` + `set_match_selection()` |
+| Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts` |
+| Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` |
+| Membership stages, applications, signing order | `shared/membershipStages.ts`, `worker/src/apply.ts`, `worker/src/applicationSigning.ts`, SQL `sign_application()` |
+| Commitment reviews and their emails | `worker/src/reviews.ts`, `worker/src/reviewEmails.ts`, `worker/src/reviewDrafts.ts` |
+| Data retention (13 months), Delete my profile | `worker/src/retention.ts`, SQL `retention_stamp()` / `erase_personal_data()`; `docs/DATA_RETENTION.md` |
+| Displayed team (optics only) | `shared/displayTeam.ts`: Selected Team EOS, then SOS, then the true registered team |
+
+**Invariants. Don't break these:**
+1. Eligibility runs in a fixed order, and its reason strings and `RULE_IDS` never change: add new ones, never edit existing ones. If a golden test fails, don't deploy.
+2. Every selection write is revalidated in the Worker. The client is never trusted.
+3. Section Rank is the only stored ranking. Team rank, positional rank and ability are derived.
+4. Availability is exception-based: no record means Available. An `Available` record is stored only where something else (a standing rule, or Opt-In Only) would otherwise give a different answer. `needsExplicitAvailable()` decides that.
+5. The play-up GK exemption comes from the match card's Goalkeeper flag, never the player's position. Team order comes from `teams.team_rank`, never names.
+6. The displayed team is optics. Every rule uses the true registered team.
+7. Read fresh on write paths (no cache), and invalidate caches after writes.
 
 ---
 
-## Development Workflow
+## Worker internals
 
-### Setup
+- **Routing:** `worker/src/index.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`, and registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
+- **Caching:** `worker/src/cache.ts` keeps a per-isolate memory cache plus KV (`CACHE`). Writes invalidate the affected keys. The club stats summaries live in KV.
+- **Request stats:** `worker/src/requestContext.ts` counts database calls, bytes and wait time. The figures go out as a `Server-Timing` header and one log line per request.
+- **Crons:** `scheduled()` in `index.ts`, at 03:00 UTC (11:00 HKT; commitment review emails) and 03:30 UTC (retention, `RETENTION_MODE` = `report` until the owner flips it to `remove`).
+- **Email:** `worker/src/mailer.ts` over Resend. Resend's free plan allows 100 emails a day and 3,000 a month, and Supabase sign-in codes share that allowance. Eddy caps itself at 70 recipients a day (`DAILY_LIMIT`) and logs every send in `email_log`. Preview sends everything to `MAIL_REDIRECT_TO`.
+- **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
+- **PDFs:** `worker/src/pdf/` collects the data and has the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fill the templates. `PDFS="on"` enables it.
 
-```bash
-git clone https://github.com/ant-ford/Squad-Selection.git
-cd Squad-Selection
-npm install
-```
+---
 
-### Environment Variables
+## Working rules
 
-Create `.env` in the project root:
+### Migrations
+- **New files only.** Never edit a migration that has been applied anywhere; a fix is a new file.
+- **Version = `YYYYMMDDHHMMSS` in Hong Kong time.** It must be newer than every version on `origin/main`. When several sessions work at once, each uses its own seconds value, so versions can't collide.
+- **Version-clash check:** before applying anywhere, `git fetch origin` and check that no other file (on main or an open branch) uses your version. If a newer version has merged since, renumber yours first. `supabase db push` silently skips a second file with the same version; a 6 Oct 2026 clash had to be repaired with `migration repair`.
+- **Preview first:** Claude applies migrations to **eddy-preview** with `npx supabase@2.118.0 db push --db-url <percent-encoded URL> --workdir <checkout>`, through a wrapper that masks the URL.
+- **Production is the owner's:** the owner applies to **eddy-production**, and it must be there **before** the PR that needs it merges, because a merge deploys at once.
+- CI rejects duplicate versions, and rejects a PR that adds a migration older than main's newest.
 
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=***
-VITE_API_URL=https://api.eddy.global
-```
+### Owner-only actions
+The owner (Anthony) does these, and Claude asks first:
+- anything that writes to production (migrations, data fixes, scripts with `--target=production`);
+- GitHub secrets and environments; Cloudflare, Supabase and Resend settings;
+- approving preview deploys and merging PRs;
+- flipping `RETENTION_MODE`;
+- setting `hkid_hidden`.
 
-Configure Worker secrets:
+Never run `scripts/migration/import-airtable.mjs` again: production has data written since the switch-over. The live scripts in `scripts/migration/` are `import-kit-order`, `load-quizzes`, `upload-club-doc` and `upload-pdf-template`.
 
-```bash
-cd worker
-npx wrangler secret put AIRTABLE_TOKEN
-npx wrangler secret put CALENDAR_SECRET
-```
+### Branches and PRs
+Several sessions share one checkout, so don't switch branches in it. Work in a git worktree off `origin/main`.
+- Keep PRs small, with one concern each.
+- Branch names start with `feat/`, `fix/`, `ci/` or `docs/`. Only `feat/`, `fix/` and `ci/` can deploy to preview.
+- `npm run verify` must be green before you push.
 
-### Request instrumentation
+---
 
-Every API response carries a `Server-Timing` header (visible in the browser's Network → Timing tab) with the Airtable calls, bytes and wait time behind it, the cache hits and misses, and the total. Workers Logs get the same numbers as one `request {...}` line per call, and every Airtable 429 is logged with the table it hit. When a screen is slow, that line says whether the time went to Airtable, to a cold cache, or to the Worker itself.
+## Environments and deploys
 
-### Run Locally
-
-Copy `worker/.dev.vars.example` to `worker/.dev.vars` (sets `ALLOWED_ORIGIN` for local CORS) before starting the Worker.
-
-```bash
-npx vite dev                    # Frontend: http://localhost:5173
-cd worker && npx wrangler dev   # Worker: http://localhost:8787 (separate terminal)
-```
-
-The `cloudflare()` Vite plugin is applied to **builds only** ([`vite.config.ts`](vite.config.ts) switches on `command`). In dev its ProxyController deadlocks on Windows and the dev server accepts connections but answers none — no error, no log, just a hang. Nothing is lost: the root `wrangler.jsonc` is assets-only and the API runs separately on 8787. Builds and deploys still get the plugin. If the API ever moves into this Worker, dev will need it back and this has to be revisited.
-
-### Branch Preview
-
-To check a branch in a browser without running the Worker locally, deploy it to the preview API from GitHub: **Actions → Preview API → Run workflow**, then pick the branch. That deploys `hkfc-api-preview` ([`.github/workflows/preview.yml`](.github/workflows/preview.yml)), a separate Worker kept away from production by `[env.preview]` in [`worker/wrangler.toml`](worker/wrangler.toml):
-
-- no custom domain and no cron;
-- its own KV cache namespace (`hkfc-api-preview-cache`), never production's. KV quotas are per Cloudflare account, so preview branches that include generation-based prefix clearing ([#48](https://github.com/ant-ford/Squad-Selection/pull/48)), not older ones that still `list()`;
-- a read-only Airtable token, so saves fail rather than change club data;
-- CORS only for `http://localhost:5173`.
-
-Then run the frontend against it:
-
-```bash
-npm run dev:preview-api   # Frontend: http://localhost:5173, API: the preview Worker
-```
-
-Secrets live in the `preview` GitHub environment (`CLOUDFLARE_API_TOKEN`, `AIRTABLE_TOKEN`). The Cloudflare token cannot be limited to one Worker, so the environment should require the owner's approval for each run. The workflow refuses to run on `main`, which the CI deploy job owns.
-
-### Build & Test
-
-```bash
-npx vite build      # Output: dist/
-npx vitest          # Watch mode
-npx vitest run      # Single pass (CI)
-npx tsc --noEmit                             # Typecheck frontend
-npx tsc --noEmit -p worker/tsconfig.json     # Typecheck worker
-npx tsc --noEmit -p tsconfig.test.json       # Typecheck tests
-npm run verify                               # All of the above, in order (what CI runs)
-```
-
-### Deploy
-
-Two separate Cloudflare Workers, not Cloudflare Pages: the API Worker (`worker/wrangler.toml`) and a Workers-with-static-assets Worker for the frontend (root `wrangler.jsonc`, whose `assets` block serves `dist/` with SPA fallback). `package.json` wraps both:
-
-```bash
-npm run deploy:api    # API Worker (worker/wrangler.toml)
-npm run deploy:web    # Frontend: vite build, then wrangler deploy (root wrangler.jsonc)
-npm run deploy        # Frontend build + deploy, same as deploy:web
-```
-
-**Deploy order:** deploy the API Worker before the frontend when the API contract changes.
-
-**Missing assets return 404, not the app shell.** `wrangler.jsonc` sets `main` to `web-shell/index.ts`, a few lines that run only for requests matching no file in `dist/`. It 404s anything under `/assets/` and serves `index.html` for everything else. `not_found_handling` is `"none"` because that script now owns the SPA fallback.
-
-Why it exists: asset filenames are content-hashed and a deploy removes the previous ones, so a client holding an old page requests chunks that no longer exist. Returning `index.html` for those handed the browser HTML to parse as JavaScript - the lazy route never resolved and the app sat on its loading skeleton with no error to catch. `tests/webShell.test.ts` pins both branches.
-
-**Windows local build caveat:** adding `main` means the Cloudflare Vite plugin spawns a `workerd` process during `vite build`, and on Windows it keeps a handle on `dist/hkfc_squad_selection/.wrangler` after the build exits. The next build then fails with `EPERM ... prepare-out-dir`. Kill the stray `workerd` and delete `dist/` to recover. Linux unlink semantics make this a non-issue, so CI and Cloudflare Workers Builds are unaffected.
-
-**Custom domains.** Both Workers are served from `eddy.global` rather than `*.workers.dev`, which some corporate and mobile DNS resolvers block:
-
-| Worker | Hostname | Config |
+| | Production | Preview |
 |---|---|---|
-| Frontend | `app.eddy.global` | root `wrangler.jsonc` -> `routes` |
-| API | `api.eddy.global` | `worker/wrangler.toml` -> `routes` |
+| Frontend | `app.eddy.global` (root `wrangler.jsonc`, static assets + `web-shell/`) | local Vite on port 5173 or 5174 |
+| API Worker | `hkfc-api` at `api.eddy.global` | `hkfc-api-preview.ant-ford.workers.dev` (`[env.preview]`, no crons) |
+| Database | Supabase `eddy-production` | Supabase `eddy-preview`, a copy of real club data |
+| Files | R2 `eddy-files` | R2 `eddy-files-preview` |
+| Deployed by | `ci.yml` on every merge to `main` | `preview.yml`, run by hand and approved by the owner |
 
-`custom_domain: true` makes `wrangler deploy` create the DNS record and certificate on first deploy, so no dashboard step is needed - but the `eddy.global` zone must sit in the same Cloudflare account as the Workers. Three values must agree or auth and CORS break:
-
-- `ALLOWED_ORIGIN` in `worker/wrangler.toml` is a **comma-separated allow-list** of frontend origins, not a single value. The request's `Origin` is echoed back when it is on the list; anything else gets the first entry. The header is always one concrete origin, never a wildcard and never the raw list, and every response carries `Vary: Origin`. Both the `app.eddy.global` and `*.workers.dev` frontends are listed so they work side by side; drop the `workers.dev` entry when that hostname is retired.
-- `VITE_API_URL` in `.env` must equal the API origin (`https://api.eddy.global`). It is baked in at build time, so the frontend needs a rebuild after any change.
-- The Supabase project's **Redirect URLs** allow-list must include every frontend origin in use (`https://app.eddy.global` and the `workers.dev` hostname). Sign-in uses `window.location.origin`, so a missing entry makes every one-time-code link fail on that hostname.
-
-The `*.workers.dev` hostnames keep working alongside the custom domains: `workers_dev` is set to `true` in both configs, and the CORS allow-list names both frontend origins. Retiring a hostname later is two edits - set `workers_dev = false` and remove that origin from `ALLOWED_ORIGIN`.
-
-**Deploy the API first.** `VITE_API_URL` points every frontend, on either hostname, at `https://api.eddy.global`. That hostname only exists after the API Worker has been deployed once, so deploying the frontend first leaves both frontends calling a host that does not resolve.
-
-**Rollback:** `npx wrangler rollback` (from `worker/` for the API, from the repo root for the frontend) or the Cloudflare dashboard â†’ Workers & Pages â†’ the Worker â†’ Deployments â†’ Rollback.
-
----
-
-## Project Documentation
-
-| Document | Purpose | Authority |
-|---|---|---|
-| **README.md** | This file â€” onboarding and orientation | **â˜… Authoritative, with the code** |
-| **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** | Architecture overview | Historical background only |
-| `tests/golden-eligibility.test.ts` | Frozen eligibility test matrix | Authoritative for expected behaviour |
-| `shared/schema/` | Hand-maintained Airtable types and field maps | Authoritative for data schema (kept in sync with `docs/Airtable Schema.json`) |
-| `worker/src/eligibility.ts` | Eligibility engine source | Authoritative for rule implementation |
-
-**This README and the code are authoritative.** `Implementation_Roadmap_v4.md` is retained as historical background on the reasoning behind the architecture - useful context, but not a current specification. Where it and the code disagree, the code (and this README) win; the roadmap doc is not kept in lockstep with every change.
-
----
-
-## Airtable Schema Mapping
-
-`shared/schema/` (`domainTypes.ts`, `tableNames.ts`, `fieldMaps.ts`) is **hand-maintained**, not code-generated â€” there is no generator script. [`docs/Airtable Schema.json`](docs/Airtable%20Schema.json) (an export of the live Airtable base) is the source of truth for what the schema actually looks like; `shared/schema/` is kept in sync with it by hand.
-
-```
-docs/Airtable Schema.json (source of truth)
-      â”‚
-      â–¼  (kept in sync by hand)
-  shared/schema/
-      â”œâ”€â”€â–º domainTypes.ts     (TypeScript interfaces)
-      â”œâ”€â”€â–º tableNames.ts      (TABLES constant)
-      â””â”€â”€â–º fieldMaps.ts       (*_FIELDS constants)
-      â”‚
-      â–¼
-  shared/mappers/ + Worker queries   (consume the schema types)
-      â”‚
-      â–¼
-  React Components                    (consume via the API)
-```
-
-When the Airtable schema changes:
-1. Re-export `docs/Airtable Schema.json` from Airtable
-2. Update `shared/schema/domainTypes.ts` / `tableNames.ts` / `fieldMaps.ts` by hand to match
-3. Update affected mappers and Worker queries
-4. Run the full test suite â€” golden eligibility tests will catch field name mismatches
+- **Production deploys are CI only.** The Cloudflare token lives in the `production` GitHub environment, which admits only `main`. The deploy job uploads the Worker's secrets from that environment. Roll back with `npx wrangler rollback`, or from the Cloudflare dashboard.
+- **Preview workflow:**
+  1. One preview Worker serves every session, so check what is on it first: `gh run list --workflow preview.yml --limit 3`.
+  2. Dispatch with `gh workflow run preview.yml --ref <branch>`, and send the owner the run link to approve. GitHub doesn't notify them about their own runs.
+  3. Run `npm run dev:preview-api` (Vite in `preview-api` mode against the preview Worker). CORS admits only `localhost:5173` and `:5174`.
+  4. The owner signs in in the browser. Preview data is real, so it's **view only**, apart from test records you create and remove.
+- **Frontend env** (`.env`, `.env.preview-api`, `.env.production`, not committed): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`.
+- **Windows:** in dev, the Cloudflare Vite plugin is applied to builds only (it deadlocks on Windows). After a local build, a stray `workerd` can hold `dist/`: kill it and delete `dist/`.
 
 ---
 
 ## Testing
 
-### Golden Tests
-
-`tests/golden-eligibility.test.ts` is the most critical test file. It asserts that every blocked reason string and rule ID is produced by the eligibility engine, and that the evaluation order never changes. **If any golden test fails, the eligibility engine has regressed. Do not deploy.**
-
-### Suite Overview
-
-- One file per module under test â€” all unit tests, no browser required. Run `npx vitest run` for the current pass/fail count; hard-coding a test count here just means this line goes stale the next time a test is added.
-- Test data uses **factory functions** (`p()`, `m()`, `mc()`, `t()`, `ctx()` â€” shared across the eligibility-family tests via `tests/helpers/factories.ts` where they're identical) and a shared `fakeAirtable()` stub (`tests/helpers/airtable.ts`) â€” no dependency on real Airtable data.
-- `tsconfig.test.json` type-checks the whole `tests/` directory (`npx tsc --noEmit -p tsconfig.test.json`, part of `npm run verify`).
-
----
-
-## Selected Team Display (optics)
-
-The app **displays** a player''s team as `People."Selected Team EOS"`, falling back to `People."Selected Team SOS"`, then the true `People.Registered Team`. The Section Captain manages both fields directly in Airtable: SOS stays static for the season; EOS may be adjusted to change the optics mid-season.
-
-- **Display only.** Every business rule - eligibility (play-up limits, higher-to-lower blocks, Premier restrictions), suspensions, recommendation scoring and play-up counting - keeps using the true `People.Registered Team`.
-- The substitution happens server-side at the API response boundary (squad selection rows, ranking lists, player portal, recommendations), so the true registration never reaches the browser.
-- `T#` / team blocks in the ranking view are grouped by the displayed team so ordering stays consistent with the optics.
-- Fixtures and selection legality are always computed against the true registration - a player displayed in a higher team still needs legitimate play-up eligibility to be selected there.
-- The player dashboard shows a **per-day, at most three fixture options** model: **My Team / Upcoming Fixture** (the fixture they are selected for, else their Selected Team EOS fixture), **Support Fixture** (their Registered Team fixture, when the Registered Team is below the selected/EOS team) and **Play-Up Opportunities** (teams immediately above the relevant team, closest first, filling the remaining places). Play-up and support candidates must pass the eligibility engine; the same-day availability rule is neutralised for this portal presentation (players plan availability here) while selection-time evaluation keeps every rule including same-day blocks.
-- The special goalkeeper view keeps its bulk-fetched exception model; the new date-level bulk control is a UX shortcut that performs the existing match-level updates ("Available" deletes exceptions - no Available records are created).
-
-## Removed Features
-
-Removed in the [Phase 1 cleanup commit](https://github.com/ant-ford/Squad-Selection/commit/b533df653810c749384849e9903ce8600bb1c2d5) (`b533df6`, "Delete dead routes, dormant features, and dead config"):
-
-- **Automatic re-registration service** (`worker/src/registration.ts` and its routes) - never enabled in production; the owner decision was to delete it outright rather than keep dead code around "in case it's needed later". Re-registration came back on 3 Oct 2026 as a database trigger on match cards (migration `20261003090000_auto_reregistration`; rules spec §13.2).
-- **Metrics/performance-snapshot endpoints and modules** (`worker/src/metrics.ts`, `worker/src/perf.ts`, and the routes that exposed them) - unused instrumentation with no consumer.
-- Thirteen other dead routes with no frontend caller, the Worker's `scheduled()` cron export (with the corresponding `[triggers]` block in `worker/wrangler.toml`), and the `tailwind.config.ts` file (Tailwind v4 reads tokens from `src/index.css`, not a JS config).
-
-If you're looking for any of the above in the git history, that commit is where they left.
-
-## AI Contributor Guide
-
-**âš ï¸ Read this section before making any changes.**
-
-### Required Reading
-
-Every AI assistant MUST read these documents **in order** before modifying code:
-
-1. **This README** â€” authoritative, along with the code, for architecture, invariants, and business rules
-2. **[Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** â€” historical background only; useful context on the reasoning, not current
-
-### What MUST NOT Change
-
-| Rule | Why |
-|---|---|
-| Eligibility evaluation order | Fixed by spec Â§7.1; golden tests enforce it |
-| Exact reason strings | Coaches depend on consistent labels |
-| `RULE_IDS` constants | Stable identifiers for golden tests |
-| Section Rank as sole ranking | Everything else is derived |
-| Exception-based availability | No "Available" records |
-| Selections on `Matches.Selected Players` | Not a separate table |
-| Worker owns business rules | Never duplicate in React |
-| Schema mapping | Keep `shared/schema/` in sync with `docs/Airtable Schema.json` by hand |
-
-### Where Logic Belongs
-
-| If you're addingâ€¦ | Put it inâ€¦ |
-|---|---|
-| Eligibility rules | `worker/src/eligibility.ts` |
-| Ranking logic | `worker/src/ranking.ts` |
-| Recommendation scoring | `worker/src/recommendations.ts` |
-| New API endpoints | `worker/src/index.ts` |
-| React Query hooks | `src/lib/queries.ts` |
-| UI components | `src/components/` or `src/pages/` |
-| Filter controls | `src/components/PlayerFilters.tsx` |
-| Drag-and-drop state | `src/pages/PlayerRanking.tsx` (local state) |
-
-### Required Regression Tests
-
-| Changed module | Must-run tests |
-|---|---|
-| `eligibility.ts` | `eligibility.test.ts` + `golden-eligibility.test.ts` + `recommendations.test.ts` |
-| `ranking.ts` | `abilityGroup.test.ts` + `abilityRank.test.ts` |
-| `recommendations.ts` | `recommendations.test.ts` |
-| `abilityGroup.ts` | `abilityGroup.test.ts` |
-| `dateUtils.ts` | `dateUtils.test.ts` |
-| `PlayerFilters.tsx` | `playerFilters.test.ts` |
-
 ```bash
-npx vitest run   # Always run the full suite before deploying
+npm run verify      # typecheck (app, worker, web-shell, legacy-redirect, tests) + vitest + vite build; what CI runs
+npx vitest run tests/golden-eligibility.test.ts
 ```
 
-### Common Mistakes to Avoid
-
-âŒ **Do not** add eligibility logic to React â€” display Worker-returned `eligibilityStatus` and `reason`  
-âŒ **Do not** change existing reason strings â€” add new ones only  
-âŒ **Do not** persist Playing Ability independently â€” always derive from Section Rank  
-âŒ **Do not** read from cache on write paths â€” always read fresh from Airtable  
-âŒ **Do not** forget cache invalidation after writes â€” follow the pattern in `syncSquad()`  
-âŒ **Do not** use non-deterministic sorting â€” use alphabetical tiebreaking  
-âŒ **Do not** use `People.Playing Position` for the GK exemption â€” use `Match Cards.Goalkeeper`  
-âŒ **Do not** infer team rank from team name â€” use `Teams.Team Rank`  
-âŒ **Do not** use Airtable rollups for play-up counts â€” compute in the Worker  
-âŒ **Do not** let `shared/schema/` drift from `docs/Airtable Schema.json` — update both together
-- **Do not** duplicate the qualifying play-up filter - import `isQualifyingPlayUpCard` from `worker/src/playUp.ts`
+- Tests are unit tests in `tests/`, one file per module, with no browser and no real database.
+- Factories live in `tests/helpers/factories.ts`.
+- The Supabase path is tested with fakes of `fetch` for PostgREST, and of the repositories in `worker/src/data/`. Some older tests still drive the legacy fake Airtable (`tests/helpers/airtable.ts`); they're being rewritten in October 2026.
+- Must-run tests by module:
+  - `eligibility.ts`: `eligibility`, `golden-eligibility` and `recommendations`;
+  - `ranking.ts`: `ranking`, `abilityGroup` and `abilityRank`;
+  - anything touching availability: the `availability*` and `sameDay*` files.
 
 ---
 
-## Contributing
+## Docs index
 
-### Before Making Changes
-
-1. Read this README (authoritative) and, for background, [`Implementation_Roadmap_v4.md`](docs/Implementation_Roadmap_v4.md) (historical)
-2. Understand where your change belongs (Worker vs React)
-3. Check the [Critical Invariants](#critical-invariants) above â€” your change MUST NOT violate any of them
-
-### Pull Request Checklist
-
-- [ ] Architecture preserved â€” no invariants violated
-- [ ] Business logic in the correct tier (Worker, not React)
-- [ ] No duplicated eligibility or ranking logic
-- [ ] Tests added for new behaviour
-- [ ] Golden eligibility tests still pass
-- [ ] Full test suite passes (`npx vitest run`)
-- [ ] Generated files regenerated if schema changed
-- [ ] Cache invalidation handled for write paths
-- [ ] Reason strings unchanged (add only, never modify)
-- [ ] Build succeeds (`npx vite build`)
-
----
-
-## Support
-
-### Getting Started
-
-1. **Read this README** â€” You are here
-2. **Read [Implementation_Roadmap_v4.md](docs/Implementation_Roadmap_v4.md)** â€” historical background, not authoritative
-3. **Review `tests/golden-eligibility.test.ts`** â€” Understand the eligibility contract
-4. **Explore `worker/src/eligibility.ts`** â€” The eligibility engine implementation
-5. **Run `npx vitest run`** â€” Confirm everything passes
-
-### Key Contacts
-
-- **Section Captain:** Manages ranking configuration and has cross-team visibility
-- **Coaches:** Primary users â€” squad selection and player management
-- **Administrators:** Manage suspensions, visiting player flags, and data completeness
+| Document | What it is |
+|---|---|
+| [docs/HKFC Eligibility & Selection Rules Specification v1.0.md](docs/HKFC%20Eligibility%20%26%20Selection%20Rules%20Specification%20v1.0.md) | The club's eligibility and selection rules, which the engine implements |
+| [docs/HKHA Competition Bye-Laws Summary.md](docs/HKHA%20Competition%20Bye-Laws%20Summary.md) | Developer summary of the HKHA bye-laws (source PDF: 10 Sep 2026 edition, alongside it) |
+| [docs/Coaches Ranking System.md](docs/Coaches%20Ranking%20System.md) | Section ranking and ability-group spec |
+| [docs/DATA_RETENTION.md](docs/DATA_RETENTION.md) | What is removed when, Delete my profile, `hkid_hidden` |
+| [docs/RESTORE.md](docs/RESTORE.md) | Backups (nightly to R2), restore drill, restoring production |
+| [docs/CUTOVER.md](docs/CUTOVER.md) | The 2 Oct 2026 Airtable → Supabase switch-over runbook (record) |
+| [docs/migration/FIELDS.md](docs/migration/FIELDS.md) | Which Airtable fields became which columns |
+| [scripts/migration/README.md](scripts/migration/README.md) | The live data scripts (kit order, quizzes, club docs, PDF templates) |
+| [docs/archive/](docs/archive/) | Historical reviews, the cleanup prompt and report, and the original roadmap. Not current. |
