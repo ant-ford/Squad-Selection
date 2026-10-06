@@ -32,17 +32,9 @@ Eddy is the Hong Kong Football Club men's hockey section's web app. It covers pl
 - **Postgres.** All club data since the switch from Airtable on **2 Oct 2026**. Multi-row writes that must succeed together are SQL functions called through `rpc()`, so each is one transaction.
 - **Shared code (`shared/`).** Rules and formats used by both sides (display team, ability groups, stages, profile field specs, etc.). `worker/src` must not import `src/`, and `src/` must not import `worker/`.
 
-### Airtable (legacy, being removed in October 2026)
+### What's left of Airtable
 
-Airtable stopped being read or written on 2 Oct 2026, and its subscription ends on 20 Oct 2026. Until the removal PRs land, the Worker still contains Airtable code:
-- `worker/src/airtable.ts`;
-- the Airtable halves of `worker/src/data/*.ts`;
-- `backendFor(...) === "airtable"` branches;
-- `shared/mappers`.
-
-Production runs `DATA_BACKEND="supabase"`. Treat Airtable branches as dead, and don't add to them.
-
-What stays for good:
+Eddy ran on Airtable until 2 Oct 2026, and the Airtable code was removed in October 2026. What stays for good:
 - **`rec…` ids.** Imported rows keep their Airtable id in `airtable_id`, and every public id is `api_id = coalesce(airtable_id, id::text)`. Calendar feed URLs, `/join?ref=`, `/review/:id` links in sent emails and bookmarked matches all carry `rec…` ids. Rows created in Eddy have uuid ids.
 - **The `archive` schema** holds the raw Airtable JSON until it's dropped after 20 Oct. Nothing new may depend on it.
 
@@ -116,7 +108,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 ## Worker internals
 
 - **Routing:** `worker/src/index.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`, and registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
-- **Caching:** `worker/src/cache.ts` keeps a per-isolate memory cache plus KV (`CACHE`). Writes invalidate the affected keys. The club stats summaries live in KV.
+- **Caching:** `worker/src/cache.ts` keeps short-lived reads in a per-isolate memory cache, and Worker writes clear the affected keys (`worker/src/invalidation.ts`). KV (`CACHE`) holds only the club Stats summaries. The current season is keyed on its newest result, so a result hkha-sync writes shows on the next request.
 - **Request stats:** `worker/src/requestContext.ts` counts database calls, bytes and wait time. The figures go out as a `Server-Timing` header and one log line per request.
 - **Crons:** `scheduled()` in `index.ts`, at 03:00 UTC (11:00 HKT; commitment review emails) and 03:30 UTC (retention, `RETENTION_MODE` = `report` until the owner flips it to `remove`).
 - **Email:** `worker/src/mailer.ts` over Resend. Resend's free plan allows 100 emails a day and 3,000 a month, and Supabase sign-in codes share that allowance. Eddy caps itself at 70 recipients a day (`DAILY_LIMIT`) and logs every send in `email_log`. Preview sends everything to `MAIL_REDIRECT_TO`.
@@ -143,7 +135,7 @@ The owner (Anthony) does these, and Claude asks first:
 - flipping `RETENTION_MODE`;
 - setting `hkid_hidden`.
 
-Never run `scripts/migration/import-airtable.mjs` again: production has data written since the switch-over. The live scripts in `scripts/migration/` are `import-kit-order`, `load-quizzes`, `upload-club-doc` and `upload-pdf-template`.
+The Airtable import scripts are gone. The live scripts in `scripts/migration/` are `import-kit-order`, `load-quizzes`, `upload-club-doc` and `upload-pdf-template`.
 
 ### Branches and PRs
 Several sessions share one checkout, so don't switch branches in it. Work in a git worktree off `origin/main`.
@@ -183,7 +175,7 @@ npx vitest run tests/golden-eligibility.test.ts
 
 - Tests are unit tests in `tests/`, one file per module, with no browser and no real database.
 - Factories live in `tests/helpers/factories.ts`.
-- The Supabase path is tested with fakes of `fetch` for PostgREST, and of the repositories in `worker/src/data/`. Some older tests still drive the legacy fake Airtable (`tests/helpers/airtable.ts`); they're being rewritten in October 2026.
+- The data layer is faked in two ways: the repositories in `worker/src/data/` are replaced by in-memory fakes (`tests/helpers/fakeRepos.ts`), and direct PostgREST calls go to one shared fetch fake (`tests/helpers/postgrest.ts`), which fails a test on any query it doesn't understand. `tests/helpers/README.md` explains how to use them.
 - Must-run tests by module:
   - `eligibility.ts`: `eligibility`, `golden-eligibility` and `recommendations`;
   - `ranking.ts`: `ranking`, `abilityGroup` and `abilityRank`;

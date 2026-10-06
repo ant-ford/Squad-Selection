@@ -1,9 +1,5 @@
-import { airtableFindAll } from "../airtable";
 import type { Env } from "../env";
-import { pick } from "./backend";
 import { supabaseOfficers } from "./supabase/squad";
-import { TABLES } from "../../../shared/schema/tableNames";
-import { OFFICER_FIELDS } from "../../../shared/schema/fieldMaps";
 
 /**
  * The office tables. A "sectionCaptain" row is in the Section Captains
@@ -16,28 +12,15 @@ export type Office =
   | "sectionChair"
   | "sectionCaptain"
   | "sponsor"
+  // The kit screens (auth.ts).
   | "kitConvenor"
+  // League registration: the requests for new joiners (joiners.ts) and the
+  // registration screen (auth.ts).
   | "hockeyConvenor"
+  // Coach rights for every team and the trial sessions (auth.ts).
   | "assistantDirector"
+  // Runs the umpiring duties (umpiring.ts).
   | "umpireCoordinator";
-
-export const OFFICE_TABLES: Record<Office, string> = {
-  membershipOfficer: TABLES.membershipOfficer,
-  sectionChair: TABLES.sectionChair,
-  sectionCaptain: TABLES.sectionCaptainOffice,
-  sponsor: TABLES.sponsor,
-  // Read on the Supabase backend only (reference.ts getOfficerLinks): the kit
-  // screens don't exist on Airtable.
-  kitConvenor: "Kit Convenor",
-  // Supabase only too: it lets the Hockey Convenor sign in to open league
-  // registration requests (joiners.ts). It opens no officer section.
-  hockeyConvenor: "Hockey Convenor",
-  // Supabase only: coach rights for every team and the trial sessions
-  // (auth.ts).
-  assistantDirector: "Assistant Director of Hockey",
-  // Supabase only: runs the umpiring duties (umpiring.ts).
-  umpireCoordinator: "Umpire Coordinator",
-};
 
 /** One office row: who holds it (People ids) and its Designation. */
 export interface OfficeRow {
@@ -66,41 +49,6 @@ export interface OfficersRepo {
   listAllMembers(offices: readonly Office[]): Promise<OfficeMemberRow[]>;
 }
 
-const linkIds = (v: unknown): string[] =>
-  (Array.isArray(v) ? v : []).filter((id: unknown): id is string => typeof id === "string");
-
-function toOfficeRow(office: Office, record: any): OfficeRow {
-  const designation = record.fields?.[OFFICER_FIELDS.designation];
-  const member = record.fields?.[OFFICER_FIELDS.member];
-  return {
-    office,
-    designation: typeof designation === "string" ? designation : "",
-    memberIds: linkIds(member),
-  };
-}
-
-function airtableOfficers(env: Env): OfficersRepo {
-  return {
-    async listActive(offices) {
-      const tables = await Promise.all(
-        offices.map((office) =>
-          airtableFindAll(env, OFFICE_TABLES[office], `{${OFFICER_FIELDS.status}}="Active"`),
-        ),
-      );
-      return offices.flatMap((office, i) => tables[i].map((record) => toOfficeRow(office, record)));
-    },
-
-    async listAllMembers(offices) {
-      const tables = await Promise.all(
-        offices.map((office) => airtableFindAll(env, OFFICE_TABLES[office], undefined, undefined, [OFFICER_FIELDS.member])),
-      );
-      return offices.flatMap((office, i) =>
-        tables[i].map((record) => ({ id: record.id, office, memberIds: linkIds(record.fields?.[OFFICER_FIELDS.member]) })),
-      );
-    },
-  };
-}
-
 export function officers(env: Env): OfficersRepo {
-  return pick(env, "officers", airtableOfficers, supabaseOfficers);
+  return supabaseOfficers(env);
 }

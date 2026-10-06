@@ -28,7 +28,8 @@ import {
   uploadPoster,
   waiveCharge,
 } from '@/api/events';
-import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
+import PaymentsSection from '@/components/events/PaymentsSection';
+import { saveCsv } from '@/lib/saveCsv';
 import PosterImage from '@/components/events/PosterImage';
 import RegisterSection from '@/components/events/RegisterSection';
 import CheckInQrSheet from '@/components/events/CheckInQrSheet';
@@ -45,6 +46,7 @@ import {
   answersCsv,
   asksDietary,
   audienceOptions,
+  billed,
   registerOpen,
   describeAudience,
   type EventInput,
@@ -91,6 +93,7 @@ type Form = {
   guestAdultPrice: string;
   guestChildPrice: string;
   helpNeeded: string;
+  linkUrl: string;
   dietary: boolean;
   dietaryRequired: boolean;
   ownQuestions: { label: string; required: boolean }[];
@@ -116,6 +119,7 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   guestAdultPrice: num(e?.guestAdultPrice ?? null),
   guestChildPrice: num(e?.guestChildPrice ?? null),
   helpNeeded: e?.helpNeeded ?? '',
+  linkUrl: e?.linkUrl ?? '',
   dietary: e ? asksDietary(e.questions) : false,
   dietaryRequired: !!e?.questions.find((q) => q.key === DIETARY.key)?.required,
   ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => ({ label: q.label, required: !!q.required })) ?? [],
@@ -171,6 +175,7 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
         guestAdultPrice: priceOrNull(f.guestAdultPrice),
         guestChildPrice: priceOrNull(f.guestChildPrice),
         helpNeeded: f.helpNeeded,
+        linkUrl: f.linkUrl,
         questions: [
           ...(f.dietary ? [{ ...DIETARY, required: f.dietaryRequired }] : []),
           ...f.ownQuestions.filter((q) => q.label.trim()).map((q, i) => ({ key: `q${i + 1}`, label: q.label, required: q.required })),
@@ -191,7 +196,8 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
     else delete audience[key];
     set({ audience });
   };
-  const paid = f.paymentMode !== 'free';
+  const paid = billed(f.paymentMode);
+  const selfFunded = f.paymentMode === 'self_funded';
 
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
@@ -275,9 +281,9 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
                 ))}
               </select>
             </label>
-            {paid && (
+            {(paid || selfFunded) && (
               <label className={label}>
-                Member price (HK$)
+                {selfFunded ? 'Estimated cost each (HK$, optional)' : 'Member price (HK$)'}
                 <input type="number" min={0} inputMode="decimal" className={fieldInput} value={f.memberPrice} onChange={(e) => set({ memberPrice: e.target.value })} />
               </label>
             )}
@@ -314,6 +320,10 @@ function EventForm({ view, event, onClose, onSaved }: { view: ManageView; event:
               )}
             </div>
           )}
+          <label className={`block ${label}`}>
+            Link (optional)
+            <input className={fieldInput} type="url" inputMode="url" value={f.linkUrl} onChange={(e) => set({ linkUrl: e.target.value })} placeholder="e.g. the event's WhatsApp group link" />
+          </label>
           <label className={`block ${label}`}>
             Help needed (optional)
             <input className={fieldInput} value={f.helpNeeded} onChange={(e) => set({ helpNeeded: e.target.value })} placeholder="e.g. 3 for the BBQ and setting up" />
@@ -560,7 +570,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">Answers ({data.responses.length})</h3>
                   {data.responses.some((r) => r.status !== 'not_going') && (
-                    <button className="text-xs text-primary inline-flex items-center gap-1" onClick={() => downloadCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}>
+                    <button className="text-xs text-primary inline-flex items-center gap-1" onClick={() => saveCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}>
                       <Download className="h-3.5 w-3.5" /> Download answers
                     </button>
                   )}
@@ -593,7 +603,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                           {r.status !== 'not_going' &&
                             e.questions.map((q) => (r.answers[q.key] ? <p key={q.key}>{q.label}: {r.answers[q.key]}</p> : null))}
                           {r.canHelp && <p>Can help</p>}
-                          {e.paymentMode !== 'free' && r.status === 'going' && (
+                          {billed(e.paymentMode) && r.status === 'going' && (
                             <p>
                               {r.waived ? 'Let off the charge · ' : ''}
                               <button className="text-primary" disabled={waive.isPending} onClick={() => waive.mutate({ personId: r.personId, waived: !r.waived })}>
@@ -640,7 +650,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
               </section>
             )}
 
-            {e.paymentMode !== 'free' && e.status !== 'draft' && <PaymentsSection event={e} />}
+            {billed(e.paymentMode) && e.status !== 'draft' && <PaymentsSection event={e} />}
 
             {data.notAnswered.length > 0 && (
               <section className="space-y-1">
