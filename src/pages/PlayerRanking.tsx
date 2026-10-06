@@ -1130,7 +1130,7 @@ function RecentChangesSection({ changes, loading }: { changes: RankingChange[]; 
               <li key={c.id} className="flex items-center gap-2 py-1.5 px-2 bg-card border border-border rounded-lg">
                 <span
                   className={`shrink-0 w-6 text-center text-xs font-bold ${
-                    dir === 'up' ? 'text-green-600' : dir === 'down' ? 'text-red-600' : 'text-muted-foreground'
+                    dir === 'up' ? 'text-green-700' : dir === 'down' ? 'text-red-700' : 'text-muted-foreground'
                   }`}
                 >
                   {dir === 'up' ? '↑' : dir === 'down' ? '↓' : c.kind === 'activate' ? '+' : '−'}

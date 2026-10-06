@@ -22,6 +22,18 @@ export function otherGamesThatDay(fixture: MyFixture, all: MyFixture[]): MyFixtu
   return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Fixtures by Hong Kong day, built once so each card only scans its own day. */
+export function groupByHkDay(all: MyFixture[]): Map<string, MyFixture[]> {
+  const map = new Map<string, MyFixture[]>();
+  for (const f of all) {
+    const key = hkDateKey(f.date);
+    const list = map.get(key);
+    if (list) list.push(f);
+    else map.set(key, [f]);
+  }
+  return map;
+}
+
 /**
  * Whether to ask about the rest of the day: the player is out for this game
  * but still counted in (Available or Maybe) for another one that day.

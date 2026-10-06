@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => {
     getMyFixtures: vi.fn(),
     getUpcomingFixtures: vi.fn(),
     getPlayersForMatch: vi.fn(),
-    getSquadForMatch: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
@@ -36,8 +35,6 @@ const mocks = vi.hoisted(() => {
     getActiveRanking: vi.fn(),
     getInactiveRanking: vi.fn(),
     setAbilityGroupConfig: vi.fn(),
-    movePlayerToRank: vi.fn(),
-    movePlayerRelative: vi.fn(),
     reorderRanking: vi.fn(),
     activatePlayer: vi.fn(),
     deactivatePlayer: vi.fn(),
@@ -54,7 +51,6 @@ vi.mock("../worker/src/fixtures", () => ({
 }));
 vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
-  getSquadForMatch: mocks.getSquadForMatch,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
   setMatchKit: mocks.setMatchKit,
@@ -81,8 +77,6 @@ vi.mock("../worker/src/ranking", () => ({
   getActiveRanking: mocks.getActiveRanking,
   getInactiveRanking: mocks.getInactiveRanking,
   setAbilityGroupConfig: mocks.setAbilityGroupConfig,
-  movePlayerToRank: mocks.movePlayerToRank,
-  movePlayerRelative: mocks.movePlayerRelative,
   reorderRanking: mocks.reorderRanking,
   activatePlayer: mocks.activatePlayer,
   deactivatePlayer: mocks.deactivatePlayer,
@@ -266,9 +260,10 @@ beforeEach(() => {
   invalidateAll();
   // Defaults: signed in as the ordinary player, so coach-only routes reject.
   signInAs(TOKENS.player);
-  // Only the sign-in check leaves the Worker; no table is seeded, so any
-  // PostgREST read a route made here would fail the test.
-  fakePostgrest({ tables: {}, other: supabaseAuth });
+  // Only the sign-in check leaves the Worker, plus the error_log row every
+  // 5xx writes (systemHealth.ts). No other table is seeded, so any other
+  // PostgREST call a route made here would fail the test.
+  fakePostgrest({ tables: { error_log: [] }, other: supabaseAuth });
   requireAuthorizedUserSpy = vi.spyOn(auth, "requireAuthorizedUser");
 
   mocks.getMyProfile.mockResolvedValue({
@@ -285,7 +280,7 @@ beforeEach(() => {
   mocks.syncSquad.mockResolvedValue({ success: true });
   mocks.setTeamAutoSelectPlayers.mockResolvedValue({ success: true });
   mocks.getTeamAutoSelectPlayers.mockResolvedValue({ players: [] });
-  mocks.movePlayerToRank.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+  mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
 });
 
 // ---------------------------------------------------------------------------
@@ -312,7 +307,7 @@ describe("error codes", () => {
   });
 
   it("returns 403 COACH_ACCESS_REQUIRED when a player hits a coach-only route", async () => {
-    const res = await call("/api/ranking/move", jsonInit({ playerId: "recP9", newRank: 1 }));
+    const res = await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }));
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
@@ -448,8 +443,6 @@ describe("session-derived identity (IDOR prevention)", () => {
 describe("coach-only routes", () => {
   const coachOnlyCalls: { path: string; init: RequestInit }[] = [
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
-    { path: "/api/ranking/move", init: jsonInit({ playerId: "recP9", newRank: 1 }) },
-    { path: "/api/ranking/move-relative", init: jsonInit({ sourceId: "a", targetId: "b", position: "above" }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
     { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
@@ -464,47 +457,20 @@ describe("coach-only routes", () => {
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
 
-  it("allows a coach on POST /api/ranking/move and uses the session email for audit", async () => {
+  it("allows a coach on POST /api/ranking/reorder and uses the session email for audit", async () => {
     signInAs(TOKENS.coach);
 
     const res = await call(
-      "/api/ranking/move",
-      jsonInit({ playerId: "recP9", newRank: 1, actingEmail: "attacker@evil.com" }),
+      "/api/ranking/reorder",
+      jsonInit({ playerIds: ["recP9", "recP8"], actingEmail: "attacker@evil.com" }),
     );
     expect(res.status).toBe(200);
-    expect(mocks.movePlayerToRank).toHaveBeenCalledWith(ENV, "recP9", 1, "coach@hkfc.com", undefined);
+    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined);
   });
 
   it("passes the optional justification note through on ranking writes", async () => {
     signInAs(TOKENS.coach);
-    mocks.movePlayerToRank.mockResolvedValue({ players: [], activeCount: 0, config: {} });
-    mocks.movePlayerRelative.mockResolvedValue({ players: [], activeCount: 0, config: {} });
     mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
-
-    await call(
-      "/api/ranking/move",
-      jsonInit({ playerId: "recP9", newRank: 4, justification: "needs more game time" }),
-    );
-    expect(mocks.movePlayerToRank).toHaveBeenLastCalledWith(
-      ENV,
-      "recP9",
-      4,
-      "coach@hkfc.com",
-      "needs more game time",
-    );
-
-    await call(
-      "/api/ranking/move-relative",
-      jsonInit({ sourceId: "recP9", targetId: "recP8", position: "above", justification: "form" }),
-    );
-    expect(mocks.movePlayerRelative).toHaveBeenLastCalledWith(
-      ENV,
-      "recP9",
-      "recP8",
-      "above",
-      "coach@hkfc.com",
-      "form",
-    );
 
     await call(
       "/api/ranking/reorder",
@@ -636,19 +602,6 @@ describe("misc routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("read routes require authentication", () => {
-  it("lets an authorized player read a match squad", async () => {
-    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
-    const res = await call("/api/match/recM1/squad");
-    expect(res.status).toBe(200);
-    expect(requireAuthorizedUserSpy).toHaveBeenCalled();
-  });
-
-  it("forwards ?side= on a derby squad read (regression: the route used to ignore it)", async () => {
-    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
-    await call("/api/match/recM1/squad?side=away");
-    expect(mocks.getSquadForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
-  });
-
   it("lets an authorized player read a fixture's team availability, forwarding ?side=", async () => {
     mocks.getTeamAvailabilityForMatch.mockResolvedValue({ selected: [], restOfTeam: [], suggestions: [] });
     const res = await call("/api/match/recM1/team-availability?side=away");
@@ -662,13 +615,6 @@ describe("read routes require authentication", () => {
     const res = await call("/api/match/recM1/team-availability");
     expect(res.status).toBe(401);
     expect(mocks.getTeamAvailabilityForMatch).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unauthenticated match squad read", async () => {
-    signOut();
-    const res = await call("/api/match/recM1/squad");
-    expect(res.status).toBe(401);
-    expect(mocks.getSquadForMatch).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -962,42 +908,43 @@ describe("CORS origin allow-list", () => {
 // ---------------------------------------------------------------------------
 // Deep health check. Plain /health only proves the Worker is running. A
 // rejected Airtable token once looked exactly like a frontend fault: sign-in
-// worked, /health was green, and every screen behind the login failed, with
-// no unauthenticated route that touched Airtable to prove otherwise.
+// worked, /health was green, and every screen behind the login failed. The
+// deep check now asks the Supabase data project, and never Airtable.
 // ---------------------------------------------------------------------------
 
 describe("GET /health?deep=1", () => {
-  const withAirtable = async (responder: () => Response, path = "/health?deep=1") => {
+  const DATA_ENV = { ...ENV, DATA_SUPABASE_URL: "https://data.supabase.test", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" };
+  const withSupabase = async (responder: () => Response) => {
     invalidateAll();
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).includes("api.airtable.com")) return responder();
+      if (String(input).startsWith("https://data.supabase.test/rest/v1/api_teams")) return responder();
       throw new Error("unexpected fetch: " + String(input));
     }) as typeof fetch;
     try {
-      return await call(path);
+      return await worker.fetch(new Request("https://hkfc-api.test/health?deep=1"), DATA_ENV, CTX);
     } finally {
       globalThis.fetch = realFetch;
       invalidateAll();
     }
   };
 
-  it("reports airtable ok when the token works", async () => {
-    const res = await withAirtable(() => new Response(JSON.stringify({ records: [] }), { status: 200 }));
+  it("reports supabase ok when the data project answers, and asks nothing of Airtable", async () => {
+    const res = await withSupabase(() => new Response("[]", { status: 200 }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ status: "ok", airtable: "ok" });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ status: "ok", supabase: "ok" });
+    expect(body).not.toHaveProperty("airtable");
   });
 
-  it("reports airtable error when the token is rejected, without leaking why", async () => {
-    const res = await withAirtable(
-      () => new Response('{"error":{"type":"AUTHENTICATION_REQUIRED"}}', { status: 401 }),
-    );
+  it("reports supabase error when the key is rejected, without leaking why", async () => {
+    const res = await withSupabase(() => new Response('{"message":"Invalid API key"}', { status: 401 }));
     // Still 200: the Worker itself is up. Only the dependency is broken.
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ status: "ok", airtable: "error" });
+    expect(body).toMatchObject({ status: "ok", supabase: "error" });
     // No message, no record, no configuration - detail belongs in the logs.
-    expect(JSON.stringify(body)).not.toMatch(/AUTHENTICATION_REQUIRED|test-token|test-base|airtable\.com/i);
+    expect(JSON.stringify(body)).not.toMatch(/Invalid API key|sb_secret|supabase\.test/i);
   });
 
   it("leaves plain /health untouched, and free of any Airtable call", async () => {

@@ -85,3 +85,9 @@ export function requireParam(value: string | null, name: string): string {
   if (!value) throw new HttpError(`Missing required query param: ${name}`, 400);
   return value;
 }
+
+/** An outbound fetch ended by its AbortSignal.timeout (a DOMException, so matched by name). */
+export function isTimeout(err: unknown): boolean {
+  const name = typeof err === "object" && err !== null ? (err as { name?: unknown }).name : undefined;
+  return name === "TimeoutError" || name === "AbortError";
+}

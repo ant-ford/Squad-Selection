@@ -15,7 +15,6 @@
  * this switch existed. Rolling back is setting the value back and deploying.
  */
 import type { Env } from "../env";
-import { shadowed } from "./shadow";
 
 export const DATA_MODULES = [
   "people",
@@ -97,7 +96,5 @@ export function pick<T extends object>(
     if (!supabase) throw new Error(`Data module "${module}" is set to supabase but has no Supabase implementation yet`);
     return supabase(env);
   }
-  // Preview only: serve Airtable, and compare the same read on Supabase in the background.
-  if (supabase && env.DATA_SHADOW_READ === "on") return shadowed(module, airtable(env), () => supabase(env));
   return airtable(env);
 }

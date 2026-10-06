@@ -1,7 +1,7 @@
 import { HttpError } from "./http";
 import { availabilityRules, type NewAvailabilityRule } from "./data/availabilityRules";
 import type { Env } from "./env";
-import { getShared, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateShared } from "./cache";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
 
 /**
@@ -180,7 +180,7 @@ export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRul
   try {
     return await getShared<AvailabilityRule[]>(env, RULES_CACHE_KEY, async () => {
       return availabilityRules(env).listAll();
-    }, rawReadTtl(env, RULES_TTL_MS));
+    }, RULES_TTL_MS);
   } catch (err) {
     console.error("Availability rules unavailable for this request:", err instanceof Error ? err.message : err);
     return [];
