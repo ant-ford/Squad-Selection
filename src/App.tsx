@@ -32,6 +32,7 @@ const People = lazy(() => import('./pages/People'));
 const PersonAdmin = lazy(() => import('./pages/PersonAdmin'));
 const Suspensions = lazy(() => import('./pages/Suspensions'));
 const Club = lazy(() => import('./pages/Club'));
+const DataChecks = lazy(() => import('./pages/DataChecks'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
@@ -370,6 +371,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <Club />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/data-checks',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <DataChecks />
           </Suspense>
         ),
       },
