@@ -1,5 +1,8 @@
 /**
- * Which caches a change to each kind of club data can make stale.
+ * Which caches a write to each kind of club data can make stale. Only the
+ * Worker's own writes are announced: the Airtable webhook that also drove
+ * these went with Airtable, and hkha-sync writes Postgres directly (the
+ * Stats summary keys itself on the data instead, clubStats.ts).
  *
  * Shared entries are dropped in KV as well; in-isolate-only derived
  * structures (season index, per-match player lists, calendar feeds, the
@@ -7,15 +10,7 @@
  */
 import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
-import { SCHEDULED_MATCHES_KEY } from "./fixtures";
-import {
-  CHAIRMAN_DIRECTORY_KEY,
-  MEMBERSHIP_RECORDS_KEY,
-  OFFICER_LINKS_KEY,
-  STATEMENT_RECORDS_KEY,
-  STATS_CURRENT_KEY,
-  WAITING_ON_KEY,
-} from "./reference";
+import { CHAIRMAN_DIRECTORY_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "./reference";
 
 interface Rule {
   keys?: string[];
@@ -23,7 +18,7 @@ interface Rule {
   localPrefixes?: string[];
 }
 
-export const INVALIDATION = {
+const INVALIDATION = {
   people: {
     keys: [
       "club-reference",
@@ -38,73 +33,22 @@ export const INVALIDATION = {
     // my-tasks: a member's player-page banner, gone once their form is in.
     localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
   },
-  teams: {
-    keys: ["club-reference", "team-coach-links"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
-  },
-  matches: {
-    keys: [SCHEDULED_MATCHES_KEY, STATS_CURRENT_KEY],
-    sharedPrefixes: ["all-matches:", "played-matches:"],
-    localPrefixes: ["match:", "players-for-match:", "season-index:", "calendar:", "availability:"],
-  },
-  matchCards: {
-    keys: [STATS_CURRENT_KEY],
-    sharedPrefixes: ["match-cards:"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
-  },
-  availabilityExceptions: {
-    sharedPrefixes: ["exceptions:"],
-    localPrefixes: ["availability:", "players-for-match:", "season-index:", "calendar:"],
-  },
-  availabilityRules: {
-    keys: ["availability-rules"],
-    localPrefixes: ["players-for-match:", "calendar:"],
-  },
-  abilityGroups: {
-    keys: ["ranking:config", "ranking:active"],
-  },
-  rankingEvents: {
-    localPrefixes: ["ranking-events:"],
-  },
-  // The boards carry the signing officer's name and mobile, so an office
-  // changing hands drops them too.
-  membershipOfficers: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
-  sectionChairs: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
-  sectionCaptains: {
-    keys: [OFFICER_LINKS_KEY],
-  },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  sponsors: {
-    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
 } satisfies Record<string, Rule>;
 
-export type DataDomain = keyof typeof INVALIDATION;
-
-/** Drop every cache a change to these kinds of data can have made stale. */
-export async function invalidateFor(env: Env, domains: Iterable<DataDomain>): Promise<void> {
-  const keys = new Set<string>();
-  const sharedPrefixes = new Set<SharedPrefix>();
-  for (const domain of domains) {
-    const rule: Rule = INVALIDATION[domain];
-    for (const k of rule.keys ?? []) keys.add(k);
-    for (const p of rule.sharedPrefixes ?? []) sharedPrefixes.add(p);
-    for (const p of rule.localPrefixes ?? []) invalidateCachePrefix(p);
-  }
-  if (keys.size === 0 && sharedPrefixes.size === 0) return;
-  await invalidateShared(env, [...keys], [...sharedPrefixes]);
+/** Drop every cache a change to this kind of data can have made stale. */
+async function invalidate(env: Env, domain: keyof typeof INVALIDATION): Promise<void> {
+  const rule: Rule = INVALIDATION[domain];
+  for (const p of rule.localPrefixes ?? []) invalidateCachePrefix(p);
+  await invalidateShared(env, rule.keys ?? [], rule.sharedPrefixes ?? []);
 }
 
 /** After a write to People. */
-export const invalidatePeople = (env: Env) => invalidateFor(env, ["people"]);
+export const invalidatePeople = (env: Env) => invalidate(env, "people");
 
 /** After a write to Commitments. */
-export const invalidateCommitments = (env: Env) => invalidateFor(env, ["commitments"]);
+export const invalidateCommitments = (env: Env) => invalidate(env, "commitments");

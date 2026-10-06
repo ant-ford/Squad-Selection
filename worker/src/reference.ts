@@ -1,6 +1,6 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
+import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
@@ -39,7 +39,7 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
       teamRankMap,
       teamNames: teams.map((t) => t.teamName || ""),
     };
-  }, rawReadTtl(env, REFERENCE_TTL_MS));
+  }, REFERENCE_TTL_MS);
 }
 
 const REFERENCE_TTL_MS = 10 * 60 * 1000;
@@ -96,7 +96,7 @@ export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
         allTeamNames,
       };
     },
-    rawReadTtl(env, REFERENCE_TTL_MS),
+    REFERENCE_TTL_MS,
   );
 }
 
@@ -174,7 +174,7 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
       }
       return { rolesByPersonId };
     },
-    rawReadTtl(env, REFERENCE_TTL_MS),
+    REFERENCE_TTL_MS,
   );
 }
 
@@ -182,13 +182,8 @@ export async function getActivePlayers(env: Env): Promise<Player[]> {
   return people(env).listActive();
 }
 
-/**
- * Without a webhook an access decision follows an Airtable correction
- * within a minute; with one, a People edit drops these entries as it
- * happens, and the TTL is capped at five minutes as a backstop.
- */
+/** An access decision follows a correction made outside the Worker within a minute. */
 const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
-const PLAYER_BY_EMAIL_MAX_TTL_MS = 5 * 60 * 1000;
 
 function playerByEmailKey(email: string): string {
   return `player-by-email:${normalizeEmail(email)}`;
@@ -237,7 +232,7 @@ export async function getPlayerByEmail(
     env,
     playerByEmailKey(email),
     () => lookupPlayerByEmail(env, email),
-    Math.min(rawReadTtl(env, PLAYER_BY_EMAIL_TTL_MS), PLAYER_BY_EMAIL_MAX_TTL_MS),
+    PLAYER_BY_EMAIL_TTL_MS,
   );
 }
 
@@ -271,7 +266,7 @@ export async function getExceptionsForSeasons(
     return availabilityExceptions(env).listForSeasons(uniqueSeasons);
   };
   if (opts?.fresh) return load();
-  return getShared<AvailabilityException[]>(env, cacheKey, load, rawReadTtl(env, EXCEPTIONS_TTL_MS));
+  return getShared<AvailabilityException[]>(env, cacheKey, load, EXCEPTIONS_TTL_MS);
 }
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;

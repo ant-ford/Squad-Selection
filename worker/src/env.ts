@@ -35,15 +35,6 @@ export interface Env {
    */
   CACHE?: CacheKv;
   /**
-   * Airtable webhook credentials (worker/src/airtableWebhook.ts). Both are
-   * optional: without them the webhook route answers 404, and the raw-table
-   * caches fall back to the short TTLs that Airtable-side edits relied on
-   * before there was a webhook to announce them.
-   */
-  AIRTABLE_WEBHOOK_ID?: string;
-  /** The webhook's macSecretBase64, as a Worker secret. */
-  AIRTABLE_WEBHOOK_SECRET?: string;
-  /**
    * Which store the data modules use: "airtable" (the default when unset)
    * or "supabase". See worker/src/data/backend.ts.
    */

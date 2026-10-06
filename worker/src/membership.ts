@@ -34,10 +34,9 @@ import {
 } from "../../shared/membershipStages";
 
 /**
- * Short and fixed, not webhook-extended like the raw squad reads: the records
- * carry Airtable attachment URLs (photo, application form), which Airtable
- * expires after a couple of hours. The webhook still drops the entry the
- * moment People changes.
+ * Short and fixed: the records carry Airtable attachment URLs (photo,
+ * application form), which Airtable expires after a couple of hours. A
+ * People write still drops the entry at once (invalidation.ts).
  */
 const RECORDS_TTL_MS = 5 * 60 * 1000;
 
@@ -549,8 +548,7 @@ export async function approveApplicant(env: Env, actor: AuthorizedUser, input: A
   });
 
   // Status and stage feed the ranking lists and the roster too, so drop
-  // everything a People edit invalidates (the board included) now, rather
-  // than waiting for the webhook.
+  // everything a People edit invalidates (the board included) now.
   await invalidatePeople(env);
 
   // The response has always echoed what was written under the People field

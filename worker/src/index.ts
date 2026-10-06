@@ -130,7 +130,6 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
-import { handleAirtableWebhook, refreshAirtableWebhook, WEBHOOK_ROUTE } from "./airtableWebhook";
 import { newRequestStats, runWithRequestContext, serverTimingHeader } from "./requestContext";
 
 export type { Env };
@@ -200,9 +199,8 @@ export default {
   },
 
   /**
-   * Daily: keep the Airtable webhook from lapsing (airtableWebhook.ts), and
-   * on the Supabase backend send the commitment review emails that are due
-   * (reviewEmails.ts) - the job the Airtable 60-day automation did.
+   * Daily: on the Supabase backend, send the commitment review emails that
+   * are due (reviewEmails.ts) - the job the Airtable 60-day automation did.
    * RETENTION_CRON, half an hour later, is the data retention job
    * (retention.ts), on its own so it has a run's outside calls to itself.
    */
@@ -211,7 +209,6 @@ export default {
       if (backendFor(env, "people") === "supabase") await runRetention(env);
       return;
     }
-    await refreshAirtableWebhook(env);
     if (backendFor(env, "commitments") === "supabase") await sendDueReviewEmails(env);
   },
 };
@@ -223,11 +220,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const method = request.method;
 
   if (method === "OPTIONS") return handleOptions(origin);
-
-  // Airtable's change notifications. Signed by Airtable, not by a user
-  // session, so it sits outside the authenticated routes; airtableWebhook.ts
-  // verifies the signature and answers 404 until a webhook is configured.
-  if (pathname === WEBHOOK_ROUTE) return handleAirtableWebhook(request, env);
 
   try {
     // ── Health Check (Public) ──────────────────────────────────────────────

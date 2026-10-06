@@ -32,7 +32,7 @@ import {
   type ReviewColumn,
 } from "../../shared/statementStages";
 
-/** Same reasoning as the applicant board: attachment URLs expire, the webhook drops it sooner. */
+/** Same reasoning as the applicant board: attachment URLs expire, a People or Commitments write drops it sooner. */
 const RECORDS_TTL_MS = 5 * 60 * 1000;
 
 /** Complete reviews stay on the board this long after their period ends. */
