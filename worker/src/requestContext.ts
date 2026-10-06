@@ -37,6 +37,8 @@ export interface RequestContext {
   /** The error behind a 5xx answer, and who was signed in, for error_log (systemHealth.ts). */
   error?: unknown;
   personId?: string;
+  /** The signed-in email (auth.ts): whose reused sign-in answer a write drops. */
+  email?: string;
   /** The database's cache versions, once this request has read them (auth.ts). */
   versions?: CacheVersions;
   /** The one read of the versions on a request without sign-in (cache.ts requestVersions). */
@@ -53,6 +55,18 @@ export function noteRequestWrite(): void {
   if (!context) return;
   context.versions = undefined;
   context.versionsRead = undefined;
+  for (const listener of writeListeners) listener(context);
+}
+
+const writeListeners: ((context: RequestContext) => void)[] = [];
+
+/**
+ * Called on every database write made inside a request, after the write
+ * (auth.ts drops the writer's reused sign-in answer, so their next request
+ * reads their own write).
+ */
+export function onRequestWrite(listener: (context: RequestContext) => void): void {
+  writeListeners.push(listener);
 }
 
 /** Remembers the error a 5xx answer was made from (index.ts), for error_log. */
@@ -62,9 +76,11 @@ export function noteRequestError(err: unknown): void {
 }
 
 /** Remembers who is signed in (auth.ts), for error_log. */
-export function noteRequestPerson(personId: string): void {
+export function noteRequestPerson(personId: string, email?: string): void {
   const context = storage.getStore();
-  if (context) context.personId = personId;
+  if (!context) return;
+  context.personId = personId;
+  if (email) context.email = email;
 }
 
 /** Remembers the cache versions read with the person (auth.ts), for the caches later in the request. */

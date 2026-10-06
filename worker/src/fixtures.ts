@@ -1,8 +1,7 @@
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
-import { people } from "./data/people";
 import type { Env } from "./env";
-import { getReferenceData, getExceptionsForMatches, getPlayerExceptions, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, getExceptionsForMatches, UNRANKED_TEAM_RANK } from "./reference";
 import { personAsPlayer } from "./authContext";
 import { getVersioned } from "./cache";
 import { HttpError } from "./http";
@@ -13,7 +12,7 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { isBirthdayOn } from "../../shared/birthday";
 import { buildEvaluationContext, getSeasonContext, currentSeason, previousSeason } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
-import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
+import { effectiveAvailability, getAllAvailabilityRules, getRulesForPlayer } from "./availabilityRules";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
@@ -167,7 +166,9 @@ export async function getMyFixtures(
   const user = await personAsPlayer(env, authUser.person);
   const teamName = user.registeredTeam || "";
   const displayTeam = selectedDisplayTeam(user) || teamName;
-  const ref = await getReferenceData(env);
+  // The view starts every read it needs at once; the reference data here is
+  // the same read (joined in flight), so this adds no round trip.
+  const [ref, view] = await Promise.all([getReferenceData(env), buildPlayerFixtureView(env, user)]);
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
   const captainTeams = authUser.captainTeams;
@@ -198,7 +199,6 @@ export async function getMyFixtures(
     isBirthday: isBirthdayOn(user.birthday, today),
     teamBirthdays: teamBirthdaysOn(ref.players, user, displayTeam, today),
   };
-  const view = await buildPlayerFixtureView(env, user);
 
   // Results are read from the cached season context, so asking for them
   // costs no extra Airtable call. Still gated on the toggle: it is a
@@ -206,7 +206,7 @@ export async function getMyFixtures(
   // an upcoming fixture, not to read last month's scores.
   let pastFixtures: PastFixture[] = [];
   if (opts.includePast) {
-    const ctx = await getSeasonContext(env, currentSeason());
+    const ctx = await getSeasonContext(env, currentSeason(), user.id);
     pastFixtures = buildPastFixtures({
       playerId: user.id,
       teams: [view.displayTeam, user.registeredTeam || ""],
@@ -258,12 +258,21 @@ export async function buildPlayerFixtureView(
   // player experiences THIS team as "My Team"; every business rule (play-up
   // legality, same-day priority, suspension) keeps using the true team.
   const displayTeam = selectedDisplayTeam(user) || teamName;
-  const ref = await getReferenceData(env);
+  // Everything this view reads, asked for at once (one round trip on a cold
+  // isolate instead of one after another): the players and teams, the
+  // scheduled matches, the player's own season context (the eligibility
+  // gate, their answers and the squad's) and the availability rules. The
+  // later reads of each are cache hits, or join these in flight.
+  const [ref, allMatches] = await Promise.all([
+    getReferenceData(env),
+    getScheduledMatches(env),
+    getSeasonContext(env, currentSeason(), playerId),
+    getAllAvailabilityRules(env),
+  ]);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const rankMap = ref.teamRankMap;
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
 
-  const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
@@ -385,7 +394,7 @@ export async function buildPlayerFixtureView(
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team, playerId);
     // Portal gate = the engine itself (no neutralisation): mere availability
     // for a higher team no longer blocks (product decision 2026-09-03),
     // while an actual selection for a higher team still does.
@@ -403,22 +412,18 @@ export async function buildPlayerFixtureView(
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // The player looking at their own answer must see the tap they just made.
-  // This read used to skip the cache for that (a per-isolate copy put the
-  // old status straight back). Both reads below are kept under the
-  // availability_exceptions version, which the tap moves, so the cached
-  // copy is the current one in every isolate.
-  //
-  // And only these matches are read, never the whole season (~177 KB on
-  // preview): the player's own answers (player=eq & match=in), about a
-  // kilobyte, or - for the calendar, which also names the squad - every
-  // answer for these matches.
-  const [matchExceptions, playerRules] = await Promise.all([
-    opts.withSquad
-      ? getExceptionsForMatches(env, relevantMatchIds)
-      : getPlayerExceptions(env, playerId, relevantMatchIds),
+  // The player's own answers (with note and id) and, for the calendar, the
+  // selected squad's: both are in the player's own season context, read
+  // above, so no read of their own. The context is kept under the
+  // availability_exceptions version, which a tap moves, so the player sees
+  // the tap they just made in every isolate.
+  const relevantSeasons = [...new Set(relevantCategorized.map((x) => x.side.match.season || "").filter(Boolean))];
+  const [contexts, playerRules] = await Promise.all([
+    Promise.all(relevantSeasons.map((s) => getSeasonContext(env, s, playerId))),
     getRulesForPlayer(env, playerId),
   ]);
+  const relevantIds = new Set(relevantMatchIds);
+  const matchExceptions = contexts.flatMap((c) => c.exceptionsRaw).filter((e) => relevantIds.has(linkId(e.match) || ""));
   const playerExceptions = matchExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   // Everyone's answer, per match, so a calendar event can say who else is in
@@ -488,7 +493,17 @@ export async function buildPlayerFixtureView(
  * Identity comes from the signed calendar token's player id.
  */
 export async function getPlayerFixtures(env: Env, playerId: string) {
-  const player = await people(env).getById(playerId);
+  // The player comes from the Active list the view reads anyway, and the
+  // view's other reads start alongside it: one round trip, not a lookup of
+  // the person first. (Their season context is asked for on trust; for an
+  // id that is no Active player, the 404 below is what answers.)
+  const [ref] = await Promise.all([
+    getReferenceData(env),
+    getScheduledMatches(env),
+    getSeasonContext(env, currentSeason(), playerId).catch(() => null),
+    getAllAvailabilityRules(env),
+  ]);
+  const player = ref.players.find((p) => p.id === playerId);
   if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
   const view = await buildPlayerFixtureView(env, player, { withSquad: true });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];

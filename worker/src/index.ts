@@ -131,6 +131,7 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
+import { getTeamAttendance } from "./teamAttendance";
 import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
 import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
@@ -480,6 +481,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
       }
       return json(await getPlayerAttendance(env, playerAttendanceMatch[1]), 200, origin);
+    }
+
+    // ── Team Availability Dashboard (Read - Coach) ─────────────────────────
+    // Every squad's grid at once: names and statuses only, no notes.
+    if (method === "GET" && pathname === "/api/team-attendance") {
+      await requireCoach(request, env);
+      return json(await getTeamAttendance(env), 200, origin);
     }
 
     // Player-facing routes: identity always comes from the verified Supabase

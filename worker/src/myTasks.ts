@@ -170,13 +170,22 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   // An imported person's id, or the uuid of one created in Eddy.
   if (!isRowId(personId)) return { tasks: [] };
 
-  const [mine, waitingOn] = await Promise.all([
+  // Every part at once: none depends on another, and each is a read or two.
+  const [mine, waitingOn, requests, events, registers, systemLook] = await Promise.all([
     getCached(
       `my-tasks:${personId}`,
       async (): Promise<Partial<MyTaskRow>> => (await people(env).getMyTaskFields(personId)) ?? {},
       MY_RECORD_TTL_MS,
     ).then((hit) => hit.data),
     getWaitingOn(env),
+    // A minute in this isolate, dropped when a request is made or marked done.
+    getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, user.personUuid), MY_RECORD_TTL_MS).then((hit) => hit.data),
+    // Events they are invited to and have not answered (events.ts).
+    eventTasks(env, user).catch(() => []),
+    // Registers to take for events they keep (events.ts).
+    registerTasks(env, user).catch(() => []),
+    // The owner: the daily health check found something (systemHealth.ts).
+    systemNeedsLook(env, user),
   ]);
 
   const today = hkDateKey(new Date().toISOString());
@@ -189,15 +198,10 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   if (needsDetailsCheck(user, today)) {
     tasks.push({ id: "details", key: "details", url: "/my-details" });
   }
-  // A minute in this isolate, dropped when a request is made or marked done.
-  const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, user.personUuid), MY_RECORD_TTL_MS);
   for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
-  // Events they are invited to and have not answered (events.ts).
-  for (const e of await eventTasks(env, user).catch(() => [])) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });
-  // Registers to take for events they keep (events.ts).
-  for (const e of await registerTasks(env, user).catch(() => [])) tasks.push({ id: `register:${e.id}`, key: "register", subject: e.title, url: `/events/manage/${e.id}?tab=register` });
-  // The owner: the daily health check found something (systemHealth.ts).
-  if (await systemNeedsLook(env, user)) tasks.push({ id: "system", key: "system", url: "/system" });
+  for (const e of events) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });
+  for (const e of registers) tasks.push({ id: `register:${e.id}`, key: "register", subject: e.title, url: `/events/manage/${e.id}?tab=register` });
+  if (systemLook) tasks.push({ id: "system", key: "system", url: "/system" });
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
   return { tasks };
 }
