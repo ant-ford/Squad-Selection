@@ -1,0 +1,597 @@
+import { afterEach, beforeEach, vi } from "vitest";
+import * as peopleModule from "../../worker/src/data/people";
+import * as teamsModule from "../../worker/src/data/teams";
+import * as officersModule from "../../worker/src/data/officers";
+import * as matchesModule from "../../worker/src/data/matches";
+import * as matchCardsModule from "../../worker/src/data/matchCards";
+import * as exceptionsModule from "../../worker/src/data/availabilityExceptions";
+import * as rulesModule from "../../worker/src/data/availabilityRules";
+import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
+import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
+import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
+import * as commitmentsModule from "../../worker/src/data/commitments";
+import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
+import {
+  APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
+} from "../../worker/src/data/people";
+import type { TeamsRepo } from "../../worker/src/data/teams";
+import type { Office, OfficersRepo } from "../../worker/src/data/officers";
+import type { MatchesRepo } from "../../worker/src/data/matches";
+import type { MatchCardsRepo } from "../../worker/src/data/matchCards";
+import type { AvailabilityExceptionsRepo, ExceptionWrite } from "../../worker/src/data/availabilityExceptions";
+import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRules";
+import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
+import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
+import type { MembershipEventsRepo, NewMembershipEvent } from "../../worker/src/data/membershipEvents";
+import type { CommitmentsRepo } from "../../worker/src/data/commitments";
+import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../../worker/src/data/commitments";
+import type { FieldMap, Row } from "../../worker/src/data/rows";
+import { API_ID_RE } from "../../worker/src/data/ids";
+import { HttpError } from "../../worker/src/http";
+import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../shared/schema/fieldMaps";
+import { normalizeEmail } from "../../shared/normalizeEmail";
+import { REVIEWS_FROM } from "../../shared/statementStages";
+import type {
+  AbilityGroupConfiguration, AvailabilityException, AvailabilityRule, Match, MatchCard, Player, Team,
+} from "../../shared/schema/domainTypes";
+
+/**
+ * In-memory repositories: every interface in worker/src/data/*.ts, backed by
+ * plain arrays a test seeds and inspects. They behave like the SUPABASE
+ * implementations (worker/src/data/supabase/*), which are the ones that run
+ * in production: the same filters, the same "blank counts as different" for
+ * a != filter, the same errors for a missing row. Writes mutate the arrays.
+ *
+ * Installed by spying on each module's accessor (people(env), teams(env),
+ * ...), so it does not depend on backend.ts or pick(): it keeps working once
+ * the Airtable implementations are deleted. See tests/helpers/README.md.
+ */
+
+// ── State ────────────────────────────────────────────────────────────────
+
+/** Every key a People row view (api_people_crm) can carry. */
+type PeopleCrmKey =
+  | keyof typeof MEMBERSHIP_FIELDS
+  | keyof typeof CHAIRMAN_FIELDS
+  | keyof typeof EXPORT_FIELDS
+  | keyof typeof NUMBER_HOLDER_FIELDS
+  | keyof typeof APPLICANT_STAGE_FIELDS
+  | keyof typeof CONTACT_FIELDS
+  | keyof typeof NAME_FIELDS
+  | keyof typeof MY_TASK_FIELDS
+  | keyof typeof APPLICANT_TASK_FIELDS;
+
+/**
+ * One People row: the Player the squad reads see, plus `crm`, the officer
+ * sections' columns (api_people_crm) that are not Player fields or have
+ * another shape there (photo is an attachment list in the CRM views, a URL
+ * on Player). A row view reads `crm[key]` first, then the Player field of
+ * that name, so status/applicantStage/names need setting only once.
+ */
+export type FakePerson = Player & { crm?: Partial<Record<PeopleCrmKey, unknown>> };
+
+/** One office row as api_offices has it. */
+export interface FakeOffice {
+  id: string;
+  office: Office;
+  designation?: string | null;
+  /** "Active" or "Retired". */
+  status: string;
+  /** The holder's People id; null for a vacant row. */
+  member: string | null;
+}
+
+/** An availability exception, plus who gave the answer (not on the domain type). */
+export type FakeException = AvailabilityException & { updatedBy?: string };
+
+type CommitmentKey = keyof typeof COMMITMENT_FIELDS | keyof typeof NOTIFY_FIELDS | keyof typeof REVIEW_TASK_FIELDS;
+/** One Commitments row as api_commitments_crm has it, keyed by field-map KEYS. */
+export type FakeCommitment = { id: string } & Partial<Record<CommitmentKey, unknown>>;
+
+export interface FakeState {
+  people: FakePerson[];
+  teams: Team[];
+  officers: FakeOffice[];
+  matches: Match[];
+  matchCards: MatchCard[];
+  availabilityExceptions: FakeException[];
+  availabilityRules: AvailabilityRule[];
+  abilityGroups: AbilityGroupConfiguration[];
+  rankingEvents: RankingEventRow[];
+  membershipEvents: NewMembershipEvent[];
+  commitments: FakeCommitment[];
+}
+
+export type RepoName = keyof FakeState;
+
+export interface FakeRepos {
+  people: PeopleRepo;
+  teams: TeamsRepo;
+  officers: OfficersRepo;
+  matches: MatchesRepo;
+  matchCards: MatchCardsRepo;
+  availabilityExceptions: AvailabilityExceptionsRepo;
+  availabilityRules: AvailabilityRulesRepo;
+  abilityGroups: AbilityGroupsRepo;
+  rankingEvents: RankingEventsRepo;
+  membershipEvents: MembershipEventsRepo;
+  commitments: CommitmentsRepo;
+}
+
+export interface RepoCall {
+  repo: RepoName;
+  method: string;
+  args: unknown[];
+}
+
+export interface FakeReposHandle {
+  /** The arrays behind the repositories. Seed them, mutate them, assert on them. */
+  state: FakeState;
+  /** The repository objects the code under test receives (spy on a method to make it fail). */
+  repos: FakeRepos;
+  /** Every repository call, in order. */
+  calls: RepoCall[];
+  /** Calls to one repository, optionally one method. */
+  callsTo(repo: RepoName, method?: string): RepoCall[];
+  /** Empties every array (and the call log), then copies `seed` in. */
+  reset(seed?: Partial<FakeState>): void;
+  /** Puts the real accessors back. */
+  restore(): void;
+}
+
+export function emptyState(): FakeState {
+  return {
+    people: [], teams: [], officers: [], matches: [], matchCards: [], availabilityExceptions: [], availabilityRules: [],
+    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [],
+  };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/** A copy, so code under test cannot change the state by mutating what it was given. */
+const clone = <T>(v: T): T => structuredClone(v);
+
+let uuidSeq = 0;
+/** A uuid-shaped id, as Supabase gives a row created in Eddy (passes API_ID_RE). */
+export function fakeUuid(): string {
+  uuidSeq++;
+  return `00000000-0000-4000-8000-${String(uuidSeq).padStart(12, "0")}`;
+}
+
+/** Blank as Postgres sees it for a not-null/!= test: null, undefined or "". */
+const blank = (v: unknown) => v === undefined || v === null || v === "";
+/** "column <> value" counting a blank as different, as the Supabase reads do. */
+const differs = (v: unknown, value: string) => blank(v) || v !== value;
+/** A lookup may be a one-element list; compare its first value. */
+const scalar = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+
+/**
+ * The Player fields toPlayer() (data/supabase/mappers.ts) fills. Anything
+ * else on a FakePerson is not returned - teamRank and positionalRank
+ * included: they are derived by the ranking engine, never stored.
+ */
+const PLAYER_KEYS: (keyof Player)[] = [
+  "id", "preferredName", "givenNames", "surname", "shirtNoValue", "email", "mobileNo", "active", "registeredTeam",
+  "selectedTeamSos", "selectedTeamEos", "playingPosition", "playingAbility", "isVisitingPlayer", "isSuspended",
+  "matchesToServe", "everRegisteredToPremier", "u21Eligible", "playerCoach", "sectionRank",
+  "rankUpdatedAt", "status", "applicantStage", "photo", "sportsBackground", "selectionComments", "optInOnly", "birthday",
+];
+const PLAYER_KEY_SET = new Set<string>(PLAYER_KEYS);
+
+function toPlayer(p: FakePerson): Player {
+  const out: Record<string, unknown> = {};
+  // Like toPlayer(), an empty text reads as "not set".
+  for (const k of PLAYER_KEYS) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = clone(p[k]);
+  return out as unknown as Player;
+}
+
+/** api_people_crm names APPLICANT_TASK_FIELDS.stage "applicantStage" (data/supabase/crm.ts ALIASES). */
+const PEOPLE_ALIASES: Record<string, string> = { stage: "applicantStage" };
+
+function personValue(p: FakePerson, key: string): unknown {
+  const column = PEOPLE_ALIASES[key] ?? key;
+  const crm = p.crm as Record<string, unknown> | undefined;
+  if (crm && column in crm) return crm[column];
+  return (p as unknown as Record<string, unknown>)[column];
+}
+
+function personRow<M extends FieldMap>(p: FakePerson, map: M): Row<M> {
+  const row: Record<string, unknown> = { id: p.id };
+  for (const key of Object.keys(map)) {
+    const v = personValue(p, key);
+    if (v !== undefined && v !== null) row[key] = clone(v);
+  }
+  return row as Row<M>;
+}
+
+function commitmentRow<M extends FieldMap>(c: FakeCommitment, map: M): Row<M> {
+  const row: Record<string, unknown> = { id: c.id };
+  for (const key of Object.keys(map)) {
+    const v = (c as Record<string, unknown>)[key];
+    if (v !== undefined && v !== null) row[key] = clone(v);
+  }
+  return row as Row<M>;
+}
+
+/** Removes in place, so a test holding the array sees the delete. */
+function removeWhere<T>(rows: T[], pred: (row: T) => boolean): void {
+  for (let i = rows.length - 1; i >= 0; i--) if (pred(rows[i])) rows.splice(i, 1);
+}
+
+const addDays = (dayKey: string, n: number) =>
+  new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+// ── The repositories ─────────────────────────────────────────────────────
+
+function buildRepos(s: FakeState): FakeRepos {
+  const findPerson = (id: string) => s.people.find((p) => p.id === id);
+
+  const patchPerson = (p: FakePerson, patch: PersonPatch) => {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) continue;
+      // null clears the column; toPlayer() reads a null as "not set".
+      const v = value === null ? undefined : value;
+      if (PLAYER_KEY_SET.has(key)) (p as unknown as Record<string, unknown>)[key] = v;
+      if (!PLAYER_KEY_SET.has(key) || (p.crm && key in p.crm)) {
+        p.crm ??= {};
+        (p.crm as Record<string, unknown>)[key] = v;
+      }
+    }
+  };
+
+  const people: PeopleRepo = {
+    async listActive() {
+      return s.people.filter((p) => p.active === true).map(toPlayer);
+    },
+    async findByEmail(email) {
+      const want = normalizeEmail(email);
+      const rows = s.people.filter((p) => typeof p.email === "string" && normalizeEmail(p.email) === want);
+      const chosen = rows.find((p) => p.active) ?? rows[0];
+      return chosen ? toPlayer(chosen) : null;
+    },
+    async getById(id) {
+      const p = findPerson(id);
+      return p ? toPlayer(p) : null;
+    },
+    async listRankingPool() {
+      return s.people
+        .filter((p) => (p.active === true || p.status === "Applicant") && differs(p.applicantStage, "Rejected") && differs(p.status, "Resigned"))
+        .map(toPlayer);
+    },
+    async listInactiveRankable() {
+      return s.people
+        .filter((p) => p.active === false && differs(p.status, "Applicant") && differs(p.status, "Resigned") && differs(p.applicantStage, "Rejected"))
+        .map(toPlayer);
+    },
+    async update(id, patch) {
+      const p = findPerson(id);
+      if (!p) throw new Error(`No person ${id}`);
+      patchPerson(p, patch);
+    },
+    async updateMany(updates) {
+      // One transaction on Supabase (update_people_ranks): all or nothing.
+      for (const { id } of updates) if (!findPerson(id)) throw new Error(`No person ${id}`);
+      for (const { id, patch } of updates) patchPerson(findPerson(id)!, patch);
+    },
+    async listMembershipBoard() {
+      return s.people
+        .filter((p) => !blank(personValue(p, "applicantStage")) && differs(personValue(p, "status"), "Resigned"))
+        .map((p) => personRow(p, MEMBERSHIP_FIELDS));
+    },
+    async listActiveForExport() {
+      return s.people
+        .filter((p) => personValue(p, "active") === true && differs(personValue(p, "applicantStage"), "Temporary"))
+        .map((p) => personRow(p, EXPORT_FIELDS));
+    },
+    async listByMembershipNo(membershipNo) {
+      return s.people.filter((p) => personValue(p, "membershipNo") === membershipNo).map((p) => personRow(p, NUMBER_HOLDER_FIELDS));
+    },
+    async getApplicantStage(id) {
+      const p = findPerson(id);
+      return p ? personRow(p, APPLICANT_STAGE_FIELDS) : null;
+    },
+    async listDirectory() {
+      return s.people.filter((p) => differs(personValue(p, "status"), "Resigned")).map((p) => personRow(p, CHAIRMAN_FIELDS));
+    },
+    async listContactsByIds(ids) {
+      const wanted = new Set([...ids].filter((id) => API_ID_RE.test(id)));
+      return s.people.filter((p) => wanted.has(p.id)).map((p) => personRow(p, CONTACT_FIELDS));
+    },
+    async listNames() {
+      return s.people.map((p) => personRow(p, NAME_FIELDS));
+    },
+    async getMyTaskFields(id) {
+      const p = findPerson(id);
+      return p ? personRow(p, MY_TASK_FIELDS) : null;
+    },
+    async listApplicantsAtStages(stages) {
+      return s.people
+        .filter((p) => stages.includes(personValue(p, "applicantStage") as string))
+        .map((p) => personRow(p, APPLICANT_TASK_FIELDS));
+    },
+  };
+
+  const teams: TeamsRepo = {
+    async listActive() {
+      return s.teams.filter((t) => t.active === true).map(clone);
+    },
+    async listAll() {
+      return s.teams.map(clone);
+    },
+    async setAutoSelectPlayers(teamId, playerIds) {
+      const t = s.teams.find((x) => x.id === teamId);
+      if (!t) throw new Error(`No team ${teamId}`);
+      t.autoSelectPlayers = [...playerIds];
+    },
+  };
+
+  const officeRows = (offices: readonly Office[], activeOnly: boolean) =>
+    offices.flatMap((office) =>
+      s.officers
+        .filter((r) => r.office === office && (!activeOnly || r.status === "Active"))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    );
+  const officers: OfficersRepo = {
+    async listActive(offices) {
+      return officeRows(offices, true).map((r) => ({ office: r.office, designation: r.designation ?? "", memberIds: r.member ? [r.member] : [] }));
+    },
+    async listAllMembers(offices) {
+      return officeRows(offices, false).map((r) => ({ id: r.id, office: r.office, memberIds: r.member ? [r.member] : [] }));
+    },
+  };
+
+  const matches: MatchesRepo = {
+    async getById(id) {
+      const m = s.matches.find((x) => x.id === id);
+      return m ? clone(m) : null;
+    },
+    async update(id, patch) {
+      const m = s.matches.find((x) => x.id === id);
+      if (!m) throw new Error(`No match ${id}`);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value !== undefined) (m as unknown as Record<string, unknown>)[key] = clone(value);
+      }
+    },
+    async listForSeason(season) {
+      return s.matches.filter((m) => !season || m.season === season).map(clone);
+    },
+    async listScheduled() {
+      return s.matches.filter((m) => m.matchStatus === "Scheduled").map(clone);
+    },
+    async listPlayedForSeasons(seasons) {
+      return s.matches.filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? "")).map(clone);
+    },
+  };
+
+  const matchCards: MatchCardsRepo = {
+    async listForSeason(season, opts = {}) {
+      return s.matchCards
+        .filter((c) => (!season || c.season === season) && (!opts.cardedOnly || (c.cards?.length ?? 0) > 0))
+        .map(clone);
+    },
+  };
+
+  const seasonOf = (matchId: string) => s.matches.find((m) => m.id === matchId)?.season ?? "";
+  const toException = (id: string, w: ExceptionWrite): FakeException => ({
+    id,
+    player: [w.playerId],
+    match: [w.matchId],
+    availabilityStatus: w.status,
+    note: w.notes ?? "",
+    // The view reads the season from the match.
+    season: seasonOf(w.matchId),
+    updatedAt: new Date().toISOString(),
+    updatedBy: w.updatedById,
+  });
+  const availabilityExceptions: AvailabilityExceptionsRepo = {
+    async listForSeasons(seasons) {
+      return s.availabilityExceptions
+        .filter((e) => seasons.includes(e.season ?? ""))
+        .map(({ updatedBy: _by, ...e }) => clone(e));
+    },
+    async apply({ deleteIds, updates, creates }) {
+      // One transaction on Supabase (apply_availability_changes).
+      for (const { id } of updates) if (!s.availabilityExceptions.some((e) => e.id === id)) throw new Error(`No exception ${id}`);
+      removeWhere(s.availabilityExceptions, (e) => deleteIds.includes(e.id));
+      for (const { id, write } of updates) {
+        const i = s.availabilityExceptions.findIndex((e) => e.id === id);
+        s.availabilityExceptions[i] = toException(id, write);
+      }
+      const createdIds = creates.map(() => fakeUuid());
+      creates.forEach((w, i) => s.availabilityExceptions.push(toException(createdIds[i], w)));
+      return { createdIds };
+    },
+  };
+
+  const availabilityRules: AvailabilityRulesRepo = {
+    async listAll() {
+      return s.availabilityRules.map(clone);
+    },
+    async create(rule) {
+      const row: AvailabilityRule = {
+        id: fakeUuid(),
+        player: [rule.playerId],
+        ruleType: rule.ruleType,
+        availability: rule.availability,
+        active: true,
+        startDate: rule.startDate || "",
+        endDate: rule.endDate || "",
+        notes: rule.notes || "",
+        lastModified: new Date().toISOString(),
+      };
+      s.availabilityRules.push(row);
+      return clone(row);
+    },
+    async delete(id) {
+      removeWhere(s.availabilityRules, (r) => r.id === id);
+    },
+  };
+
+  const abilityGroups: AbilityGroupsRepo = {
+    async list() {
+      return s.abilityGroups.map(clone);
+    },
+    async saveCapacities(capacities) {
+      for (const [group, capacity] of Object.entries(capacities) as [AbilityGroupConfiguration["group"], number][]) {
+        const row = s.abilityGroups.find((g) => g.group === group);
+        if (row) row.capacity = capacity;
+        else s.abilityGroups.push({ id: fakeUuid(), group, capacity, isResidual: false });
+      }
+    },
+  };
+
+  const rankingEvents: RankingEventsRepo = {
+    async create(events) {
+      for (const e of events) s.rankingEvents.push({ id: fakeUuid(), ...clone(e) });
+    },
+    async listNewestFirst() {
+      return [...s.rankingEvents]
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp) || a.id.localeCompare(b.id))
+        .map(clone);
+    },
+  };
+
+  const membershipEvents: MembershipEventsRepo = {
+    async record(event) {
+      s.membershipEvents.push(clone(event));
+    },
+  };
+
+  const commitments: CommitmentsRepo = {
+    async listReviewBoard() {
+      const today = new Date().toISOString().slice(0, 10);
+      return s.commitments
+        .filter((c) => {
+          const start = scalar(c.periodStart);
+          const end = scalar(c.periodEnd);
+          return typeof start === "string" && typeof end === "string" && start < addDays(today, 2) && end > addDays(REVIEWS_FROM, -2);
+        })
+        .map((c) => commitmentRow(c, COMMITMENT_FIELDS));
+    },
+    async getNotifyState(id) {
+      const c = s.commitments.find((x) => x.id === id);
+      return c ? commitmentRow(c, NOTIFY_FIELDS) : null;
+    },
+    async setNotifyNow(id) {
+      // On Supabase this starts the review (start_review) and emails the
+      // member; here it ticks notifyNow, and a second start is refused the
+      // same way.
+      const c = s.commitments.find((x) => x.id === id);
+      if (!c || c.notifyNow === true) throw new HttpError("This review has already been started.", 409, "ALREADY_STARTED");
+      c.notifyNow = true;
+    },
+    async listReviewsAtStages(stages) {
+      return s.commitments
+        .filter((c) => stages.includes(c.reviewProgress as string))
+        .map((c) => commitmentRow(c, REVIEW_TASK_FIELDS));
+    },
+  };
+
+  return {
+    people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents,
+    membershipEvents, commitments,
+  };
+}
+
+/** Wraps every method so the call is logged. */
+function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]): T {
+  const out: Record<string, unknown> = {};
+  for (const [method, fn] of Object.entries(target)) {
+    out[method] = (...raw: unknown[]) => {
+      // An iterable argument (a Set, a Map's keys) is read once, into an array, for both the log and the call.
+      const args = raw.map((a) =>
+        a && typeof a === "object" && !Array.isArray(a) && Symbol.iterator in a ? [...(a as Iterable<unknown>)] : a,
+      );
+      let logged: unknown[];
+      try {
+        logged = clone(args);
+      } catch {
+        logged = args;
+      }
+      calls.push({ repo, method, args: logged });
+      return (fn as (...a: unknown[]) => unknown)(...args);
+    };
+  }
+  return out as T;
+}
+
+// ── Installing ───────────────────────────────────────────────────────────
+
+/**
+ * Replaces every repository accessor (people(env), teams(env), ...) with the
+ * in-memory repositories, seeded from `seed`. Returns the state, the repos
+ * and the call log. Call restore() (or vi.restoreAllMocks()) afterwards;
+ * useFakeRepos() does both for a whole file.
+ */
+export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle {
+  const state = emptyState();
+  const calls: RepoCall[] = [];
+  // The repositories read `state` through this indirection, so reset() can
+  // swap the arrays without re-installing.
+  const live = buildRepos(state);
+  const repos = Object.fromEntries(
+    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls)]),
+  ) as unknown as FakeRepos;
+
+  const spies = [
+    vi.spyOn(peopleModule, "people").mockImplementation(() => repos.people),
+    vi.spyOn(teamsModule, "teams").mockImplementation(() => repos.teams),
+    vi.spyOn(officersModule, "officers").mockImplementation(() => repos.officers),
+    vi.spyOn(matchesModule, "matches").mockImplementation(() => repos.matches),
+    vi.spyOn(matchCardsModule, "matchCards").mockImplementation(() => repos.matchCards),
+    vi.spyOn(exceptionsModule, "availabilityExceptions").mockImplementation(() => repos.availabilityExceptions),
+    vi.spyOn(rulesModule, "availabilityRules").mockImplementation(() => repos.availabilityRules),
+    vi.spyOn(abilityGroupsModule, "abilityGroups").mockImplementation(() => repos.abilityGroups),
+    vi.spyOn(rankingEventsModule, "rankingEvents").mockImplementation(() => repos.rankingEvents),
+    vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
+    vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
+  ];
+
+  const handle: FakeReposHandle = {
+    state,
+    repos,
+    calls,
+    callsTo: (repo, method) => calls.filter((c) => c.repo === repo && (!method || c.method === method)),
+    reset(next = {}) {
+      calls.length = 0;
+      const fresh = emptyState();
+      for (const key of Object.keys(fresh) as RepoName[]) {
+        // Same object, new arrays: tests that hold `state` see the reset.
+        (state as unknown as Record<string, unknown[]>)[key] = (next[key] ?? fresh[key]) as unknown[];
+      }
+    },
+    restore() {
+      for (const spy of spies) spy.mockRestore();
+    },
+  };
+  handle.reset(seed);
+  return handle;
+}
+
+/**
+ * installFakeRepos() for every test in the file: installed before each test
+ * (seeded by `seed()`, if given) and restored after it. The handle is the
+ * same object throughout, so a file can keep it in a const.
+ *
+ *   const db = useFakeRepos(() => ({ people: [player({ id: ALICE })] }));
+ */
+export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
+  let current: FakeReposHandle | null = null;
+  const proxy = {} as FakeReposHandle;
+  const forward = (key: keyof FakeReposHandle) =>
+    Object.defineProperty(proxy, key, {
+      get: () => {
+        if (!current) throw new Error("useFakeRepos(): the fakes are installed in beforeEach; use the handle inside a test or hook");
+        return current[key];
+      },
+    });
+  (["state", "repos", "calls", "callsTo", "reset", "restore"] as const).forEach(forward);
+  beforeEach(() => {
+    current = installFakeRepos(seed?.());
+  });
+  afterEach(() => {
+    current?.restore();
+    current = null;
+  });
+  return proxy;
+}

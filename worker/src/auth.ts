@@ -5,6 +5,7 @@ import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type
 import { getCached } from "./cache";
 import { backendFor } from "./data/backend";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
+import { noteRequestPerson } from "./requestContext";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
 const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
@@ -124,6 +125,7 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
+  noteRequestPerson(player.id);
   return {
     email: normalizedEmail,
     personId: player.id,

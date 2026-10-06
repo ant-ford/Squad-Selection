@@ -11,6 +11,7 @@ import type { Env } from "../env";
 import type { RenderSpec } from "../../../supabase/functions/_shared/pdf";
 import { db, eq, inList } from "../data/supabase";
 import { CJK_FONT_KEY, PDF_TEMPLATES, type PdfTemplate } from "./templates";
+import { isTimeout } from "../http";
 
 /** The renderer's name for the Chinese font asset (CJK_FONT in _shared/pdf.ts, which the Worker does not bundle). */
 const CJK_FONT = "cjk-font";
@@ -89,6 +90,13 @@ export interface RenderResult {
   warnings: string[];
 }
 
+/**
+ * How long the render-pdf function gets. A render takes seconds; most run
+ * in the background (inBackground), where the Worker has 30 s after the
+ * response, so a hung render ends with time left to log it.
+ */
+const RENDER_TIMEOUT_MS = 25_000;
+
 /** Has the render-pdf function fill a document. */
 export async function renderPdf(env: Env, spec: RenderSpec, assets: Record<string, Asset>): Promise<RenderResult> {
   if (!env.DATA_SUPABASE_URL || !env.DATA_SUPABASE_SECRET_KEY) throw new PdfError("PDF rendering is not configured (DATA_SUPABASE_URL / DATA_SUPABASE_SECRET_KEY)");
@@ -105,6 +113,10 @@ export async function renderPdf(env: Env, spec: RenderSpec, assets: Record<strin
     // The function checks this is the project's secret key (render-pdf/index.ts).
     headers: { "X-Render-Key": env.DATA_SUPABASE_SECRET_KEY },
     body: form,
+    signal: AbortSignal.timeout(RENDER_TIMEOUT_MS),
+  }).catch((err: unknown) => {
+    // Failed like a refused render (PdfError), so every caller handles it the same way.
+    throw new PdfError(isTimeout(err) ? `The PDF was not made (no answer within ${RENDER_TIMEOUT_MS / 1000} s)` : `The PDF was not made (${err instanceof Error ? err.message : String(err)})`);
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

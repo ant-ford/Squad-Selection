@@ -32,7 +32,6 @@ import { db, eq } from "./data/supabase";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   SUMMARY_VERSION,
-  addWDL,
   emptyWDL,
   isHkfcTeam,
   type MatchResult,

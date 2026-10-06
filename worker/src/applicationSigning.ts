@@ -302,7 +302,7 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
   requireSupabase(env);
   const role = body.role as SignRole;
   if (!SIGN_ROLES.includes(role)) throw new HttpError("Unknown signer.", 400, "INVALID_INPUT");
-  const { p, holderOf } = await loadApplication(env, apiId);
+  const { holderOf } = await loadApplication(env, apiId);
   if (holderOf(role)?.apiId !== user.personId) throw new HttpError(`You're not the ${ROLE_LABEL[role]} on this application.`, 403, "NOT_YOURS");
   const answers = role === "sponsor" ? sponsorAnswersFrom(body) : null;
   if (answers) {
@@ -326,7 +326,8 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
   // Officer to check and send. After the response; a slow render never holds it up.
   if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, apiId));
   const next = TURN_BY_STAGE[stage];
-  if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
+  // The next signer's email, after the response: the signature is saved, and a slow or failed email never holds it up.
+  if (next) await inBackground(() => notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err)));
   return { stage };
 }
 
