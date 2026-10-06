@@ -74,6 +74,8 @@ export default defineConfig(({ command }) => ({
         ],
         // The default plus the self-hosted font.
         globPatterns: ["**/*.{js,css,html,woff2}"],
+        // Fetched on demand (unicode-range), only for names that need it.
+        globIgnores: ["**/open-sans-latin-ext-*.woff2"],
       },
       manifest: {
         name: "HKFC Squad Selection",
@@ -141,7 +143,7 @@ function preloadFont(): Plugin {
     transformIndexHtml: {
       order: "post",
       handler(_html, ctx) {
-        const font = Object.keys(ctx.bundle ?? {}).find((file) => /open-sans.*\.woff2$/.test(file));
+        const font = Object.keys(ctx.bundle ?? {}).find((file) => /open-sans-latin-wght-.*\.woff2$/.test(file));
         if (!font) throw new Error("preload-font: no open-sans .woff2 in the bundle");
         return [
           {

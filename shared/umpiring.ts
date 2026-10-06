@@ -46,7 +46,7 @@ export interface UmpireDuty {
   status: DutyStatus;
   /** Offers, the confirmed umpire, no-shows; withdrawn ones are left out. */
   assignments: DutyAssignment[];
-  /** The viewer's own game it clashes with ("10:45 HKFC D v Valley B"), if any. */
+  /** The viewer's own game it clashes with ("10:45 HKFC D vs Valley B"), if any. */
   clash?: string;
   /** Coordinator only: club umpires playing at a clashing time, People api id -> kick-off ("10:45"). */
   clashes?: Record<string, string>;
@@ -90,9 +90,9 @@ export function hkTime(iso: string): string {
   return `${p.hour}:${p.minute}`;
 }
 
-/** "10:45 HKFC D v Valley B" ("TBC" for a time not yet set). */
+/** "10:45 HKFC D vs Valley B" ("TBC" for a time not yet set). */
 export function gameLabel(g: OwnGame): string {
-  return `${isTbc(g.matchDate) ? "TBC" : hkTime(g.matchDate)} ${g.homeTeam} v ${g.awayTeam}`;
+  return `${isTbc(g.matchDate) ? "TBC" : hkTime(g.matchDate)} ${g.homeTeam} vs ${g.awayTeam}`;
 }
 
 export type UmpiringAccess = "umpire" | "coordinator";

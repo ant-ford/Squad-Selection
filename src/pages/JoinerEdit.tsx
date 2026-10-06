@@ -12,6 +12,11 @@ import { errorText, primary, secondary } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
+import { useAuth } from '@/lib/auth';
+import { differs } from '@/lib/drafts';
+import { useDraft } from '@/lib/useDraft';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
 import { createJoiner, getJoiner, getJoinerOptions, inviteJoiner, requestJoinerStep, updateJoiner } from '@/api/joiners';
 import { declineRegistration, invitePracticeTrial } from '@/api/trials';
 import {
@@ -114,9 +119,14 @@ export default function JoinerEditPage() {
 function Editor({ view, options }: { view: JoinerView | null; options: JoinerOptions }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<JoinerForm>(view?.form ?? EMPTY_JOINER);
+  const { user } = useAuth();
+  // What's saved; the form is "changed" while it differs from this.
+  const [baseline, setBaseline] = useState<JoinerForm>(view?.form ?? EMPTY_JOINER);
+  // Kept on this device until saved, so a dropped connection or a reload loses nothing.
+  const [form, setForm, clearDraft] = useDraft<JoinerForm>(user ? `draft:joiner:${user.id}:${view?.id ?? 'new'}` : null, baseline);
   const [problem, setProblem] = useState<string | null>(null);
   const set = <K extends keyof JoinerForm>(k: K) => (v: JoinerForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const leave = useUnsavedChanges(differs(form, baseline), DRAFT_KEPT_MESSAGE);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['joiner'] });
     void queryClient.invalidateQueries({ queryKey: ['membershipBoard'] });
@@ -125,10 +135,15 @@ function Editor({ view, options }: { view: JoinerView | null; options: JoinerOpt
   const save = useMutation({
     mutationFn: (invite: boolean) => (view ? updateJoiner(view.id, form).then(() => ({ id: view.id, invited: false })) : createJoiner(form, invite)),
     onSuccess: (r) => {
+      clearDraft();
+      setBaseline(form);
       refresh();
       toast.success(r.invited ? 'Saved, and the invitation has gone' : 'Saved');
       setProblem(null);
-      if (!view) navigate(`/joiners/${r.id}`, { replace: true });
+      if (!view) {
+        leave.allowNavigation();
+        navigate(`/joiners/${r.id}`, { replace: true });
+      }
     },
     onError: (err) => setProblem(errorText(err)),
   });
@@ -200,6 +215,7 @@ function Editor({ view, options }: { view: JoinerView | null; options: JoinerOpt
             <OfficePick value={form.chairId} options={options.chairs} onChange={set('chairId')} />
           </Field>
         </div>
+        {leave.prompt}
         {problem && (
           <p role="alert" className="text-xs text-destructive">
             {problem}
@@ -260,15 +276,15 @@ function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: J
       <h2 className="text-base font-semibold text-foreground">Registered to join</h2>
       <dl className="grid sm:grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Sent</dt>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Sent</dt>
           <dd className="text-foreground">{t.registeredAt ? when(t.registeredAt) : 'Still filling it in'}</dd>
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Through the link of</dt>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Through the link of</dt>
           <dd className="text-foreground">{t.referredBy ?? '–'}</dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Trial sessions they can come to</dt>
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">Trial sessions they can come to</dt>
           <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, h:mm a')} (${s.place})`).join('; ') : 'None'}</dd>
         </div>
       </dl>

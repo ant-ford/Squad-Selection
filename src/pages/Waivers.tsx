@@ -6,7 +6,15 @@ import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import SignaturePad from '@/components/SignaturePad';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActionButton } from '@/components/ui/action-button';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { ApiError } from '@/lib/apiClient';
+import { errorMessage } from '@/lib/errorMessages';
+import { formGaps } from '@/lib/formGaps';
+import { useFormGaps } from '@/lib/useFormGaps';
+import { differs } from '@/lib/drafts';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { safeFormat } from '@/lib/dateUtils';
 import { getMyDeclarations, submitDeclarations } from '@/api/declarations';
 import {
@@ -17,13 +25,10 @@ import {
   type DeclarationsView,
 } from '@shared/declarations';
 
-const input =
-  'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-
-function Tick({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
+function Tick({ id, checked, onChange, children }: { id?: string; checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
   return (
     <label className="flex gap-3 items-start py-2 cursor-pointer">
-      <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--primary))]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input id={id} type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--primary))]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       <span className="text-sm text-foreground">{children}</span>
     </label>
   );
@@ -52,14 +57,33 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
         accepted: Object.keys(ticked).filter((k) => ticked[k]),
         ...(view.underEighteen ? { guardian, signature: signature ?? undefined } : {}),
       }),
-    onSuccess: onDone,
+    onSuccess: () => {
+      // Saved: going home next isn't leaving anything behind.
+      leave.allowNavigation();
+      onDone();
+    },
   });
 
-  const allTicked = DECLARATION_ITEMS.every((i) => ticked[i.key]);
-  const guardianDone =
-    !view.underEighteen ||
-    (!!guardian.surname.trim() && !!guardian.givenNames.trim() && !!guardian.mobileNo.trim() && /^\S+@\S+\.\S+$/.test(guardian.email.trim()) &&
-      !!ticked[GUARDIAN_CONFIRM.key] && !!signature);
+  const firstUnticked = DECLARATION_ITEMS.find((i) => !ticked[i.key]);
+  const validEmail = /^\S+@\S+\.\S+$/.test(guardian.email.trim());
+  const gaps = useFormGaps(
+    formGaps([
+      [!!firstUnticked, { id: `tick-${firstUnticked?.key}`, label: 'Tick every box' }],
+      ...(view.underEighteen
+        ? ([
+            [!guardian.givenNames.trim(), { id: 'guardian-given', label: "Parent or guardian's given name(s)" }],
+            [!guardian.surname.trim(), { id: 'guardian-surname', label: "Parent or guardian's surname" }],
+            [!guardian.mobileNo.trim(), { id: 'guardian-mobile', label: "Parent or guardian's mobile" }],
+            [!validEmail, { id: 'guardian-email', label: "Parent or guardian's email" }],
+            [!ticked[GUARDIAN_CONFIRM.key], { id: `tick-${GUARDIAN_CONFIRM.key}`, label: "Parent or guardian's consent" }],
+            [!signature, { id: 'guardian-signature', label: "Parent or guardian's signature" }],
+          ] as const)
+        : []),
+    ]),
+  );
+  const leave = useUnsavedChanges(
+    !submit.isSuccess && (Object.values(ticked).some(Boolean) || !!signature || differs(guardian, view.guardian)),
+  );
 
   return (
     <>
@@ -78,7 +102,7 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
         {CODE_OF_CONDUCT.code.map((p) => <p key={p} className="text-sm text-muted-foreground">{p}</p>)}
         <div className="divide-y divide-border">
           {DECLARATION_ITEMS.filter((i) => i.section === 'code').map((i) => (
-            <Tick key={i.key} checked={!!ticked[i.key]} onChange={tick(i.key)}>{i.text}</Tick>
+            <Tick key={i.key} id={`tick-${i.key}`} checked={!!ticked[i.key]} onChange={tick(i.key)}>{i.text}</Tick>
           ))}
         </div>
       </Section>
@@ -86,7 +110,7 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
       <Section title={CODE_OF_CONDUCT.disclaimersTitle}>
         <div className="divide-y divide-border">
           {DECLARATION_ITEMS.filter((i) => i.section === 'disclaimers').map((i) => (
-            <Tick key={i.key} checked={!!ticked[i.key]} onChange={tick(i.key)}>
+            <Tick key={i.key} id={`tick-${i.key}`} checked={!!ticked[i.key]} onChange={tick(i.key)}>
               <strong>{'label' in i ? i.label : ''}:</strong> {i.text}
             </Tick>
           ))}
@@ -99,42 +123,41 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
             {view.playerName} is under 18, so a parent or guardian completes this part.
           </p>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-muted-foreground">Given name(s)
-              <input className={input} value={guardian.givenNames} onChange={(e) => setGuardian({ ...guardian, givenNames: e.target.value })} />
-            </label>
-            <label className="text-xs text-muted-foreground">Surname
-              <input className={input} value={guardian.surname} onChange={(e) => setGuardian({ ...guardian, surname: e.target.value })} />
-            </label>
-            <label className="text-xs text-muted-foreground">Mobile
-              <input className={input} inputMode="tel" value={guardian.mobileNo} onChange={(e) => setGuardian({ ...guardian, mobileNo: e.target.value })} />
-            </label>
-            <label className="text-xs text-muted-foreground">Email
-              <input className={input} type="email" value={guardian.email} onChange={(e) => setGuardian({ ...guardian, email: e.target.value })} />
-            </label>
+            <Field label="Given name(s)" id="guardian-given" required>
+              <Input value={guardian.givenNames} onChange={(e) => setGuardian({ ...guardian, givenNames: e.target.value })} />
+            </Field>
+            <Field label="Surname" id="guardian-surname" required>
+              <Input value={guardian.surname} onChange={(e) => setGuardian({ ...guardian, surname: e.target.value })} />
+            </Field>
+            <Field label="Mobile" id="guardian-mobile" required>
+              <Input inputMode="tel" value={guardian.mobileNo} onChange={(e) => setGuardian({ ...guardian, mobileNo: e.target.value })} />
+            </Field>
+            <Field label="Email" id="guardian-email" required>
+              <Input type="email" value={guardian.email} onChange={(e) => setGuardian({ ...guardian, email: e.target.value })} />
+            </Field>
           </div>
           <div className="space-y-1 pt-1">
             {guardianConsent(guardianName).map((p) => (
               <p key={p} className={`text-sm text-muted-foreground ${/^[a-d]\. /.test(p) ? 'pl-4' : ''}`}>{p}</p>
             ))}
           </div>
-          <Tick checked={!!ticked[GUARDIAN_CONFIRM.key]} onChange={tick(GUARDIAN_CONFIRM.key)}>{GUARDIAN_CONFIRM.text}</Tick>
+          <Tick id={`tick-${GUARDIAN_CONFIRM.key}`} checked={!!ticked[GUARDIAN_CONFIRM.key]} onChange={tick(GUARDIAN_CONFIRM.key)}>{GUARDIAN_CONFIRM.text}</Tick>
           <p className="text-xs text-muted-foreground">Parent or guardian's signature</p>
-          <SignaturePad onChange={setSignature} />
+          <div id="guardian-signature" tabIndex={-1} className="focus:outline-none">
+            <SignaturePad onChange={setSignature} />
+          </div>
         </Section>
       )}
 
-      {submit.error && (
-        <p role="alert" className="text-xs text-destructive">
-          {submit.error instanceof ApiError ? submit.error.message : 'Not submitted: the connection or the server failed. Please try again.'}
+      {leave.prompt}
+      {(gaps.summary || submit.error) && (
+        <p role="alert" className="text-xs font-medium text-danger-soft-foreground">
+          {gaps.summary || errorMessage(submit.error, 'submit')}
         </p>
       )}
-      <button
-        className="w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-        disabled={!allTicked || !guardianDone || submit.isPending}
-        onClick={() => submit.mutate()}
-      >
-        {submit.isPending ? 'Submitting…' : 'Agree and submit'}
-      </button>
+      <ActionButton fullWidth loading={submit.isPending} onClick={() => gaps.check() && submit.mutate()}>
+        Agree and submit
+      </ActionButton>
     </>
   );
 }

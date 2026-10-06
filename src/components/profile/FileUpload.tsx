@@ -97,17 +97,17 @@ export default function FileUpload({
       )}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-foreground">{label}</p>
-        {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         {picked?.saved ? (
-          <p className="text-[11px] text-primary flex items-center gap-1 truncate">
+          <p className="text-xs text-primary flex items-center gap-1 truncate">
             <Check className="h-3.5 w-3.5 shrink-0" /> Uploaded: {picked.name}
           </p>
         ) : hasFile ? (
-          <p className="text-[11px] text-primary flex items-center gap-1">
+          <p className="text-xs text-primary flex items-center gap-1">
             <Check className="h-3.5 w-3.5 shrink-0" /> On file
           </p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Not uploaded yet</p>
+          <p className="text-xs text-muted-foreground">Not uploaded yet</p>
         )}
       </div>
       <input

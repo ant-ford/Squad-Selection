@@ -1,5 +1,5 @@
 import { X, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -86,7 +86,7 @@ const GROUPS: ChipGroup[] = [
     { key: 'selected', label: 'Selected' }, { key: 'none', label: 'None' },
   ]},
   { category: 'availability', label: 'Availability', options: [
-    { key: 'Available', label: 'Available' }, { key: 'Maybe', label: 'Maybe' }, { key: 'Unavailable', label: 'Unavailable' },
+    { key: 'Available', label: 'Available' }, { key: 'Maybe', label: 'Maybe' }, { key: 'Unavailable', label: 'No' },
   ]},
 ];
 
@@ -104,21 +104,52 @@ const ABILITY_GROUPS: { group: string; values: string[] }[] = [
 // One width for every row label, so the chips line up down the whole panel.
 // Narrower on a phone, where "Position:" and its five chips only just fit.
 const LABEL_CLASS = 'text-xs text-muted-foreground w-16 sm:w-20 shrink-0';
-const CHIP_CLASS = 'text-xs px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 transition-colors';
+// 40 px tall on a phone (a finger); compact with a mouse.
+const CHIP_CLASS = 'text-xs px-3 min-h-10 sm:min-h-0 sm:px-2.5 sm:py-1 rounded-full whitespace-nowrap shrink-0 transition-colors';
 
 export interface PlayerFiltersProps {
   filters: FilterState;
   onChange: (f: FilterState) => void;
 }
 
-export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps) {
-  const [expandedAbility, setExpandedAbility] = useState<string | null>(null);
+/** One labelled row of toggle chips ("Position: GK DEF MID ..."). */
+export function ChipRow({ label, options, selected, onToggle }: {
+  label: string;
+  options: { key: string; label: string }[];
+  selected: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
+      <span className={LABEL_CLASS}>{label}:</span>
+      {options.map(opt => {
+        const on = selected.has(opt.key);
+        return (
+          <button key={opt.key} type="button" aria-pressed={on} onClick={() => onToggle(opt.key)}
+            className={`${CHIP_CLASS} ${on ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The filter panel shared by the squad and ranking screens: a name search,
+ * "Clear (n)" and the screen's chip rows. On a phone it folds into a
+ * "Filters (n)" button that opens the panel as a bottom sheet.
+ */
+export function FilterPanel({ name, onName, activeCount, onClear, children }: {
+  name: string;
+  onName: (name: string) => void;
+  /** How many filters are on; shown on the phone button and the Clear link. */
+  activeCount: number;
+  onClear: () => void;
+  children: ReactNode;
+}) {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const isMobile = useMediaQuery('(max-width: 639px)');
-
-  const totalActive =
-    [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability, ...filters.ability].length +
-    (filters.name ? 1 : 0);
 
   const filterContent = (
     <div className="space-y-2">
@@ -127,75 +158,28 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
         <Search className="h-4 w-4 text-muted-foreground shrink-0" />
         <input
           type="text"
-          placeholder="Search by name..."
-          value={filters.name ?? ''}
-          onChange={(e) => onChange({ ...filters, name: e.target.value })}
-          className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder="Search by name"
+          aria-label="Search by name"
+          value={name}
+          onChange={(e) => onName(e.target.value)}
+          className="flex-1 h-10 text-base sm:text-sm border border-border rounded px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
         />
       </div>
 
       {/* The sheet has its own "Filters" title, so the caption would only
           repeat it there. */}
-      {(!isMobile || totalActive > 0) && (
+      {(!isMobile || activeCount > 0) && (
         <div className="flex items-center gap-2">
           {!isMobile && <span className="text-xs font-medium text-muted-foreground">Filters</span>}
-          {totalActive > 0 && (
-            <button onClick={() => onChange(EMPTY_FILTERS)} className="text-xs text-destructive flex items-center gap-0.5">
-              <X className="h-3 w-3" /> Clear ({totalActive})
+          {activeCount > 0 && (
+            <button type="button" onClick={onClear} className="min-h-10 text-xs text-destructive flex items-center gap-0.5">
+              <X className="h-3 w-3" /> Clear ({activeCount})
             </button>
           )}
         </div>
       )}
 
-      {GROUPS.map(group => (
-        <div key={group.category} className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
-          <span className={LABEL_CLASS}>{group.label}:</span>
-          {group.options.map(opt => (
-            <button key={opt.key} onClick={() => onChange({ ...filters, [group.category]: toggleInSet(filters[group.category], opt.key) })}
-              className={`${CHIP_CLASS} ${filters[group.category].has(opt.key) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      ))}
-
-      {/* Ability: parent toggles all sub-grades, caret expands granular */}
-      <div className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
-        <span className={LABEL_CLASS}>Ability:</span>
-        {ABILITY_GROUPS.map(g => {
-          const allSelected = g.values.every(v => filters.ability.has(v));
-          const someSelected = g.values.some(v => filters.ability.has(v));
-          const isExpanded = expandedAbility === g.group;
-          const toggleGroup = () => {
-            const next = new Set(filters.ability);
-            if (allSelected) g.values.forEach(v => next.delete(v));
-            else g.values.forEach(v => next.add(v));
-            onChange({ ...filters, ability: next });
-          };
-          return (
-            <div key={g.group} className="flex items-center gap-1">
-              <button onClick={toggleGroup}
-                className={`${CHIP_CLASS} ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary-tint/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                {g.group}
-              </button>
-              <button onClick={() => setExpandedAbility(isExpanded ? null : g.group)}
-                className="text-muted-foreground hover:text-foreground p-0.5">
-                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              </button>
-              {isExpanded && (
-                <div className="flex items-center gap-1 ml-1">
-                  {g.values.map(v => (
-                    <button key={v} onClick={() => onChange({ ...filters, ability: toggleInSet(filters.ability, v) })}
-                      className={`${CHIP_CLASS} ${filters.ability.has(v) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {children}
     </div>
   );
 
@@ -205,11 +189,12 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
         <div className="border-b border-border">
           <div className="container mx-auto px-4 py-3">
             <button
+              type="button"
               onClick={() => setIsSheetOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+              className="flex items-center gap-2 px-3 min-h-10 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
             >
               <Filter className="h-4 w-4" />
-              Filters {totalActive > 0 && `(${totalActive})`}
+              Filters {activeCount > 0 && `(${activeCount})`}
             </button>
           </div>
         </div>
@@ -225,9 +210,10 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
               <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 border-b border-border">
                 <SheetTitle>Filters</SheetTitle>
                 <button
+                  type="button"
                   onClick={() => setIsSheetOpen(false)}
                   aria-label="Close filters"
-                  className="shrink-0 -mr-1.5 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  className="shrink-0 -mr-1.5 h-10 w-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -250,5 +236,71 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
         {filterContent}
       </div>
     </div>
+  );
+}
+
+export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps) {
+  const [expandedAbility, setExpandedAbility] = useState<string | null>(null);
+
+  const totalActive =
+    [...filters.position, ...filters.eligibility, ...filters.selection, ...filters.availability, ...filters.ability].length +
+    (filters.name ? 1 : 0);
+
+  return (
+    <FilterPanel
+      name={filters.name ?? ''}
+      onName={(name) => onChange({ ...filters, name })}
+      activeCount={totalActive}
+      onClear={() => onChange(EMPTY_FILTERS)}
+    >
+      {GROUPS.map(group => (
+        <ChipRow
+          key={group.category}
+          label={group.label}
+          options={group.options}
+          selected={filters[group.category]}
+          onToggle={(key) => onChange({ ...filters, [group.category]: toggleInSet(filters[group.category], key) })}
+        />
+      ))}
+
+      {/* Ability: parent toggles all sub-grades, caret expands granular */}
+      <div className="flex items-center gap-x-1.5 gap-y-1.5 flex-wrap">
+        <span className={LABEL_CLASS}>Ability:</span>
+        {ABILITY_GROUPS.map(g => {
+          const allSelected = g.values.every(v => filters.ability.has(v));
+          const someSelected = g.values.some(v => filters.ability.has(v));
+          const isExpanded = expandedAbility === g.group;
+          const toggleGroup = () => {
+            const next = new Set(filters.ability);
+            if (allSelected) g.values.forEach(v => next.delete(v));
+            else g.values.forEach(v => next.add(v));
+            onChange({ ...filters, ability: next });
+          };
+          return (
+            <div key={g.group} className="flex items-center gap-1">
+              <button type="button" onClick={toggleGroup} aria-pressed={allSelected}
+                className={`${CHIP_CLASS} ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary-tint/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                {g.group}
+              </button>
+              <button type="button" onClick={() => setExpandedAbility(isExpanded ? null : g.group)}
+                aria-label={`${g.group} grades`} aria-expanded={isExpanded}
+                className="text-muted-foreground hover:text-foreground h-10 w-6 sm:h-auto sm:w-auto sm:p-0.5 flex items-center justify-center">
+                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              </button>
+              {isExpanded && (
+                <div className="flex items-center gap-1 ml-1">
+                  {g.values.map(v => (
+                    <button key={v} type="button" aria-pressed={filters.ability.has(v)} onClick={() => onChange({ ...filters, ability: toggleInSet(filters.ability, v) })}
+                      className={`${CHIP_CLASS} ${filters.ability.has(v) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </FilterPanel>
   );
 }

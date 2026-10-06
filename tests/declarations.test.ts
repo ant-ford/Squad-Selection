@@ -4,7 +4,7 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import { getMyDeclarations, isUnderEighteen, submitDeclarations } from "../worker/src/declarations";
 import { DECLARATIONS_VERSION, REQUIRED_KEYS, guardianConsent } from "../shared/declarations";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const user = { email: "p@x.com", personId: "recPLAYER00000000", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 
 type Call = { url: URL; method: string; body: any };
@@ -60,10 +60,5 @@ describe("waivers & declarations", () => {
     expect(v).toMatchObject({ underEighteen: true, playerName: "Sam Lee", signedThisSeasonAt: null, version: DECLARATIONS_VERSION });
     expect(v.guardian).toMatchObject({ surname: "Lee", givenNames: "Jo" });
     expect(guardianConsent("Jo Lee")[0]).toContain("I, Jo Lee (the “Parent or Guardian”)");
-  });
-
-  it("stays on the Fillout form until the switch-over", async () => {
-    fake({});
-    await expect(getMyDeclarations({ ...env, DATA_BACKEND: "airtable" }, user)).rejects.toMatchObject({ status: 409, code: "NOT_YET" });
   });
 });

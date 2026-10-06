@@ -11,9 +11,8 @@ name: Preview API
 #
 # What keeps the preview away from production is in worker/wrangler.toml
 # under [env.preview]: its own Worker name, no custom domain, no cron, no
-# shared KV cache, and CORS only for http://localhost:5173 and :5174. With
-# DATA_BACKEND = "supabase" it reads and writes eddy-preview, never
-# production data.
+# shared KV cache, and CORS only for http://localhost:5173 and :5174. It
+# reads and writes eddy-preview (DATA_SUPABASE_URL), never production data.
 
 on:
   workflow_dispatch:
@@ -160,6 +159,6 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\` (\`${GITHUB_SHA::7}\`)"
             echo "- URL: $URL"
             echo "- Frontend: \`npm run dev:preview-api\`, then http://localhost:5173 (or add \`-- --port 5174\`)"
-            echo "- Data: eddy-preview (DATA_BACKEND in [env.preview]); saves change that copy only."
+            echo "- Data: eddy-preview (DATA_SUPABASE_URL in [env.preview]); saves change that copy only."
             echo "- Health: \`$URL/health?deep=1\`"
           } >> "$GITHUB_STEP_SUMMARY"

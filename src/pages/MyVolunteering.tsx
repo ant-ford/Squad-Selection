@@ -10,6 +10,7 @@ import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { getMyVolunteering, saveVolunteering } from '@/api/volunteering';
 import { volunteeringMissing, type MyVolunteering, type VolunteeringAnswers } from '@shared/volunteering';
+import { errorMessage } from '@/lib/errorMessages';
 
 function Form({ initial, onSaved }: { initial: MyVolunteering; onSaved: () => void }) {
   const [answers, setAnswers] = useState<VolunteeringAnswers>(initial);
@@ -21,7 +22,7 @@ function Form({ initial, onSaved }: { initial: MyVolunteering; onSaved: () => vo
       <VolunteeringSection value={answers} onChange={setAnswers} />
       {save.error && (
         <p role="alert" className="text-xs text-destructive">
-          {save.error instanceof ApiError ? save.error.message : 'Not saved: the connection or the server failed. Please try again.'}
+          {errorMessage(save.error, 'save')}
         </p>
       )}
       {missing && <p className="text-xs text-muted-foreground">{missing}</p>}
