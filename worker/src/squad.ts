@@ -3,7 +3,7 @@ import { matches } from "./data/matches";
 import { teams as teamsRepo } from "./data/teams";
 import { isRowId } from "./data/ids";
 import type { Env } from "./env";
-import { getVersioned, invalidateCachePrefix } from "./cache";
+import { getVersioned } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
 import { evaluatePlayerEligibility, type EvaluationContext } from "./eligibility";
 import { HttpError } from "./http";
@@ -29,16 +29,6 @@ async function getMatchRecord(env: Env, matchId: string): Promise<Match> {
     if (!match) throw new HttpError("Match not found", 404);
     return match;
   });
-}
-
-/**
- * After a write that changes a match's selections, kit or auto-select flag.
- * The match, season and per-match player caches are keyed on the cache
- * versions the write moved; only this isolate's calendar feeds still need
- * dropping.
- */
-async function invalidateSelectionCaches(_env: Env, _matchId: string, _season?: string): Promise<void> {
-  invalidateCachePrefix("calendar:");
 }
 
 // ── HKFC side resolution ────────────────────────────────────────────────
@@ -378,7 +368,6 @@ export async function syncSquad(
   // Invalidation fan-out (Invariant #11): a selection change can affect
   // same-day eligibility for OTHER matches too, so this is a coarse wipe
   // rather than a match-by-match computation.
-  await invalidateSelectionCaches(env, matchId, match.season || "");
   return { displaced };
 }
 
@@ -483,7 +472,6 @@ export async function applySquadChanges(
     }
   }
 
-  await invalidateSelectionCaches(env, matchId, match.season || "");
   return { status: "ok", version: result.version, selectedIds: result.selected, displaced };
 }
 
@@ -491,7 +479,6 @@ export async function toggleAutoSelect(env: Env, matchId: string, enabled: boole
   const existing = await matches(env).getById(matchId);
   if (!existing) throw new HttpError("Match not found", 404);
   await matches(env).update(matchId, { autoSelectEnabled: enabled });
-  await invalidateSelectionCaches(env, matchId);
   console.log(`[AutoSelect Audit] action=toggle matchId=${matchId} enabled=${enabled} actor=${actingEmail || "unknown"}`);
   return { success: true, autoSelectEnabled: enabled };
 }
@@ -525,7 +512,6 @@ export async function setMatchKit(
 
   // Same invalidation set as the auto-select toggle: the fixture views and
   // the calendar feeds all read the kit off the cached match records.
-  await invalidateSelectionCaches(env, matchId);
   console.log(`[Kit Audit] matchId=${matchId} side=${side} kit=${kit || "(cleared)"} actor=${actingEmail || "unknown"}`);
   return { success: true, side, kit };
 }

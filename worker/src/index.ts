@@ -1074,7 +1074,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await handleGetCalendarLink(env, user.personId, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/feed.ics") {
-      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
+      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"), url.origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-link") {
       const user = await requireAuthorizedUser(request, env);
@@ -1082,7 +1082,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await handleGetTeamCalendarLink(env, user, team, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
-      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
+      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"), url.origin);
     }
 
     return errorJson("Not Found", 404, origin, "NOT_FOUND");

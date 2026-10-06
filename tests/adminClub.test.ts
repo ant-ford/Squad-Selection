@@ -174,11 +174,11 @@ describe("teams", () => {
     expect(() => parseTeamChange({ sectionCaptainIds: ["recA1"] })).toThrow(/Nothing/);
   });
 
-  it("saves through admin_save_team and drops what it can only when something changed (the rest is keyed on the cache versions)", async () => {
+  it("saves through admin_save_team and has no cache to drop: every team cache is keyed on the cache versions", async () => {
     let calls = fake({ "rpc/admin_save_team": { status: "ok", changed: ["coach"] } });
     expect(await saveTeam(env, captain, "recT1", { coachIds: ["recA1"] })).toEqual({ ok: true, changed: ["coach"] });
     expect(calls[0].body).toEqual({ p_team: "recT1", p_actor: "recCAPTAIN", p: { coaches: ["recA1"] } });
-    expect(mocks.invalidateShared.mock.calls.flatMap((c) => c[2] as string[])).toContain("calendar:");
+    expect(mocks.invalidateShared.mock.calls.flatMap((c) => [...(c[1] as string[]), ...((c[2] as string[]) ?? [])])).toEqual([]);
     mocks.invalidateShared.mockClear();
     calls = fake({ "rpc/admin_save_team": { status: "ok", changed: [] } });
     await saveTeam(env, captain, "recT1", { targetSquadSize: 14 });

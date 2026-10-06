@@ -28,25 +28,20 @@ const INVALIDATION = {
       WAITING_ON_KEY,
     ],
     // my-tasks: a member's player-page banner, gone once their form is in.
-    prefixes: ["calendar:", "ranking-events:", "my-tasks:"],
+    prefixes: ["ranking-events:", "my-tasks:"],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  // Appearances feed eligibility and play-up counts: the match cards, season
-  // index and per-match lists are keyed on the cache versions, and so is
-  // the current Stats summary. Only the calendar feeds remain.
-  matchCards: {
-    prefixes: ["calendar:"],
-  },
-  // Coaches, captains and squad sizes: the roster, the teams and every
-  // per-match list are keyed on the teams / team_people versions (and coach
-  // access is read afresh at sign-in). Only the calendar feeds remain.
-  teams: {
-    prefixes: ["calendar:"],
-  },
+  // Appearances feed eligibility, play-up counts, the Stats summary and the
+  // calendar feeds: all keyed on the cache versions now, so nothing to drop.
+  matchCards: {},
+  // Coaches, captains and squad sizes: the roster, the teams, every
+  // per-match list and the calendar feeds are keyed on the teams /
+  // team_people versions (and coach access is read afresh at sign-in).
+  teams: {},
   // Who holds an office: section access, and the boards that name the
   // signing officers and sponsors.
   offices: {

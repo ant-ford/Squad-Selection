@@ -405,6 +405,15 @@ function buildRepos(s: FakeState): FakeRepos {
     async listPlayedForSeasons(seasons) {
       return s.matches.filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? "")).map(clone);
     },
+    async listResultsForSeasons(seasons) {
+      return s.matches
+        .filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? ""))
+        .map((m) => ({
+          id: m.id, matchDate: m.matchDate, season: m.season, competitionType: m.competitionType,
+          homeTeam: m.homeTeam, homeTeamScore: m.homeTeamScore, awayTeam: m.awayTeam, awayTeamScore: m.awayTeamScore,
+          venue: m.venue, matchStatus: m.matchStatus,
+        }) as Match);
+    },
   };
 
   const matchCards: MatchCardsRepo = {

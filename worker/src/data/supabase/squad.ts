@@ -100,6 +100,14 @@ export function supabaseMatches(env: Env): MatchesRepo {
       if (seasons.length === 0) return [];
       return list(`match_status=eq.Played&season=${inList(seasons)}`);
     },
+    async listResultsForSeasons(seasons) {
+      if (seasons.length === 0) return [];
+      const rows = await d.select<MatchRow>(
+        "api_matches",
+        `select=id,match_date,season,competition_type,home_team,home_score,away_team,away_score,venue&match_status=eq.Played&season=${inList(seasons)}`,
+      );
+      return rows.map((r) => ({ ...toMatch(r), matchStatus: "Played" }));
+    },
   };
 }
 
