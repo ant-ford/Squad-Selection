@@ -9,7 +9,8 @@ import FileUpload from '@/components/profile/FileUpload';
 import KitSizesSection from '@/components/profile/KitSizesSection';
 import SeasonPlanSection from '@/components/SeasonPlanSection';
 import VolunteeringSection from '@/components/VolunteeringSection';
-import { ApiError } from '@/lib/apiClient';
+import { errorMessage } from '@/lib/errorMessages';
+import { focusGap } from '@/lib/formGaps';
 import { useAuth } from '@/lib/auth';
 import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
@@ -44,7 +45,8 @@ import type { KitSizes } from '@shared/kit';
 export const primary = 'h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50';
 export const secondary = 'h-10 px-4 rounded-md border border-border bg-background text-sm text-foreground hover:bg-muted disabled:opacity-50';
 
-export const errorText = (err: unknown) => (err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Please try again.');
+/** Why a save failed, in plain words (src/lib/errorMessages.ts). */
+export const errorText = (err: unknown) => errorMessage(err, 'save');
 
 /**
  * One screen: its content, then Back and the step's own save.
@@ -83,15 +85,11 @@ export function StepShell({
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-4">
       {leave.prompt}
-      <div>
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step {step} of {total}
-        </p>
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-      </div>
+      {/* Which step this is shows above the card (StepProgress). */}
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
       {children}
       {problem && (
-        <p role="alert" className="text-xs text-destructive whitespace-pre-line">
+        <p role="alert" className="text-xs font-medium text-danger-soft-foreground whitespace-pre-line">
           {problem}
         </p>
       )}
@@ -260,13 +258,18 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
       : idKind === 'hkid' && !values.hkidNo ? 'Give your HKID number.'
       : idKind === 'passport' && !values.passportNo ? 'Give your passport number.'
       : null;
+    // The first question with a problem: the step jumps to it.
+    const badField = fields.find((f) => checkValue(f, values[f.key], who));
     const bad =
-      fields.map((f) => checkValue(f, values[f.key], who)).find(Boolean) ??
+      (badField ? checkValue(badField, values[badField.key], who) : null) ??
       idNumber ??
       sectionProblem(section.key, values, { idHidden }) ??
       (uploads ? `Upload ${uploads}.` : null);
     setProblem(bad ?? null);
-    if (bad) return;
+    if (bad) {
+      focusGap(badField ? { id: `f-${badField.key}`, label: badField.label } : undefined);
+      return;
+    }
     if (section.key === 'hockey' && who === 'member' && values.active === false && details.values.active !== false) setConfirmInactive(true);
     else save.mutate();
   };

@@ -95,7 +95,7 @@ function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChan
   const label = (
     <label htmlFor={id} className="text-xs font-medium text-foreground">
       {f.label}
-      {required && <span className="text-destructive"> *</span>}
+      {required && <span className="text-danger" aria-hidden="true"> *</span>}
     </label>
   );
   const hint = f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>;
@@ -106,7 +106,7 @@ function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChan
       <fieldset className="space-y-1 sm:col-span-2">
         <legend className="text-xs font-medium text-foreground">
           {f.label}
-          {required && <span className="text-destructive"> *</span>}
+          {required && <span className="text-danger" aria-hidden="true"> *</span>}
         </legend>
         <div className="flex gap-2" role="radiogroup">
           {[true, false].map((b) => (
@@ -132,7 +132,7 @@ function Field({ f, value, onChange, who }: { f: FieldSpec; value: Value; onChan
       <fieldset className="sm:col-span-2">
         <legend className="text-xs font-medium text-foreground">
           {f.label}
-          {required && <span className="text-destructive"> *</span>}
+          {required && <span className="text-danger" aria-hidden="true"> *</span>}
         </legend>
         <div className="grid sm:grid-cols-2 gap-x-4">
           {f.options!.map((o) => (

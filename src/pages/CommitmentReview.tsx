@@ -7,6 +7,12 @@ import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActionButton } from '@/components/ui/action-button';
+import { Field } from '@/components/ui/field';
+import { inputClass } from '@/components/ui/input';
+import { errorMessage } from '@/lib/errorMessages';
+import { formGaps } from '@/lib/formGaps';
+import { useFormGaps } from '@/lib/useFormGaps';
 import { ApiError } from '@/lib/apiClient';
 import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
@@ -28,14 +34,8 @@ import {
   type SponsorReview,
 } from '@shared/commitmentReview';
 
-const input =
-  'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const area =
-  'w-full min-h-[84px] rounded-md border border-border bg-background p-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const shortArea =
-  'w-full rounded-md border border-border bg-background p-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none';
-const primary =
-  'w-full h-10 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50';
+const area = `${inputClass} h-auto min-h-[84px] py-2`;
+const shortArea = `${inputClass} h-auto py-2 resize-none`;
 
 const day = (d: string | null | undefined) => safeFormat(d, 'd MMM yyyy');
 
@@ -48,16 +48,6 @@ function Card({ title, children, note }: { title: string; children: ReactNode; n
       </div>
       {children}
     </section>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="block text-xs text-muted-foreground">
-      <span className="block text-foreground/80">{label}</span>
-      {hint && <span className="block text-xs leading-snug mt-0.5">{hint}</span>}
-      <span className="block mt-1">{children}</span>
-    </label>
   );
 }
 
@@ -91,22 +81,12 @@ function DraftNote({ drafts }: { drafts: Record<string, string> }) {
   );
 }
 
-/** Why a submission failed, kept on screen by the button (a toast is easy to miss). */
-function submitError(err: unknown): string {
-  if (err instanceof ApiError && err.status < 500) return err.message;
-  // The Worker's reference for an unexpected failure (type, database code, stage).
-  if (err instanceof ApiError && (err.code === 'REVIEW_FAILED' || err.code === 'DB_ERROR')) {
-    return `${err.message} Your answers are kept here; please try again.`;
-  }
-  if (err instanceof ApiError) return `Not submitted (${err.status}${err.code ? ` ${err.code}` : ''}). Your answers are kept here; please try again.`;
-  return 'Not submitted: the connection or the server failed. Your answers are kept here; please try again.';
-}
-
-function SubmitError({ error }: { error: unknown }) {
-  if (!error) return null;
+/** What's missing, or why the submission failed: by the button (a toast is easy to miss). */
+function SubmitNote({ missing, error }: { missing: string; error: unknown }) {
+  if (!missing && !error) return null;
   return (
-    <p role="alert" className="text-xs text-destructive">
-      {submitError(error)}
+    <p role="alert" className="text-xs font-medium text-danger-soft-foreground">
+      {missing || errorMessage(error, 'submit', { kept: true })}
     </p>
   );
 }
@@ -143,20 +123,26 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
       onDone(`Sent to ${sponsor ?? 'your sponsor'} for their review`);
     },
   });
-  const complete = !!form.gamesUmpired && !!form.practices && !!form.sponsor;
+  const gaps = useFormGaps(
+    formGaps([
+      [!form.gamesUmpired, { id: 'cr-games', label: 'Games umpired' }],
+      [!form.practices, { id: 'cr-practices', label: 'Practices' }],
+      [!form.sponsor, { id: 'cr-sponsor', label: 'Sponsor' }],
+    ]),
+  );
   const leave = useUnsavedChanges(!submit.isSuccess && differs(form, start), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Games umpired">
-          <select className={input} value={form.gamesUmpired} onChange={(e) => set('gamesUmpired', e.target.value)}>
+        <Field label="Games umpired" id="cr-games" required>
+          <select className={inputClass} value={form.gamesUmpired} onChange={(e) => set('gamesUmpired', e.target.value)}>
             <option value="">Choose…</option>
             {GAMES_UMPIRED.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </Field>
-        <Field label="Practices">
-          <select className={input} value={form.practices} onChange={(e) => set('practices', e.target.value)}>
+        <Field label="Practices" id="cr-practices" required>
+          <select className={inputClass} value={form.practices} onChange={(e) => set('practices', e.target.value)}>
             <option value="">Choose…</option>
             {PRACTICES.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
@@ -199,24 +185,24 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
         </Field>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Sponsor">
-          <select className={input} value={form.sponsor} onChange={(e) => set('sponsor', e.target.value)}>
+        <Field label="Sponsor" id="cr-sponsor" required>
+          <select className={inputClass} value={form.sponsor} onChange={(e) => set('sponsor', e.target.value)}>
             <option value="">Choose…</option>
             {options.sponsors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
         <Field label="Membership Officer">
-          <select className={input} value={form.officer ?? ''} onChange={(e) => set('officer', e.target.value)}>
+          <select className={inputClass} value={form.officer ?? ''} onChange={(e) => set('officer', e.target.value)}>
             <option value="">Choose…</option>
             {options.officers.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </Field>
       </div>
       {leave.prompt}
-      <SubmitError error={submit.error} />
-      <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
-        {submit.isPending ? 'Submitting…' : 'Submit Player Statement'}
-      </button>
+      <SubmitNote missing={gaps.summary} error={submit.error} />
+      <ActionButton fullWidth loading={submit.isPending} onClick={() => gaps.check() && setConfirming(true)}>
+        Submit Player Statement
+      </ActionButton>
       {confirming && (
         <ConfirmDialog
           title="Submit your Player Statement?"
@@ -275,27 +261,36 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       onDone('Sent to the Membership Officer');
     },
   });
-  const complete = !!form.sectionService.trim() && !!form.hkfcService.trim() && !!form.recommendation.trim() && !!sig;
+  const gaps = useFormGaps(
+    formGaps([
+      [!form.sectionService.trim(), { id: 'cr-s-section', label: 'Potential for Section service' }],
+      [!form.hkfcService.trim(), { id: 'cr-s-hkfc', label: 'Potential for HKFC service' }],
+      [!form.recommendation.trim(), { id: 'cr-s-recommendation', label: 'Recommendation' }],
+      [!sig, { id: 'cr-signature', label: 'Your signature' }],
+    ]),
+  );
   const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
       <DraftNote drafts={ai} />
-      <Field label="Potential for Section service and involvement">
+      <Field label="Potential for Section service and involvement" id="cr-s-section" required>
         <textarea className={area} value={form.sectionService} onChange={(e) => setForm({ ...form, sectionService: e.target.value })} />
       </Field>
-      <Field label="Potential for HKFC service and involvement">
+      <Field label="Potential for HKFC service and involvement" id="cr-s-hkfc" required>
         <textarea className={area} value={form.hkfcService} onChange={(e) => setForm({ ...form, hkfcService: e.target.value })} />
       </Field>
-      <Field label="Recommendation">
+      <Field label="Recommendation" id="cr-s-recommendation" required>
         <textarea className={area} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} />
       </Field>
-      <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      <div id="cr-signature" tabIndex={-1} className="focus:outline-none">
+        <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      </div>
       {leave.prompt}
-      <SubmitError error={submit.error} />
-      <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
-        {submit.isPending ? 'Submitting…' : 'Sign and submit'}
-      </button>
+      <SubmitNote missing={gaps.summary} error={submit.error} />
+      <ActionButton fullWidth loading={submit.isPending} onClick={() => gaps.check() && setConfirming(true)}>
+        Sign and submit
+      </ActionButton>
       {confirming && (
         <ConfirmDialog
           title="Submit your review?"
@@ -356,7 +351,15 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
     },
   });
   const n = (v: string) => /^\d{1,3}$/.test(v);
-  const complete = n(form.playersAvailable) && n(form.optimumPlayers) && !!form.isPlayerNeeded.trim() && !!form.recommendedReduction && !!sig;
+  const gaps = useFormGaps(
+    formGaps([
+      [!n(form.playersAvailable), { id: 'cr-o-available', label: 'Players available' }],
+      [!n(form.optimumPlayers), { id: 'cr-o-optimum', label: 'Optimum number of players' }],
+      [!form.isPlayerNeeded.trim(), { id: 'cr-o-needed', label: 'Is the player needed?' }],
+      [!form.recommendedReduction, { id: 'cr-o-reduction', label: 'Recommended commitment reduction' }],
+      [!sig, { id: 'cr-signature', label: 'Your signature' }],
+    ]),
+  );
   const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
@@ -364,17 +367,18 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       <DraftNote drafts={ai} />
       <div className="grid grid-cols-2 gap-3">
         <Field
+          id="cr-o-available"
+          required
           label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}
           hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their Selected Team` : undefined}
         >
-          <input className={input} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />
+          <input className={inputClass} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />
         </Field>
-        <Field label="Optimum number of players">
-          <input className={input} inputMode="numeric" value={form.optimumPlayers} onChange={(e) => setForm({ ...form, optimumPlayers: e.target.value.replace(/\D/g, '') })} />
+        <Field label="Optimum number of players" id="cr-o-optimum" required>
+          <input className={inputClass} inputMode="numeric" value={form.optimumPlayers} onChange={(e) => setForm({ ...form, optimumPlayers: e.target.value.replace(/\D/g, '') })} />
         </Field>
       </div>
-      <Field label="Is the player needed?">
-        {/* Two lines, so a one-sentence answer is seen whole rather than scrolling off a single line. */}
+      <Field label="Is the player needed?" id="cr-o-needed" required>
         <textarea rows={2} className={shortArea} value={form.isPlayerNeeded} onChange={(e) => setForm({ ...form, isPlayerNeeded: e.target.value })} />
       </Field>
       <Field label="Other comments">
@@ -383,18 +387,20 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
       <Field label="Other relevant information about the candidate">
         <textarea className={area} value={form.otherInformation} onChange={(e) => setForm({ ...form, otherInformation: e.target.value })} />
       </Field>
-      <Field label="Recommended commitment reduction">
-        <select className={input} value={form.recommendedReduction} onChange={(e) => setForm({ ...form, recommendedReduction: e.target.value })}>
+      <Field label="Recommended commitment reduction" id="cr-o-reduction" required>
+        <select className={inputClass} value={form.recommendedReduction} onChange={(e) => setForm({ ...form, recommendedReduction: e.target.value })}>
           <option value="">Choose…</option>
           {RECOMMENDED_REDUCTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
       </Field>
-      <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      <div id="cr-signature" tabIndex={-1} className="focus:outline-none">
+        <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      </div>
       {leave.prompt}
-      <SubmitError error={submit.error} />
-      <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
-        {submit.isPending ? 'Submitting…' : 'Sign and complete review'}
-      </button>
+      <SubmitNote missing={gaps.summary} error={submit.error} />
+      <ActionButton fullWidth loading={submit.isPending} onClick={() => gaps.check() && setConfirming(true)}>
+        Sign and complete review
+      </ActionButton>
       {confirming && (
         <ConfirmDialog
           title="Complete this review?"
