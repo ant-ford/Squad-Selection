@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 //
 // The rules live in TypeScript (availabilityRules.ts: the read path, every
 // coach sheet and the player's own cards) and in SQL (set_availability,
-// migration 20261007021003: the write path, which decides whether an
+// migration 20261007141003: the write path, which decides whether an
 // Available answer is stored or the row deleted). The cases in
 // tests/fixtures/availabilityRuleCases.json are the single statement of what
 // both must do:

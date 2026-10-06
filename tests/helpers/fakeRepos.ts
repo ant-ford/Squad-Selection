@@ -394,7 +394,7 @@ function buildRepos(s: FakeState): FakeRepos {
     return t ? t.teamRank || UNRANKED_TEAM_RANK : undefined;
   };
   /**
-   * set_availability (migration 20261007021003), in memory: the same checks,
+   * set_availability (migration 20261007141003), in memory: the same checks,
    * the same store-or-delete decision through the TypeScript rule engine
    * (needsExplicitAvailable), all or nothing.
    */
