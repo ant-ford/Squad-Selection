@@ -3,13 +3,12 @@ import { matches } from "./data/matches";
 import { teams as teamsRepo } from "./data/teams";
 import { isRowId } from "./data/ids";
 import type { Env } from "./env";
-import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
-import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
-import { SCHEDULED_MATCHES_KEY } from "./fixtures";
+import { getVersioned, invalidateCachePrefix } from "./cache";
+import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
 import { evaluatePlayerEligibility, type EvaluationContext } from "./eligibility";
 import { HttpError } from "./http";
 import type { KitColour, Match, Player, Team } from "../../shared/schema/domainTypes";
-import { buildEvaluationContext } from "./seasonContext";
+import { buildEvaluationContext, SEASON_INDEX_DEPS } from "./seasonContext";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -17,44 +16,29 @@ import { hkfcSides } from "./match";
 
 type MatchSide = "home" | "away";
 
-// ── Cached match-record fetch (Performance Pass #1) ─────────────────────
+// ── Cached match-record fetch ───────────────────────────────────────────
 //
-// Short-TTL isolate cache for the raw match record. Only READ endpoints use
-// it (getPlayersForMatch). Every write path reads the
-// record fresh from Airtable so no merge ever operates on stale data, and
-// syncSquad invalidates `match:${matchId}` immediately after each write —
-// so a coach can never be served stale selections post-update.
-const MATCH_RECORD_TTL_MS = 30 * 1000;
-const PLAYERS_FOR_MATCH_TTL_MS = 60 * 1000;
+// The raw match record, for READ endpoints (getPlayersForMatch); write
+// paths read it fresh. Kept under the matches and match_selections cache
+// versions (cache.ts getVersioned), which every squad save moves, so a
+// coach is never served the selections their save replaced, on any isolate.
 
 async function getMatchRecord(env: Env, matchId: string): Promise<Match> {
-  const { data } = await getCached<Match>(`match:${matchId}`, async () => {
+  return getVersioned<Match>(env, `match:${matchId}`, ["matches", "match_selections"], async () => {
     const match = await matches(env).getById(matchId);
     if (!match) throw new HttpError("Match not found", 404);
     return match;
-  }, MATCH_RECORD_TTL_MS);
-  return data;
+  });
 }
 
 /**
- * Invalidation fan-out for a write that changes a match's selections, kit,
- * or auto-select flag. A coarse prefix wipe rather than computing exactly
- * which matches are affected: a selection change can shift same-day
- * eligibility for OTHER matches too, so a precise match-by-match key list
- * would need its own full-season match read just to build it.
+ * After a write that changes a match's selections, kit or auto-select flag.
+ * The match, season and per-match player caches are keyed on the cache
+ * versions the write moved; only this isolate's calendar feeds still need
+ * dropping.
  */
-async function invalidateSelectionCaches(env: Env, matchId: string, season?: string): Promise<void> {
-  invalidateCache(`match:${matchId}`);
-  if (season) invalidateCache(`season-index:${season}`);
-  invalidateCachePrefix("players-for-match:");
+async function invalidateSelectionCaches(_env: Env, _matchId: string, _season?: string): Promise<void> {
   invalidateCachePrefix("calendar:");
-
-  // These two are shared, so dropping them only in this isolate is what let
-  // another one keep serving the selections this write just replaced.
-  await invalidateShared(env, [
-    SCHEDULED_MATCHES_KEY,
-    ...(season ? [`all-matches:${season}`] : []),
-  ]);
 }
 
 // ── HKFC side resolution ────────────────────────────────────────────────
@@ -93,14 +77,14 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   const hkfcTeam = hkfcTeamName(match, teamRankMap, side);
   if (!hkfcTeam) throw new HttpError("Cannot determine HKFC team for this match", 422);
 
-  // Derived from shared reads, so held only briefly in this isolate: a
-  // longer hold is what let a squad saved on one isolate stay invisible on
-  // another for minutes.
+  // Kept under the versions of everything it is built from (the season
+  // index's tables and the availability rules): a squad saved on one isolate
+  // shows on every other on its next request.
   const cacheKey = `players-for-match:${matchId}:${side ?? "auto"}`;
-  const { data: heavyData } = await getCached(cacheKey, async () => {
+  const heavyData = await getVersioned(env, cacheKey, [...SEASON_INDEX_DEPS, "availability_rules"], async () => {
     const { ctx, exceptionsRaw } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
     return { ctx, allPlayers: ref.players, allExceptions: exceptionsRaw };
-  }, PLAYERS_FOR_MATCH_TTL_MS);
+  });
   const { ctx, allPlayers, allExceptions } = heavyData;
 
   const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
@@ -283,7 +267,6 @@ async function releaseFromLowerSameDaySquads(
     const lower = ctx.matchesById.get(lowerMatchId);
     if (!lower) continue;
     if (lower.matchStatus === "Played") continue;
-    let changed = false;
     for (const { team, playerIds: ids } of teams) {
       const sides: [string | undefined, MatchSide][] = [[lower.homeTeam, "home"], [lower.awayTeam, "away"]];
       for (const [sideTeam, side] of sides) {
@@ -292,11 +275,11 @@ async function releaseFromLowerSameDaySquads(
           side, add: [], remove: [...ids], version: null, actorId, source: "release",
         });
         if (result.status !== "ok") continue;
-        changed = true;
         for (const id of result.removed) displaced.push({ playerId: id, playerName: playerName(playersById.get(id)), team, matchId: lowerMatchId });
       }
     }
-    if (changed) invalidateCache(`match:${lowerMatchId}`);
+    // The match record is kept under the match_selections version, which
+    // the release moved: nothing to drop.
   }
   return displaced;
 }
@@ -473,9 +456,7 @@ export async function applySquadChanges(
   });
 
   if (result.status === "conflict") {
-    // This isolate's copy is now known to be behind; the page reloads next.
-    invalidateCache(`match:${matchId}`);
-    invalidateCachePrefix("players-for-match:");
+    // The other change moved the cache versions, so the page's reload reads it.
     const byId = new Map(ref.players.map((p) => [p.id, p]));
     return {
       status: "conflict",
@@ -583,8 +564,6 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   // Use team.id from reference data — avoids a redundant Airtable lookup
   await teamsRepo(env).setAutoSelectPlayers(team.id, validIds);
 
-  // Invalidate reference data cache so match-info picks up the new list
-  await invalidateReferenceData(env);
 
   console.log(`[AutoSelect Audit] action=setPriorityPlayers team=${teamName} count=${validIds.length} actor=${actingEmail || "unknown"}`);
   return { success: true, teamName, playerIds: validIds };
@@ -593,18 +572,16 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
 /**
  * Availability exceptions for one match, for the 30s squad-page poll.
  *
- * Previously this scanned the whole Availability Exceptions table with
- * FIND("{id}", {Match}) on every poll tick. Now it resolves the match's
- * season (30s match-record cache), reuses the season-scoped exceptions
- * cache (5 min, invalidated by every availability write) and holds a 25s
- * per-match cache of its own - so steady-state polling makes zero Airtable
- * calls and the linked-field FIND fragility is gone entirely.
+ * It resolves the match's season, reuses the season-scoped exceptions read
+ * and keeps the result per match, all under the availability_exceptions
+ * and matches cache versions: steady-state polling makes no database call
+ * until someone answers, and then every isolate sees the answer.
  */
-const AVAILABILITY_FOR_MATCH_TTL_MS = 25 * 1000;
-
 export async function getAvailabilityForMatch(env: Env, matchId: string) {
-  const { data } = await getCached<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
+  return getVersioned<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
+    env,
     `availability:${matchId}`,
+    ["availability_exceptions", "matches"],
     async () => {
       const match = await matches(env).getById(matchId);
       const season = match?.season || "";
@@ -620,7 +597,5 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
           })),
       };
     },
-    AVAILABILITY_FOR_MATCH_TTL_MS,
   );
-  return data;
 }

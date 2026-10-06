@@ -1,13 +1,12 @@
 /**
- * Which caches a write to each kind of club data can make stale. Only the
- * Worker's own writes are announced: the Airtable webhook that also drove
- * these went with Airtable, and hkha-sync writes Postgres directly (the
- * Stats summary keys itself on the data instead, clubStats.ts).
+ * Which caches a write to each kind of club data can make stale, among
+ * those NOT kept under the cache versions. The reference data, matches,
+ * match cards, answers, rules, season index and per-match player lists are
+ * keyed on cache_versions (cache.ts getVersioned), which every write moves,
+ * the Worker's and hkha-sync's alike, so they need nothing here.
  *
  * Everything named is dropped in this isolate (and a Stats summary in KV
- * too): the cached reads and the structures derived from them (season
- * index, per-match player lists, calendar feeds, the 25 s poll cache), which
- * are rebuilt from fresh reads.
+ * too) and rebuilt from fresh reads.
  */
 import { invalidateShared } from "./cache";
 import type { Env } from "./env";
@@ -21,7 +20,6 @@ interface Rule {
 const INVALIDATION = {
   people: {
     keys: [
-      "club-reference",
       "ranking:active",
       "ranking:inactive",
       MEMBERSHIP_RECORDS_KEY,
@@ -30,23 +28,24 @@ const INVALIDATION = {
       WAITING_ON_KEY,
     ],
     // my-tasks: a member's player-page banner, gone once their form is in.
-    prefixes: ["player-by-email:", "players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
+    prefixes: ["calendar:", "ranking-events:", "my-tasks:"],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  // Appearances feed eligibility and play-up counts. The current Stats
-  // summary needs nothing here: it is keyed on match_cards.updated_at.
+  // Appearances feed eligibility and play-up counts: the match cards, season
+  // index and per-match lists are keyed on the cache versions, and so is
+  // the current Stats summary. Only the calendar feeds remain.
   matchCards: {
-    prefixes: ["match-cards:", "players-for-match:", "season-index:", "calendar:"],
+    prefixes: ["calendar:"],
   },
-  // Coaches, captains and squad sizes: the roster, coach access and every
-  // per-match list built on them.
+  // Coaches, captains and squad sizes: the roster, the teams and every
+  // per-match list are keyed on the teams / team_people versions (and coach
+  // access is read afresh at sign-in). Only the calendar feeds remain.
   teams: {
-    keys: ["club-reference", "active-teams"],
-    prefixes: ["players-for-match:", "season-index:", "calendar:"],
+    prefixes: ["calendar:"],
   },
   // Who holds an office: section access, and the boards that name the
   // signing officers and sponsors.
@@ -54,13 +53,8 @@ const INVALIDATION = {
     // (Sign-in reads offices afresh every request: auth_context.)
     keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  // The Men's Convenor's suspensions (discipline.ts): the open ones
-  // (seasonContext.ts MANUAL_SUSPENSIONS_KEY) and what eligibility built
-  // from them.
-  suspensions: {
-    keys: ["manual-suspensions"],
-    prefixes: ["players-for-match:", "season-index:"],
-  },
+  // (The Men's Convenor's suspensions, and what eligibility builds from
+  // them, are keyed on the suspensions cache version: nothing to drop.)
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */
@@ -83,6 +77,3 @@ export const invalidateTeams = (env: Env) => invalidate(env, "teams");
 
 /** After an office changes hands or is edited. */
 export const invalidateOffices = (env: Env) => invalidate(env, "offices");
-
-/** After a write to suspensions. */
-export const invalidateSuspensions = (env: Env) => invalidate(env, "suspensions");

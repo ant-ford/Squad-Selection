@@ -1,6 +1,6 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
+import { getVersioned, invalidateCache, invalidateShared } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
@@ -21,7 +21,7 @@ export interface ReferenceData {
 export const UNRANKED_TEAM_RANK = 99;
 
 export async function getReferenceData(env: Env): Promise<ReferenceData> {
-  return getShared<ReferenceData>(env, "club-reference", async () => {
+  return getVersioned<ReferenceData>(env, "club-reference", ["people", "teams", "team_people"], async () => {
     const [teams, players] = await Promise.all([
       teamsRepo(env).listActive(),
       people(env).listActive(),
@@ -45,7 +45,7 @@ const REFERENCE_TTL_MS = 10 * 60 * 1000;
 
 /** The Active teams alone (~3 KB), for screens that need no players list. */
 export async function getActiveTeams(env: Env): Promise<Team[]> {
-  return getShared<Team[]>(env, "active-teams", () => teamsRepo(env).listActive(), REFERENCE_TTL_MS);
+  return getVersioned<Team[]>(env, "active-teams", ["teams", "team_people"], () => teamsRepo(env).listActive(), REFERENCE_TTL_MS);
 }
 
 /*
@@ -85,9 +85,6 @@ export const STATEMENT_RECORDS_KEY = "statement-records:v2";
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";
 
-/** An access decision follows a correction made outside the Worker within a minute. */
-const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
-
 function playerByEmailKey(email: string): string {
   return `player-by-email:${normalizeEmail(email)}`;
 }
@@ -103,15 +100,13 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
 }
 
 /**
- * Fan-out for a write that changes club reference data (team rosters,
- * coach links, ability/rank fields) - every read built on top of
- * getReferenceData/getActiveTeams or a per-match player list would
- * otherwise keep serving the pre-write snapshot.
+ * Was the fan-out after a write to club reference data. The reference
+ * data, the teams and the per-match player lists are now kept under the
+ * cache versions (cache.ts getVersioned), which the write itself moves, so
+ * there is nothing to drop. Kept, empty, for availability.ts until the
+ * set_availability work replaces that path.
  */
-export async function invalidateReferenceData(env: Env): Promise<void> {
-  invalidateCachePrefix("players-for-match:");
-  await invalidateShared(env, ["club-reference", "active-teams"]);
-}
+export async function invalidateReferenceData(_env: Env): Promise<void> {}
 
 /**
  * People-record lookup by email, cached. Every caller, including the
@@ -126,12 +121,7 @@ export async function getPlayerByEmail(
   if (opts?.fresh) {
     return lookupPlayerByEmail(env, email);
   }
-  return getShared<Player | null>(
-    env,
-    playerByEmailKey(email),
-    () => lookupPlayerByEmail(env, email),
-    PLAYER_BY_EMAIL_TTL_MS,
-  );
+  return getVersioned<Player | null>(env, playerByEmailKey(email), ["people"], () => lookupPlayerByEmail(env, email));
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
@@ -141,17 +131,15 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
 /**
  * Availability exceptions for one or more seasons.
  *
- * Cached for five minutes, which is fine for the aggregate views but NOT for
- * a player looking at their own answer. The cache lives in the memory of one
- * Worker isolate, and Cloudflare runs many: a write invalidates the cache on
- * whichever isolate served it, and says nothing to the others. So a player
- * could set Maybe, tap Available, and have the next request land on an
- * isolate still holding a five-minute-old copy - which showed Maybe again.
- * From their side the status simply would not change.
+ * Kept under the availability_exceptions and matches versions (cache.ts
+ * getVersioned). It used to be a plain five-minute copy per isolate, which
+ * a write cleared only on the isolate that took it: a player could tap
+ * Available and be shown Maybe again by another isolate. A tap now moves
+ * the version, so every isolate reads afresh on its next request, and the
+ * player sees their own answer.
  *
- * Pass { fresh: true } where read-your-own-write matters. It skips the cache
- * entirely rather than trying to invalidate across isolates, which an
- * in-memory cache cannot do.
+ * { fresh: true } still skips the cache, for a write path that must read
+ * what is there this instant.
  */
 export async function getExceptionsForSeasons(
   env: Env,
@@ -164,7 +152,8 @@ export async function getExceptionsForSeasons(
     return availabilityExceptions(env).listForSeasons(uniqueSeasons);
   };
   if (opts?.fresh) return load();
-  return getShared<AvailabilityException[]>(env, cacheKey, load, EXCEPTIONS_TTL_MS);
+  // The season of an answer is its match's: both tables' versions.
+  return getVersioned<AvailabilityException[]>(env, cacheKey, ["availability_exceptions", "matches"], load, EXCEPTIONS_TTL_MS);
 }
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;

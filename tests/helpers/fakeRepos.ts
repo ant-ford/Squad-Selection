@@ -12,10 +12,12 @@ import * as membershipEventsModule from "../../worker/src/data/membershipEvents"
 import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import * as authContextModule from "../../worker/src/authContext";
+import * as cacheVersionsModule from "../../worker/src/cacheVersions";
+import { noteRequestWrite } from "../../worker/src/requestContext";
 import type { AuthContext } from "../../worker/src/authContext";
 import type { AuthorizedUser } from "../../worker/src/auth";
 import { signedIn } from "./factories";
-import { parseCacheVersions } from "../../worker/src/cacheVersions";
+import { CACHE_VERSION_KEYS, parseCacheVersions, type CacheVersions } from "../../worker/src/cacheVersions";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
   APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
@@ -542,7 +544,24 @@ function buildRepos(s: FakeState): FakeRepos {
 }
 
 /** Wraps every method so the call is logged. */
-function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]): T {
+/** A repository method that only reads; anything else is a write. */
+const READ_METHOD = /^(get|list|find|count|read|search|load|has|is)/;
+
+/**
+ * The fakes' cache versions (cache_versions): one counter for every table,
+ * moved by every repository write, as the database's triggers move theirs.
+ * So a value cached under the versions is rebuilt after any write.
+ */
+let fakeVersion = 1;
+export function fakeVersions(): CacheVersions {
+  return parseCacheVersions(Object.fromEntries(CACHE_VERSION_KEYS.map((k) => [k, fakeVersion])));
+}
+function onWrite(): void {
+  fakeVersion++;
+  noteRequestWrite();
+}
+
+function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[], written?: () => void): T {
   const out: Record<string, unknown> = {};
   for (const [method, fn] of Object.entries(target)) {
     out[method] = (...raw: unknown[]) => {
@@ -557,7 +576,15 @@ function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]
         logged = args;
       }
       calls.push({ repo, method, args: logged });
-      return (fn as (...a: unknown[]) => unknown)(...args);
+      const result = (fn as (...a: unknown[]) => unknown)(...args);
+      if (written && !READ_METHOD.test(method)) {
+        // After the write lands, as a database write would.
+        return Promise.resolve(result).then((value) => {
+          written();
+          return value;
+        });
+      }
+      return result;
     };
   }
   return out as T;
@@ -578,7 +605,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
   // swap the arrays without re-installing.
   const live = buildRepos(state);
   const repos = Object.fromEntries(
-    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls)]),
+    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls, onWrite)]),
   ) as unknown as FakeRepos;
 
   const spies = [
@@ -596,6 +623,8 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
     // auth.ts reads the signed-in person through auth_context: answered from the same state.
     vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
+    // A request without sign-in reads the versions: the fakes' counter.
+    vi.spyOn(cacheVersionsModule, "readCacheVersions").mockImplementation(async () => fakeVersions()),
   ];
 
   const handle: FakeReposHandle = {
@@ -689,7 +718,7 @@ export function authContextFrom(s: FakeState, email: string): AuthContext {
   const want = normalizeEmail(email);
   const rows = s.people.filter((p) => typeof p.email === "string" && normalizeEmail(p.email) === want);
   const p = rows.find((r) => r.active) ?? rows[0];
-  const versions = parseCacheVersions({});
+  const versions = fakeVersions();
   if (!p) {
     return {
       person: null, isTeamCoach: false, coachTeams: [], teamSectionCaptain: false, allTeamNames: [], captainTeams: [],

@@ -39,6 +39,20 @@ export interface RequestContext {
   personId?: string;
   /** The database's cache versions, once this request has read them (auth.ts). */
   versions?: CacheVersions;
+  /** The one read of the versions on a request without sign-in (cache.ts requestVersions). */
+  versionsRead?: Promise<CacheVersions | null>;
+}
+
+/**
+ * The request has written to the database (data/supabase.ts): the versions
+ * it read before are behind its own write, so they are read again before
+ * anything else is cached under them.
+ */
+export function noteRequestWrite(): void {
+  const context = storage.getStore();
+  if (!context) return;
+  context.versions = undefined;
+  context.versionsRead = undefined;
 }
 
 /** Remembers the error a 5xx answer was made from (index.ts), for error_log. */

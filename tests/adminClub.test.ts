@@ -129,7 +129,7 @@ describe("POST /api/admin/people (a new office holder)", () => {
     const calls = fake({ "rpc/admin_create_person": { status: "ok", id: "uuid-new" } });
     expect(await createOfficeHolder(env, captain, { preferredName: " Pat ", surname: "Lam", email: " Pat.Lam@Example.TEST " })).toEqual({ ok: true, id: "uuid-new" });
     expect(calls[0].body).toEqual({ p: { preferredName: "Pat", givenNames: null, surname: "Lam", email: "pat.lam@example.test" }, p_actor: "recCAPTAIN" });
-    expect(mocks.invalidateShared.mock.calls[0][2]).toContain("player-by-email:");
+    expect(mocks.invalidateShared.mock.calls[0][2]).toContain("my-tasks:");
   });
 
   it("is 409 EMAIL_TAKEN for an email someone already has", async () => {
@@ -174,15 +174,15 @@ describe("teams", () => {
     expect(() => parseTeamChange({ sectionCaptainIds: ["recA1"] })).toThrow(/Nothing/);
   });
 
-  it("saves through admin_save_team and drops the team caches only when something changed", async () => {
+  it("saves through admin_save_team and drops what it can only when something changed (the rest is keyed on the cache versions)", async () => {
     let calls = fake({ "rpc/admin_save_team": { status: "ok", changed: ["coach"] } });
     expect(await saveTeam(env, captain, "recT1", { coachIds: ["recA1"] })).toEqual({ ok: true, changed: ["coach"] });
     expect(calls[0].body).toEqual({ p_team: "recT1", p_actor: "recCAPTAIN", p: { coaches: ["recA1"] } });
-    expect(invalidatedKeys()).toEqual(expect.arrayContaining(["club-reference", "active-teams"]));
+    expect(mocks.invalidateShared.mock.calls.flatMap((c) => c[2] as string[])).toContain("calendar:");
     mocks.invalidateShared.mockClear();
     calls = fake({ "rpc/admin_save_team": { status: "ok", changed: [] } });
     await saveTeam(env, captain, "recT1", { targetSquadSize: 14 });
-    expect(invalidatedKeys()).toEqual([]);
+    expect(mocks.invalidateShared).not.toHaveBeenCalled();
   });
 });
 

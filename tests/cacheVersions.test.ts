@@ -8,18 +8,18 @@ import { newRequestStats, runWithRequestContext } from "../worker/src/requestCon
 const env = { ...SUPABASE_TEST_ENV } as Env;
 afterEach(() => vi.unstubAllGlobals());
 
-/** The cache_versions migration's text (the newest one, if ever redefined). */
+/** Every migration that adds cache versions (the table's own, and later keys), joined. */
 function migration(): string {
   const dir = "supabase/migrations";
-  const file = readdirSync(dir).filter((f) => f.endsWith("_cache_versions.sql")).sort().pop();
-  if (!file) throw new Error("no cache_versions migration");
-  return readFileSync(`${dir}/${file}`, "utf8");
+  const files = readdirSync(dir).filter((f) => /_cache_versions(_[a-z_]+)?\.sql$/.test(f)).sort();
+  if (files.length === 0) throw new Error("no cache_versions migration");
+  return files.map((f) => readFileSync(`${dir}/${f}`, "utf8")).join("\n");
 }
 
 describe("cache versions", () => {
-  it("the Worker's keys are exactly the rows the migration seeds", () => {
-    const seeded = /insert into public\.cache_versions \(key\) values([\s\S]*?);/.exec(migration())?.[1] ?? "";
-    const keys = [...seeded.matchAll(/\('([a-z_]+)'\)/g)].map((m) => m[1]);
+  it("the Worker's keys are exactly the rows the migrations seed", () => {
+    const keys = [...migration().matchAll(/insert into public\.cache_versions \(key\) values([\s\S]*?);/g)]
+      .flatMap((m) => [...m[1].matchAll(/\('([a-z_]+)'\)/g)].map((k) => k[1]));
     expect([...keys].sort()).toEqual([...CACHE_VERSION_KEYS].sort());
   });
 
