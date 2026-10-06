@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Player } from '@shared/schema/domainTypes';
 import { POS_SHORT } from '@/lib/format';
-import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto, thumbOf } from '@/lib/defaultPhoto';
 import { abilityBadgeStyle } from '@/lib/abilityColour';
 import { nameOf, shortStage } from '@/lib/rankingModel';
 import { toneClasses } from '@/lib/statusTone';
@@ -103,7 +103,7 @@ export function RankingRow(
         className="shrink-0 rounded-full overflow-hidden border border-border"
         aria-label={player.photo ? `Photo of ${name}` : name}
       >
-        <img src={player.photo || DEFAULT_PHOTO} alt="" className="h-9 w-9 rounded-full object-cover" onError={fallBackToDefaultPhoto} />
+        <img src={thumbOf(player.photo) || DEFAULT_PHOTO} alt="" className="h-9 w-9 rounded-full object-cover" loading="lazy" onError={fallBackToDefaultPhoto} />
       </button>
 
       <div className="w-7 text-center shrink-0">

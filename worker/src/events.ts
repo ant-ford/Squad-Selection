@@ -20,7 +20,7 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, inList } from "./data/supabase";
-import { fileLink } from "./data/supabase/files";
+import { fileLink, photoLink } from "./data/supabase/files";
 import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
 import { eventRights, managesEvent, type EventRights } from "./eventAccess";
 import { getChairmanDirectory, getDirectoryPerson } from "./chairman";
@@ -254,7 +254,7 @@ async function posterLinks(env: Env, eventIds: string[]): Promise<Record<string,
   const newest: Record<string, string> = {};
   for (const f of rows) newest[f.event_id] ??= f.id;
   const out: Record<string, string> = {};
-  await Promise.all(Object.entries(newest).map(async ([eventId, fileId]) => (out[eventId] = await fileLink(env, fileId))));
+  await Promise.all(Object.entries(newest).map(async ([eventId, fileId]) => (out[eventId] = await photoLink(env, fileId))));
   return out;
 }
 
@@ -736,7 +736,7 @@ export async function uploadPoster(env: Env, user: AuthorizedUser, id: string, b
     await d.remove("files", `id=${inList(old.map((o) => o.id))}`);
     await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
   }
-  return { url: await fileLink(env, file.id) };
+  return { url: await photoLink(env, file.id) };
 }
 
 /** Everyone's answers, and who hasn't answered yet. */

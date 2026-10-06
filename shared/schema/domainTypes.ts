@@ -27,8 +27,13 @@ export interface Player {
   rankUpdatedAt?: string;
   status?: string;
   applicantStage?: string;
-  /** People.Photo — first attachment URL. */
+  /**
+   * People.Photo - a signed link, set only by a screen that shows it (the
+   * ranking). The repositories return photoFileId instead.
+   */
   photo?: string;
+  /** The photo's files.id, for signing a link where it's shown (Worker only). */
+  photoFileId?: string;
   /** People."Sports Background / Involvement" — applicant Hockey CV. */
   sportsBackground?: string;
   /** People."Selection Comments/Coach Requests" — free-text coach notes. */
