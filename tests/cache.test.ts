@@ -205,16 +205,18 @@ describe("availability poll cache", () => {
     expect(exceptionFetches()).toBe(afterFirst);
   });
 
-  it("is invalidated by an availability write so the next poll is fresh", async () => {
-    await getAvailabilityForMatch(ENV, M4);
+  it("is rebuilt after an availability write, because the write moves the version", async () => {
+    // As index.ts runs requests: the versions come from the (fake) database,
+    // whose counters every repository write moves, as the triggers do.
+    const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
+    await request(() => getAvailabilityForMatch(ENV, M4));
     const afterRead = exceptionFetches();
-    await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" });
-    await getAvailabilityForMatch(ENV, M4);
-    // One extra read: the invalidated post-write poll goes to the database
-    // again. The write itself reads nothing here - its read-modify-write
-    // happens inside set_availability, in the database.
+    await request(() => setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" }));
+    const r = await request(() => getAvailabilityForMatch(ENV, M4));
+    // One extra read: the post-write poll, under the new version. The write
+    // itself reads nothing here - its read-modify-write happens inside
+    // set_availability, in the database - and clears nothing.
     expect(exceptionFetches()).toBe(afterRead + 1);
-    const r = await getAvailabilityForMatch(ENV, M4);
     expect(r.exceptions[0]).toMatchObject({ playerId: BOB, status: "Unavailable" });
   });
 });

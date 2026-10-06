@@ -18,6 +18,7 @@ import { invalidateAll } from "../worker/src/cache";
 import { newRequestStats, runWithRequestContext, type RequestStats } from "../worker/src/requestContext";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
 import { recId } from "./helpers/factories";
+import { parseCacheVersions } from "../worker/src/cacheVersions";
 
 const ENV = { ...SUPABASE_TEST_ENV } as any;
 const ALICE = recId("Alice");
@@ -51,16 +52,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * One request after sign-in, which hands the request the cache versions
+ * (auth_context): versioned reads need no read of their own.
+ */
+const SIGNED_IN_VERSIONS = parseCacheVersions({});
 async function counted<T>(fn: () => Promise<T>): Promise<{ out: T; stats: RequestStats }> {
   const stats = newRequestStats();
-  const out = await runWithRequestContext({ stats }, fn);
+  const out = await runWithRequestContext({ stats, versions: SIGNED_IN_VERSIONS }, fn);
   return { out, stats };
 }
+/** The player lookup an earlier request on this isolate left cached under the same versions. */
+const warmPlayerLookup = () => counted(() => getPlayerByEmail(ENV, "alice@hkfc.com"));
 
 describe("an availability tap on the wire", () => {
   it("is one call of under 2 KB after sign-in", async () => {
-    // Sign-in (auth.ts requireAuthorizedUser) looks the player up by email, and the tap reuses it.
-    await getPlayerByEmail(ENV, "alice@hkfc.com");
+    await warmPlayerLookup();
     const before = pg.calls.length;
     const { out, stats } = await counted(() =>
       setMyAvailability(ENV, { email: "alice@hkfc.com", matchId: M1, status: "Unavailable", notes: "Work" }),
@@ -90,7 +97,7 @@ describe("an availability tap on the wire", () => {
   });
 
   it("a whole day is one call after sign-in", async () => {
-    await getPlayerByEmail(ENV, "alice@hkfc.com");
+    await warmPlayerLookup();
     const before = pg.calls.length;
     const { out, stats } = await counted(() =>
       setMyAvailabilityForDate(ENV, { email: "alice@hkfc.com", date: "2026-10-10", status: "Unavailable" }),

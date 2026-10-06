@@ -2,9 +2,8 @@ import { people } from "./data/people";
 import { availabilityExceptions, type AvailabilityOutcome } from "./data/availabilityExceptions";
 import { SupabaseError } from "./data/supabase";
 import type { Env } from "./env";
-import { getPlayerByEmail, invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
+import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
-import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 
 type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
 type AvailabilityStatus = ExceptionStatus;
@@ -29,24 +28,11 @@ function notFound(err: unknown): unknown {
   return new HttpError("Player not found or inactive", 404);
 }
 
-/**
- * Invalidation fan-out for availability writes, in this isolate (none of
- * these keys are in KV). Other isolates see the change when their copies
- * expire.
- */
-async function invalidateAvailabilityCaches(env: Env, matchIds: string[], seasons: string[]) {
-  for (const matchId of matchIds) {
-    invalidateCachePrefix(`players-for-match:${matchId}:`);
-    invalidateCache(`availability:${matchId}`);
-  }
-  for (const season of new Set(seasons)) {
-    invalidateCache(`season-index:${season}`);
-  }
-  invalidateCachePrefix("calendar:player:");
-
-  // A coach on this isolate was otherwise shown the answer this write replaced.
-  await invalidateShared(env, [], ["exceptions:"]);
-}
+// Nothing is cleared after a write. Every read built on availability is
+// kept under the cache versions (cache.ts getVersioned), and the database
+// moves the availability_exceptions version in the same transaction as the
+// answer, so every isolate's next request reads afresh; this request forgets
+// its versions on the write (requestContext.ts noteRequestWrite).
 
 /**
  * Says what this write actually saw and did. Setting yourself Available is
@@ -120,7 +106,6 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     throw notFound(err);
   }
   logWrite(input, outcome);
-  await invalidateAvailabilityCaches(env, input.matchIds, outcome.seasons);
   return { success: true, updated: outcome.updated, results: outcome.results };
 }
 
@@ -230,10 +215,7 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
     throw notFound(err);
   }
   const matchIds = outcome.results.map((r) => r.matchId);
-  if (matchIds.length > 0) {
-    logWrite({ playerId: user.id, matchIds, status: input.status }, outcome);
-    await invalidateAvailabilityCaches(env, matchIds, outcome.seasons);
-  }
+  if (matchIds.length > 0) logWrite({ playerId: user.id, matchIds, status: input.status }, outcome);
   return { success: true, updated: outcome.results.length, results: outcome.results };
 }
 // ---------------------------------------------------------------------
@@ -274,14 +256,10 @@ export async function setPlayerOptInOnly(
     `[Availability Audit] optInOnly=${input.optInOnly} player=${input.playerId} coach=${input.coachEmail}`,
   );
 
-  // The flag changes the default answer on every unanswered fixture, so
-  // every derived view of this player has to be rebuilt: the roster it is
-  // read from, the coach sheets, the season index and the calendar feeds.
-  if (typeof player.email === "string") invalidatePlayerByEmail(player.email, env);
-  invalidateCachePrefix("players-for-match:");
-  invalidateCachePrefix("season-index:");
-  invalidateCachePrefix("calendar:");
-  await invalidateReferenceData(env);
+  // The flag changes the default answer on every unanswered fixture. Every
+  // view built on it (the roster, the coach sheets, the season index, the
+  // calendar feeds) is kept under the people version, which this update
+  // moves: nothing to clear.
 
   return { success: true, playerId: input.playerId, optInOnly: input.optInOnly };
 }
