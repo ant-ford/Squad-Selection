@@ -11,9 +11,9 @@ import { installClientErrorReporting } from './lib/clientErrors';
 installClientErrorReporting();
 
 // A chunk that fails to load almost always means this client is holding an
-// index.html from a previous deploy. Reloading on its own does not help: the
-// service worker precache answers the next load identically. recoverFromStaleDeploy
-// drops the worker and its caches first, and only ever runs once per tab.
+// index.html from a previous deploy. recoverFromStaleDeploy reloads, and if
+// the same thing happens again drops the service worker and its caches before
+// reloading; it never goes further than that in one tab.
 window.addEventListener('vite:preloadError', (event) => {
   event.preventDefault();
   void recoverFromStaleDeploy();
