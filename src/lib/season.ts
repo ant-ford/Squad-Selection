@@ -1,5 +1,5 @@
 import { hkDateKey } from '@shared/hkDateKey';
-import { seasonStartYear } from '@shared/membershipInsights';
+import { seasonStartYear } from '@shared/season';
 
 /**
  * The season (July to June) as it stands in Hong Kong, e.g. "2026–27".

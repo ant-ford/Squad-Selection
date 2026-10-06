@@ -5,22 +5,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { ApiError } from '@/lib/apiClient';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { moveKit } from '@/api/kit';
-import type { KitBoard, KitMoveResult, KitPerson } from '@shared/kit';
+import type { KitBoard, KitPerson } from '@shared/kit';
+import { reportMove } from '@/lib/kitMoves';
 import { PersonPicker, PlaceBadge, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
-
-/** "Handed 20 to Ben. Not moved: #12 already with Sam, #40 still on order." */
-export function reportMove(result: KitMoveResult, toName: string) {
-  const n = result.moved.length;
-  if (n > 0) toast.success(`${n} kit${n === 1 ? '' : 's'} now with ${toName}`);
-  const o = result.offered?.length ?? 0;
-  if (o > 0) toast.success(`${toName} will be asked to confirm they've got ${o === 1 ? 'it' : `all ${o}`}`);
-  if (result.conflicts.length > 0) {
-    toast.warning(
-      `Not moved: ${result.conflicts.map((c) => `${c.shirtNo !== null ? `#${c.shirtNo}` : 'a set'} ${c.reason}`).join(', ')}`,
-      { duration: 10_000 },
-    );
-  }
-}
 
 /**
  * Hand a batch of kit to whoever is collecting: a captain taking their
