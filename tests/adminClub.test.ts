@@ -103,6 +103,13 @@ describe("offices", () => {
     expect(invalidatedKeys()).toEqual([]);
   });
 
+  it("is 409 ONE_HOLDER for a second Membership Officer or Chairman without a handover", async () => {
+    fake({ "rpc/admin_save_office": { status: "conflict", code: "ONE_HOLDER" } });
+    await expect(addOffice(env, captain, { office: "sectionChair", personId: "recP1" })).rejects.toMatchObject({
+      status: 409, code: "ONE_HOLDER", message: expect.stringContaining("one holder at a time"),
+    });
+  });
+
   it("is 409 LAST_SECTION_CAPTAIN when retiring the last one", async () => {
     const calls = fake({ "rpc/admin_save_office": { status: "conflict", code: "LAST_SECTION_CAPTAIN" } });
     await expect(editOffice(env, captain, "recO1", { status: "Retired" })).rejects.toMatchObject({ status: 409, code: "LAST_SECTION_CAPTAIN" });

@@ -3,7 +3,9 @@
  * who manage every office, sponsors included - owner, 6 Oct 2026):
  *
  *   GET  /api/admin/offices         every office row, Active first
- *   POST /api/admin/offices         a new holder (optionally handing one over)
+ *   POST /api/admin/offices         a new holder (optionally handing one over;
+ *                                   the Membership Officer and Chairman must:
+ *                                   one holder at a time, 409 ONE_HOLDER)
  *   POST /api/admin/offices/:id     designation, office email, Active/Retired
  *   POST /api/admin/people          add an office holder who isn't in People
  *   GET  /api/admin/teams           coaches, captains, target size, Section Captain links
@@ -39,6 +41,7 @@ const ROLE_ORDER = Object.values(OFFICE_ROLES);
 
 const MESSAGES = {
   ALREADY_HOLDS: "They already hold this office.",
+  ONE_HOLDER: "This office has one holder at a time. Choose who they take over from.",
   LAST_SECTION_CAPTAIN: "There must always be a Section Captain. Add the new one first.",
   EMAIL_TAKEN: "Someone already has this email. Find them by name instead.",
   NOT_FOUND: "Not found. Reload and try again.",
