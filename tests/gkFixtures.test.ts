@@ -207,11 +207,14 @@ describe("getMyFixtures - special goalkeeper view", () => {
     expect(m4.availabilityExceptionId).toBe(E1);
   });
 
-  it("fetches the player's own answers in one read - never once per fixture, never the season's", async () => {
+  it("takes the player's own answers from their season context - never once per fixture, no read of their own", async () => {
     await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    expect(db.callsTo("availabilityExceptions", "listForPlayer")).toHaveLength(1);
-    expect(db.callsTo("availabilityExceptions", "listForPlayer")[0].args[0]).toBe(P2);
-    expect(exceptionFetches()).toBe(0);
+    expect(db.callsTo("availabilityExceptions", "listForPlayer")).toHaveLength(0);
+    // One season_context call per season, not per fixture (the fakes answer it
+    // through the season's answers): the current season, read up front, and
+    // the season these test fixtures carry.
+    expect(exceptionFetches()).toBe(2);
+    expect(db.callsTo("availabilityExceptions", "listForMatches")).toHaveLength(0);
   });
 
   it("does not change the normal player experience", async () => {
