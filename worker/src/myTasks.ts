@@ -79,7 +79,7 @@ const INVITED_STAGE = "2. Section Captain Invitation";
 
 /**
  * A minute per person in this isolate, and dropped at once when People
- * changes (airtableWebhook.ts), so a banner goes soon after the form is in.
+ * changes (invalidation.ts), so a banner goes soon after the form is in.
  */
 const MY_RECORD_TTL_MS = 60 * 1000;
 const WAITING_ON_TTL_MS = 5 * 60 * 1000;

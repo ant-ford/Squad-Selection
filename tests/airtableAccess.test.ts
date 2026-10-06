@@ -5,24 +5,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 //   - field projection: People is a 300-field CRM, the app reads 27 of them
 //   - previous-season Match Cards narrowed to carded appearances
 //   - "Show past" bounded to two seasons instead of every result ever
-//   - webhook-backed TTLs, with the in-isolate copy capped regardless
+//   - the in-isolate copy of a shared entry capped at a minute
 //   - prefix invalidation handed to ctx.waitUntil
 //   - lookups the auth path makes on every request shared through KV
-//   - the Airtable webhook route
 //   - Server-Timing on every response
 // ---------------------------------------------------------------------------
 
 import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { fakeKv } from "./helpers/kv";
-import { getShared, invalidateAll, invalidateShared, rawReadTtl, WEBHOOK_BACKED_TTL_MS } from "../worker/src/cache";
+import { getShared, invalidateAll, invalidateShared } from "../worker/src/cache";
 import { resetMissingFieldCache } from "../worker/src/airtable";
-import { getOfficerLinks, getPlayerByEmail, getReferenceData, getTeamCoachLinks, OFFICER_LINKS_KEY } from "../worker/src/reference";
+import { getOfficerLinks, getPlayerByEmail, getReferenceData, getTeamCoachLinks } from "../worker/src/reference";
 import { getAllMatches, getSeasonContext } from "../worker/src/seasonContext";
 import { getPlayedMatches, getScheduledMatches, SCHEDULED_MATCHES_KEY } from "../worker/src/fixtures";
 import { getRankingEvents, RANKING_EVENTS_FIELDS } from "../worker/src/rankingEvents";
 import { PEOPLE_FIELDS, MATCHCARDS_FIELDS, OFFICER_FIELDS } from "../shared/schema/fieldMaps";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
-import { handleAirtableWebhook, signWebhookBody, webhookConfigured, WEBHOOK_ROUTE } from "../worker/src/airtableWebhook";
 import worker from "../worker/src/index";
 
 const ENV = {
@@ -186,9 +184,9 @@ describe("shared cache lifetimes", () => {
   // Selections live in match records. When an invalidation fails - the KV
   // quota ran out on 2026-09-23 - a six-hour copy showed the coach dashboard
   // 0/14 for a squad saved hours before. These reads stay at ten minutes.
-  it("keeps the reads that carry selections short, even with the webhook set up", async () => {
+  it("keeps the reads that carry selections short", async () => {
     const kv = fakeKv();
-    const env = { ...ENV, AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x", CACHE: kv };
+    const env = { ...ENV, CACHE: kv };
     await getScheduledMatches(env);
     await getAllMatches(env, THIS_SEASON);
     expect(kv.store.get(SCHEDULED_MATCHES_KEY)?.ttl).toBe(600);
@@ -202,51 +200,24 @@ describe("shared cache lifetimes", () => {
     expect(matches.map((m) => m.id)).not.toContain("stale");
   });
 
-  it("stretches the TTL only when BOTH webhook settings are present", () => {
-    expect(rawReadTtl({}, 600_000)).toBe(600_000);
-    // The half-configured states are the dangerous ones, and they are not
-    // hypothetical - the first real set-up stored the secret while the id
-    // was still commented out. Keying on the secret alone stretched every
-    // cache to six hours with no working route to invalidate it, which is
-    // worse than having no webhook at all.
-    expect(rawReadTtl({ AIRTABLE_WEBHOOK_SECRET: "x" }, 600_000)).toBe(600_000);
-    expect(rawReadTtl({ AIRTABLE_WEBHOOK_ID: "achTest" }, 600_000)).toBe(600_000);
-    expect(rawReadTtl({ AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x" }, 600_000)).toBe(
-      WEBHOOK_BACKED_TTL_MS,
-    );
-  });
-
-  // The two predicates must move together; this is what makes every
-  // partial set-up safe rather than merely currently-correct.
-  it("agrees with the route's own view of whether a webhook is configured", () => {
-    for (const env of [
-      {},
-      { AIRTABLE_WEBHOOK_SECRET: "x" },
-      { AIRTABLE_WEBHOOK_ID: "achTest" },
-      { AIRTABLE_WEBHOOK_ID: "achTest", AIRTABLE_WEBHOOK_SECRET: "x" },
-    ]) {
-      const stretched = rawReadTtl(env, 600_000) === WEBHOOK_BACKED_TTL_MS;
-      expect(stretched, `disagreement for ${JSON.stringify(env)}`).toBe(webhookConfigured(env as any));
-    }
-  });
-
   it("caps the in-isolate copy of a shared entry at a minute whatever KV's TTL is", async () => {
     vi.useFakeTimers();
     const kv = fakeKv();
     const env = { CACHE: kv };
     let fetches = 0;
     const fetcher = async () => { fetches++; return ["v"]; };
+    const sixHours = 6 * 60 * 60 * 1000;
 
-    await getShared(env, "k", fetcher, WEBHOOK_BACKED_TTL_MS);
-    expect(kv.store.get("k")?.ttl).toBe(WEBHOOK_BACKED_TTL_MS / 1000);
+    await getShared(env, "k", fetcher, sixHours);
+    expect(kv.store.get("k")?.ttl).toBe(sixHours / 1000);
     const readsAfterFirst = kv.reads.length;
 
     vi.advanceTimersByTime(30_000);
-    await getShared(env, "k", fetcher, WEBHOOK_BACKED_TTL_MS);
+    await getShared(env, "k", fetcher, sixHours);
     expect(kv.reads.length).toBe(readsAfterFirst);
 
     vi.advanceTimersByTime(31_000);
-    await getShared(env, "k", fetcher, WEBHOOK_BACKED_TTL_MS);
+    await getShared(env, "k", fetcher, sixHours);
     expect(kv.reads.length).toBe(readsAfterFirst + 1);
     expect(fetches).toBe(1);
   });
@@ -287,102 +258,15 @@ describe("shared cache lifetimes", () => {
   });
 });
 
-describe("Airtable webhook", () => {
-  const secret = btoa("webhook-mac-secret");
-  const configured = (kv: ReturnType<typeof fakeKv>) => ({
-    ...ENV,
-    CACHE: kv,
-    AIRTABLE_WEBHOOK_ID: "achTest",
-    AIRTABLE_WEBHOOK_SECRET: secret,
-  });
-
-  function ping(body: string, mac?: string): Request {
-    return new Request(`https://api.test${WEBHOOK_ROUTE}`, {
-      method: "POST",
-      body,
-      headers: mac ? { "X-Airtable-Content-MAC": mac } : {},
-    });
-  }
-
-  /** Airtable's base-level endpoints, which the table fake does not model. */
-  function stubWebhookApi(changedTableIds: string[]) {
-    const seen = { payloads: 0, refresh: 0 };
-    vi.stubGlobal("fetch", vi.fn((url: any, init?: any) => {
-      const u = String(url);
-      if (u.includes("/webhooks/achTest/payloads")) {
-        seen.payloads++;
-        const changedTablesById = Object.fromEntries(changedTableIds.map((id) => [id, {}]));
-        return Promise.resolve(new Response(JSON.stringify({ payloads: [{ changedTablesById }], cursor: 7, mightHaveMore: false }), { status: 200 }));
-      }
-      if (u.includes("/webhooks/achTest/refresh") && init?.method === "POST") {
-        seen.refresh++;
-        return Promise.resolve(new Response("{}", { status: 200 }));
-      }
-      return Promise.resolve(new Response("{}", { status: 404 }));
-    }));
-    return seen;
-  }
-
-  it("is not there until a webhook is configured", async () => {
-    const res = await handleAirtableWebhook(ping("{}"), ENV);
-    expect(res.status).toBe(404);
-  });
-
-  it("rejects a ping whose signature does not verify", async () => {
-    const kv = fakeKv();
-    const seen = stubWebhookApi(["tblAfY7xhjkcKXlGq"]);
-    const body = JSON.stringify({ base: { id: "appTest" }, webhook: { id: "achTest" }, timestamp: "t" });
-    expect((await handleAirtableWebhook(ping(body), configured(kv))).status).toBe(401);
-    expect((await handleAirtableWebhook(ping(body, "hmac-sha256=deadbeef"), configured(kv))).status).toBe(401);
-    expect(seen.payloads).toBe(0);
-  });
-
-  it("drops only the caches the changed tables feed, and remembers its cursor", async () => {
-    const kv = fakeKv();
-    await kv.put(`match-cards:${THIS_SEASON}`, "[]");
-    await kv.put("club-reference", "{}");
-    const seen = stubWebhookApi(["tblAfY7xhjkcKXlGq", "tblh2seXeKtmRmPpr"]); // Match Cards + Hockey Convenor (CRM, ignored)
-
-    const body = JSON.stringify({ base: { id: "appTest" }, webhook: { id: "achTest" }, timestamp: "t" });
-    const mac = `hmac-sha256=${await signWebhookBody(secret, body)}`;
-    const res = await handleAirtableWebhook(ping(body, mac), configured(kv));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ invalidated: ["Match Cards"] });
-
-    // Match Cards' prefix moved to a new generation (one write, no list);
-    // nothing else the ping did not touch was cleared.
-    expect(kv.writes.filter((k) => k.startsWith("cache-gen:"))).toEqual(["cache-gen:match-cards:"]);
-    expect(kv.store.has("club-reference")).toBe(true);
-    expect(JSON.parse(kv.store.get("airtable-webhook:cursor")!.value)).toBe(7);
-    await vi.waitFor(() => expect(seen.refresh).toBe(1));
-  });
-
-  it("drops the officer links when either officer table changes", async () => {
-    const kv = fakeKv();
-    await kv.put(OFFICER_LINKS_KEY, "{}");
-    await kv.put("club-reference", "{}");
-    stubWebhookApi(["tblfWkNsOIl3hrXAt"]); // Membership Officers
-
-    const body = JSON.stringify({ base: { id: "appTest" }, webhook: { id: "achTest" }, timestamp: "t" });
-    const mac = `hmac-sha256=${await signWebhookBody(secret, body)}`;
-    const res = await handleAirtableWebhook(ping(body, mac), configured(kv));
-    expect(await res.json()).toEqual({ invalidated: ["Membership Officers"] });
-    expect(kv.store.has(OFFICER_LINKS_KEY)).toBe(false);
-    expect(kv.store.has("club-reference")).toBe(true);
-  });
-
-  it("is routed by the Worker without a session", async () => {
-    const res = await worker.fetch(new Request(`https://api.test${WEBHOOK_ROUTE}`, { method: "POST", body: "{}" }), ENV);
-    expect(res.status).toBe(404);
-  });
-});
-
 describe("instrumentation", () => {
-  it("reports Airtable and cache work on every response", async () => {
-    const res = await worker.fetch(new Request("https://api.test/health?deep=1"), ENV);
+  it("reports data and cache work on every response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+    const env = { ...ENV, DATA_SUPABASE_URL: "https://data.supabase.test", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" };
+    const res = await worker.fetch(new Request("https://api.test/health?deep=1"), env);
     expect(res.status).toBe(200);
     const timing = res.headers.get("Server-Timing") || "";
-    expect(timing).toMatch(/airtable;dur=\d+;desc="calls=1 bytes=\d+ 429s=0"/);
+    expect(timing).toMatch(/airtable;dur=0;desc="calls=0 bytes=0 429s=0"/);
+    expect(timing).toMatch(/db;dur=\d+;desc="calls=1 bytes=2"/);
     expect(timing).toMatch(/cache;desc="hits=0 misses=1 kv=0"/);
     expect(timing).toMatch(/total;dur=\d+/);
     expect(res.headers.get("Timing-Allow-Origin")).toBe("https://app.test");
