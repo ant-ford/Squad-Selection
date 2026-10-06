@@ -147,6 +147,28 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
 }
 
 /**
+ * A Section Captain: linked as Section Captain on a team (the
+ * isSectionCaptain coach link) or holding the Section Captain office.
+ * Coaches, the Men's Convenor and the Assistant Director of Hockey are not.
+ */
+export function isSectionCaptainUser(user: Pick<AuthorizedUser, "isSectionCaptain" | "officerRoles">): boolean {
+  return user.isSectionCaptain || user.officerRoles.some((r) => r.office === "sectionCaptain");
+}
+
+/**
+ * Section Captains only: making players active or inactive (owner
+ * decision, 2026-10-06). 403 SECTION_CAPTAIN_REQUIRED otherwise, which,
+ * like COACH_ACCESS_REQUIRED, keeps them signed in.
+ */
+export async function requireSectionCaptain(request: Request, env: Env): Promise<AuthorizedUser> {
+  const user = await requireAuthorizedUser(request, env);
+  if (!isSectionCaptainUser(user)) {
+    throw new HttpError("Only Section Captains can do this.", 403, "SECTION_CAPTAIN_REQUIRED");
+  }
+  return user;
+}
+
+/**
  * The officers' sections of the app and the offices that open each one
  * (owner decision, 2026-09-25). Designation plays no part: any Active row in
  * one of the listed tables is enough.
@@ -171,6 +193,10 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *   club       - offices (sponsors included) and teams' coaches, captains
  *                and squad sizes: Section Captains (owner decision,
  *                2026-10-06).
+ *   dataChecks - records to put right (unlinked match cards, shared
+ *                Registered Names, re-registrations to review, incomplete
+ *                players, likely duplicates): the Men's Convenor and the
+ *                Section Captains.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -181,6 +207,9 @@ export const SECTION_OFFICES = {
   registration: ["hockeyConvenor"],
   people: ["membershipOfficer", "hockeyConvenor", "sectionCaptain"],
   club: ["sectionCaptain"],
+  dataChecks: ["hockeyConvenor", "sectionCaptain"],
+  // Suspensions: the Men's Convenor only (owner, 6 Oct 2026).
+  discipline: ["hockeyConvenor"],
 } as const satisfies Record<string, readonly Office[]>;
 
 export type Section = keyof typeof SECTION_OFFICES;

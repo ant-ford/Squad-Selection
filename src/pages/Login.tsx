@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { normalizeEmail } from '@shared/normalizeEmail';
 import { sendEmailErrorMessage, signInErrorMessage } from '@/lib/signInError';
+import { Turnstile, TURNSTILE_SITE_KEY, type TurnstileHandle } from '@/components/Turnstile';
 
 const CODE_LENGTH = 6;
 
@@ -41,6 +42,19 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const { loginWithEmail, verifyEmailOtp, user } = useAuth();
+  // The Turnstile token for the next send (null until Cloudflare has one).
+  // Not needed when Turnstile is off.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // A check that can't run must not leave the button stuck on "Checking...":
+  // the send goes ahead, and Supabase's refusal (if CAPTCHA is on) gets the
+  // "security check" message.
+  const [checkFailed, setCheckFailed] = useState(false);
+  const turnstile = useRef<TurnstileHandle>(null);
+  const waitingForCheck = !!TURNSTILE_SITE_KEY && !captchaToken && !checkFailed;
+  const onToken = (token: string | null) => {
+    setCaptchaToken(token);
+    if (token) setCheckFailed(false);
+  };
 
   // Post-login routing happens in one place: AuthGate unmounts Login the
   // instant the session arrives and renders the authenticated app (player
@@ -49,7 +63,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
   const sendEmail = async (): Promise<boolean> => {
     setSending(true);
     try {
-      await loginWithEmail(normalizeEmail(email), redirectTo);
+      await loginWithEmail(normalizeEmail(email), redirectTo, captchaToken ?? undefined);
       toast.success('Email sent! Use the link or enter the code below.');
       return true;
     } catch (err: unknown) {
@@ -58,6 +72,8 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
       return false;
     } finally {
       setSending(false);
+      // A token works once, sent or not: get the next one ready.
+      turnstile.current?.reset();
     }
   };
 
@@ -143,10 +159,10 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
               />
               <button
                 type="submit"
-                disabled={sending}
+                disabled={sending || waitingForCheck}
                 className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {sending ? 'Sending...' : 'Send Sign-In Email'}
+                {sending ? 'Sending...' : waitingForCheck ? 'Checking...' : 'Send Sign-In Email'}
               </button>
             </form>
             {/* Someone who already has a code — read on another device, or
@@ -224,7 +240,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={sending}
+                disabled={sending || waitingForCheck}
                 className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-60"
               >
                 {sending ? 'Sending...' : 'Resend email'}
@@ -232,6 +248,10 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
             </div>
           </>
         )}
+
+        <div className="mt-4 empty:hidden">
+          <Turnstile ref={turnstile} onToken={onToken} onError={() => setCheckFailed(true)} />
+        </div>
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Don't see the email? Please check your junk or spam folder.

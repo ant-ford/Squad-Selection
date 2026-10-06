@@ -6,6 +6,10 @@
  *   GET  /api/admin/people/:id                people section
  *   POST /api/admin/people/:id/membership     membership section
  *   POST /api/admin/people/:id/stage          membership section
+ *   GET  /api/admin/offices, /api/admin/teams club section (Section Captains)
+ *   POST /api/admin/offices, /offices/:id     club section
+ *   POST /api/admin/people                    club section (a new office holder)
+ *   POST /api/admin/teams/:id                 club section
  *
  * Each route checks its own section; the person page then shows only the
  * blocks the caller's offices open (people.ts canFor), and each save checks
@@ -16,6 +20,7 @@ import { requireSection } from "../auth";
 import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
 import { moveStage, saveMembership } from "./membership";
+import { addOffice, createOfficeHolder, editOffice, listOffices, listTeams, saveTeam } from "./club";
 
 export async function readBody(request: Request): Promise<Record<string, unknown>> {
   let body: unknown;
@@ -54,6 +59,22 @@ export async function adminRoute(request: Request, env: Env, url: URL): Promise<
     const user = await requireSection(request, env, "membership");
     const body = await readBody(request);
     return membership[2] === "membership" ? saveMembership(env, user, membership[1], body) : moveStage(env, user, membership[1], body);
+  }
+
+  // Offices and teams: Section Captains.
+  const office = pathname.match(/^\/api\/admin\/offices\/([A-Za-z0-9-]{3,64})$/);
+  const team = pathname.match(/^\/api\/admin\/teams\/([A-Za-z0-9-]{3,64})$/);
+  const club =
+    (method === "GET" && (pathname === "/api/admin/offices" || pathname === "/api/admin/teams")) ||
+    (method === "POST" && (pathname === "/api/admin/offices" || pathname === "/api/admin/people" || !!office || !!team));
+  if (club) {
+    const user = await requireSection(request, env, "club");
+    if (method === "GET") return pathname === "/api/admin/offices" ? listOffices(env) : listTeams(env);
+    const body = await readBody(request);
+    if (pathname === "/api/admin/offices") return addOffice(env, user, body);
+    if (pathname === "/api/admin/people") return createOfficeHolder(env, user, body);
+    if (office) return editOffice(env, user, office[1], body);
+    return saveTeam(env, user, team![1], body);
   }
   return undefined;
 }

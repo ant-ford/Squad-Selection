@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useChairmanDirectory, useMyProfile } from '@/lib/queries';
 import { logExport, type ExportKind } from '@/api/chairman';
 import { toCsv } from '@shared/csv';
+import { saveCsv } from '@/lib/saveCsv';
 import { hkDateKey } from '@shared/hkDateKey';
 import {
   ANY,
@@ -112,14 +113,7 @@ export default function EmailLists() {
         rows.push([p.name, e, p.membershipNo ?? '', p.values.status?.[0] ?? '', p.values.team?.[0] ?? '']);
       }
     }
-    const url = URL.createObjectURL(new Blob(['﻿', toCsv(rows)], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `hkfc-hockey-email-list-${hkDateKey(new Date().toISOString())}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    saveCsv(`hkfc-hockey-email-list-${hkDateKey(new Date().toISOString())}.csv`, toCsv(rows));
     exported('csv', addresses.length);
   };
 
