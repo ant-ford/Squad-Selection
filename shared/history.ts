@@ -76,6 +76,7 @@ export const FIELD_LABELS: Record<string, string> = {
   is_visiting_player: "Visiting player",
   active: "Active",
   review_progress: "Review progress",
+  commitments: "Commitment periods",
   hkha_registrations: "HKHA registration",
   suspensions: "Suspension",
   sponsored_by_kit_convenor_id: "Kit Convenor",

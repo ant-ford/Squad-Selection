@@ -12,7 +12,7 @@
 import type { Env } from "../env";
 import type { AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
-import { invalidatePeople } from "../invalidation";
+import { invalidateCommitments, invalidatePeople } from "../invalidation";
 import { CATEGORY_TYPES, MEMBER_TYPES } from "../../../shared/profile";
 import { isOpenStage, stageTargets } from "../../../shared/membershipStages";
 import { describeHolders, getNumberHolders } from "../membership";
@@ -22,6 +22,8 @@ import { readPerson } from "./people";
 interface UpdateResult {
   status: "ok";
   changed: string[];
+  /** Untouched commitment periods removed because new dates left them out (20261007010503). */
+  removedPeriods?: number;
 }
 
 /** The body's names and the People columns behind them. */
@@ -99,7 +101,7 @@ export async function saveMembership(
   actor: AuthorizedUser,
   personId: string,
   body: Record<string, unknown>,
-): Promise<{ ok: true; changed: string[] }> {
+): Promise<{ ok: true; changed: string[]; removedPeriods: number }> {
   requireSupabaseAdmin(env);
   const change = parseMembershipChange(body);
   const p = await readPerson(env, personId);
@@ -130,9 +132,11 @@ export async function saveMembership(
     { p_person: p.api_id, p_actor: actor.personId, p_action: "admin-membership", p_patch: change.patch, p_expect: change.expect },
     { messages: { NOT_FOUND: "Person not found." } },
   );
-  // Dates re-run the commitment periods (trigger); boards and statements read these.
+  // Dates re-run the commitment periods (trigger), and a correction removes
+  // untouched periods the new dates leave out; boards and statements read these.
   if (result.changed.length > 0) await invalidatePeople(env);
-  return { ok: true, changed: result.changed };
+  if (result.changed.some((c) => c === "join_date" || c === "commitment_end_date")) await invalidateCommitments(env);
+  return { ok: true, changed: result.changed, removedPeriods: result.removedPeriods ?? 0 };
 }
 
 const STAGE_CHANGED = "The stage changed while you had this open. Reload and try again.";

@@ -102,7 +102,7 @@ describe("POST /api/admin/people/:id/membership", () => {
   it("saves through admin_update_person with the expected values", async () => {
     const calls = fake({ people: [person()], rpc: { status: "ok", changed: ["category_type"] } });
     const res = await saveMembership(env, officer, "recP1", { categoryType: "Sports Debenture", expect: { categoryType: "Sports Preferred" } });
-    expect(res).toEqual({ ok: true, changed: ["category_type"] });
+    expect(res).toEqual({ ok: true, changed: ["category_type"], removedPeriods: 0 });
     expect(rpcCall(calls)!.body).toEqual({
       p_person: "recP1", p_actor: "recOFFICER", p_action: "admin-membership",
       p_patch: { category_type: "Sports Debenture" }, p_expect: { category_type: "Sports Preferred" },
@@ -134,6 +134,20 @@ describe("POST /api/admin/people/:id/membership", () => {
       status: 400, message: expect.stringContaining("after the join date"),
     });
     expect(rpcCall(calls)).toBeUndefined();
+  });
+
+  it("reports periods removed by a date correction and drops the Statements caches", async () => {
+    const calls = fake({ people: [person()], rpc: { status: "ok", changed: ["commitment_end_date", "commitments"], removedPeriods: 2 } });
+    expect(await saveMembership(env, officer, "recP1", { commitmentEndDate: "2026-08-31", expect: { commitmentEndDate: "2027-08-31" } })).toEqual({
+      ok: true, changed: ["commitment_end_date", "commitments"], removedPeriods: 2,
+    });
+    expect(rpcCall(calls)!.body.p_patch).toEqual({ commitment_end_date: "2026-08-31" });
+  });
+
+  it("lets the officer clear a membership number or a date", async () => {
+    const calls = fake({ people: [person()], rpc: { status: "ok", changed: ["join_date", "membership_no"] } });
+    await saveMembership(env, officer, "recP1", { membershipNo: "", joinDate: null, expect: { membershipNo: "M1", joinDate: "2024-09-01" } });
+    expect(rpcCall(calls)!.body.p_patch).toEqual({ membership_no: null, join_date: null });
   });
 
   it("is 409 CHANGED when someone else saved first", async () => {
