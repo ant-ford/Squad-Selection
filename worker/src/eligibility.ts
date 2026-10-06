@@ -1,4 +1,4 @@
-import { linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
 import { isFriendly, isQualifyingPlayUpCard, playUpAllowance } from "./playUp";
 import { hkfcSides } from "./match";
 import { UNRANKED_TEAM_RANK } from "./reference";
