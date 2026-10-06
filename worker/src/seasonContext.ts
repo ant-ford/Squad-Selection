@@ -31,7 +31,7 @@ import {
   type ManualSuspensionState,
 } from "./suspension";
 import { backendFor } from "./data/backend";
-import { db } from "./data/supabase";
+import { db, SupabaseError } from "./data/supabase";
 import {
   computeCompletedLeagueMatchCounts,
   type EvaluationContext,
@@ -122,13 +122,19 @@ export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
 export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspension[]> {
   if (backendFor(env, "people") !== "supabase") return [];
   return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, async () => {
-    const rows = await db(env).select<{
-      id: string;
-      player: string;
-      matches: number | null;
-      from_date: string;
-      serving_team: string;
-    }>("api_suspensions", "select=id,player,matches,from_date,serving_team&cleared_at=is.null");
+    type Row = { id: string; player: string; matches: number | null; from_date: string; serving_team: string };
+    const rows = await db(env)
+      .select<Row>("api_suspensions", "select=id,player,matches,from_date,serving_team&cleared_at=is.null")
+      .catch((err: unknown): Row[] => {
+        // Only a database without the migration yet (PGRST205: no such
+        // view) reads as "none": with no table there are none. Anything
+        // else fails the read, as the other reads here do - never "none".
+        if (err instanceof SupabaseError && err.code === "PGRST205") {
+          console.error("api_suspensions missing: apply 20261007010203_suspensions.sql");
+          return [];
+        }
+        throw err;
+      });
     return rows.map((r) => ({
       id: r.id,
       player: r.player,

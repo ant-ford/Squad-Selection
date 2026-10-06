@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireSection: vi.fn(),
   rpc: vi.fn(),
+  select: vi.fn(),
 }));
 
 vi.mock("../worker/src/auth", async (importOriginal) => ({
@@ -14,7 +15,7 @@ vi.mock("../worker/src/auth", async (importOriginal) => ({
 }));
 vi.mock("../worker/src/data/supabase", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../worker/src/data/supabase")>()),
-  db: () => ({ rpc: mocks.rpc }),
+  db: () => ({ rpc: mocks.rpc, select: mocks.select }),
 }));
 
 import worker from "../worker/src/index";
@@ -22,6 +23,8 @@ import { HttpError } from "../worker/src/http";
 import { SupabaseError } from "../worker/src/data/supabase";
 import { sectionsFor } from "../worker/src/auth";
 import { parseNewSuspension, parseSuspensionChange } from "../worker/src/discipline";
+import { getOpenManualSuspensions } from "../worker/src/seasonContext";
+import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
@@ -56,6 +59,31 @@ const valid = { playerId: "recP1", matches: 2, fromDate: "2026-09-12", reason: "
 beforeEach(() => {
   mocks.requireSection.mockReset();
   mocks.rpc.mockReset();
+  mocks.select.mockReset();
+  invalidateAll();
+});
+
+describe("reading the open suspensions for eligibility", () => {
+  it("maps the view's rows", async () => {
+    mocks.select.mockResolvedValue([{ id: ID, player: "recP1", matches: null, from_date: "2026-09-12", serving_team: "HKFC C" }]);
+    expect(await getOpenManualSuspensions(ENV)).toEqual([
+      { id: ID, player: "recP1", matches: null, fromDate: "2026-09-12", servingTeam: "HKFC C" },
+    ]);
+    expect(mocks.select.mock.calls[0][1]).toContain("cleared_at=is.null");
+  });
+
+  it("is empty on Airtable without asking Supabase", async () => {
+    expect(await getOpenManualSuspensions({ ...ENV, DATA_BACKEND: "airtable" })).toEqual([]);
+    expect(mocks.select).not.toHaveBeenCalled();
+  });
+
+  it("reads as none only when the view does not exist yet; any other failure fails the read", async () => {
+    mocks.select.mockRejectedValueOnce(new SupabaseError("Supabase GET api_suspensions failed (404)", 404, "PGRST205"));
+    expect(await getOpenManualSuspensions(ENV)).toEqual([]);
+    invalidateAll();
+    mocks.select.mockRejectedValueOnce(new SupabaseError("Supabase GET api_suspensions failed (503)", 503));
+    await expect(getOpenManualSuspensions(ENV)).rejects.toBeInstanceOf(SupabaseError);
+  });
 });
 
 describe("the discipline section", () => {
