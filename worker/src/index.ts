@@ -91,6 +91,7 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { adminRoute, isAdminPath } from "./admin/routes";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -852,6 +853,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const task = pathname.match(/^\/api\/joiner-tasks\/([0-9a-f-]{36})(\/done)?$/);
       if (task && method === "GET" && !task[2]) return json(await getJoinerTask(env, user, task[1]), 200, origin);
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
+    }
+
+    // ── Officers' admin screens (Supabase backend; src/admin/) ────────────
+    // Each route checks its own section (admin/routes.ts).
+    if (isAdminPath(pathname)) {
+      const result = await adminRoute(request, env, url);
+      if (result !== undefined) return json(result, 200, origin);
     }
 
     // ── HKHA registration (Supabase backend; src/registration.ts) ─────────

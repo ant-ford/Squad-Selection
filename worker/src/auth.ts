@@ -171,6 +171,13 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *                and passport numbers included: the Hockey Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
  *                Supabase backend only.
+ *   people     - finding a person and their admin page and change history:
+ *                the Membership Officer, the Men's Convenor and Section
+ *                Captains (each sees only the blocks their own sections
+ *                open). Supabase backend only.
+ *   club       - offices (sponsors included) and teams' coaches, captains
+ *                and squad sizes: Section Captains (owner decision,
+ *                2026-10-06). Supabase backend only.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -179,10 +186,12 @@ export const SECTION_OFFICES = {
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
   registration: ["hockeyConvenor"],
+  people: ["membershipOfficer", "hockeyConvenor", "sectionCaptain"],
+  club: ["sectionCaptain"],
 } as const satisfies Record<string, readonly Office[]>;
 
 /** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration"];
+const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration", "people", "club"];
 
 export type Section = keyof typeof SECTION_OFFICES;
 
@@ -205,6 +214,16 @@ export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">, env?: Pi
 export async function requireSection(request: Request, env: Env, section: Section): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);
   if (!sectionsFor(user, env).includes(section)) {
+    throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
+  }
+  return user;
+}
+
+/** Gate for routes any one of several sections opens; the same 403 otherwise. */
+export async function requireAnySection(request: Request, env: Env, sections: readonly Section[]): Promise<AuthorizedUser> {
+  const user = await requireAuthorizedUser(request, env);
+  const mine = sectionsFor(user, env);
+  if (!sections.some((s) => mine.includes(s))) {
     throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }
   return user;
