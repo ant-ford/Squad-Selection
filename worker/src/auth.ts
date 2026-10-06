@@ -2,11 +2,11 @@ import { HttpError } from "./http";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import type { Office, OfficerRole } from "./reference";
-import { getCached } from "./cache";
+import { getCached, invalidateCache } from "./cache";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
-import { noteRequestPerson, noteRequestVersions } from "./requestContext";
+import { noteRequestPerson, noteRequestVersions, onRequestWrite } from "./requestContext";
 import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
-import type { CacheVersions } from "./cacheVersions";
+import { raiseVersionFloor, withVersionFloor, type CacheVersions } from "./cacheVersions";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
 const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
@@ -85,13 +85,43 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // readable claim, or a different verified email) it is asked again for
   // the verified one. One database call, with no re-lookups behind it.
   const claimed = claimedEmail(request);
-  const early = claimed ? authContexts(env).load(claimed) : null;
+  const early = claimed ? loadAuthContext(env, claimed) : null;
   // A rejected token must answer 401, whatever the early read did.
   early?.catch(() => undefined);
   const normalizedEmail = normalizeEmail(await verifySupabaseSession(request, env));
-  const context = early && claimed === normalizedEmail ? await early : await authContexts(env).load(normalizedEmail);
+  const context = early && claimed === normalizedEmail ? await early : await loadAuthContext(env, normalizedEmail);
   return authorize(normalizedEmail, context);
 }
+
+/**
+ * How long an isolate reuses one email's auth_context answer (owner
+ * decision, 2026-10-07). A screen opens several endpoints at once, and a
+ * player taps through a few in a row: one database call serves them all.
+ * Access is still decided on every request from the answer, and Supabase
+ * still checks the session (60 s per token, verifySupabaseSession).
+ */
+const AUTH_CONTEXT_REUSE_MS = 10 * 1000;
+
+const authContextKey = (email: string) => `auth-context:${email}`;
+
+/**
+ * auth_context for an email, shared by this isolate's requests for 10 s;
+ * concurrent requests share one call (getCached's in-flight de-dup).
+ * Keyed by email, never by token: the answer is about the email, and is
+ * used only once Supabase has confirmed the request is that email's.
+ */
+async function loadAuthContext(env: Env, email: string): Promise<AuthContext> {
+  const { data, fromCache } = await getCached(authContextKey(email), () => authContexts(env).load(email), AUTH_CONTEXT_REUSE_MS);
+  if (!fromCache) raiseVersionFloor(data.versions);
+  return data;
+}
+
+// A write drops the writer's reused answer in this isolate, so their next
+// request reads auth_context again, with the versions their write moved:
+// they see it at once.
+onRequestWrite((context) => {
+  if (context.email) invalidateCache(authContextKey(context.email));
+});
 
 /** The access rules, applied to what auth_context read. Throws 403 on denial. */
 export function authorize(normalizedEmail: string, context: AuthContext): AuthorizedUser {
@@ -139,8 +169,10 @@ export function authorize(normalizedEmail: string, context: AuthContext): Author
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
-  noteRequestPerson(player.id);
-  noteRequestVersions(context.versions);
+  noteRequestPerson(player.id, normalizedEmail);
+  // A reused answer's versions, raised to the newest this isolate has seen.
+  const versions = withVersionFloor(context.versions);
+  noteRequestVersions(versions);
   return {
     email: normalizedEmail,
     personId: player.id,
@@ -154,7 +186,7 @@ export function authorize(normalizedEmail: string, context: AuthContext): Author
     captainTeams: context.captainTeams,
     socialSecretaryTeams: context.socialSecretaryTeams,
     umpire: context.umpire,
-    versions: context.versions,
+    versions,
   };
 }
 

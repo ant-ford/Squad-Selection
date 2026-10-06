@@ -3,6 +3,11 @@ import worker from "../worker/src/index";
 import { invalidateAll } from "../worker/src/cache";
 import type { Env } from "../worker/src/env";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
+import { authorize } from "../worker/src/auth";
+import { parseAuthContext } from "../worker/src/authContext";
+import { parseCacheVersions, raiseVersionFloor } from "../worker/src/cacheVersions";
+import { db } from "../worker/src/data/supabase";
+import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
 
 /**
  * The database calls a signed-in request makes, counted by the Worker's own
@@ -56,6 +61,7 @@ beforeEach(() => {
     tables: {
       api_players: [apiPlayer],
       api_teams: [{ id: "recTeamC000000000", team_name: "HKFC C", team_rank: 3, is_premier: false, target_squad_size: 16, active: true, coach: [], team_captain: [ADA], section_captain: [], auto_select_players: [] }],
+      notes: [],
     },
     rpc: { auth_context: () => CONTEXT },
     other: (url) => {
@@ -91,12 +97,57 @@ describe("database calls behind a signed-in request", () => {
     expect(verified).toBe(1);
   });
 
-  it("a repeat request on a warm isolate: auth_context alone", async () => {
+  it("a repeat request within 10 s on a warm isolate: no database call at all", async () => {
     await get("/api/my-profile");
     const again = await get("/api/my-profile");
     expect(again.status).toBe(200);
-    expect(dbCalls(again)).toBe(1);
+    expect(dbCalls(again)).toBe(0);
+    expect(pg.rpcCalls("auth_context")).toHaveLength(1);
     // Supabase's check is held 60 s per token, as before.
     expect(verified).toBe(1);
+  });
+
+  it("asks auth_context again once the 10 s are up", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      await get("/api/my-profile");
+      vi.setSystemTime(Date.now() + 9_000);
+      await get("/api/my-profile");
+      expect(pg.rpcCalls("auth_context")).toHaveLength(1);
+      vi.setSystemTime(Date.now() + 2_000);
+      const later = await get("/api/my-profile");
+      expect(later.status).toBe(200);
+      expect(pg.rpcCalls("auth_context")).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a page's parallel requests share one auth_context call", async () => {
+    const all = await Promise.all([get("/api/my-profile"), get("/api/my-profile"), get("/api/my-profile")]);
+    for (const res of all) expect(res.status).toBe(200);
+    expect(pg.rpcCalls("auth_context")).toHaveLength(1);
+  });
+
+  it("after the person writes, their next request reads auth_context again (their write shows at once)", async () => {
+    await get("/api/my-profile");
+    // Any database write made inside one of their requests.
+    await runWithRequestContext({ stats: newRequestStats(), email: "ada@hkfc.com" }, () => db(ENV).insert("notes", [{ id: "n1" }]));
+    await get("/api/my-profile");
+    expect(pg.rpcCalls("auth_context")).toHaveLength(2);
+    // Someone else's write doesn't drop Ada's answer.
+    await runWithRequestContext({ stats: newRequestStats(), email: "bob@hkfc.com" }, () => db(ENV).insert("notes", [{ id: "n2" }]));
+    await get("/api/my-profile");
+    expect(pg.rpcCalls("auth_context")).toHaveLength(2);
+  });
+
+  it("a reused answer's versions are raised to the newest this isolate has seen", () => {
+    const stale = parseAuthContext({ ...CONTEXT, versions: { matches: 7, people: 4 } });
+    expect(authorize("ada@hkfc.com", stale).versions.matches).toBe(7);
+    // Someone else's fresh sign-in on this isolate, after Ada's answer was read.
+    raiseVersionFloor(parseCacheVersions({ matches: 9, people: 3 }));
+    const reused = authorize("ada@hkfc.com", stale);
+    expect(reused.versions.matches).toBe(9);
+    expect(reused.versions.people).toBe(4); // never lowered
   });
 });
