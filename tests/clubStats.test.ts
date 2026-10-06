@@ -3,18 +3,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // Stats page: the per-season summary (built from Matches and Match Cards),
 // adding seasons up, and the route - including that no other player's cards
-// ever reach the page.
+// ever reach the page. The route runs on the Supabase backend's in-memory
+// repositories.
 // ---------------------------------------------------------------------------
 
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
-import { resetMissingFieldCache } from "../worker/src/airtable";
 import { buildSeasonSummary, getStoredSummary } from "../worker/src/clubStats";
 import { currentSeason } from "../worker/src/seasonContext";
 import { fakeKv } from "./helpers/kv";
 import { clubRecord, combineSeasons, leaders, splitsAcrossTeams, type SeasonSummary } from "../shared/clubStats";
 import type { Match, MatchCard } from "../shared/schema/domainTypes";
 import worker from "../worker/src/index";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { match as matchRow, matchCard, person } from "./helpers/factories";
 
 const match = (id: string, over: Partial<Match>): Match => ({
   id,
@@ -293,40 +296,48 @@ describe("adding seasons up", () => {
 // ── Through the router ──────────────────────────────────────────────────
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
-function tables(): FakeTables {
-  const m = (id: string, f: Record<string, unknown>) => ({ id, fields: { Season: "2025-2026", "Match Status": "Played", "Competition Type": "LEAGUE", Venue: "HKFC", Date: "2025-10-05T06:00:00.000Z", ...f } });
-  return {
-    People: [
-      { id: "recPlayerPat00001", fields: { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member", "Match Cards": ["recCard000000001"] } },
-      { id: "recPlayerKim00001", fields: { "Preferred Name": "Kim", Surname: "Keeper", Email: "kim@hkfc.com", Active: true, Status: "Member", "HKID No.": "A123456(7)", "Match Cards": ["recCard000000002"] } },
-    ],
-    Teams: [],
-    Matches: [
-      m("recMatch000000001", { "Home Team": "HKFC A", "Home Score": 3, "Away Team": "Valley A", "Away Score": 1, "Ump 1": "Appt - Alex Wong" }),
-    ],
-    "Match Cards": [
-      { id: "recCard000000001", fields: { Match: ["recMatch000000001"], Player: ["recPlayerPat00001"], Team: "HKFC A", Season: ["2025-2026"], "Goals Scored": 2, Cards: ["Y2"] } },
-      { id: "recCard000000002", fields: { Match: ["recMatch000000001"], Player: ["recPlayerKim00001"], Team: "HKFC A", Season: ["2025-2026"], Cards: ["Y1"] } },
-    ],
-  };
-}
-
-let handle: ReturnType<typeof fakeAirtable>;
+const db = useFakeRepos(() => ({
+  people: [
+    person({ id: "recPlayerPat00001", preferredName: "Pat", surname: "Player", email: "pat@hkfc.com", active: true, status: "Member" }),
+    person({
+      id: "recPlayerKim00001", preferredName: "Kim", surname: "Keeper", email: "kim@hkfc.com", active: true, status: "Member",
+      // A CRM-only column no stats read carries.
+      crm: { hkidNo: "A123456(7)" } as FakePerson["crm"],
+    }),
+  ],
+  matches: [
+    matchRow({
+      id: "recMatch000000001", season: "2025-2026", matchStatus: "Played", competitionType: "LEAGUE", venue: "HKFC",
+      matchDate: "2025-10-05T06:00:00.000Z", homeTeam: "HKFC A", homeTeamScore: 3, awayTeam: "Valley A", awayTeamScore: 1,
+      ump1: "Appt - Alex Wong",
+    }),
+  ],
+  matchCards: [
+    matchCard({ id: "recCard000000001", match: ["recMatch000000001"], player: ["recPlayerPat00001"], team: "HKFC A", season: "2025-2026", goals: 2, cards: ["Y2"] }),
+    matchCard({ id: "recCard000000002", match: ["recMatch000000001"], player: ["recPlayerKim00001"], team: "HKFC A", season: "2025-2026", cards: ["Y1"] }),
+  ],
+}));
 
 beforeEach(() => {
   invalidateAll();
-  resetMissingFieldCache();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-26T04:00:00Z"));
-  handle = fakeAirtable(tables());
+  // Supabase vouches for any token: "token-for-<email>" signs in as <email>.
+  // Nothing here queries PostgREST directly; a request that did would fail the test.
+  fakePostgrest({
+    tables: {},
+    other: (_u, init) => {
+      const auth = String((init.headers as Record<string, string>).Authorization ?? "");
+      return new Response(JSON.stringify({ email: auth.replace(/^Bearer token-for-/, "") }), { status: 200 });
+    },
+  });
 });
 
 afterEach(() => {
@@ -335,13 +346,6 @@ afterEach(() => {
 });
 
 async function as(email: string | null, path: string): Promise<Response> {
-  const airtable = handle.fetchMock as unknown as typeof fetch;
-  vi.stubGlobal("fetch", vi.fn((u: any, opts?: any) => {
-    if (String(u).startsWith(ENV.SUPABASE_URL)) {
-      return Promise.resolve(new Response(JSON.stringify({ email }), { status: 200 }));
-    }
-    return airtable(u, opts);
-  }));
   const headers: Record<string, string> = { Origin: "https://app.test" };
   if (email) headers.Authorization = `Bearer token-for-${email}`;
   return worker.fetch(new Request(`https://api.test${path}`, { headers }), ENV, { waitUntil: () => {} } as any);
@@ -367,7 +371,7 @@ describe("the season route", () => {
 
   it("builds a past season once and serves it from the cache after", async () => {
     await as("pat@hkfc.com", "/api/stats/season?season=2025-2026");
-    const reads = () => handle.calls.filter((c) => /\/(Matches|Match%20Cards)\?/.test(c.url)).length;
+    const reads = () => db.callsTo("matches").length + db.callsTo("matchCards").length;
     const first = reads();
     await as("kim@hkfc.com", "/api/stats/season?season=2025-2026");
     expect(reads()).toBe(first);
