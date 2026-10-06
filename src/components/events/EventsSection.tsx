@@ -62,7 +62,7 @@ export default function EventsSection({ enabled }: { enabled: boolean }) {
             ) : answer ? (
               <span className={`shrink-0 text-xs font-medium px-2 py-1 rounded ${statusChip[answer]}`}>{RESPONSE_LABEL[answer]}</span>
             ) : e.open && e.invited ? (
-              <span className="shrink-0 text-xs font-medium px-2 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400">Answer</span>
+              <span className="shrink-0 text-xs font-medium px-2 py-1 rounded bg-amber-500/15 text-amber-700">Answer</span>
             ) : null}
           </button>
         );
