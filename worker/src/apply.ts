@@ -410,7 +410,8 @@ export async function submitApplication(env: Env, user: AuthorizedUser, body: Re
   }
   await invalidatePeople(env);
   // A new HKFC member's application now waits on their sponsor (then the Chairman, then the Membership Officer).
-  if (who === "new") await notifySigner(env, p.api_id, "sponsor").catch((err) => console.error("Sponsor's email not sent:", err instanceof Error ? err.message : err));
+  // The email goes after the response (inBackground); its failure is logged, never the applicant's problem.
+  if (who === "new") await inBackground(() => notifySigner(env, p.api_id, "sponsor").catch((err) => console.error("Sponsor's email not sent:", err instanceof Error ? err.message : err)));
   // An existing member's levy form, for the Membership Officer to check and send to the front desk.
   else if (pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, p.api_id));
   return { ok: true };

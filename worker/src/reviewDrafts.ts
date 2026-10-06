@@ -17,6 +17,7 @@
 import type { Env } from "./env";
 import { db, eq } from "./data/supabase";
 import { inBackground } from "./requestContext";
+import { isTimeout } from "./http";
 import { MIN_MATCH_ATTENDANCE } from "../../shared/commitmentReview";
 
 export const DEFAULT_DRAFT_MODEL = "qwen/qwen3.8-27b";
@@ -192,10 +193,20 @@ export function cleanDraft(text: string, limit: number): string {
 /** Words in a draft, as a person would count them. */
 export const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
+/**
+ * How long OpenRouter gets to answer. A draft usually takes 4-6 s and a
+ * picture a little longer; 25 s allows for a slow provider while ending a
+ * hung call inside the 30 s the Worker has after a response (the review
+ * drafts run in the background), so the answers that did come back are
+ * still saved.
+ */
+export const OPENROUTER_TIMEOUT_MS = 25_000;
+
 /** One completion from the drafting model (also the applicant form's Polish button, apply.ts). */
 export async function complete(env: Env, system: string, context: string, retry?: { previous: string; ask: string }): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
@@ -218,7 +229,11 @@ export async function complete(env: Env, system: string, context: string, retry?
       // Only providers that neither keep nor train on the prompt.
       provider: { data_collection: "deny" },
     }),
+  }).catch((err: unknown) => {
+    // Thrown, as a refusal is below, so every caller's failure path handles it.
+    throw new Error(isTimeout(err) ? `OpenRouter did not answer within ${OPENROUTER_TIMEOUT_MS / 1000} s` : `OpenRouter unreachable: ${err instanceof Error ? err.message : String(err)}`);
   });
+  // A timeout while the answer is still arriving leaves no body: "no text" below.
   const body = (await res.json().catch(() => null)) as {
     choices?: { message?: { content?: string }; finish_reason?: string }[];
     error?: { message?: string };
