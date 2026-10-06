@@ -78,3 +78,23 @@ export function columnFor(stage: string): BoardColumn {
   if ((PARKED_STAGES as readonly string[]).includes(stage)) return stage as ParkedStage;
   return NEEDS_FIXING;
 }
+
+/** Stages 1-6: moving someone there makes them an Applicant again. */
+export const isOpenStage = (stage: string) => (PIPELINE_STAGES as readonly string[]).includes(stage) && stage !== ACCEPTED_STAGE;
+
+/**
+ * Where an officer may move someone's stage by hand (the person page; POST
+ * /api/admin/people/:id/stage). Offered only for an Applicant, a Temporary
+ * player, or a stage the board lists under "Needs fixing". Stages 1-6,
+ * Rejected and Temporary, minus the current one; never Accepted (Approve
+ * does that, with the membership details). A Temporary player isn't
+ * offered Rejected.
+ */
+export function stageTargets(status: string | null, stage: string | null): string[] {
+  const current = stage ?? "";
+  const offered = status === "Applicant" || current === "Temporary" || (current !== "" && columnFor(current) === NEEDS_FIXING);
+  if (!offered) return [];
+  return [...PIPELINE_STAGES.filter(isOpenStage), ...PARKED_STAGES].filter(
+    (s) => s !== current && !(current === "Temporary" && s === "Rejected"),
+  );
+}

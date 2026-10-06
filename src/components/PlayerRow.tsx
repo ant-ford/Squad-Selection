@@ -3,6 +3,8 @@ import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react'
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { POS_SHORT, shortTeam } from '@/lib/format';
 import { playUpAllowance } from '@shared/playUpAllowance';
+import { availabilityClasses, availabilityLabel } from '@/lib/availabilityTone';
+import { toneClasses } from '@/lib/statusTone';
 
 /** Engine strings are written with the club prefix; on this screen it goes without saying. */
 export function displayWarning(warning: string): string {
@@ -50,8 +52,8 @@ export function playUpTone(playUpCount: number, isU21: boolean | undefined): 'no
 
 const PLAY_UP_TONE_CLASS = {
   none: '',
-  amber: 'font-semibold text-amber-700',
-  red: 'font-semibold text-red-700',
+  amber: 'font-semibold text-warning-soft-foreground',
+  red: 'font-semibold text-danger-soft-foreground',
 } as const;
 
 /**
@@ -89,9 +91,7 @@ const PlayerRow = React.memo(function PlayerRow({
   // A tint alone was not carrying outdoors on a phone, so each state also
   // gets a solid edge. The bar is on every row, transparent when there is
   // nothing to say, so names stay on one vertical line down the list.
-  let bgClass = 'border-l-transparent';
-  if (isMaybe) bgClass = 'bg-amber-200 border-l-amber-600';
-  else if (isUnavailable) bgClass = 'bg-red-200 border-l-red-600';
+  const bgClass = availabilityClasses(isMaybe || isUnavailable ? player.availabilityStatus : '', 'edge');
 
   // Blocked rows still recede - they are there to be understood, not picked.
   // Unavailable ones no longer do: dimming a pale tint was most of why these
@@ -130,11 +130,11 @@ const PlayerRow = React.memo(function PlayerRow({
             <span className="text-xs font-semibold tabular-nums text-muted-foreground shrink-0">#{player.shirtNo}</span>
           )}
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
-          {player.isU21 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-1 py-0.5 rounded-sm shrink-0">U21</span>}
-          {player.isVisitingPlayer && <span className="text-[10px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm shrink-0">VP</span>}
-          <span className="text-[11px] text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · {player.playingAbility || '–'}</span>
+          {player.isU21 && <span className={`text-xs font-bold px-1 py-0.5 rounded-sm shrink-0 ${toneClasses('info', 'soft')}`}>U21</span>}
+          {player.isVisitingPlayer && <span className="text-xs font-bold px-1 py-0.5 rounded-sm shrink-0 border border-border bg-muted text-foreground">VP</span>}
+          <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · {player.playingAbility || '–'}</span>
         </div>
-        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
           <span>
             {player.registeredTeam || '–'} ·{' '}
             <span className={playUpClass} title={`${player.playUpCount} of ${playUpAllowed} play-ups this season`}>
@@ -153,10 +153,10 @@ const PlayerRow = React.memo(function PlayerRow({
                 title={`Set availability for ${player.preferredName}`}
                 className="underline decoration-dotted underline-offset-2 hover:text-foreground transition-colors"
               >
-                {player.availabilityStatus}
+                {availabilityLabel(player.availabilityStatus)}
               </button>
             ) : (
-              player.availabilityStatus
+              availabilityLabel(player.availabilityStatus)
             )}
           </span>
           {onShowStats && (
@@ -177,9 +177,9 @@ const PlayerRow = React.memo(function PlayerRow({
           )}
         </p>
         {player.supportUnavailable && player.supportUnavailable.length > 0 && (
-          <p className='text-[11px] text-amber-900 bg-amber-50 border border-amber-400 rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1'>
+          <p className={`text-xs border rounded px-1.5 py-0.5 mt-1 inline-flex items-center gap-1 ${toneClasses('warning', 'chip')}`}>
             <AlertCircle className='h-3 w-3 shrink-0' />
-            Available here - unavailable for {player.supportUnavailable.map(shortTeam).join(', ')}
+            Available here, No for {player.supportUnavailable.map(shortTeam).join(', ')}
           </p>
         )}
         {player.playerNotes && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">“{player.playerNotes}”</p>}
@@ -188,7 +188,7 @@ const PlayerRow = React.memo(function PlayerRow({
           <div className="mt-1 flex flex-wrap gap-1.5">
             {visibleConflicts.map((c, i) => (
               <span key={i} className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border ${
-                isDoubleBooked ? 'text-red-900 bg-red-100 border-red-500 font-medium' : 'text-blue-900 bg-blue-50 border-blue-400'
+                isDoubleBooked ? `${toneClasses('danger', 'chip')} font-medium` : toneClasses('info', 'chip')
                 }`}>
                 {isDoubleBooked && <AlertCircle className="h-3 w-3" />}
                 {`Selected: ${shortTeam(c.team)}${movesOnPick ? ' - moves here if picked' : ''}`}
@@ -200,12 +200,12 @@ const PlayerRow = React.memo(function PlayerRow({
         {hasReasonChips && (
           <div className="mt-1 flex flex-wrap gap-1.5">
             {(player.blocks ?? []).map((b, i) => (
-              <span key={i} className="inline-flex items-center gap-1 text-xs text-red-900 bg-red-50 border border-red-400 px-1.5 py-0.5 rounded">
+              <span key={i} className={`inline-flex items-center gap-1 text-xs border px-1.5 py-0.5 rounded ${toneClasses('danger', 'chip')}`}>
                 <Ban className="h-3 w-3 shrink-0" /> {b.reason}
               </span>
             ))}
             {visibleWarnings.map((w, i) => (
-              <span key={i} className="inline-flex items-center gap-1 text-xs text-amber-900 bg-amber-50 border border-amber-400 px-1.5 py-0.5 rounded">
+              <span key={i} className={`inline-flex items-center gap-1 text-xs border px-1.5 py-0.5 rounded ${toneClasses('warning', 'chip')}`}>
                 <AlertCircle className="h-3 w-3 shrink-0" /> {displayWarning(w)}
               </span>
             ))}

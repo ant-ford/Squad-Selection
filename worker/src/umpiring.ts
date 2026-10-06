@@ -17,6 +17,8 @@ import {
   clashingGame,
   gameLabel,
   isOnCommitment,
+  knownSpelling,
+  mergeOutsideNames,
   seasonOf,
   weekEnd,
   weekOf,
@@ -91,8 +93,12 @@ export function isCoordinator(user: AuthorizedUser): boolean {
  * The club's umpires (People uuids): Active people with an umpiring level,
  * and anyone who umpired an HKFC game in the last 12 months, by name on
  * the match card (shared/umpires.ts) or confirmed in Eddy.
+ *
+ * Also the outside umpires on those match cards: names that are no Active
+ * member's, and not an HKFC team's duty umpire. HKHA's spelling, for the
+ * coordinator's list.
  */
-async function umpirePool(env: Env): Promise<Map<string, PersonRow>> {
+async function umpireData(env: Env): Promise<{ pool: [string, PersonRow][]; cardNames: string[] }> {
   const { data } = await getCached(
     POOL_KEY,
     async () => {
@@ -111,22 +117,49 @@ async function umpirePool(env: Env): Promise<Map<string, PersonRow>> {
       const teams = new Set(matches.flatMap((m) => [m.home_team, m.away_team]).filter((t): t is string => !!t));
       const values = matches.flatMap((m) => [m.ump_1, m.ump_2]);
       const names = buildNameDictionary(values, teams);
-      const keys = new Set(
-        values.map((v) => parseUmpire(v, { teams, names }).key).filter((k): k is string => !!k),
-      );
+      const parsed = values.map((v) => parseUmpire(v, { teams, names }));
+      const keys = new Set(parsed.map((u) => u.key).filter((k): k is string => !!k));
       const fromEddy = new Set(umpired.map((u) => u.person_id));
+      const writtenAs = (p: PersonRow) =>
+        [`${p.given_names ?? ""} ${p.surname ?? ""}`, `${p.preferred_name ?? ""} ${p.surname ?? ""}`].filter((n) => n.trim().includes(" "));
       const pool: [string, PersonRow][] = people
-        .filter((p) => {
-          if (qualified(p) || fromEddy.has(p.id)) return true;
-          const asWritten = [`${p.given_names ?? ""} ${p.surname ?? ""}`, `${p.preferred_name ?? ""} ${p.surname ?? ""}`];
-          return asWritten.some((n) => n.trim().includes(" ") && keys.has(canonicalKey(n)));
-        })
+        .filter((p) => qualified(p) || fromEddy.has(p.id) || writtenAs(p).some((n) => keys.has(canonicalKey(n))))
         .map((p) => [p.id, p]);
-      return pool;
+      const members = new Set(people.flatMap((p) => writtenAs(p).map(canonicalKey)));
+      const cardNames = parsed
+        .filter((u) => u.name && u.key && !members.has(u.key) && !u.duty?.startsWith("HKFC"))
+        .map((u) => u.name!)
+        // A full name: a first name alone, or an umpire number, isn't one.
+        .filter((n) => n.includes(" ") && !/\d/.test(n));
+      return { pool, cardNames };
     },
     10 * 60 * 1000,
   );
-  return new Map(data);
+  return data;
+}
+
+async function umpirePool(env: Env): Promise<Map<string, PersonRow>> {
+  return new Map((await umpireData(env)).pool);
+}
+
+/**
+ * Outside umpires' names, one spelling each: those put down in Eddy in the
+ * last 12 months (taken off ones left out, so a misspelling goes once
+ * redone), then those on HKFC match cards.
+ */
+async function outsideNames(env: Env): Promise<string[]> {
+  const since = new Date(Date.now() - 365 * DAY_MS).toISOString();
+  const [used, { cardNames }] = await Promise.all([
+    db(env).select<{ id: string; external_name: string; created_at: string }>(
+      "umpire_assignments",
+      `select=id,external_name,created_at&external_name=not.is.null&status=neq.withdrawn&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc,id`,
+    ),
+    umpireData(env),
+  ]);
+  return mergeOutsideNames(
+    used.map((o) => o.external_name),
+    cardNames,
+  );
 }
 
 async function personByApiId(env: Env, apiId: string): Promise<PersonRow> {
@@ -318,11 +351,7 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
     board.umpires = [...pool.values()]
       .map<UmpireOption>((p) => ({ personId: p.api_id, name: firstName(p), fullName: fullName(p), onCommitment: isOnCommitment(p.commitment_end_date, now) }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-    const outside = await db(env).select<{ id: string; external_name: string; created_at: string }>(
-      "umpire_assignments",
-      "select=id,external_name,created_at&external_name=not.is.null&order=created_at.desc,id",
-    );
-    board.externalNames = [...new Set(outside.map((o) => o.external_name))].slice(0, 20);
+    board.externalNames = await outsideNames(env);
   }
   return board;
 }
@@ -445,9 +474,11 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   const now = new Date().toISOString();
 
   if (externalName) {
+    // "andy chan" is saved as the Andy Chan already known.
+    const name = knownSpelling(externalName, await outsideNames(env)) ?? externalName;
     await writing(() =>
       db(env).insert("umpire_assignments", [
-        { duty_id: d.id, external_name: externalName, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
+        { duty_id: d.id, external_name: name, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
       ]),
     );
     return { ok: true };
@@ -510,7 +541,7 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
       team.uncovered++;
       continue;
     }
-    const key = a.personId ?? `external:${a.name.toLowerCase()}`;
+    const key = a.personId ?? `external:${canonicalKey(a.name)}`;
     const t = tallies.get(key) ?? { name: a.name, personId: a.personId, external: a.external, free: 0, paid: 0, noShows: 0 };
     tallies.set(key, t);
     if (a.status === "no_show") {
