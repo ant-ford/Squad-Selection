@@ -107,20 +107,22 @@ export default defineConfig(({ command }) => ({
          * React and the Supabase client to pick up a copy change. These barely
          * move between releases; keeping them separate means a deploy usually
          * only reissues the small app chunk, and the rest is served from cache.
+         *
+         * Only the big libraries every load needs are named. Everything else is
+         * left to Rollup, which puts it next to whatever imports it: drag and
+         * drop goes with the ranking page, the QR code with event check-in, the
+         * list virtualiser with the coach lists, confetti with birthdays. A
+         * catch-all "vendor" chunk put all of that on every player's first load.
          */
         manualChunks(id) {
-          if (!id.includes("node_modules")) return;
-          // Imported only on someone's birthday. Left to Rollup it gets its
-          // own lazy chunk (precached in the background like the coach
-          // routes); the catch-all below would put it on the first load.
-          if (id.includes("canvas-confetti")) return;
-          if (id.includes("@supabase")) return "vendor-supabase";
-          if (id.includes("react-router")) return "vendor-router";
-          if (id.includes("@tanstack")) return "vendor-query";
-          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) {
-            return "vendor-react";
-          }
-          return "vendor";
+          if (!id.includes("/node_modules/")) return;
+          if (id.includes("/node_modules/@supabase/")) return "vendor-supabase";
+          if (/\/node_modules\/react-router(-dom)?\//.test(id)) return "vendor-router";
+          // Not /@tanstack/: react-virtual is only used by coach lists.
+          if (/\/node_modules\/@tanstack\/(react-query|query-core)\//.test(id)) return "vendor-query";
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
+          // Still lazy (two coach pages share it); named so it isn't "index".
+          if (/\/node_modules\/@tanstack\/(react-virtual|virtual-core)\//.test(id)) return "vendor-virtual";
         },
       },
     },
