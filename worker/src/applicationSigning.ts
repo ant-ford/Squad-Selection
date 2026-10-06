@@ -172,7 +172,7 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     const file = signatureFile(app, r);
     signatures[r] = { name: holderOf(r)?.name ?? null, signedAt: signedAt(app, r), signatureUrl: file ? await fileLink(env, file) : null };
   }
-  const saved = myRoles.length ? await savedSignature(env, user.personId) : null;
+  const saved = myRoles.length ? await savedSignature(env, user.personUuid) : null;
   let sending: SigningView["sending"];
   if (readyToSend(app)) {
     const { to, label } = recipientFor(env, app.application_type);

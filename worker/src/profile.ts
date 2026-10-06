@@ -1,6 +1,5 @@
 import type { Env } from "./env";
-import { getActiveTeams, getPlayerByEmail, UNRANKED_TEAM_RANK } from "./reference";
-import { HttpError } from "./http";
+import { getActiveTeams, UNRANKED_TEAM_RANK } from "./reference";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
@@ -22,12 +21,10 @@ export function landsOnApplication(status: string | undefined, stage: string | u
 }
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
-  // The Active teams alone (~3 KB): the players list (~150 KB) isn't needed here.
-  const [user, teams] = await Promise.all([getPlayerByEmail(env, authUser.email), getActiveTeams(env)]);
-
-  if (!user) {
-    throw new HttpError("Player record not found for this email", 404);
-  }
+  // The person came with sign-in (auth_context). The Active teams alone
+  // (~3 KB): the players list (~150 KB) isn't needed here.
+  const user = authUser.person;
+  const teams = await getActiveTeams(env);
 
   // coachTeams/isSectionCaptain come from the single authorization derivation
   // (auth.ts) - Section Captains already see every team name there, so the

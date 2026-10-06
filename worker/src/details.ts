@@ -10,7 +10,6 @@ import { HttpError } from "./http";
 import { db, eq } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
-import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
@@ -248,7 +247,6 @@ export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Reco
   if (body.confirm !== "DELETE") throw new HttpError("Type DELETE to confirm.", 400, "INVALID_INPUT");
   const p = await loadPerson(env, user.personId);
   await db(env).rpc("delete_own_profile", { p_person: p.id });
-  invalidateCache(`my-details-check:${user.personId}`);
   await invalidatePeople(env);
   return { ok: true };
 }
@@ -257,8 +255,6 @@ export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Reco
 export async function confirmDetails(env: Env, user: AuthorizedUser) {
   const p = await loadPerson(env, user.personId);
   await db(env).update("people", `id=${eq(p.id)}`, { profile_updated_at: new Date().toISOString() });
-  // The My Tasks line goes at once, not when its minute's cache runs out.
-  invalidateCache(`my-details-check:${user.personId}`);
   await invalidatePeople(env);
   return { ok: true };
 }

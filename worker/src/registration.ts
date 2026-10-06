@@ -160,8 +160,9 @@ export async function getRegistrationBoard(env: Env): Promise<RegistrationBoard>
   return { season, players };
 }
 
-async function actorUuid(env: Env, actor: AuthorizedUser): Promise<string | null> {
-  return (await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(actor.personId)}`))?.id ?? null;
+/** Sign-in resolved it (auth_context): no read. */
+async function actorUuid(_env: Env, actor: AuthorizedUser): Promise<string | null> {
+  return actor.personUuid || null;
 }
 
 /** One activity_log row per entity, in a single write (a whole team is one request, not forty). */

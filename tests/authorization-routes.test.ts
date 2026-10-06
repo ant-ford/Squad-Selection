@@ -408,7 +408,7 @@ describe("session-derived identity (IDOR prevention)", () => {
     mocks.handleGetCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/feed.ics?id=recP1&sig=abc" });
     const res = await call("/api/calendar/link?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, "player@hkfc.com", "https://hkfc-api.test");
+    expect(mocks.handleGetCalendarLink).toHaveBeenCalledWith(ENV, PLAYER, "https://hkfc-api.test");
   });
 });
 

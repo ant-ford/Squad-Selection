@@ -1,15 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// My profile reads the person and the Active teams, together. Everything
-// else (captaincies, the officer screens) came with sign-in (auth_context).
+// My profile reads the Active teams and nothing else: the person, their
+// captaincies and the officer screens came with sign-in (auth_context).
 
 const mocks = vi.hoisted(() => ({
-  getPlayerByEmail: vi.fn(),
   getActiveTeams: vi.fn(),
 }));
 
 vi.mock("../worker/src/reference", () => ({
-  getPlayerByEmail: mocks.getPlayerByEmail,
   getActiveTeams: mocks.getActiveTeams,
   UNRANKED_TEAM_RANK: 999,
 }));
@@ -19,39 +17,33 @@ import { signedIn } from "./helpers/factories";
 
 const ENV = {} as any;
 
-const player = signedIn({ email: "ada@hkfc.com", personId: "recAda", personUuid: "uuid-ada" });
-
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+const player = signedIn({
+  email: "ada@hkfc.com",
+  personId: "recAda",
+  personUuid: "uuid-ada",
+  person: { id: "recAda", uuid: "uuid-ada", preferredName: "Ada", status: "Member", playerCoach: ["Player"] },
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getPlayerByEmail.mockResolvedValue({ id: "recAda", preferredName: "Ada", status: "Member" });
   mocks.getActiveTeams.mockResolvedValue([]);
 });
 
 describe("my profile's reads", () => {
-  it("asks for the person and the teams before either has answered", async () => {
-    const person = deferred<unknown>();
-    const teams = deferred<unknown[]>();
-    mocks.getPlayerByEmail.mockReturnValue(person.promise);
-    mocks.getActiveTeams.mockReturnValue(teams.promise);
-
-    const profile = getMyProfile(ENV, player);
-    await flush();
-    expect(mocks.getPlayerByEmail).toHaveBeenCalledTimes(1);
+  it("reads only the teams; the person came with sign-in", async () => {
+    mocks.getActiveTeams.mockResolvedValue([
+      { id: "t2", teamName: "HKFC D", teamRank: 4, targetSquadSize: 0 },
+      { id: "t1", teamName: "HKFC C", teamRank: 3, targetSquadSize: 18 },
+    ]);
+    const p = await getMyProfile(ENV, { ...player, role: "coach", coachTeams: ["HKFC C", "HKFC D"] });
     expect(mocks.getActiveTeams).toHaveBeenCalledTimes(1);
-
-    teams.resolve([{ id: "t1", teamName: "HKFC C", teamRank: 3, targetSquadSize: 16 }]);
-    person.resolve({ id: "recAda", preferredName: "Ada", status: "Member" });
-    expect((await profile).preferredName).toBe("Ada");
+    expect(p.preferredName).toBe("Ada");
+    expect(p.roles).toEqual(["Player"]);
+    expect(p.inviteLink).toContain("ref=recAda");
+    expect(p.coachTeams).toEqual([
+      { id: "t1", teamName: "HKFC C", teamRank: 3, targetSquadSize: 18 },
+      { id: "t2", teamName: "HKFC D", teamRank: 4, targetSquadSize: 16 },
+    ]);
   });
 
   it("takes captaincies and the officer screens from sign-in", async () => {

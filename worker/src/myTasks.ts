@@ -150,16 +150,10 @@ async function getWaitingOn(env: Env): Promise<WaitingOn> {
 }
 
 /** An Active member who hasn't confirmed their details since 1 July. */
-async function needsDetailsCheck(env: Env, personId: string, today: string): Promise<boolean> {
-  const { data } = await getCached(
-    `my-details-check:${personId}`,
-    async () => db(env).one<{ status: string | null; active: boolean; profile_updated_at: string | null }>(
-      "people",
-      `select=status,active,profile_updated_at&api_id=${eq(personId)}`,
-    ),
-    MY_RECORD_TTL_MS,
-  );
-  return !!data && data.active && data.status === "Member" && !checkedThisSeason(data.profile_updated_at, today);
+/** From the person sign-in read this request (auth_context): no read, and never stale. */
+function needsDetailsCheck(user: AuthorizedUser, today: string): boolean {
+  const p = user.person;
+  return p.active === true && p.status === "Member" && !checkedThisSeason(p.profileUpdatedAt ?? null, today);
 }
 
 /** Waivers count for the season they were submitted in (July to June). */
@@ -193,11 +187,11 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     tasks.push({ id: "waivers", key: "waivers", url: "/waivers" });
   }
   // Members check their details at the start of each season.
-  if (await needsDetailsCheck(env, personId, today)) {
+  if (needsDetailsCheck(user, today)) {
     tasks.push({ id: "details", key: "details", url: "/my-details" });
   }
   // A minute in this isolate, dropped when a request is made or marked done.
-  const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, personId), MY_RECORD_TTL_MS);
+  const { data: requests } = await getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, user.personUuid), MY_RECORD_TTL_MS);
   for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
   // Events they are invited to and have not answered (events.ts).
   for (const e of await eventTasks(env, user).catch(() => [])) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });

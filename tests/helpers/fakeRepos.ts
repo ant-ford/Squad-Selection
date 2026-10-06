@@ -12,6 +12,8 @@ import * as membershipEventsModule from "../../worker/src/data/membershipEvents"
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import * as authContextModule from "../../worker/src/authContext";
 import type { AuthContext } from "../../worker/src/authContext";
+import type { AuthorizedUser } from "../../worker/src/auth";
+import { signedIn } from "./factories";
 import { parseCacheVersions } from "../../worker/src/cacheVersions";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
@@ -139,6 +141,12 @@ export interface FakeReposHandle {
   reset(seed?: Partial<FakeState>): void;
   /** Puts the real accessors back. */
   restore(): void;
+  /**
+   * The signed-in user auth.ts would build for this email from the seeded
+   * state (auth_context's person, captaincies, offices, umpire flag), with
+   * `overrides` on top. Unlike requireAuthorizedUser it never refuses.
+   */
+  signedIn(email: string, overrides?: Partial<AuthorizedUser>): AuthorizedUser;
 }
 
 export function emptyState(): FakeState {
@@ -567,6 +575,21 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     restore() {
       for (const spy of spies) spy.mockRestore();
     },
+    signedIn(email, overrides = {}) {
+      const ctx = authContextFrom(state, email);
+      const person = ctx.person ?? { id: "", uuid: "", email };
+      return signedIn({
+        email,
+        personId: person.id,
+        personUuid: person.uuid,
+        person,
+        captainTeams: ctx.captainTeams,
+        socialSecretaryTeams: ctx.socialSecretaryTeams,
+        offices: ctx.offices,
+        umpire: ctx.umpire,
+        ...overrides,
+      });
+    },
   };
   handle.reset(seed);
   return handle;
@@ -589,7 +612,7 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
         return current[key];
       },
     });
-  (["state", "repos", "calls", "callsTo", "reset", "restore"] as const).forEach(forward);
+  (["state", "repos", "calls", "callsTo", "reset", "restore", "signedIn"] as const).forEach(forward);
   beforeEach(() => {
     current = installFakeRepos(seed?.());
   });

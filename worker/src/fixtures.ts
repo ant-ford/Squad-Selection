@@ -2,7 +2,8 @@ import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { people } from "./data/people";
 import type { Env } from "./env";
-import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { personAsPlayer } from "./authContext";
 import { getCached, getShared } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
@@ -153,8 +154,8 @@ export async function getMyFixtures(
   authUser: AuthorizedUser,
   opts: { includePast?: boolean } = {},
 ) {
-  const user = await getPlayerByEmail(env, authUser.email);
-  if (!user) throw new HttpError("Player record not found for this email", 404);
+  // The person came with sign-in (auth_context): no read.
+  const user = await personAsPlayer(env, authUser.person);
   const teamName = user.registeredTeam || "";
   const displayTeam = selectedDisplayTeam(user) || teamName;
   const ref = await getReferenceData(env);

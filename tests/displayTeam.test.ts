@@ -13,12 +13,12 @@ import type { Player } from "../shared/schema/domainTypes";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
-import { match, person, recId, team, signedIn } from "./helpers/factories";
+import { match, person, recId, team } from "./helpers/factories";
 
 const ENV = { ...SUPABASE_TEST_ENV } as Env;
 
 function authUser(email: string): AuthorizedUser {
-  return signedIn({ email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] });
+  return db.signedIn(email);
 }
 
 const db = useFakeRepos();
