@@ -13,28 +13,22 @@ interface CalendarSheetProps {
   description?: string;
   /** Label for the generate button. */
   generateLabel?: string;
-  /** If provided, renders as an inline card instead of a bottom sheet. */
-  inline?: boolean;
-  /** For bottom-sheet mode. */
+  /** Called when the sheet is dismissed. */
   onClose?: () => void;
 }
 
 /**
  * Unified calendar subscription UI.
  *
- * - Bottom-sheet mode (default): overlay + drawer, used by PlayerDashboard.
- * - Inline mode: renders as a card, used by FixtureList (CoachCalendarExport).
- *
- * Both modes share the same provider buttons, copy-to-clipboard, and
- * advanced fallback — eliminating the drift between the old
- * CalendarSyncSheet and CoachCalendarExport.
+ * A bottom sheet (overlay + drawer) used by PlayerDashboard and by the
+ * coach's team calendar (CoachCalendarExport), so both share the same
+ * provider buttons, copy-to-clipboard and advanced fallback.
  */
 export default function CalendarSheet({
   fetchLink,
-  title = "Sync to Calendar",
+  title = "Sync to calendar",
   description = "Get automatic updates for your fixtures, selection, and availability status.",
-  generateLabel = "Generate Calendar Link",
-  inline = false,
+  generateLabel = "Get calendar link",
   onClose,
 }: CalendarSheetProps) {
   const [httpsUrl, setHttpsUrl] = useState<string | null>(null);
@@ -82,7 +76,7 @@ export default function CalendarSheet({
           <div className="grid grid-cols-3 gap-2 w-full">
             <a
               href={webcalUrl}
-              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-[11px] font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-xs font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
               title="Opens Apple Calendar directly"
             >
               <Smartphone className="h-5 w-5" />
@@ -92,7 +86,7 @@ export default function CalendarSheet({
               href={googleUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-[11px] font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-xs font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
               title="Opens Google Calendar web"
             >
               <Calendar className="h-5 w-5" />
@@ -102,7 +96,7 @@ export default function CalendarSheet({
               href={outlookWebUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-[11px] font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
+              className="flex flex-col items-center justify-center gap-1.5 px-2 py-3 text-xs font-medium rounded-lg border border-border bg-background hover:bg-muted transition-colors"
               title="Opens Outlook Web"
             >
               <Mail className="h-5 w-5" />
@@ -114,14 +108,14 @@ export default function CalendarSheet({
           <div className="border-t border-border pt-3">
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center justify-between w-full text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center justify-between w-full min-h-10 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               <span>Using Outlook Desktop or another app?</span>
               {showAdvanced ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             {showAdvanced && (
               <div className="mt-2 space-y-2">
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   Copy the link below, open your calendar app, and look for{" "}
                   <strong>"Subscribe from URL"</strong> or <strong>"Add Internet Calendar"</strong>.
                 </p>
@@ -129,21 +123,22 @@ export default function CalendarSheet({
                   <input
                     readOnly
                     value={httpsUrl}
-                    className="flex-1 text-[10px] font-mono p-2 bg-muted rounded border border-border truncate text-muted-foreground"
+                    className="flex-1 text-xs font-mono p-2 bg-muted rounded border border-border truncate text-muted-foreground"
                   />
                   <button
                     onClick={handleCopy}
-                    className="shrink-0 h-8 w-8 flex items-center justify-center rounded border border-border hover:bg-muted transition-colors"
+                    className="shrink-0 h-10 w-10 flex items-center justify-center rounded border border-border hover:bg-muted transition-colors"
                     title="Copy link"
+                    aria-label="Copy link"
                   >
-                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+                    {copied ? <Check className="h-3.5 w-3.5 text-success-soft-foreground" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             <strong>Note:</strong> Updates usually appear within minutes. Google Calendar can take up to 24 hours to reflect changes.
           </p>
         </div>
@@ -151,29 +146,7 @@ export default function CalendarSheet({
     </>
   );
 
-  // ── Inline card mode (FixtureList) ──
-  if (inline) {
-    return (
-      <div className="flex flex-col items-end gap-2 pb-2">
-        {!httpsUrl ? (
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap"
-          >
-            <Calendar className="h-4 w-4" />
-            {loading ? "Generating..." : generateLabel}
-          </button>
-        ) : (
-          <div className="flex flex-col items-end gap-3 w-full max-w-sm bg-card border border-border rounded-lg p-3 shadow-sm">
-            {linkContent}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Bottom-sheet mode (PlayerDashboard) ──
+  // A bottom sheet: PlayerDashboard and the coach's team calendar (CoachCalendarExport).
   return (
     <Sheet open onOpenChange={(next) => !next && onClose?.()}>
       <SheetContent side="bottom" className="p-4">

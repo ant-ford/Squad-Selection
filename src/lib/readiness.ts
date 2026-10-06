@@ -35,3 +35,20 @@ export function detectSameDayConflicts(fixtures: UpcomingFixture[]): SameDayConf
   return out;
 }
 
+
+/**
+ * How long before push-back a squad that is still short turns red on the
+ * coach's fixture list: about two days. Earlier than that, a squad short of
+ * players is normal (answers are still coming in) and the count alone says
+ * enough.
+ */
+export const SHORTFALL_URGENT_MS = 48 * 60 * 60 * 1000;
+
+/** True from 48 hours before push-back until push-back. */
+export function isShortfallUrgent(date: string | undefined | null, now = new Date()): boolean {
+  if (!date) return false;
+  const start = Date.parse(date);
+  if (Number.isNaN(start)) return false;
+  const left = start - now.getTime();
+  return left > 0 && left <= SHORTFALL_URGENT_MS;
+}
