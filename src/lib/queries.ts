@@ -137,7 +137,8 @@ export function useUpcomingFixtures(teamFilter?: string, includePast = false) {
 export function usePlayersForMatch(matchId: string, side?: "home" | "away") {
   return useQuery({
     queryKey: ['playersForMatch', matchId, side],
-    queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`, { side }),
+    // With the recommendation order, so the squad screen needs no second request.
+    queryFn: () => apiGet<GetPlayersForMatchOutput>(`/api/match/${matchId}/players`, { side, recommendations: '1' }),
     staleTime: 300_000,
   });
 }
