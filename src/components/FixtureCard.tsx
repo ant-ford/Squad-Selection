@@ -178,7 +178,7 @@ export default function FixtureCard({
             </span>
           ) : (
             <>
-              <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+              <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
                 {fixture.selectedCount} / {fixture.targetSquadSize}
                 {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
               </span>
