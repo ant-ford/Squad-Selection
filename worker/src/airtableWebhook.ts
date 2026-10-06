@@ -24,17 +24,8 @@
  * Without both the route answers 404 and nothing here runs.
  */
 import { airtableBaseRequest } from "./airtable";
-import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
 import type { Env } from "./env";
-import { SCHEDULED_MATCHES_KEY } from "./fixtures";
-import {
-  CHAIRMAN_DIRECTORY_KEY,
-  MEMBERSHIP_RECORDS_KEY,
-  OFFICER_LINKS_KEY,
-  STATEMENT_RECORDS_KEY,
-  STATS_CURRENT_KEY,
-  WAITING_ON_KEY,
-} from "./reference";
+import { invalidateFor, type DataDomain } from "./invalidation";
 import { TABLE_IDS, TABLES } from "../../shared/schema/tableNames";
 import { inBackground } from "./requestContext";
 
@@ -61,90 +52,22 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/**
- * Cache keys and prefixes each table's edit invalidates. Shared entries are
- * dropped in KV as well; in-isolate-only derived structures (season index,
- * per-match player lists, calendar feeds, the 25 s poll cache) are dropped
- * here and rebuilt from the freshly re-read raw tables.
- */
-const INVALIDATION: Record<string, { keys?: string[]; sharedPrefixes?: SharedPrefix[]; localPrefixes?: string[] }> = {
-  [TABLES.player]: {
-    keys: [
-      "club-reference",
-      "ranking:active",
-      "ranking:inactive",
-      MEMBERSHIP_RECORDS_KEY,
-      CHAIRMAN_DIRECTORY_KEY,
-      STATEMENT_RECORDS_KEY,
-      WAITING_ON_KEY,
-    ],
-    sharedPrefixes: ["player-by-email:"],
-    // my-tasks: a member's player-page banner, gone once their form is in.
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
-  },
-  [TABLES.team]: {
-    keys: ["club-reference", "team-coach-links"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
-  },
-  [TABLES.match]: {
-    keys: [SCHEDULED_MATCHES_KEY, STATS_CURRENT_KEY],
-    sharedPrefixes: ["all-matches:", "played-matches:"],
-    localPrefixes: ["match:", "players-for-match:", "season-index:", "calendar:", "availability:"],
-  },
-  [TABLES.matchCard]: {
-    keys: [STATS_CURRENT_KEY],
-    sharedPrefixes: ["match-cards:"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
-  },
-  [TABLES.availabilityException]: {
-    sharedPrefixes: ["exceptions:"],
-    localPrefixes: ["availability:", "players-for-match:", "season-index:", "calendar:"],
-  },
-  [TABLES.availabilityRule]: {
-    keys: ["availability-rules"],
-    localPrefixes: ["players-for-match:", "calendar:"],
-  },
-  [TABLES.abilityGroupConfiguration]: {
-    keys: ["ranking:config", "ranking:active"],
-  },
-  "Ranking Events": {
-    localPrefixes: ["ranking-events:"],
-  },
-  // The boards carry the signing officer's name and mobile, so an office
-  // changing hands drops them too.
-  [TABLES.membershipOfficer]: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
-  [TABLES.sectionChair]: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
-  [TABLES.sectionCaptainOffice]: {
-    keys: [OFFICER_LINKS_KEY],
-  },
-  // The Statements board. People edits drop it too: names, teams and
-  // resignations reach it through lookups and the resigned-id read.
-  [TABLES.commitment]: {
-    keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
-  [TABLES.sponsor]: {
-    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-  },
+/** The kind of data (invalidation.ts) an edit to each Airtable table changes. */
+const TABLE_DOMAINS: Record<string, DataDomain> = {
+  [TABLES.player]: "people",
+  [TABLES.team]: "teams",
+  [TABLES.match]: "matches",
+  [TABLES.matchCard]: "matchCards",
+  [TABLES.availabilityException]: "availabilityExceptions",
+  [TABLES.availabilityRule]: "availabilityRules",
+  [TABLES.abilityGroupConfiguration]: "abilityGroups",
+  "Ranking Events": "rankingEvents",
+  [TABLES.membershipOfficer]: "membershipOfficers",
+  [TABLES.sectionChair]: "sectionChairs",
+  [TABLES.sectionCaptainOffice]: "sectionCaptains",
+  [TABLES.commitment]: "commitments",
+  [TABLES.sponsor]: "sponsors",
 };
-
-/** Drop every cache an edit to these tables can have made stale. */
-export async function invalidateForTables(env: Env, tables: Iterable<string>): Promise<void> {
-  const keys = new Set<string>();
-  const sharedPrefixes = new Set<SharedPrefix>();
-  for (const table of tables) {
-    const rule = INVALIDATION[table];
-    if (!rule) continue;
-    for (const k of rule.keys ?? []) keys.add(k);
-    for (const p of rule.sharedPrefixes ?? []) sharedPrefixes.add(p);
-    for (const p of rule.localPrefixes ?? []) invalidateCachePrefix(p);
-  }
-  if (keys.size === 0 && sharedPrefixes.size === 0) return;
-  await invalidateShared(env, [...keys], [...sharedPrefixes]);
-}
 
 interface PayloadPage {
   payloads?: { changedTablesById?: Record<string, unknown>; createdTablesById?: Record<string, unknown>; destroyedTableIds?: string[] }[];
@@ -155,7 +78,7 @@ interface PayloadPage {
 /**
  * Consume every payload since the stored cursor and return the names of the
  * tables they touched. Tables the app does not cache (the CRM side of the
- * base) come back too and are simply ignored by invalidateForTables.
+ * base) come back too and are simply ignored.
  */
 export async function fetchChangedTables(env: Env): Promise<Set<string>> {
   const kv = env.CACHE;
@@ -239,10 +162,10 @@ export async function handleAirtableWebhook(request: Request, env: Env): Promise
     tables = await fetchChangedTables(env);
   } catch (err) {
     console.error("Airtable webhook: payload read failed, invalidating every table:", err instanceof Error ? err.message : err);
-    tables = new Set(Object.keys(INVALIDATION));
+    tables = new Set(Object.keys(TABLE_DOMAINS));
   }
-  const cached = [...tables].filter((t) => t in INVALIDATION);
-  await invalidateForTables(env, cached);
+  const cached = [...tables].filter((t) => t in TABLE_DOMAINS);
+  await invalidateFor(env, cached.map((t) => TABLE_DOMAINS[t]));
   console.log(`Airtable webhook: invalidated ${JSON.stringify(cached)}`);
 
   void inBackground(() => refreshAirtableWebhook(env));

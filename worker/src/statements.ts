@@ -12,13 +12,12 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { getShared } from "./cache";
 import { HttpError } from "./http";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidateCommitments } from "./invalidation";
 import { STATEMENT_RECORDS_KEY } from "./reference";
 import { daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
 import { firstLink, getOfficeHolders, getPeopleByIds, type Contact } from "./contacts";
 import { commitments, type StatementRow } from "./data/commitments";
 import { isRowId } from "./data/ids";
-import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   AUTO_NOTICE_DAYS,
@@ -342,6 +341,6 @@ export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commit
     notes: `Commitment review email requested early${year ? ` for Year ${year}` : ""}${period ? ` (${period})` : ""}.`,
   });
 
-  await invalidateForTables(env, [TABLES.commitment]);
+  await invalidateCommitments(env);
   return { success: true, commitmentId: id };
 }

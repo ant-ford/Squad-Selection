@@ -15,11 +15,10 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { invalidateCache } from "./cache";
 import { sendEmail } from "./mailer";
 import { invitationEmail, kitEmail, registrationEmail, type Sender } from "./joinerEmails";
-import { TABLES } from "../../shared/schema/tableNames";
 import { joinPhone, splitPhone } from "../../shared/phone";
 import { AGREEMENT_PDFS, NEW_MEMBERS_INFO_SHEET } from "../../shared/application";
 import { isUnderEighteen } from "./declarations";
@@ -245,7 +244,7 @@ export async function createJoiner(env: Env, actor: AuthorizedUser, body: Record
     apiId = row.api_id;
   }
   await log(env, actor, existing ? "update" : "create", apiId, Object.keys(formColumns(form)));
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   const invite = body.invite === true;
   if (invite) await inviteJoiner(env, actor, apiId);
   return { id: apiId, invited: invite };
@@ -265,7 +264,7 @@ export async function updateJoiner(env: Env, actor: AuthorizedUser, apiId: strin
   }
   await db(env).update("people", `id=${eq(p.id)}`, formColumns(form));
   await log(env, actor, "update", apiId, Object.keys(formColumns(form)));
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -320,7 +319,7 @@ export async function inviteJoiner(env: Env, actor: AuthorizedUser, apiId: strin
   await sendEmail(env, { toPersonId: p.id, to: p.email, subject, text: body, template: "joiner-invitation", cc, from });
   await db(env).update("people", `id=${eq(p.id)}`, { status: "Applicant", applicant_stage: INVITED_STAGE });
   await log(env, actor, "invite", apiId, ["applicant_stage"]);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
