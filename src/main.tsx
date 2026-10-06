@@ -5,6 +5,10 @@ import { queryClient } from './lib/queryClient';
 import App from "./App";
 import "./index.css";
 import { recoverFromStaleDeploy, isChunkLoadError } from './lib/staleDeploy';
+import { installClientErrorReporting } from './lib/clientErrors';
+
+// Crashes go to the Worker's error_log, for /system.
+installClientErrorReporting();
 
 // A chunk that fails to load almost always means this client is holding an
 // index.html from a previous deploy. Reloading on its own does not help: the
