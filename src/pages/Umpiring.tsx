@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Copy, Download, MessageCircle, User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import { DateHeading } from '@/components/shared';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
@@ -38,7 +39,7 @@ import {
 
 const input =
   'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const btn = 'inline-flex items-center justify-center gap-1 h-8 px-3 rounded-md text-xs font-medium disabled:opacity-50';
+const btn = 'inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium disabled:opacity-50';
 const primaryBtn = `${btn} bg-primary text-primary-foreground`;
 const plainBtn = `${btn} border border-border bg-background text-foreground`;
 const linkBtn = 'text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50';
@@ -166,8 +167,10 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
     ) : null;
   }
 
+  // `contents`: these sit in the card's status row; the offers and the
+  // assign form break onto rows of their own.
   return (
-    <div className="space-y-2">
+    <div className="contents">
       {taken && (
         <div className="flex flex-wrap items-center gap-3">
           {past ? (
@@ -187,7 +190,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
         </div>
       )}
       {!taken && offers.length > 0 && (
-        <ul className="space-y-1">
+        <ul className="basis-full space-y-1">
           {offers.map((o) => (
             <li key={o.id} className="flex items-center gap-3 text-xs">
               <span className="text-foreground">
@@ -203,7 +206,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
       )}
       {!taken &&
         (assigning ? (
-          <div className="rounded-lg border border-border p-2 space-y-2">
+          <div className="basis-full rounded-lg border border-border p-2 space-y-2">
             <div className="grid sm:grid-cols-2 gap-2">
               <label className="text-xs text-muted-foreground">
                 Club umpire
@@ -299,7 +302,7 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
   const taken = confirmedOf(duty);
   const cancelled = duty.status === 'cancelled';
   return (
-    <li className={`px-3 py-2.5 space-y-1.5 ${cancelled ? 'opacity-70' : ''}`}>
+    <li className={`px-3 py-2 space-y-1 ${cancelled ? 'opacity-70' : ''}`}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-sm text-foreground">
@@ -312,25 +315,29 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
         </div>
         <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-muted text-foreground">{duty.dutyTeam} duty</span>
       </div>
-      <p className="text-sm">
-        {cancelled ? (
-          <span className="text-destructive">
-            Removed by HKHA
-            {taken && coordinator ? ` · tell ${taken.name}` : ''}
-          </span>
-        ) : taken ? (
-          <>
-            <Who a={taken} />
-            {coordinator && <Playing duty={duty} personId={taken.personId} />}
-          </>
-        ) : (
-          <span className="text-amber-600 dark:text-amber-400 font-medium">Open</span>
-        )}
-        {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
-        {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-600 dark:text-amber-400"> · ⚠ Your game {duty.clash}</span>}
-      </p>
-      {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
-      {coordinator && <CoordinatorActions duty={duty} board={board} />}
+      {/* Status and the buttons share a row, so more duties fit on a screen;
+          the coordinator's assign form and paid offers take a row of their own. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <p className="text-sm mr-auto">
+          {cancelled ? (
+            <span className="text-destructive">
+              Removed by HKHA
+              {taken && coordinator ? ` · tell ${taken.name}` : ''}
+            </span>
+          ) : taken ? (
+            <>
+              <Who a={taken} />
+              {coordinator && <Playing duty={duty} personId={taken.personId} />}
+            </>
+          ) : (
+            <span className="text-amber-600 dark:text-amber-400 font-medium">Open</span>
+          )}
+          {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
+          {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-600 dark:text-amber-400"> · ⚠ Your game {duty.clash}</span>}
+        </p>
+        {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
+        {coordinator && <CoordinatorActions duty={duty} board={board} />}
+      </div>
     </li>
   );
 }
@@ -599,7 +606,7 @@ export default function Umpiring() {
                 ) : (
                   byDay.map(([day, duties]) => (
                     <section key={day}>
-                      <h2 className="text-xs font-bold uppercase tracking-wide text-foreground mb-1.5">{safeFormat(noon(day), 'EEEE d MMMM')}</h2>
+                      <DateHeading date={noon(day)} />
                       <ul className="rounded-xl border border-border bg-card divide-y divide-border">
                         {duties.map((d) => (
                           <DutyCard key={d.id} duty={d} board={data} />
