@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import { people } from "../worker/src/data/people";
 import { matches } from "../worker/src/data/matches";
+import { matchCards } from "../worker/src/data/matchCards";
 import { availabilityExceptions } from "../worker/src/data/availabilityExceptions";
 import { officers } from "../worker/src/data/officers";
 import { fileLink, verifyFileLink } from "../worker/src/data/supabase/files";
@@ -96,6 +97,27 @@ describe("Supabase repositories", () => {
       { office: "membershipOfficer", designation: "", memberIds: ["recA"] },
       { office: "sectionChair", designation: "Chairman", memberIds: ["recB"] },
     ]);
+  });
+
+  // Ported from airtableAccess.test.ts ("keeps Active rows only"): a Retired
+  // office row grants nothing, but an application still names its signer.
+  it("asks for Active office rows for access, and every row for who signs", async () => {
+    const calls = postgrest(() => []);
+    await officers(env).listActive(["membershipOfficer"]);
+    await officers(env).listAllMembers(["membershipOfficer"]);
+    expect(calls[0].url.searchParams.get("status")).toBe("eq.Active");
+    expect(calls[1].url.searchParams.has("status")).toBe(false);
+  });
+
+  // Ported from airtableAccess.test.ts ("reads only carded appearances from
+  // the previous season"): the suspension input needs only carded rows.
+  it("narrows a season's match cards to carded appearances when asked", async () => {
+    const calls = postgrest(() => []);
+    await matchCards(env).listForSeason("2025-2026", { cardedOnly: true });
+    await matchCards(env).listForSeason("2026-2027");
+    expect(calls[0].url.searchParams.get("season")).toBe("eq.2025-2026");
+    expect(calls[0].url.searchParams.get("cards")).toBe("neq.{}");
+    expect(calls[1].url.searchParams.has("cards")).toBe(false);
   });
 });
 

@@ -27,7 +27,6 @@ import { matches as matchesRepo } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -51,8 +50,6 @@ const PAST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * leaves no newer updated_at behind.
  */
 const CURRENT_TTL_MS = 6 * 60 * 60 * 1000;
-/** On the Airtable backend nothing announces a change, so the summary is only kept briefly. */
-const CURRENT_UNVERSIONED_TTL_MS = 10 * 60 * 1000;
 export const STATS_CURRENT_KEY = "stats-summary:current";
 
 export interface CardCount {
@@ -375,10 +372,9 @@ async function buildFor(env: Env, season: string, fresh = false): Promise<Stored
 /**
  * When this season's Matches and Match Cards last changed: the newest
  * updated_at of each, two one-row reads. Postgres keeps updated_at on every
- * write, hkha-sync's included. Null on the Airtable backend.
+ * write, hkha-sync's included.
  */
-async function currentVersion(env: Env, season: string): Promise<string | null> {
-  if (backendFor(env, "matches") !== "supabase" || backendFor(env, "matchCards") !== "supabase") return null;
+async function currentVersion(env: Env, season: string): Promise<string> {
   const latest = async (view: string) => {
     const rows = await db(env).select<{ updated_at: string }>(view, `select=updated_at&season=${eq(season)}&order=updated_at.desc&limit=1`);
     return rows[0]?.updated_at.replace(/\D/g, "") || "0";
@@ -395,10 +391,8 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   if (season > current) throw new HttpError("That season has not started.", 400, "INVALID_INPUT");
   if (season === current) {
     const version = await currentVersion(env, season);
-    const stored = version
-      ? // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
-        await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS)
-      : await getShared<StoredSummary>(env, STATS_CURRENT_KEY, () => buildFor(env, season), CURRENT_UNVERSIONED_TTL_MS);
+    // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
+    const stored = await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS);
     // Across 1 July the fixed key may still hold last season's summary.
     if (stored.summary.season === season && stored.summary.version === SUMMARY_VERSION) return stored;
     return buildFor(env, season);

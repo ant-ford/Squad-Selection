@@ -159,7 +159,6 @@ describe("my details", () => {
     expect(d).toMatchObject({ season: "2026-2027", applicant: false, underEighteen: true, email: "p@x.com", photoUrl: null, hasHkidCopy: true, kit: null });
     expect(d.values).toMatchObject({ surname: "Lee", academicQualifications: ["Secondary"], chineseName: null });
     expect(d.membership).toMatchObject({ membershipNo: "123", playerCoach: ["Player"] });
-    await expect(getMyDetails({ ...env, DATA_BACKEND: "airtable" } as Env, user)).rejects.toMatchObject({ status: 409 });
   });
 });
 

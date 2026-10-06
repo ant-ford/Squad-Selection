@@ -5,7 +5,6 @@ import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
 import { officers, type Office } from "./data/officers";
-import { backendFor } from "./data/backend";
 import { availabilityExceptions } from "./data/availabilityExceptions";
 import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
@@ -160,10 +159,11 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
     async () => {
       // The Kit Convenor opens the kit screens, the Hockey Convenor league
       // registration requests, the Assistant Director of Hockey every
-      // team's coach screens and the Umpire Coordinator the umpiring
-      // duties, which exist only on Supabase.
-      const offices: Office[] = ["membershipOfficer", "sectionChair", "sectionCaptain"];
-      if (backendFor(env, "officers") === "supabase") offices.push("kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator");
+      // team's coach screens and the Umpire Coordinator the umpiring duties.
+      const offices: Office[] = [
+        "membershipOfficer", "sectionChair", "sectionCaptain",
+        "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator",
+      ];
       const rows = await officers(env).listActive(offices);
       const rolesByPersonId: Record<string, OfficerRole[]> = {};
       for (const { office, designation, memberIds } of rows) {

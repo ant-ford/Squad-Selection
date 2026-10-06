@@ -61,9 +61,4 @@ describe("waivers & declarations", () => {
     expect(v.guardian).toMatchObject({ surname: "Lee", givenNames: "Jo" });
     expect(guardianConsent("Jo Lee")[0]).toContain("I, Jo Lee (the “Parent or Guardian”)");
   });
-
-  it("stays on the Fillout form until the switch-over", async () => {
-    fake({});
-    await expect(getMyDeclarations({ ...env, DATA_BACKEND: "airtable" }, user)).rejects.toMatchObject({ status: 409, code: "NOT_YET" });
-  });
 });

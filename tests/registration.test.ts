@@ -51,10 +51,9 @@ const blank: RegistrationPlayer = {
 };
 
 describe("HKHA registration", () => {
-  it("opens to the Hockey Convenor only, on Supabase only", () => {
-    expect(sectionsFor(convenor, env)).toEqual(["registration"]);
-    expect(sectionsFor(captain, env)).not.toContain("registration");
-    expect(sectionsFor(convenor, { ...env, DATA_BACKEND: "airtable" })).toEqual([]);
+  it("opens to the Hockey Convenor only", () => {
+    expect(sectionsFor(convenor)).toEqual(["registration"]);
+    expect(sectionsFor(captain)).not.toContain("registration");
   });
 
   it("lists what's missing before a player can be registered", () => {

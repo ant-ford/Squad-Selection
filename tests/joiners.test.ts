@@ -95,10 +95,9 @@ describe("the Section Captain's new joiner form", () => {
     expect(parsed).not.toHaveProperty("extra");
   });
 
-  it("is for Section Captains, and only once the app is on Supabase", async () => {
+  it("is for Section Captains", async () => {
     fake();
     await expect(createJoiner(env, player, { form })).rejects.toThrow(/Section Captains/);
-    await expect(createJoiner({ ...env, DATA_BACKEND: "airtable" } as Env, captain, { form })).rejects.toThrow(/switch-over/);
   });
 
   it("creates the applicant and, when asked, invites them from the captain's mailbox", async () => {

@@ -72,7 +72,6 @@ describe("volunteering", () => {
     expect(await canSeeVolunteers(env, { ...player, personId: "recCAPTAIN" })).toBe(true);
     expect(await canSeeVolunteers(env, { ...player, personId: "recSPONSOR" })).toBe(true);
     expect(await canSeeVolunteers(env, player)).toBe(false);
-    expect(await canSeeVolunteers({ ...env, DATA_BACKEND: "airtable" }, { ...player, role: "coach" } as AuthorizedUser)).toBe(false);
   });
 
   it("lists everyone who offered a role or holds a level", async () => {

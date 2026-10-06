@@ -18,7 +18,6 @@ import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
 import { canSeeSeasonPlans } from "./seasonPlan";
-import { backendFor } from "./data/backend";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
 
@@ -180,13 +179,13 @@ export async function getMyFixtures(
     captainTeams,
     isSectionCaptain: authUser.isSectionCaptain,
     // Officers' sections, for the dashboard's header buttons.
-    sections: sectionsFor(authUser, env),
-    seasonPlans: canSeeSeasonPlans(env, authUser),
+    sections: sectionsFor(authUser),
+    seasonPlans: canSeeSeasonPlans(authUser),
     volunteers: await canSeeVolunteers(env, authUser),
     events: await canManageEvents(env, authUser),
     umpiring: await umpiringAccess(env, authUser),
     // Their details are Eddy's own screens on Supabase ("My details").
-    eddyProfile: backendFor(env, "people") === "supabase",
+    eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
     // itself never reaches the browser.
     isBirthday: isBirthdayOn(user.birthday, today),

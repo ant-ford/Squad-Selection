@@ -67,7 +67,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Which officers' sections to offer. Derived from the same rule the
     // Worker enforces, so the app never keeps its own copy of it.
-    sections: sectionsFor(authUser, env),
+    sections: sectionsFor(authUser),
 
     // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
     quizzes: backendFor(env, "people") === "supabase",
@@ -84,7 +84,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
         : null,
 
     // Whether the Season plans screen has anything for them.
-    seasonPlans: canSeeSeasonPlans(env, authUser),
+    seasonPlans: canSeeSeasonPlans(authUser),
 
     // Whether the Volunteers screen is theirs: officers, coaches, captains.
     volunteers: await canSeeVolunteers(env, authUser),

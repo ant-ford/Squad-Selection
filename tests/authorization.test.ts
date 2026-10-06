@@ -300,10 +300,7 @@ describe("requireAuthorizedUser", () => {
     supabaseReturns(applicant.email);
     mocks.getPlayerByEmail.mockResolvedValue(applicant);
     expect((await requireAuthorizedUser(authedRequest(), SUPA)).personId).toBe("recApplicant");
-    // Not on Airtable, where the form is still Fillout's; not once rejected.
-    invalidateAll();
-    supabaseReturns(applicant.email);
-    await expectError(requireAuthorizedUser(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
+    // Not once rejected.
     invalidateAll();
     supabaseReturns(applicant.email);
     mocks.getPlayerByEmail.mockResolvedValue({ ...applicant, applicantStage: "Rejected" });
@@ -444,13 +441,15 @@ describe("requireCoach", () => {
 // Officers' sections (owner decision 2026-09-25)
 //   membership: Membership Officers + Section Captains table
 //   chairman:   Section Chairs + Section Captains table
+//   kit, planning, trials: Section Captains table (and others, tested
+//   in kit, seasonPlan and the Assistant Director block below)
 // ---------------------------------------------------------------------------
 
 describe("officers' sections", () => {
   it.each([
     ["a membership officer", "membershipOfficer", ["membership"]],
     ["a section chair", "chairman", ["chairman"]],
-    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman"]],
+    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman", "kit", "planning", "trials"]],
     ["an ordinary player", "activePlayer", []],
     // Teams.Section Captain is coach access; it opens neither section.
     ["a Teams-linked section captain with no officer row", "sectionCaptain", []],
@@ -526,14 +525,13 @@ describe("the Assistant Director of Hockey", () => {
     });
   });
 
-  it("opens only the trials section, and only on Supabase", async () => {
+  it("opens only the trials section", async () => {
     supabaseReturns("adh@hkfc.com");
     mocks.getPlayerByEmail.mockResolvedValue(people.assistantDirector);
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["trials"]);
-    expect(sectionsFor(user, ENV)).toEqual([]);
+    expect(sectionsFor(user)).toEqual(["trials"]);
   });
 
   it("leaves a Section Captains row its trials section", async () => {
@@ -542,6 +540,6 @@ describe("the Assistant Director of Hockey", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(sectionsFor(user, SUPABASE_ENV)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
+    expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
   });
 });

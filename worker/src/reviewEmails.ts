@@ -1,5 +1,5 @@
 /**
- * Commitment review emails on the Supabase backend - the job of the two
+ * Commitment review emails - the job of the two former
  * Airtable "Email Commitment Form" automations:
  *
  *  - daily (the Worker's cron): every review whose period ends within 60

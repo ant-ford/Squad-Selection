@@ -138,7 +138,6 @@ describe("who sees the duties", () => {
     expect(await umpiringAccess(env, user("recBOB"))).toBe("umpire"); // on a match card, names swapped
     expect(await umpiringAccess(env, user("recCAT"))).toBeNull(); // "Not Applicable", and a first name alone isn't enough
     expect(await umpiringAccess(env, user("recZED", [{ office: "sectionCaptain", designation: "" }]))).toBe("coordinator");
-    expect(await umpiringAccess({ ...env, DATA_BACKEND: "airtable" }, user("recANN"))).toBeNull();
   });
 
   it("hides the screen, not the player page, when the umpiring tables can't be read", async () => {
