@@ -89,6 +89,7 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { getDataChecks } from "./dataChecks";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -865,6 +866,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
       }
+    }
+
+    // ── Data checks (src/dataChecks.ts) ───────────────────────────────────
+    // The Men's Convenor and the Section Captains.
+    if (method === "GET" && pathname === "/api/admin/data-checks") {
+      await requireSection(request, env, "dataChecks");
+      return json(await getDataChecks(env), 200, origin);
     }
 
     // ── Volunteering (src/volunteering.ts) ────────────────────────────────

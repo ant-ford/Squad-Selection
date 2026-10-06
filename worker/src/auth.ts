@@ -186,6 +186,10 @@ export async function requireSectionCaptain(request: Request, env: Env): Promise
  *   registration - every Active player's HKHA registration details, HKID
  *                and passport numbers included: the Hockey Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
+ *   dataChecks - records to put right (unlinked match cards, shared
+ *                Registered Names, re-registrations to review, incomplete
+ *                players, likely duplicates): the Men's Convenor and the
+ *                Section Captains.
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -194,6 +198,7 @@ export const SECTION_OFFICES = {
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
   registration: ["hockeyConvenor"],
+  dataChecks: ["hockeyConvenor", "sectionCaptain"],
 } as const satisfies Record<string, readonly Office[]>;
 
 export type Section = keyof typeof SECTION_OFFICES;
