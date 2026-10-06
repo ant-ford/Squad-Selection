@@ -42,6 +42,25 @@ const INVALIDATION = {
   matchCards: {
     prefixes: ["match-cards:", "players-for-match:", "season-index:", "calendar:"],
   },
+  // Coaches, captains and squad sizes: the roster, coach access and every
+  // per-match list built on them.
+  teams: {
+    keys: ["club-reference", "active-teams"],
+    prefixes: ["players-for-match:", "season-index:", "calendar:"],
+  },
+  // Who holds an office: section access, and the boards that name the
+  // signing officers and sponsors.
+  offices: {
+    // (Sign-in reads offices afresh every request: auth_context.)
+    keys: [MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
+  },
+  // The Men's Convenor's suspensions (discipline.ts): the open ones
+  // (seasonContext.ts MANUAL_SUSPENSIONS_KEY) and what eligibility built
+  // from them.
+  suspensions: {
+    keys: ["manual-suspensions"],
+    prefixes: ["players-for-match:", "season-index:"],
+  },
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */
@@ -58,3 +77,12 @@ export const invalidateCommitments = (env: Env) => invalidate(env, "commitments"
 
 /** After a write to Match Cards (e.g. linking cards to a player). */
 export const invalidateMatchCards = (env: Env) => invalidate(env, "matchCards");
+
+/** After a change to a team's coaches, captains or target squad size. */
+export const invalidateTeams = (env: Env) => invalidate(env, "teams");
+
+/** After an office changes hands or is edited. */
+export const invalidateOffices = (env: Env) => invalidate(env, "offices");
+
+/** After a write to suspensions. */
+export const invalidateSuspensions = (env: Env) => invalidate(env, "suspensions");

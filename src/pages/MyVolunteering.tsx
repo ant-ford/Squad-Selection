@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,6 +10,7 @@ import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { getMyVolunteering, saveVolunteering } from '@/api/volunteering';
 import { volunteeringMissing, type MyVolunteering, type VolunteeringAnswers } from '@shared/volunteering';
+import { errorMessage } from '@/lib/errorMessages';
 
 function Form({ initial, onSaved }: { initial: MyVolunteering; onSaved: () => void }) {
   const [answers, setAnswers] = useState<VolunteeringAnswers>(initial);
@@ -22,7 +22,7 @@ function Form({ initial, onSaved }: { initial: MyVolunteering; onSaved: () => vo
       <VolunteeringSection value={answers} onChange={setAnswers} />
       {save.error && (
         <p role="alert" className="text-xs text-destructive">
-          {save.error instanceof ApiError ? save.error.message : 'Not saved: the connection or the server failed. Please try again.'}
+          {errorMessage(save.error, 'save')}
         </p>
       )}
       {missing && <p className="text-xs text-muted-foreground">{missing}</p>}
@@ -51,12 +51,7 @@ export default function MyVolunteeringPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="My volunteering">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="My volunteering" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
         {isLoading ? (
           <Skeleton className="h-96 w-full" />

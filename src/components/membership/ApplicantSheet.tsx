@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { FileText, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { getNumberHolders, type ApplicantCard, type NumberHolder } from '@/api/membership';
 import { ApiError } from '@/lib/apiClient';
@@ -242,13 +242,14 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
         </label>
       </div>
       {datesWrong && <p className="text-xs text-destructive mt-2">Commitment End Date must be after the Join Date.</p>}
-      <Button
-        className="mt-3 w-full h-10 bg-primary text-primary-foreground disabled:opacity-50"
+      <ActionButton
+        fullWidth
+        className="mt-3"
         disabled={!complete || datesWrong || approve.isPending || checking}
         onClick={review}
       >
         {approve.isPending ? 'Approving…' : checking ? 'Checking…' : 'Approve membership'}
-      </Button>
+      </ActionButton>
       {holders && (
         <ConfirmDialog
           title={`Approve ${card.name}?`}

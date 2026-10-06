@@ -1,148 +1,82 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors,
   MeasuringStrategy, type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core';
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import {
-  ArrowLeft, Search, Settings2, X, ChevronUp, ChevronDown, UserPlus,
-  GripVertical, Loader2, Filter, FileText, MessageSquare, Info, BarChart3, CalendarDays,
-} from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet } from '@/components/ui/sheet';
+import { Tabs, TabPanel } from '@/components/ui/tabs';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
 import {
-  useActivatePlayer, useInactiveRanking,
+  useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
 } from '@/lib/queries';
-import { getReversalAdvisory, formatAge, formatAbsolute } from '@/lib/rankingHistory';
 import { emptyConfig, computeAbilityAssignment } from '@shared/abilityGroup';
 import type { ProfileData } from '@/api/getMyProfile';
-import type { AbilityGroupConfigMap, InactiveRankingEntry, Player } from '@shared/schema/domainTypes';
-import type { RankingChange } from '@/lib/queries';
-import { POS_SHORT } from '@/lib/format';
+import type { InactiveRankingEntry, Player } from '@shared/schema/domainTypes';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { coachDashboardPath } from '@/lib/scrollMemory';
-import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+import {
+  applicantVisible, computeGroupBoundaries, countMoved, getGroupForRank, moveIdToRank, nameOf, reorderIds,
+} from '@/lib/rankingModel';
+import { NO_ROW_ACTIONS, RankingRow, SortableRankingRow } from '@/components/ranking/RankingRow';
+import { MoveToRankDialog } from '@/components/ranking/MoveToRankDialog';
+import { AbilityGroupsSheet } from '@/components/ranking/AbilityGroupsSheet';
+import { InactiveList } from '@/components/ranking/InactiveList';
+import { RecentChanges } from '@/components/ranking/RecentChanges';
+import { RankingSaveBar } from '@/components/ranking/RankingSaveBar';
+import { RankingSheet } from '@/components/ranking/RankingSheet';
+import { EMPTY_RANKING_FILTERS, RankingFilters, type RankingFilterState } from '@/components/ranking/RankingFilters';
 
-const ALL_POSITIONS = Object.keys(POS_SHORT);
-const GROUP_COLORS: Record<string, string> = {
-  A: '#3b82f6', B: '#06b6d4', C: '#14b8a6', D: '#22c55e',
-  E: '#eab308', F: '#f97316', G: '#ef4444',
-};
-const ACCEPTED_STAGE_ORDINAL = 7;
-
-function stageOrdinal(stage?: string): number {
-  if (!stage) return -1;
-  if (stage === 'Accepted') return ACCEPTED_STAGE_ORDINAL;
-  const m = /^(\d+)./.exec(stage);
-  return m ? Number(m[1]) : -1;
-}
-
-function shortStage(s?: string): string {
-  return s ? s.replace(/^\d+.\s*/, '') : '';
-}
-
-function computeGroupBoundaries(config: AbilityGroupConfigMap, totalActive: number) {
-  const boundaries: { group: string; start: number; end: number }[] = [];
-  let cursor = 0;
-  for (const g of ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const) {
-    const cap = Math.max(0, Math.floor(config[g] ?? 0));
-    if (cap === 0) continue;
-    const start = cursor + 1;
-    const end = Math.min(cursor + cap, totalActive);
-    if (end < start) break;
-    boundaries.push({ group: g, start, end });
-    cursor = end;
-  }
-  return boundaries;
-}
-
-function nameOf(p: Player | InactiveRankingEntry): string {
-  const a = (p.preferredName ?? '').trim();
-  const b = (p.surname ?? '').trim();
-  const c = (p.givenNames ?? '').trim();
-  if (a && b) return `${a} ${b}`;
-  if (a) return a;
-  if (b) return b;
-  if (c) return c;
-  return 'Unknown';
-}
-
-function getDividerGroup(player: Player, boundaries: ReturnType<typeof computeGroupBoundaries>) {
-  const rank = player.sectionRank ?? 0;
-  for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
-  return 'H';
-}
-
-function getGroupForRank(rank: number, boundaries: ReturnType<typeof computeGroupBoundaries>): string {
-  for (const b of boundaries) if (rank >= b.start && rank <= b.end) return b.group;
-  return 'H';
-}
+type View = 'ranking' | 'changes' | 'inactive';
 
 export default function PlayerRanking() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { profile } = useOutletContext<{ profile: ProfileData }>();
   const isSectionCaptain = !!profile?.isSectionCaptain;
+  // Making players active or inactive: Section Captains only (owner
+  // decision, 6 Oct 2026), the team link or the office. The Worker checks too.
+  const canSetActive = isSectionCaptain || !!profile?.officerRoles?.some((r) => r.office === 'sectionCaptain');
   const ranking = useRanking();
   const inactiveQuery = useInactiveRanking();
-  // Ranking history for the reversal advisory + recent-changes list.
+  // Ranking history for the reversal advisory and the Recent changes tab.
   const recentChangesQuery = useRecentChanges(30);
   const reorder = useReorderRanking();
   const activate = useActivatePlayer();
+  const deactivate = useDeactivatePlayer();
   const updateConfig = useUpdateAbilityConfig();
+  const isPhone = useMediaQuery('(max-width: 639px)');
 
-  // ── Filter / UI state ─────────
-  const [searchInput, setSearchInput] = useState('');
+  const [view, setView] = useState<View>('ranking');
+  const [filters, setFilters] = useState<RankingFilterState>(EMPTY_RANKING_FILTERS);
+  // The name search waits for typing to pause.
   const [search, setSearch] = useState('');
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 200);
+    const timer = setTimeout(() => setSearch(filters.search), 200);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [filters.search]);
 
-  const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set());
-  const [positionFilter, setPositionFilter] = useState<Set<string>>(new Set());
-  const [showTrialApplicants, setShowTrialApplicants] = useState(true);
-  const [showSponsoringApplicants, setShowSponsoringApplicants] = useState(true);
-  const [showInactive, setShowInactive] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [moveToRankPlayer, setMoveToRankPlayer] = useState<Player | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
+  const [confirmInactive, setConfirmInactive] = useState<{ playerId: string; label: string } | null>(null);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
   const [attendancePlayerId, setAttendancePlayerId] = useState<string | null>(null);
-  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const isMobile = useMediaQuery('(max-width: 639px)');
-
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const [justification, setJustification] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const [currentGroup, setCurrentGroup] = useState<string | null>(null);
-
-  const toggleTeam = useCallback((t: string) => {
-    setTeamFilter((prev) => {
-      const n = new Set(prev);
-      if (n.has(t)) n.delete(t); else n.add(t);
-      return n;
-    });
-  }, []);
-
-  const togglePosition = useCallback((p: string) => {
-    setPositionFilter((prev) => {
-      const n = new Set(prev);
-      if (n.has(p)) n.delete(p); else n.add(p);
-      return n;
-    });
-  }, []);
 
   const data = ranking.data;
   const players = data?.players ?? [];
@@ -151,13 +85,9 @@ export default function PlayerRanking() {
   const playersById = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
 
   const displayPlayers = useMemo(() => {
-    const source = draftIds
-      ? draftIds.map((id) => playersById.get(id)).filter((p): p is Player => !!p)
-      : players;
-      
+    const source = draftIds ? draftIds.map((id) => playersById.get(id)).filter((p): p is Player => !!p) : players;
     const teamCounters = new Map<string, number>();
     const posCounters = new Map<string, number>();
-    
     return source.map((p, i) => {
       const rank = i + 1;
       const tk = p.registeredTeam ?? '';
@@ -180,37 +110,23 @@ export default function PlayerRanking() {
 
   const filteredPlayers = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const applicants = { showTrial: filters.showTrial, showSponsoring: filters.showSponsoring };
     return displayPlayers.filter((p) => {
-      if (p.applicantStage === 'Rejected') return false;
-      if (p.status === 'Applicant') {
-        const ord = stageOrdinal(p.applicantStage);
-        if (ord !== ACCEPTED_STAGE_ORDINAL) {
-          if (ord >= 2) { if (!showSponsoringApplicants) return false; }
-          else if (!showTrialApplicants) return false;
-        }
-      }
-      if (teamFilter.size > 0 && !teamFilter.has(p.registeredTeam ?? '')) return false;
-      if (positionFilter.size > 0 && !positionFilter.has(p.playingPosition ?? '')) return false;
+      if (!applicantVisible(p, applicants)) return false;
+      if (filters.teams.size > 0 && !filters.teams.has(p.registeredTeam ?? '')) return false;
+      if (filters.positions.size > 0 && !filters.positions.has(p.playingPosition ?? '')) return false;
       if (q) {
         const name = `${p.preferredName ?? ''} ${p.surname ?? ''} ${p.givenNames ?? ''}`.toLowerCase();
         if (!name.includes(q)) return false;
       }
       return true;
     });
-  }, [displayPlayers, teamFilter, positionFilter, search, showTrialApplicants, showSponsoringApplicants]);
+  }, [displayPlayers, filters.teams, filters.positions, filters.showTrial, filters.showSponsoring, search]);
 
-  const modifiedCount = useMemo(() => {
-    if (!draftIds) return 0;
-    let count = 0;
-    for (const p of displayPlayers) {
-      const server = playersById.get(p.id);
-      if (server && server.sectionRank !== p.sectionRank) count++;
-    }
-    return count;
-  }, [draftIds, displayPlayers, playersById]);
-
+  const serverRankById = useMemo(() => new Map(players.map((p) => [p.id, p.sectionRank])), [players]);
+  const modifiedCount = useMemo(() => countMoved(draftIds, serverRankById), [draftIds, serverRankById]);
   const hasChanges = modifiedCount > 0;
-  const applicantsHidden = !showTrialApplicants || !showSponsoringApplicants;
+  const draftPending = draftIds !== null;
 
   const virtualizer = useVirtualizer({
     count: filteredPlayers.length,
@@ -236,29 +152,17 @@ export default function PlayerRanking() {
       }
     });
   }, [boundaries]);
-
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
+  const baseIds = useCallback((prev: string[] | null) => prev ?? players.map((p) => p.id), [players]);
+
   const reorderDraft = useCallback((sourceId: string, targetId: string, before: boolean) => {
-    if (sourceId === targetId) return;
-    setDraftIds((prev) => {
-      const base = prev ?? players.map((p) => p.id);
-      const next = base.filter((id) => id !== sourceId);
-      const ti = next.indexOf(targetId);
-      if (ti === -1) return prev;
-      next.splice(before ? ti : ti + 1, 0, sourceId);
-      return next;
-    });
-  }, [players]);
+    setDraftIds((prev) => reorderIds(baseIds(prev), sourceId, targetId, before) ?? prev);
+  }, [baseIds]);
 
   const moveToAbsoluteRank = useCallback((id: string, rank: number) => {
-    setDraftIds((prev) => {
-      const base = prev ?? players.map((p) => p.id);
-      const next = base.filter((x) => x !== id);
-      next.splice(Math.max(0, Math.min(rank, next.length + 1)) - 1, 0, id);
-      return next;
-    });
-  }, [players]);
+    setDraftIds((prev) => moveIdToRank(baseIds(prev), id, rank));
+  }, [baseIds]);
 
   const moveStep = useCallback((id: string, dir: 'up' | 'down') => {
     const idx = filteredPlayers.findIndex((p) => p.id === id);
@@ -270,7 +174,6 @@ export default function PlayerRanking() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const handleDragStart = useCallback((e: DragStartEvent) => setActiveDragId(String(e.active.id)), []);
-  
   const handleDragEnd = useCallback((e: DragEndEvent) => {
     setActiveDragId(null);
     const { active, over } = e;
@@ -282,7 +185,6 @@ export default function PlayerRanking() {
     if (si === -1 || ti === -1) return;
     reorderDraft(sourceId, targetId, si > ti);
   }, [filteredPlayers, reorderDraft]);
-
   const handleDragCancel = useCallback(() => setActiveDragId(null), []);
 
   const handleSave = useCallback(async () => {
@@ -294,7 +196,7 @@ export default function PlayerRanking() {
       setJustification('');
       toast.success(`Ranking saved (${modifiedCount} change${modifiedCount !== 1 ? 's' : ''})`);
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to save ranking');
+      toast.error(err?.message ?? 'Could not save the ranking');
     }
   }, [draftIds, modifiedCount, reorder, justification]);
 
@@ -304,865 +206,266 @@ export default function PlayerRanking() {
     queryClient.invalidateQueries({ queryKey: ['ranking'] });
   }, [queryClient]);
 
-  useEffect(() => {
-    if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasChanges]);
+  const leave = useUnsavedChanges(hasChanges, 'Your ranking changes will be lost.');
 
   const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
-
   const handleOpenMoveToRank = useCallback((playerId: string) => {
     setMoveToRankPlayer(displayPlayersRef.current.find((x) => x.id === playerId) ?? null);
   }, []);
+
+  const handleMakeInactive = useCallback((playerId: string) => {
+    const player = playersById.get(playerId);
+    setConfirmInactive({ playerId, label: player ? nameOf(player) : 'this player' });
+  }, [playersById]);
+
+  const executeMakeInactive = useCallback(async (playerId: string, label: string) => {
+    setConfirmInactive(null);
+    setMutatingPlayerId(playerId);
+    try {
+      await deactivate.mutateAsync({ playerId });
+      setDraftIds(null);
+      toast.success(`${label} is inactive`);
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not make the player inactive');
+    } finally { setMutatingPlayerId(null); }
+  }, [deactivate]);
 
   const handleActivate = useCallback(async (entry: InactiveRankingEntry) => {
     setMutatingPlayerId(entry.id);
     try {
       await activate.mutateAsync({ playerId: entry.id });
       setDraftIds(null);
-      toast.success(`${entry.preferredName ?? 'Player'} ${entry.status === 'Applicant' ? 'added to ranking' : 'reactivated'}`);
+      toast.success(`${entry.preferredName ?? 'Player'} ${entry.status === 'Applicant' ? 'added to the ranking' : 'is active'}`);
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to activate player');
+      toast.error(err?.message ?? 'Could not make the player active');
     } finally { setMutatingPlayerId(null); }
   }, [activate]);
 
   if (ranking.isLoading) return <RankingSkeleton />;
   if (ranking.isError) {
     return (
-      <div className="p-6 text-center text-destructive">
-        Failed to load ranking: {(ranking.error as any)?.message ?? 'Unknown error'}
-        <div className="mt-3"> <Button onClick={() => ranking.refetch()}>Retry</Button> </div>
+      <div className="p-6 text-center text-danger-soft-foreground">
+        Could not load the ranking: {(ranking.error as any)?.message ?? 'unknown error'}
+        <div className="mt-3"><ActionButton variant="outline" onClick={() => ranking.refetch()}>Try again</ActionButton></div>
       </div>
     );
   }
   if (!data) return <RankingSkeleton />;
 
   const isSaving = reorder.isPending;
-  const activeDragPlayer = activeDragId ? playersById.get(activeDragId) : null;
-
-  const filterBarProps = {
-    search: searchInput,
-    onSearch: setSearchInput,
-    teamFilter,
-    onToggleTeam: toggleTeam,
-    onClearTeams: () => setTeamFilter(new Set()),
-    positionFilter,
-    onTogglePosition: togglePosition,
-    onClearPositions: () => setPositionFilter(new Set()),
-    showTrialApplicants,
-    showSponsoringApplicants,
-    onNoneApplicants: () => { setShowTrialApplicants(false); setShowSponsoringApplicants(false); },
-    onToggleTrialApplicants: () => setShowTrialApplicants((v) => !v),
-    onToggleSponsoringApplicants: () => setShowSponsoringApplicants((v) => !v),
-    onResetApplicants: () => { setShowTrialApplicants(true); setShowSponsoringApplicants(true); },
-    teamOptions,
-    showInactive,
-    onToggleShowInactive: () => setShowInactive((v) => !v),
-  };
+  const activeDragPlayer = activeDragId ? displayPlayers.find((p) => p.id === activeDragId) : null;
+  const inactive = inactiveQuery.data ?? [];
+  const changes = recentChangesQuery.data?.changes ?? [];
+  const tabs = [
+    { value: 'ranking' as const, label: 'Ranking' },
+    { value: 'changes' as const, label: 'Recent changes' },
+    { value: 'inactive' as const, label: `Inactive (${inactive.length})` },
+  ];
 
   return (
-    <div className="pb-32">
-      <div className="container mx-auto px-4 pt-3 flex items-center gap-2">
-        <button onClick={() => navigate(coachDashboardPath())} className="flex items-center gap-1 text-sm text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-        </button>
-        <div className="flex-1" />
+    <div className={hasChanges ? 'pb-40 sm:pb-28' : 'pb-8'}>
+      <div className="container mx-auto px-4 pt-2 flex items-end gap-2">
+        <Tabs id="ranking" label="Ranking views" items={tabs} value={view} onChange={setView} className="flex-1 min-w-0" />
         {isSectionCaptain && (
-          <button
+          <ActionButton
+            variant="ghost"
+            iconOnly
+            icon={<Settings2 />}
+            aria-label="Ability groups"
+            title="Ability groups"
             onClick={() => setShowConfig(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80"
-          >
-            <Settings2 className="h-3.5 w-3.5" /> Configuration
-          </button>
+          />
         )}
       </div>
 
-      <div className="container mx-auto px-4 pt-2 pb-1">
-        <h1 className="text-xl font-semibold text-foreground">Player Ranking</h1>
-      </div>
+      {view === 'ranking' && (
+        <TabPanel tabsId="ranking" value="ranking">
+          <RankingFilters filters={filters} onChange={setFilters} teamOptions={teamOptions} />
 
-      {isMobile ? (
-        <>
-          <div className="container mx-auto px-4 py-2 border-y border-border bg-card">
-            <button
-              onClick={() => setIsFilterSheetOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-            >
-              <Filter className="h-4 w-4" />
-              Filters
-              {(search || teamFilter.size > 0 || positionFilter.size > 0 || applicantsHidden) && ' (active)'}
-            </button>
-          </div>
-          <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-            <SheetContent side="bottom" className="p-4">
-              <SheetHeader onClose={() => setIsFilterSheetOpen(false)}><SheetTitle>Filters</SheetTitle></SheetHeader>
-              <RankingFilterContent {...filterBarProps} />
-            </SheetContent>
-          </Sheet>
-        </>
-      ) : (
-        <div className="container mx-auto px-4 py-2 border-y border-border bg-card">
-          <RankingFilterContent {...filterBarProps} />
-        </div>
-      )}
-
-      {currentGroup && filteredPlayers.length > 0 && (
-        <div className="sticky top-0 z-10 container mx-auto px-4">
-          <div className="bg-background/95 backdrop-blur-sm border-b border-border py-1 px-2 rounded-b-lg">
-            <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-              Ability Group {currentGroup}
-            </span>
-          </div>
-        </div>
-      )}
-
-      <div ref={listRef} data-rank-list onScroll={handleListScroll} className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto">
-        {filteredPlayers.length === 0 ? (
-          <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
-            No players match the current filters.
-          </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-          >
-            <SortableContext items={filteredPlayers.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-              <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
-                {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const p = filteredPlayers[virtualRow.index];
-                  const prevPlayer = filteredPlayers[virtualRow.index - 1];
-                  const currentGrp = getDividerGroup(p, boundaries);
-                  const prevGrp = prevPlayer ? getDividerGroup(prevPlayer, boundaries) : null;
-                  const showDivider = prevGrp !== null && currentGrp !== prevGrp;
-                  return (
-                    <div
-                      key={p.id}
-                      data-index={virtualRow.index}
-                      ref={virtualizer.measureElement}
-                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)`, zIndex: openMenuPlayerId === p.id ? 50 : undefined }}
-                    >
-                      {showDivider && <TierDivider group={prevGrp!} />}
-                      <SortableRankingRow
-                        player={p}
-                        isFirst={virtualRow.index === 0}
-                        isLast={virtualRow.index === filteredPlayers.length - 1}
-                        disabled={isSaving || mutatingPlayerId === p.id}
-                        menuOpen={openMenuPlayerId === p.id}
-                        onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
-                        onMoveStep={moveStep}
-                        onOpenMoveToRank={handleOpenMoveToRank}
-                        onViewStats={setStatsPlayerId}
-                        onViewAttendance={setAttendancePlayerId}
-                        onPhotoClick={setExpandedPhoto}
-                      />
-                    </div>
-                  );
-                })}
+          {currentGroup && filteredPlayers.length > 0 && (
+            <div className="sticky top-0 z-10 container mx-auto px-4">
+              <div className="bg-background/95 backdrop-blur-sm border-b border-border py-1 px-2 rounded-b-lg">
+                <span className="text-xs font-semibold text-muted-foreground">Ability group {currentGroup}</span>
               </div>
-            </SortableContext>
-            <DragOverlay>
-              {activeDragPlayer ? (
-                <RankingRowInner
-                  player={activeDragPlayer}
-                  isFirst={false} isLast={false} disabled={false} isDragging={false}
-                  menuOpen={false} onMenuOpenChange={() => {}}
-                  onMoveStep={() => {}} onOpenMoveToRank={() => {}} onViewStats={() => {}} onViewAttendance={() => {}} onPhotoClick={() => {}}
-                  dragHandleProps={{}}
-                  style={{ opacity: 0.9, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
-                />
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        )}
-      </div>
+            </div>
+          )}
 
-      {showInactive && (
-        <InactiveSection entries={inactiveQuery.data ?? []} loading={inactiveQuery.isLoading} onReactivate={handleActivate} draftPending={draftIds !== null} />
+          <div ref={listRef} data-rank-list onScroll={handleListScroll} className="container mx-auto px-4 pt-2 max-h-[70vh] overflow-y-auto">
+            {filteredPlayers.length === 0 ? (
+              <div className="text-center py-12 text-sm text-muted-foreground border border-dashed border-border rounded-lg">
+                No players match the filters
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+                measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+              >
+                <SortableContext items={filteredPlayers.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+                  <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+                    {virtualizer.getVirtualItems().map((virtualRow) => {
+                      const p = filteredPlayers[virtualRow.index];
+                      const prevPlayer = filteredPlayers[virtualRow.index - 1];
+                      const currentGrp = getGroupForRank(p.sectionRank ?? 0, boundaries);
+                      const prevGrp = prevPlayer ? getGroupForRank(prevPlayer.sectionRank ?? 0, boundaries) : null;
+                      const showDivider = prevGrp !== null && currentGrp !== prevGrp;
+                      return (
+                        <div
+                          key={p.id}
+                          data-index={virtualRow.index}
+                          ref={virtualizer.measureElement}
+                          style={{
+                            position: 'absolute', top: 0, left: 0, width: '100%',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            zIndex: openMenuPlayerId === p.id ? 50 : undefined,
+                          }}
+                        >
+                          {showDivider && <GroupDivider group={prevGrp!} />}
+                          <SortableRankingRow
+                            player={p}
+                            isFirst={virtualRow.index === 0}
+                            isLast={virtualRow.index === filteredPlayers.length - 1}
+                            disabled={isSaving || mutatingPlayerId === p.id}
+                            draftPending={draftPending}
+                            compact={isPhone}
+                            menuOpen={openMenuPlayerId === p.id}
+                            onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
+                            onMoveStep={moveStep}
+                            onOpenMoveToRank={handleOpenMoveToRank}
+                            onViewStats={setStatsPlayerId}
+                            onViewAttendance={setAttendancePlayerId}
+                            onPhotoClick={setExpandedPhoto}
+                            onMakeInactive={canSetActive ? handleMakeInactive : undefined}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </SortableContext>
+                <DragOverlay>
+                  {activeDragPlayer ? (
+                    <RankingRow
+                      {...NO_ROW_ACTIONS}
+                      player={activeDragPlayer}
+                      isFirst={false} isLast={false} disabled={false} draftPending={false} compact={false}
+                      isDragging={false} menuOpen={false} onMenuOpenChange={() => {}}
+                      dragHandleProps={{}}
+                      style={{ opacity: 0.9, boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
+                    />
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </div>
+        </TabPanel>
+      )}
+
+      {view === 'changes' && (
+        <TabPanel tabsId="ranking" value="changes" className="container mx-auto px-4 pt-3">
+          <RecentChanges changes={changes} loading={recentChangesQuery.isLoading} />
+        </TabPanel>
+      )}
+
+      {view === 'inactive' && (
+        <TabPanel tabsId="ranking" value="inactive" className="container mx-auto px-4 pt-3">
+          <InactiveList
+            entries={inactive}
+            loading={inactiveQuery.isLoading}
+            onReactivate={canSetActive ? handleActivate : undefined}
+            draftPending={draftPending}
+            busyId={mutatingPlayerId}
+          />
+        </TabPanel>
       )}
 
       {moveToRankPlayer && (
-        <MoveToRankSheet
+        <MoveToRankDialog
           player={moveToRankPlayer}
           activeCount={totalActive}
-          history={recentChangesQuery.data?.changes ?? []}
+          history={changes}
           onClose={() => setMoveToRankPlayer(null)}
           onSubmit={(rank) => { moveToAbsoluteRank(moveToRankPlayer.id, rank); setMoveToRankPlayer(null); }}
         />
       )}
 
       {showConfig && isSectionCaptain && (
-        <ConfigSheet
-          config={config}
-          activeCount={totalActive}
-          saving={updateConfig.isPending}
-          onClose={() => setShowConfig(false)}
-          onSave={async (next) => {
-            try {
-              await updateConfig.mutateAsync(next);
-              toast.success('Configuration saved — ability badges updated');
-              setShowConfig(false);
-            } catch (err: any) {
-              toast.error(err?.message ?? 'Failed to update configuration');
-            }
-          }}
+        <RankingSheet title="Ability groups" onClose={() => setShowConfig(false)}>
+          <AbilityGroupsSheet
+            config={config}
+            activeCount={totalActive}
+            saving={updateConfig.isPending}
+            onClose={() => setShowConfig(false)}
+            onSave={async (next) => {
+              try {
+                await updateConfig.mutateAsync(next);
+                toast.success('Ability groups saved');
+                setShowConfig(false);
+              } catch (err: any) {
+                toast.error(err?.message ?? 'Could not save the ability groups');
+              }
+            }}
+          />
+        </RankingSheet>
+      )}
+
+      {confirmInactive && (
+        <ConfirmDialog
+          title="Make inactive"
+          message={`Take ${confirmInactive.label} out of the ranking? They can be made active again from the Inactive tab.`}
+          confirmLabel="Make inactive"
+          destructive
+          onConfirm={() => executeMakeInactive(confirmInactive.playerId, confirmInactive.label)}
+          onCancel={() => setConfirmInactive(null)}
         />
       )}
 
-      {/* Coach drill-in: the same season stats a player sees on their own
-          dashboard, opened from the ranking row menu. */}
+      {/* The same season stats a player sees on their own page. */}
       <SeasonStatsSheet
         playerId={statsPlayerId}
-        playerName={
-          statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? ({} as Player)) : undefined
-        }
+        playerName={statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? {}) : undefined}
         onClose={() => setStatsPlayerId(null)}
       />
 
       {/* Past attendance and upcoming availability, fixture by fixture. */}
       <AttendanceSheet
         playerId={attendancePlayerId}
-        playerName={
-          attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? ({} as Player)) : undefined
-        }
+        playerName={attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? {}) : undefined}
         onClose={() => setAttendancePlayerId(null)}
       />
 
-      {openMenuPlayerId !== null && (
-        <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />
-      )}
+      {openMenuPlayerId !== null && <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />}
 
       <Sheet open={!!expandedPhoto} raised onOpenChange={(next) => !next && setExpandedPhoto(null)}>
-        <div
-          className="fixed inset-0 z-[61] bg-black/70 flex items-center justify-center p-6"
-          onClick={() => setExpandedPhoto(null)}
-        >
+        <div className="fixed inset-0 z-[61] bg-black/70 flex items-center justify-center p-6" onClick={() => setExpandedPhoto(null)}>
           <img src={expandedPhoto ?? undefined} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
         </div>
       </Sheet>
 
+      {leave.prompt}
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex flex-wrap gap-3 z-50 items-center">
-          <div className="flex-1 min-w-[200px] flex items-center gap-2">
-            <input
-              value={justification}
-              onChange={(e) => setJustification(e.target.value)}
-              maxLength={280}
-              placeholder={`Optional note for this change (max 280 chars) ${modifiedCount} change${modifiedCount !== 1 ? 's' : ''}`}
-              className="flex-1 min-w-0 text-sm border border-border rounded px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
-              {justification.length}/280
-            </span>
-          </div>
-          <button onClick={handleDiscard} disabled={isSaving} className="flex-1 min-w-[100px] py-3 border rounded text-sm font-medium disabled:opacity-50">
-            Discard
-          </button>
-          <button onClick={handleSave} disabled={isSaving} className="flex-1 min-w-[100px] py-3 bg-primary text-primary-foreground rounded text-sm font-medium disabled:opacity-50">
-            {reorder.isPending ? (
-              <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Saving…</span>
-            ) : `Save (${modifiedCount})`}
-          </button>
-        </div>
+        <RankingSaveBar
+          count={modifiedCount}
+          note={justification}
+          onNote={setJustification}
+          saving={isSaving}
+          onDiscard={handleDiscard}
+          onSave={handleSave}
+        />
       )}
-
-      <RecentChangesSection
-        changes={recentChangesQuery.data?.changes ?? []}
-        loading={recentChangesQuery.isLoading}
-      />
     </div>
   );
 }
 
-// ── Filter bar ───────────────────────────────────────────────────────────
-function RankingFilterContent(props: {
-  search: string;
-  onSearch: (v: string) => void;
-  teamFilter: Set<string>;
-  onToggleTeam: (t: string) => void;
-  onClearTeams: () => void;
-  positionFilter: Set<string>;
-  onTogglePosition: (p: string) => void;
-  onClearPositions: () => void;
-  showTrialApplicants: boolean;
-  showSponsoringApplicants: boolean;
-  onNoneApplicants: () => void;
-  onToggleTrialApplicants: () => void;
-  onToggleSponsoringApplicants: () => void;
-  onResetApplicants: () => void;
-  teamOptions: string[];
-  showInactive: boolean;
-  onToggleShowInactive: () => void;
-}) {
-  const applicantsHidden = !props.showTrialApplicants || !props.showSponsoringApplicants;
-  const hasFilter = !!props.search || props.teamFilter.size > 0 || props.positionFilter.size > 0 || applicantsHidden;
-
+function GroupDivider({ group }: { group: string }) {
   return (
-    <>
-      <div className="flex items-center gap-2 mb-1.5">
-        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-        <input
-          value={props.search}
-          onChange={(e) => props.onSearch(e.target.value)}
-          placeholder="Search by name…"
-          className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-        {hasFilter && (
-          <button
-            onClick={() => {
-              props.onSearch('');
-              props.onClearTeams();
-              props.onClearPositions();
-              props.onResetApplicants();
-            }}
-            className="text-xs text-destructive flex items-center gap-0.5"
-          >
-            <X className="h-3 w-3" /> Clear
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className="text-xs text-muted-foreground w-16 shrink-0">Team:</span>
-        <Chip label="All" active={props.teamFilter.size === 0} onClick={props.onClearTeams} />
-        {props.teamOptions.map((t) => (
-          <Chip key={t} label={t} active={props.teamFilter.has(t)} onClick={() => props.onToggleTeam(t)} />
-        ))}
-      </div>
-
-      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className="text-xs text-muted-foreground w-16 shrink-0">Position:</span>
-        <Chip label="All" active={props.positionFilter.size === 0} onClick={props.onClearPositions} />
-        {ALL_POSITIONS.map((p) => (
-          <Chip key={p} label={POS_SHORT[p] ?? p} active={props.positionFilter.has(p)} onClick={() => props.onTogglePosition(p)} />
-        ))}
-      </div>
-
-      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className="text-xs text-muted-foreground w-16 shrink-0">Min. Stage:</span>
-        <Chip
-          label="None"
-          active={!props.showTrialApplicants && !props.showSponsoringApplicants}
-          onClick={props.onNoneApplicants}
-        />
-        <Chip label="Trial Application" active={props.showTrialApplicants} onClick={props.onToggleTrialApplicants} />
-        <Chip label="Sponsoring" active={props.showSponsoringApplicants} onClick={props.onToggleSponsoringApplicants} />
-      </div>
-
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          onClick={props.onToggleShowInactive}
-          className={`text-xs px-2 py-1 rounded-md ${props.showInactive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-        >
-          {props.showInactive ? 'Hide inactive' : 'Show inactive'}
-        </button>
-        <div className="flex-1" />
-      </div>
-    </>
-  );
-}
-
-function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function TierDivider({ group }: { group: string }) {
-  return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="flex items-center gap-2 py-1" aria-hidden="true">
       <div className="h-px flex-1 bg-border" />
-      <span className="text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">─── End {group} ───</span>
+      <span className="text-xs font-semibold text-muted-foreground">End of {group}</span>
       <div className="h-px flex-1 bg-border" />
-    </div>
-  );
-}
-
-function SortableRankingRow(props: {
-  player: Player;
-  isFirst: boolean;
-  isLast: boolean;
-  disabled: boolean;
-  onMoveStep: (id: string, dir: 'up' | 'down') => void;
-  onOpenMoveToRank: (playerId: string) => void;
-  onViewStats: (playerId: string) => void;
-  onViewAttendance: (playerId: string) => void;
-  onPhotoClick: (url: string) => void;
-  menuOpen: boolean;
-  onMenuOpenChange: (v: boolean) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.player.id, disabled: props.disabled });
-  const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
-  return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <RankingRowInner
-        player={props.player}
-        isFirst={props.isFirst}
-        isLast={props.isLast}
-        disabled={props.disabled}
-        isDragging={isDragging}
-        menuOpen={props.menuOpen}
-        onMenuOpenChange={props.onMenuOpenChange}
-        onMoveStep={props.onMoveStep}
-        onOpenMoveToRank={props.onOpenMoveToRank}
-        onViewStats={props.onViewStats}
-        onViewAttendance={props.onViewAttendance}
-        onPhotoClick={props.onPhotoClick}
-        dragHandleProps={listeners ?? {}}
-      />
-    </div>
-  );
-}
-
-function RankingRowInner(props: {
-  player: Player;
-  isFirst: boolean;
-  isLast: boolean;
-  disabled: boolean;
-  isDragging: boolean;
-  menuOpen: boolean;
-  onMenuOpenChange: (v: boolean) => void;
-  onMoveStep: (id: string, dir: 'up' | 'down') => void;
-  onOpenMoveToRank: (playerId: string) => void;
-  onViewStats: (playerId: string) => void;
-  onViewAttendance: (playerId: string) => void;
-  onPhotoClick: (url: string) => void;
-  dragHandleProps: Record<string, any>;
-  style?: React.CSSProperties;
-}) {
-  const { player, disabled, isDragging } = props;
-  const [showCv, setShowCv] = useState(false);
-  const [showComments, setShowComments] = useState(false);
-  const rank = player.sectionRank ?? 0;
-  const ability = player.playingAbility ?? '—';
-  const abilityTone = getAbilityTone(ability);
-  const isApplicant = player.status === 'Applicant';
-  const hasCv = isApplicant && !!player.sportsBackground && player.sportsBackground.trim() !== '';
-  const hasComments = !!player.selectionComments && player.selectionComments.trim() !== '';
-
-  // The list scrolls inside its own box, which clips anything hanging out of
-  // it - so for the last rows the menu opens upwards instead.
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuUp, setMenuUp] = useState(false);
-  useLayoutEffect(() => {
-    const menu = menuRef.current;
-    if (!props.menuOpen || !menu) {
-      setMenuUp(false);
-      return;
-    }
-    const box = menu.closest('[data-rank-list]')?.getBoundingClientRect();
-    const bottomLimit = Math.min(window.innerHeight, box?.bottom ?? Infinity);
-    const topLimit = Math.max(0, box?.top ?? 0);
-    const rect = menu.getBoundingClientRect();
-    const trigger = menu.parentElement!.getBoundingClientRect();
-    setMenuUp(rect.bottom > bottomLimit && trigger.top - rect.height - 4 >= topLimit);
-  }, [props.menuOpen]);
-
-  return (
-    <div
-      data-rank={rank}
-      style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
-      className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors ${isApplicant ? 'bg-amber-50/70' : 'bg-card'} ${isDragging ? 'border-primary' : isApplicant ? 'border-amber-200' : 'border-border'}`}
-    >
-      <div className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground shrink-0 touch-none" {...props.dragHandleProps}>
-        <GripVertical className="h-4 w-4" />
-      </div>
-
-      <button
-        onClick={(e) => { e.stopPropagation(); if (player.photo) props.onPhotoClick(player.photo); }}
-        className="shrink-0 rounded-full overflow-hidden border border-border"
-        title={player.photo ? 'View photo' : undefined}
-      >
-        <img
-          src={player.photo || DEFAULT_PHOTO}
-          alt={nameOf(player)}
-          className="h-9 w-9 rounded-full object-cover"
-          onError={fallBackToDefaultPhoto}
-        />
-      </button>
-
-      <div className="w-7 text-center shrink-0">
-        <span className="text-sm font-bold text-foreground tabular-nums">{rank || '—'}</span>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <p className="text-sm font-medium text-foreground truncate leading-tight">{nameOf(player)}</p>
-          {player.shirtNoValue && (
-            <span className="text-[10px] font-bold text-muted-foreground shrink-0">#{player.shirtNoValue}</span>
-          )}
-          {isApplicant && (
-            <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0" title={player.applicantStage}>
-              Applicant{player.applicantStage ? ` · ${shortStage(player.applicantStage)}` : ''}
-            </span>
-          )}
-          {hasCv && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowCv((v) => !v); }}
-              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showCv ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              <FileText className="h-3 w-3" /> CV
-            </button>
-          )}
-          {hasComments && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowComments((v) => !v); }}
-              className={`flex items-center gap-1 text-[10px] font-medium shrink-0 ${showComments ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              <MessageSquare className="h-3 w-3" /> Comments
-            </button>
-          )}
-        </div>
-        <p className="text-[11px] text-muted-foreground truncate leading-tight">
-          {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'} · T#{player.teamRank ?? '–'} · P#{player.positionalRank ?? '–'}
-        </p>
-        {showCv && player.sportsBackground && (
-          <div className="mt-1.5 text-[11px] text-foreground whitespace-pre-wrap bg-muted/50 border border-border rounded p-2">
-            {player.sportsBackground}
-          </div>
-        )}
-        {showComments && player.selectionComments && (
-          <div className="mt-1.5 text-[11px] text-foreground whitespace-pre-wrap bg-muted/50 border border-border rounded p-2">
-            {player.selectionComments}
-          </div>
-        )}
-      </div>
-
-      <AbilityBadge value={ability} tone={abilityTone} />
-
-      <div className="relative">
-        <button
-          onClick={(e) => { e.stopPropagation(); props.onMenuOpenChange(!props.menuOpen); }}
-          className="p-1 text-muted-foreground hover:text-foreground"
-          title="More actions"
-        >
-          <Settings2 className="h-4 w-4" />
-        </button>
-        {props.menuOpen && (
-          <>
-            <div ref={menuRef} className={`absolute right-0 ${menuUp ? 'bottom-7' : 'top-7'} z-40 w-48 bg-card border border-border rounded-md shadow-lg p-1 text-sm`}>
-              <button
-                onClick={() => { props.onMenuOpenChange(false); props.onOpenMoveToRank(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
-              >
-                Move to rank…
-              </button>
-              <div className="my-1 h-px bg-border" />
-              <button
-                onClick={() => { props.onMenuOpenChange(false); props.onViewStats(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
-              >
-                <BarChart3 className="h-3.5 w-3.5 mr-2" /> Season stats
-              </button>
-              <button
-                onClick={() => { props.onMenuOpenChange(false); props.onViewAttendance(player.id); }}
-                className="w-full flex items-center text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
-              >
-                <CalendarDays className="h-3.5 w-3.5 mr-2" /> Attendance
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-0.5">
-        <button onClick={() => props.onMoveStep(player.id, 'up')} disabled={disabled || props.isFirst} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move up">
-          <ChevronUp className="h-4 w-4" />
-        </button>
-        <button onClick={() => props.onMoveStep(player.id, 'down')} disabled={disabled || props.isLast} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Move down">
-          <ChevronDown className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function AbilityBadge({ value, tone }: { value: string; tone: string }) {
-  return <span className={`text-xs font-bold px-2 py-0.5 rounded shrink-0 ${tone}`} title={value}>{value}</span>;
-}
-
-function getAbilityTone(value: string): string {
-  if (value.startsWith('A')) return 'bg-blue-100 text-blue-800 border border-blue-200';
-  if (value.startsWith('B')) return 'bg-cyan-100 text-cyan-800 border border-cyan-200';
-  if (value.startsWith('C')) return 'bg-teal-100 text-teal-800 border border-teal-200';
-  if (value.startsWith('D')) return 'bg-green-100 text-green-800 border border-green-200';
-  if (value.startsWith('E')) return 'bg-yellow-100 text-yellow-800 border border-yellow-200';
-  if (value.startsWith('F')) return 'bg-orange-100 text-orange-800 border border-orange-200';
-  if (value.startsWith('G')) return 'bg-red-100 text-red-800 border border-red-200';
-  if (value.startsWith('H')) return 'bg-pink-100 text-pink-800 border border-pink-200';
-  return 'bg-muted text-muted-foreground';
-}
-
-function MoveToRankSheet({ player, activeCount, onClose, onSubmit, history }: {
-  player: Player; activeCount: number; onClose: () => void; onSubmit: (rank: number) => void;
-  history?: RankingChange[];
-}) {
-  const [value, setValue] = useState(String(player.sectionRank ?? 1));
-  const [error, setError] = useState('');
-  const n = Number(value);
-  const isValid = Number.isInteger(n) && n >= 1 && n <= activeCount;
-
-  // Non-blocking advisory: if someone recently moved this player, say so -
-  // the coach is always free to proceed.
-  const advisory = history
-    ? getReversalAdvisory(history, player.id)
-    : null;
-
-  return (
-    <ModalSheet title={`Move ${nameOf(player)} to rank`} onClose={onClose}>
-      <div className="space-y-3">
-        {advisory && (
-          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
-            <Info className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">
-                Recently moved {advisory.oldRank != null && advisory.newRank != null && advisory.newRank < advisory.oldRank ? 'up' : 'down'} by {advisory.actorName}
-              </p>
-              <p className="text-amber-800/80">
-                {formatAge(advisory.at)} · {formatAbsolute(advisory.at)}
-                {advisory.note ? ` · "${advisory.note}"` : ''}
-              </p>
-            </div>
-          </div>
-        )}
-        <p className="text-sm text-muted-foreground">
-          Current rank: <span className="font-medium text-foreground">#{player.sectionRank || 'Unranked'}</span>. Allowed: 1 to {activeCount}.
-        </p>
-        <input
-          type="number" min={1} max={activeCount} value={value}
-          onChange={(e) => { setValue(e.target.value); setError(''); }}
-          className={`w-full text-base border rounded px-3 py-2 bg-background text-foreground ${error ? 'border-destructive' : 'border-border'}`}
-        />
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <div className="flex gap-2">
-          <Button className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button
-            className="flex-1 bg-primary text-primary-foreground"
-            onClick={() => { if (isValid) onSubmit(n); else setError(`Enter a whole number between 1 and ${activeCount}.`); }}
-          >
-            Move
-          </Button>
-        </div>
-        <p className="text-[11px] text-muted-foreground">Staged — remember to press Save.</p>
-      </div>
-    </ModalSheet>
-  );
-}
-
-function ConfigSheet({ config, activeCount, saving, onClose, onSave }: {
-  config: AbilityGroupConfigMap; activeCount: number; saving: boolean;
-  onClose: () => void; onSave: (config: AbilityGroupConfigMap) => void;
-}) {
-  const [local, setLocal] = useState<AbilityGroupConfigMap>({ ...config });
-  useEffect(() => { setLocal({ ...config }); }, [config]);
-  const total = (['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).reduce((acc, g) => acc + (local[g] ?? 0), 0);
-  const overCapacity = total > activeCount;
-
-  return (
-    <ModalSheet title="Ability Group Configuration" onClose={onClose}>
-      <p className="text-sm text-muted-foreground mb-3">
-        Set the capacity of each top-level group. Group H is the residual group and automatically contains every remaining active player.
-      </p>
-      <div className="space-y-2">
-        {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => (
-          <div key={g} className="flex items-center gap-3">
-            <span className="w-6 text-base font-bold text-foreground">{g}</span>
-            <input
-              type="number" min={0} disabled={saving} value={local[g] ?? 0}
-              onChange={(e) => setLocal((s) => ({ ...s, [g]: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))}
-              className="flex-1 text-sm border border-border rounded px-2 py-1 bg-background text-foreground disabled:opacity-50"
-            />
-            <span className="text-xs text-muted-foreground w-10 text-right">players</span>
-          </div>
-        ))}
-        <div className="flex items-center gap-3 pt-2 border-t border-border">
-          <span className="w-6 text-base font-bold text-pink-700">H</span>
-          <span className="flex-1 text-sm text-muted-foreground italic">residual (auto)</span>
-          <span className="text-xs text-muted-foreground w-10 text-right">rest</span>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-2">
-        <div className="flex h-4 rounded-full overflow-hidden border border-border">
-          {(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map((g) => {
-            const cap = local[g] ?? 0;
-            if (cap === 0 || activeCount === 0) return null;
-            const pct = (cap / activeCount) * 100;
-            return (
-              <div
-                key={g}
-                className="h-full flex items-center justify-center text-[8px] font-bold text-white transition-all duration-200"
-                style={{ width: `${pct}%`, backgroundColor: GROUP_COLORS[g] }}
-                title={`Group ${g}: ${cap} players (${pct.toFixed(0)}%)`}
-              >
-                {pct > 6 ? g : ''}
-              </div>
-            );
-          })}
-          {activeCount > total && (
-            <div
-              className="h-full flex items-center justify-center text-[8px] font-bold text-pink-800 bg-pink-200 transition-all duration-200"
-              style={{ width: `${((activeCount - total) / activeCount) * 100}%` }}
-              title={`Group H (residual): ${activeCount - total} players`}
-            >
-              {((activeCount - total) / activeCount) * 100 > 6 ? 'H' : ''}
-            </div>
-          )}
-        </div>
-        <div className="flex justify-between text-[10px] text-muted-foreground">
-          <span>A</span>
-          <span className={overCapacity ? 'text-destructive font-medium' : ''}>
-            Total A–G: {total} / {activeCount} active{overCapacity ? ' — exceeds active count' : ''}
-          </span>
-          <span>H</span>
-        </div>
-      </div>
-
-      <div className="flex gap-2 mt-4">
-        <Button className="flex-1 h-10" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button
-          className="flex-1 h-10 bg-primary text-primary-foreground disabled:opacity-50 flex items-center justify-center"
-          disabled={overCapacity || saving}
-          onClick={() => onSave(local)}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-        </Button>
-      </div>
-    </ModalSheet>
-  );
-}
-
-function InactiveSection({ entries, loading, onReactivate, draftPending }: {
-  entries: InactiveRankingEntry[]; loading: boolean; onReactivate: (entry: InactiveRankingEntry) => void;
-  /** An unsaved reorder draft exists - reactivating would silently discard it. */
-  draftPending: boolean;
-}) {
-  return (
-    <div className="container mx-auto px-4 pt-6">
-      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Inactive ({entries.length})</h2>
-      {loading ? (
-        <Skeleton className="h-10 w-full" />
-      ) : entries.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No inactive players.</p>
-      ) : (
-        <ul className="space-y-1">
-          {entries.map((e) => (
-            <li key={e.id} className="flex items-center gap-2 py-1 px-2 bg-card border border-border rounded-lg">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{nameOf(e)}</p>
-                  {e.status === 'Applicant' && e.applicantStage && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-sm shrink-0">
-                      {shortStage(e.applicantStage)}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-muted-foreground truncate">
-                  {e.registeredTeam ?? '–'} · {POS_SHORT[e.playingPosition ?? ''] ?? '–'}
-                  {typeof e.lastSectionRank === 'number' ? `· last rank #${e.lastSectionRank}` : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => { if (draftPending) return; onReactivate(e); }}
-                disabled={draftPending}
-                title={draftPending ? 'Save or discard your reorder first' : undefined}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                {e.status === 'Applicant' ? 'Add to ranking' : 'Reactivate'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function ModalSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
-      <SheetContent side="bottom" className="p-4">
-        <SheetHeader onClose={onClose}>
-          <SheetTitle>{title}</SheetTitle>
-        </SheetHeader>
-        {children}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function RecentChangesSection({ changes, loading }: { changes: RankingChange[]; loading: boolean }) {
-  return (
-    <div className="container mx-auto px-4 pt-6">
-      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-        Recent Ranking Changes ({changes.length})
-      </h2>
-      {loading ? (
-        <Skeleton className="h-10 w-full" />
-      ) : changes.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">
-          No ranking changes recorded yet.
-        </p>
-      ) : (
-        <ul className="space-y-1">
-          {changes.slice(0, 20).map((c) => {
-            const dir =
-              c.kind === 'activate' || c.kind === 'deactivate'
-                ? null
-                : c.oldRank != null && c.newRank != null
-                  ? c.newRank < c.oldRank
-                    ? 'up'
-                    : 'down'
-                  : null;
-            return (
-              <li key={c.id} className="flex items-center gap-2 py-1.5 px-2 bg-card border border-border rounded-lg">
-                <span
-                  className={`shrink-0 w-6 text-center text-xs font-bold ${
-                    dir === 'up' ? 'text-green-700' : dir === 'down' ? 'text-red-700' : 'text-muted-foreground'
-                  }`}
-                >
-                  {dir === 'up' ? '↑' : dir === 'down' ? '↓' : c.kind === 'activate' ? '+' : '−'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate">
-                    <span className="font-medium">{c.playerName}</span>
-                    {c.oldRank != null && c.newRank != null && (
-                      <span className="text-muted-foreground"> · {c.oldRank} → {c.newRank}</span>
-                    )}
-                    {c.oldRank == null && c.newRank != null && (
-                      <span className="text-muted-foreground"> · activated at #{c.newRank}</span>
-                    )}
-                    {c.newRank == null && c.oldRank != null && (
-                      <span className="text-muted-foreground"> · deactivated from #{c.oldRank}</span>
-                    )}
-                  </p>
-                  {c.note && (
-                    <p className="text-[11px] text-muted-foreground italic truncate">"{c.note}"</p>
-                  )}
-                </div>
-                <span
-                  className="shrink-0 text-[10px] text-muted-foreground whitespace-nowrap"
-                  title={formatAbsolute(c.at)}
-                >
-                  {c.actorName} · {formatAge(c.at)}<span className="hidden sm:inline"> · {formatAbsolute(c.at)}</span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
     </div>
   );
 }
