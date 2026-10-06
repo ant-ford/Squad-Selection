@@ -47,15 +47,13 @@ const input = (more: Partial<DataCheckInput> = {}): DataCheckInput => ({
 });
 
 describe("data checks section", () => {
-  const env = { DATA_BACKEND: "supabase" } as Env;
   const as = (office: string) => ({ officerRoles: [{ office, designation: "" }] }) as unknown as AuthorizedUser;
 
-  it("opens to the Men's Convenor and the Section Captains, on Supabase only", () => {
-    expect(sectionsFor(as("hockeyConvenor"), env)).toContain("dataChecks");
-    expect(sectionsFor(as("sectionCaptain"), env)).toContain("dataChecks");
-    expect(sectionsFor(as("membershipOfficer"), env)).not.toContain("dataChecks");
-    expect(sectionsFor(as("assistantDirector"), env)).not.toContain("dataChecks");
-    expect(sectionsFor(as("sectionCaptain"), { DATA_BACKEND: "airtable" } as Env)).not.toContain("dataChecks");
+  it("opens to the Men's Convenor and the Section Captains", () => {
+    expect(sectionsFor(as("hockeyConvenor"))).toContain("dataChecks");
+    expect(sectionsFor(as("sectionCaptain"))).toContain("dataChecks");
+    expect(sectionsFor(as("membershipOfficer"))).not.toContain("dataChecks");
+    expect(sectionsFor(as("assistantDirector"))).not.toContain("dataChecks");
   });
 });
 
@@ -247,7 +245,6 @@ describe("needs fixing", () => {
 
 describe("GET data", () => {
   const env = {
-    DATA_BACKEND: "supabase",
     DATA_SUPABASE_URL: "https://proj.supabase.co",
     DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   } as Env;
@@ -278,10 +275,6 @@ describe("GET data", () => {
       expect.stringMatching(/^lt\.\d{4}-07-01T00:00:00Z$/),
     ]);
     expect(urls.find((u) => u.pathname.endsWith("/registration_events"))!.searchParams.get("status")).toBe("eq.needs_review");
-  });
-
-  it("is refused on the Airtable backend", async () => {
-    await expect(getDataChecks({ ...env, DATA_BACKEND: "airtable" } as Env)).rejects.toMatchObject({ status: 409, code: "NOT_YET" });
   });
 
   it("puts a season between 1 July and 1 July, UTC, as season_of() does", () => {

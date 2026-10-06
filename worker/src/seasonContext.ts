@@ -9,7 +9,7 @@
  * match+side opened that season.
  *
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
- * reads underneath it are shared through KV and live much longer).
+ * reads underneath it are cached for 30 s).
  * Invalidated by: syncSquad (selections changed), setAvailability and
  * setMyAvailability (exceptions changed), and People writes (invalidation.ts).
  */
@@ -144,11 +144,11 @@ export interface SeasonContext {
 }
 
 /**
- * The derived indexes live in this isolate only (Maps and Sets do not
- * survive KV's JSON round trip), so their lifetime is short: every input is
- * a shared raw read, and rebuilding from KV costs a few parallel gets plus
- * some CPU. A longer lifetime here is what let one isolate keep showing
- * selections another isolate's write had already replaced.
+ * The derived indexes live in this isolate only, and their lifetime is
+ * short: every input is a cached raw read, and rebuilding costs a few
+ * parallel reads plus some CPU. A longer lifetime here is what let one
+ * isolate keep showing selections another isolate's write had already
+ * replaced.
  */
 const SEASON_INDEX_TTL_MS = 60 * 1000;
 

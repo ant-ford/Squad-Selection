@@ -15,7 +15,7 @@ import { invalidateAll } from "../worker/src/cache";
 import { checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) =>
   ({ email: `${personId}@x.com`, personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [], ...extra }) as AuthorizedUser;
 

@@ -1,5 +1,5 @@
 /**
- * GET /api/admin/data-checks (Supabase backend; section "dataChecks": the
+ * GET /api/admin/data-checks (section "dataChecks": the
  * Men's Convenor and the Section Captains). Five reads in parallel, one
  * pass each in shared/dataChecks.ts:
  *
@@ -10,8 +10,6 @@
  *  - team names
  */
 import type { Env } from "./env";
-import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db } from "./data/supabase";
 import { currentSeason } from "./seasonContext";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -39,9 +37,6 @@ export function seasonBounds(season: string): { from: string; to: string } {
 }
 
 export async function getDataChecks(env: Env): Promise<DataChecks> {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Data checks are on the Supabase backend only.", 409, "NOT_YET");
-  }
   const d = db(env);
   const { from, to } = seasonBounds(currentSeason());
   const today = hkDateKey(new Date().toISOString());

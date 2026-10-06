@@ -61,15 +61,14 @@ describe("season plan", () => {
   });
 
   it("shows Section Captains every team and coaches their own; others none", async () => {
-    expect(planTeamsFor(env, captain)).toBe("all");
-    expect(planTeamsFor(env, coach)).toEqual(["HKFC C"]);
-    expect(planTeamsFor(env, player)).toEqual([]);
+    expect(planTeamsFor(captain)).toBe("all");
+    expect(planTeamsFor(coach)).toEqual(["HKFC C"]);
+    expect(planTeamsFor(player)).toEqual([]);
 
     // The Officers menu item, in both the profile and the fixtures payloads.
-    expect(canSeeSeasonPlans(env, captain)).toBe(true);
-    expect(canSeeSeasonPlans(env, coach)).toBe(true);
-    expect(canSeeSeasonPlans(env, player)).toBe(false);
-    expect(canSeeSeasonPlans({ ...env, DATA_BACKEND: "airtable" } as Env, coach)).toBe(false);
+    expect(canSeeSeasonPlans(captain)).toBe(true);
+    expect(canSeeSeasonPlans(coach)).toBe(true);
+    expect(canSeeSeasonPlans(player)).toBe(false);
 
     supabase();
     const all = await getSeasonPlanBoard(env, captain);
@@ -82,6 +81,5 @@ describe("season plan", () => {
     const own = await getSeasonPlanBoard(env, coach);
     expect(own.teams.map((t) => t.team)).toEqual(["HKFC C"]);
     await expect(getSeasonPlanBoard(env, player)).rejects.toMatchObject({ status: 403 });
-    await expect(getSeasonPlanBoard({ ...env, DATA_BACKEND: "airtable" }, captain)).rejects.toMatchObject({ status: 409 });
   });
 });
