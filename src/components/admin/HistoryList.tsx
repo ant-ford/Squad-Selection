@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ErrorState } from '@/components/ui/error-state';
-import { safeFormat } from '@/lib/dateUtils';
-import { historyDetail } from '@/lib/peopleAdmin';
+import { formatFullDateTime } from '@/lib/dateUtils';
+import { historyDetail, newestFirst } from '@/lib/peopleAdmin';
 import { getPersonHistory } from '@/api/adminPeople';
 
 export const historyKey = (id: string) => ['personHistory', id] as const;
@@ -20,11 +20,11 @@ export default function HistoryList({ personId }: { personId: string }) {
   if (data.entries.length === 0) return <p className="text-sm text-muted-foreground">Nothing yet.</p>;
   return (
     <ul className="divide-y divide-border">
-      {data.entries.map((e, i) => {
+      {newestFirst(data.entries).map((e, i) => {
         const detail = historyDetail(e);
         return (
           <li key={`${e.at}-${i}`} className="py-2 flex gap-3">
-            <span className="w-28 shrink-0 text-xs text-muted-foreground tabular-nums pt-0.5">{safeFormat(e.at, 'd MMM yy, HH:mm')}</span>
+            <span className="w-32 shrink-0 text-xs text-muted-foreground tabular-nums pt-0.5">{formatFullDateTime(e.at)}</span>
             <span className="min-w-0">
               <span className="block text-sm text-foreground">{e.summary}</span>
               {detail && <span className="block text-xs text-muted-foreground">{detail}</span>}

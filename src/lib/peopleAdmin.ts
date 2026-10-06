@@ -131,6 +131,15 @@ export function personChip(p: { status: string | null; stage: string | null; act
   return null;
 }
 
+/** History newest first, whatever order the sources arrived in (unparseable times last). */
+export function newestFirst<T extends { at: string }>(entries: readonly T[]): T[] {
+  const time = (e: T) => {
+    const t = Date.parse(e.at);
+    return Number.isNaN(t) ? -Infinity : t;
+  };
+  return [...entries].sort((a, b) => time(b) - time(a));
+}
+
 /** One history row's detail: the fields changed, then who did it. */
 export function historyDetail(e: { actor: string | null; fields: string[] }): string {
   return [e.fields.join(', '), e.actor ? `by ${e.actor}` : ''].filter(Boolean).join(' · ');
