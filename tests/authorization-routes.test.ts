@@ -1,20 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Integration tests for the Worker router (worker/src/index.ts).
-// All domain modules are mocked; the auth module is stubbed so each test can
-// control what the verified session resolves to. These tests prove the router
-// derives identity from the session (never from query/body params) and applies
-// the right error codes.
+// All domain modules are mocked. Sign-in is REAL: worker/src/auth.ts verifies
+// the bearer token against Supabase (/auth/v1/user, faked below), then looks
+// the email up in People and reads the Teams coach / section-captain links
+// and the Active office rows, all through the in-memory repositories. Who a
+// request is therefore comes
+// from seeded data, as in production. These tests prove the router derives
+// identity from the session (never from query/body params) and applies the
+// right gates and error codes.
 
 const mocks = vi.hoisted(() => {
-  const authorizedPlayer = { email: "player@hkfc.com", personId: "recP1", role: "player" as const, coachTeams: [], isSectionCaptain: false };
-  const authorizedCoach = { email: "coach@hkfc.com", personId: "recCoach", role: "coach" as const, coachTeams: ["Men's 1s"], isSectionCaptain: false };
   return {
-    authorizedPlayer,
-    authorizedCoach,
-    requireAuthorizedUser: vi.fn(),
-    requireCoach: vi.fn(),
-    requireSectionCaptain: vi.fn(),
     getMyProfile: vi.fn(),
     getMyFixtures: vi.fn(),
     getUpcomingFixtures: vi.fn(),
@@ -42,14 +39,9 @@ const mocks = vi.hoisted(() => {
     activatePlayer: vi.fn(),
     deactivatePlayer: vi.fn(),
     getRecentChanges: vi.fn(),
+    getChairmanDirectory: vi.fn(),
   };
 });
-
-vi.mock("../worker/src/auth", () => ({
-  requireAuthorizedUser: mocks.requireAuthorizedUser,
-  requireCoach: mocks.requireCoach,
-  requireSectionCaptain: mocks.requireSectionCaptain,
-}));
 
 vi.mock("../worker/src/profile", () => ({ getMyProfile: mocks.getMyProfile }));
 vi.mock("../worker/src/fixtures", () => ({
@@ -93,15 +85,22 @@ vi.mock("../worker/src/playerStats", () => ({ getPlayerSeasonStats: mocks.getPla
 vi.mock("../worker/src/dashboard", () => ({
   getRecentChanges: mocks.getRecentChanges,
 }));
+vi.mock("../worker/src/chairman", () => ({
+  getChairmanDirectory: mocks.getChairmanDirectory,
+  logEmailExport: vi.fn(),
+}));
 
 import worker from "../worker/src/index";
-import { HttpError } from "../worker/src/http";
-import { AirtableError } from "../worker/src/airtable";
+import * as auth from "../worker/src/auth";
+import type { AuthorizedUser } from "../worker/src/auth";
+import { SupabaseError } from "../worker/src/data/supabase";
 import { invalidateAll } from "../worker/src/cache";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "test-token",
-  AIRTABLE_BASE_ID: "test-base",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "test-secret",
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
@@ -110,22 +109,114 @@ const ENV = {
 
 const CTX = { waitUntil: () => {} } as any;
 
-function call(path: string, init?: RequestInit): Promise<Response> {
-  return worker.fetch(new Request(`https://hkfc-api.test${path}`, init), ENV, CTX);
+// ---------------------------------------------------------------------------
+// Who signs in. Each bearer token is one Supabase session; the fake
+// /auth/v1/user answers its email, and People/Teams/offices decide the rest.
+// ---------------------------------------------------------------------------
+
+const PLAYER = recId("P1");
+const COACH = recId("Coach");
+const GK_A = recId("GKA");
+/** Holds an Active Section Chair row; not a playing member (Active = false), not a coach. */
+const CHAIR = recId("Chair");
+/** The Assistant Director of Hockey: an office row, no Teams link. */
+const ADH = recId("Adh");
+/** Linked as Section Captain on a team (Teams link). */
+const CAPTAIN = recId("Captain");
+/** Holds the Section Captain office, with no Teams link. */
+const VICE = recId("Vice");
+/** Holds the Hockey Convenor office (the Men's Convenor). */
+const CONVENOR = recId("Convenor");
+
+const TOKENS = {
+  player: "player.jwt",
+  coach: "coach.jwt",
+  gkA: "gk-a.jwt",
+  chair: "chair.jwt",
+  adh: "adh.jwt",
+  captain: "captain.jwt",
+  vice: "vice.jwt",
+  convenor: "convenor.jwt",
+  /** A verified email with no People record. */
+  stranger: "stranger.jwt",
+  /** Supabase rejects this one. */
+  expired: "expired.jwt",
+} as const;
+
+const SESSION_EMAILS: Record<string, string> = {
+  [TOKENS.player]: "player@hkfc.com",
+  [TOKENS.coach]: "coach@hkfc.com",
+  [TOKENS.gkA]: "gk-a@example.com",
+  [TOKENS.chair]: "chair@hkfc.com",
+  [TOKENS.adh]: "adh@hkfc.com",
+  [TOKENS.captain]: "captain@hkfc.com",
+  [TOKENS.vice]: "vice@hkfc.com",
+  [TOKENS.convenor]: "convenor@hkfc.com",
+  [TOKENS.stranger]: "stranger@hkfc.com",
+};
+
+/** What requireAuthorizedUser resolves for the ordinary player: Active, no coach link, no office. */
+const PLAYER_USER: AuthorizedUser = {
+  email: "player@hkfc.com", personId: PLAYER, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
+};
+/** ...and for the coach: linked as Teams.Coach on Men's 1s. */
+const COACH_USER: AuthorizedUser = {
+  email: "coach@hkfc.com", personId: COACH, role: "coach", coachTeams: ["Men's 1s"], isSectionCaptain: false, officerRoles: [],
+};
+
+const db = useFakeRepos(() => ({
+  people: [
+    person({ id: PLAYER, preferredName: "Test Player", email: "player@hkfc.com", registeredTeam: "Men's 3s" }),
+    person({ id: COACH, preferredName: "Test Coach", email: "coach@hkfc.com", registeredTeam: "Men's 1s" }),
+    person({ id: GK_A, preferredName: "Keeper A", email: "gk-a@example.com", registeredTeam: "Men's 3s", playingPosition: "Goalkeeper" }),
+    person({ id: CHAIR, preferredName: "Test Chair", email: "chair@hkfc.com", active: false }),
+    person({ id: ADH, preferredName: "Test ADH", email: "adh@hkfc.com", registeredTeam: "Men's 3s" }),
+    person({ id: CAPTAIN, preferredName: "Test Captain", email: "captain@hkfc.com", registeredTeam: "Men's 1s" }),
+    person({ id: VICE, preferredName: "Test Vice", email: "vice@hkfc.com", active: false }),
+    person({ id: CONVENOR, preferredName: "Test Convenor", email: "convenor@hkfc.com", registeredTeam: "Men's 3s" }),
+  ],
+  teams: [
+    team({ teamName: "Men's 1s", teamRank: 1, coach: [COACH] }),
+    team({ teamName: "Men's 3s", teamRank: 3, sectionCaptain: [CAPTAIN] }),
+  ],
+  officers: [
+    office("sectionChair", CHAIR, { designation: "Chairman" }),
+    office("assistantDirector", ADH),
+    office("sectionCaptain", VICE, { designation: "Men's Vice Captain" }),
+    office("hockeyConvenor", CONVENOR),
+  ],
+}));
+
+/** The session the next call() carries; null sends no Authorization header. */
+let session: string | null = TOKENS.player;
+const signInAs = (token: string) => { session = token; };
+const signOut = () => { session = null; };
+
+function call(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (session) headers.set("Authorization", `Bearer ${session}`);
+  return worker.fetch(new Request(`https://hkfc-api.test${path}`, { ...init, headers }), ENV, CTX);
 }
 
-function jsonInit(body: unknown, token = "valid.jwt.token"): RequestInit {
+function jsonInit(body: unknown): RequestInit {
   return {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   };
 }
 
-const coachDenied = () =>
-  new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
-const sectionCaptainDenied = () =>
-  new HttpError("Only Section Captains can do this.", 403, "SECTION_CAPTAIN_REQUIRED");
+/** Supabase's /auth/v1/user: the token's email, or 401 for anything it does not know. */
+function supabaseAuth(url: string, init: RequestInit): Response {
+  if (url !== `${ENV.SUPABASE_URL}/auth/v1/user`) throw new Error(`unexpected fetch: ${url}`);
+  const token = String((init.headers as Record<string, string>).Authorization ?? "").replace(/^Bearer /, "");
+  const email = SESSION_EMAILS[token];
+  return email
+    ? new Response(JSON.stringify({ email }), { status: 200 })
+    : new Response(JSON.stringify({ msg: "invalid JWT" }), { status: 401 });
+}
+
+let requireAuthorizedUserSpy: ReturnType<typeof vi.spyOn>;
 
 // ---------------------------------------------------------------------------
 // Availability identity boundary - the browser never controls the identity of
@@ -134,7 +225,7 @@ const sectionCaptainDenied = () =>
 
 describe("availability identity boundary", () => {
   it("ignores client-supplied email/playerId - identity comes from the session", async () => {
-    mocks.requireAuthorizedUser.mockResolvedValue({ email: "player@hkfc.com", personId: "recP1", role: "player" });
+    signInAs(TOKENS.player);
     mocks.setMyAvailability.mockResolvedValue({ success: true, exceptionId: null });
 
     const response = await call("/api/set-my-availability", jsonInit({
@@ -152,14 +243,14 @@ describe("availability identity boundary", () => {
   });
 
   it("rejects unauthenticated availability writes with 401", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"));
+    signOut();
     const response = await call("/api/set-my-availability", jsonInit({ matchId: "recM1", status: "Unavailable" }));
     expect(response.status).toBe(401);
     expect(mocks.setMyAvailability).not.toHaveBeenCalled();
   });
 
   it("bulk date-level endpoint also ignores client-supplied identity", async () => {
-    mocks.requireAuthorizedUser.mockResolvedValue({ email: "gk-a@example.com", personId: "recGKA", role: "player" });
+    signInAs(TOKENS.gkA);
     mocks.setMyAvailabilityForDate.mockResolvedValue({ success: true, updated: 0, results: [] });
 
     const response = await call("/api/set-my-availability-for-date", jsonInit({
@@ -177,10 +268,15 @@ describe("availability identity boundary", () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Defaults: an authorized ordinary player; coach-only routes reject.
-  mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedPlayer);
-  mocks.requireCoach.mockRejectedValue(coachDenied());
-  mocks.requireSectionCaptain.mockRejectedValue(sectionCaptainDenied());
+  // Sessions, People lookups and coach/officer links are cached per isolate.
+  invalidateAll();
+  // Defaults: signed in as the ordinary player, so coach-only routes reject.
+  signInAs(TOKENS.player);
+  // Only the sign-in check leaves the Worker, plus the error_log row every
+  // 5xx writes (systemHealth.ts). No other table is seeded, so any other
+  // PostgREST call a route made here would fail the test.
+  fakePostgrest({ tables: { error_log: [] }, other: supabaseAuth });
+  requireAuthorizedUserSpy = vi.spyOn(auth, "requireAuthorizedUser");
 
   mocks.getMyProfile.mockResolvedValue({
     preferredName: "Test Player", roles: [], isCoach: false, isSectionCaptain: false, captainTeams: [], coachTeams: [],
@@ -205,9 +301,8 @@ beforeEach(() => {
 
 describe("error codes", () => {
   it("returns 401 UNAUTHORIZED for an expired/invalid session", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(
-      new HttpError("Invalid or expired session", 401, "UNAUTHORIZED"),
-    );
+    // Supabase answers 401 for this token.
+    signInAs(TOKENS.expired);
 
     const res = await call("/api/my-profile");
     expect(res.status).toBe(401);
@@ -215,9 +310,8 @@ describe("error codes", () => {
   });
 
   it("returns 403 APPLICATION_ACCESS_DENIED for a denied user", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(
-      new HttpError("Application access is not authorised.", 403, "APPLICATION_ACCESS_DENIED"),
-    );
+    // A real Supabase session whose email matches no People record.
+    signInAs(TOKENS.stranger);
 
     const res = await call("/api/my-fixtures");
     expect(res.status).toBe(403);
@@ -230,21 +324,27 @@ describe("error codes", () => {
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
 
-  it("maps an AirtableError to a generic 502 without leaking the Airtable URL or response body", async () => {
+  // A database failure is a 502 naming the
+  // table and status, never the database's own message (it can quote a value).
+  it("maps a SupabaseError to a 502 without leaking the database message, URL or key", async () => {
     mocks.getMyProfile.mockRejectedValue(
-      new AirtableError(
-        "Airtable GET https://api.airtable.com/v0/appSecretBase123/People?filterByFormula=... failed (500): {\"error\":{\"message\":\"internal\"}}",
+      new SupabaseError(
+        "Supabase GET api_people failed (500): Key (email)=(someone.private@example.com) violates something",
         500,
+        "XX000",
       ),
     );
 
     const res = await call("/api/my-profile");
     const body = await res.json();
     expect(res.status).toBe(502);
-    expect(body).toMatchObject({ error: "UPSTREAM_ERROR" });
+    expect(body).toMatchObject({ error: "DB_ERROR" });
     const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain("api.airtable.com");
-    expect(serialized).not.toContain("appSecretBase123");
+    expect(serialized).toContain("api_people");
+    expect(serialized).not.toContain("someone.private@example.com");
+    expect(serialized).not.toContain("violates");
+    expect(serialized).not.toContain(ENV.DATA_SUPABASE_URL);
+    expect(serialized).not.toContain(ENV.DATA_SUPABASE_SECRET_KEY);
   });
 });
 
@@ -256,13 +356,13 @@ describe("session-derived identity (IDOR prevention)", () => {
   it("GET /api/my-profile ignores a ?email= query param", async () => {
     const res = await call("/api/my-profile?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer);
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, PLAYER_USER);
   });
 
   it("GET /api/my-fixtures ignores a ?email= query param", async () => {
     const res = await call("/api/my-fixtures?email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, {
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, PLAYER_USER, {
       includePast: false,
     });
   });
@@ -272,7 +372,7 @@ describe("session-derived identity (IDOR prevention)", () => {
   it("GET /api/my-fixtures passes ?past=1 through as includePast", async () => {
     const res = await call("/api/my-fixtures?past=1&email=attacker@evil.com");
     expect(res.status).toBe(200);
-    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, {
+    expect(mocks.getMyFixtures).toHaveBeenCalledWith(ENV, PLAYER_USER, {
       includePast: true,
     });
   });
@@ -281,7 +381,7 @@ describe("session-derived identity (IDOR prevention)", () => {
     const res = await call("/api/upcoming-fixtures?email=attacker@evil.com&team=Men's%201s");
     expect(res.status).toBe(200);
     expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
-      user: mocks.authorizedPlayer,
+      user: PLAYER_USER,
       team: "Men's 1s",
       includePast: false,
     });
@@ -294,7 +394,7 @@ describe("session-derived identity (IDOR prevention)", () => {
     const res = await call("/api/upcoming-fixtures?past=1");
     expect(res.status).toBe(200);
     expect(mocks.getUpcomingFixtures).toHaveBeenCalledWith(ENV, {
-      user: mocks.authorizedPlayer,
+      user: PLAYER_USER,
       team: undefined,
       includePast: true,
     });
@@ -330,32 +430,45 @@ describe("session-derived identity (IDOR prevention)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Making players active / inactive: Section Captains only (owner, 2026-10-06)
+// Making players active / inactive: Section Captains only (owner, 2026-10-06).
+// A Teams link as Section Captain or the Section Captain office; not coaches,
+// the Men's Convenor or the ADH.
 // ---------------------------------------------------------------------------
 
 describe("activate / deactivate: Section Captains only", () => {
-  const calls = [
+  const routes = [
     { path: "/api/ranking/activate", fn: () => mocks.activatePlayer },
     { path: "/api/ranking/deactivate", fn: () => mocks.deactivatePlayer },
   ];
+  const refused = [
+    ["a player", TOKENS.player],
+    ["a coach", TOKENS.coach],
+    ["the Men's Convenor", TOKENS.convenor],
+    ["the Assistant Director of Hockey", TOKENS.adh],
+    ["a Section Chair", TOKENS.chair],
+  ] as const;
+  const allowed = [
+    ["a Teams-linked Section Captain", TOKENS.captain, "captain@hkfc.com"],
+    ["a Section Captain office holder", TOKENS.vice, "vice@hkfc.com"],
+  ] as const;
 
-  it.each(calls)("refuses anyone the Section Captain gate refuses on $path, a coach included", async ({ path, fn }) => {
-    // A coach passes requireCoach, but that is no longer the gate.
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
-    const res = await call(path, jsonInit({ playerId: "recP9" }));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: "SECTION_CAPTAIN_REQUIRED" });
-    expect(mocks.requireSectionCaptain).toHaveBeenCalledTimes(1);
-    expect(fn()).not.toHaveBeenCalled();
-  });
+  for (const { path, fn } of routes) {
+    it.each(refused)(`refuses %s on ${path} with SECTION_CAPTAIN_REQUIRED, writing nothing`, async (_who, token) => {
+      signInAs(token);
+      const res = await call(path, jsonInit({ playerId: "recP9" }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: "SECTION_CAPTAIN_REQUIRED" });
+      expect(fn()).not.toHaveBeenCalled();
+    });
 
-  it.each(calls)("lets a Section Captain through on $path, auditing as the session", async ({ path, fn }) => {
-    mocks.requireSectionCaptain.mockResolvedValue({ ...mocks.authorizedCoach, email: "captain@hkfc.com", isSectionCaptain: true });
-    fn().mockResolvedValue({ players: [], activeCount: 0, config: {} });
-    const res = await call(path, jsonInit({ playerId: "recP9", actingEmail: "attacker@evil.com" }));
-    expect(res.status).toBe(200);
-    expect(fn()).toHaveBeenCalledWith(ENV, "recP9", "captain@hkfc.com");
-  });
+    it.each(allowed)(`lets %s through on ${path}, auditing as the session`, async (_who, token, email) => {
+      signInAs(token);
+      fn().mockResolvedValue({ players: [], activeCount: 0, config: {} });
+      const res = await call(path, jsonInit({ playerId: "recP9", actingEmail: "attacker@evil.com" }));
+      expect(res.status).toBe(200);
+      expect(fn()).toHaveBeenCalledWith(ENV, "recP9", email);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -378,7 +491,7 @@ describe("coach-only routes", () => {
   });
 
   it("allows a coach on POST /api/ranking/reorder and uses the session email for audit", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
 
     const res = await call(
       "/api/ranking/reorder",
@@ -389,7 +502,8 @@ describe("coach-only routes", () => {
   });
 
   it("passes the optional justification note through on ranking writes", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
+    mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
 
     await call(
       "/api/ranking/reorder",
@@ -413,7 +527,7 @@ describe("coach-only routes", () => {
   });
 
   it("allows a coach on POST /api/squad/sync and uses the session email, ignoring body actingEmail", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
 
     const res = await call(
       "/api/squad/sync",
@@ -424,7 +538,7 @@ describe("coach-only routes", () => {
   });
 
   it("allows a coach on POST /api/team/auto-select-players and uses the session email", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
 
     const res = await call(
       "/api/team/auto-select-players",
@@ -435,7 +549,7 @@ describe("coach-only routes", () => {
   });
 
   it("allows a coach on POST /api/match/:id/auto-select and uses the session email", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
 
     const res = await call(
       "/api/match/recM1/auto-select",
@@ -450,6 +564,15 @@ describe("coach-only routes", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
+
+  // Coach access comes from the Teams.Coach link alone, and covers the
+  // linked team only. New with the move to real sign-in.
+  it("resolves a Teams.Coach link to coach access for that team only", async () => {
+    signInAs(TOKENS.coach);
+    const res = await call("/api/my-profile");
+    expect(res.status).toBe(200);
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, COACH_USER);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -461,7 +584,7 @@ describe("authorized-user reads", () => {
     mocks.handleGetTeamCalendarLink.mockResolvedValue({ url: "https://hkfc-api.test/api/calendar/team-feed.ics?team=Men's%201s&sig=abc" });
     const res = await call("/api/calendar/team-link?team=Men's%201s");
     expect(res.status).toBe(200);
-    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer, "Men's 1s", "https://hkfc-api.test");
+    expect(mocks.handleGetTeamCalendarLink).toHaveBeenCalledWith(ENV, PLAYER_USER, "Men's 1s", "https://hkfc-api.test");
   });
 });
 
@@ -516,14 +639,12 @@ describe("read routes require authentication", () => {
     mocks.getTeamAvailabilityForMatch.mockResolvedValue({ selected: [], restOfTeam: [], suggestions: [] });
     const res = await call("/api/match/recM1/team-availability?side=away");
     expect(res.status).toBe(200);
-    expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
+    expect(requireAuthorizedUserSpy).toHaveBeenCalled();
     expect(mocks.getTeamAvailabilityForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
   });
 
   it("rejects an unauthenticated team availability read", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(
-      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
-    );
+    signOut();
     const res = await call("/api/match/recM1/team-availability");
     expect(res.status).toBe(401);
     expect(mocks.getTeamAvailabilityForMatch).not.toHaveBeenCalled();
@@ -544,7 +665,7 @@ describe("read routes require authentication", () => {
   });
 
   it("allows a coach through to the ranking", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.getActiveRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
     const res = await call("/api/ranking");
     expect(res.status).toBe(200);
@@ -552,7 +673,7 @@ describe("read routes require authentication", () => {
   });
 
   it("allows a coach through to recent-changes", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.getRecentChanges.mockResolvedValue({ changes: [] });
     const changesRes = await call("/api/recent-changes");
     expect(changesRes.status).toBe(200);
@@ -561,7 +682,7 @@ describe("read routes require authentication", () => {
 
   // The Play-Up Watch was removed (2026-09-23); its route must not linger.
   it("no longer serves /api/playup-watch", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     const res = await call("/api/playup-watch");
     expect(res.status).toBe(404);
   });
@@ -569,7 +690,7 @@ describe("read routes require authentication", () => {
 
 describe("a coach answering for a player is coach-only", () => {
   it("denies a non-coach, and writes nothing", async () => {
-    mocks.requireCoach.mockRejectedValue(coachDenied());
+    signInAs(TOKENS.player);
     const res = await call("/api/match/recM1/availability", jsonInit({ playerId: "recP2", status: "Unavailable" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
@@ -577,7 +698,7 @@ describe("a coach answering for a player is coach-only", () => {
   });
 
   it("records the coach from the session, the match from the path, and the player from the body", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.setPlayerAvailability.mockResolvedValue({ success: true, exceptionId: "recX1" });
     const res = await call(
       "/api/match/recM1/availability",
@@ -587,7 +708,7 @@ describe("a coach answering for a player is coach-only", () => {
     expect(res.status).toBe(200);
     expect(mocks.setPlayerAvailability).toHaveBeenCalledTimes(1);
     expect(mocks.setPlayerAvailability.mock.calls[0][1]).toEqual({
-      coachPersonId: "recCoach",
+      coachPersonId: COACH,
       playerId: "recP2",
       matchId: "recM1",
       status: "Maybe",
@@ -605,7 +726,7 @@ describe("kit colour is coach-only", () => {
   });
 
   it("passes the side and colour through for a coach", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.setMatchKit.mockResolvedValue({ success: true, side: "away", kit: "White" });
 
     const res = await call("/api/match/recM1/kit", jsonInit({ side: "away", kit: "White" }));
@@ -615,14 +736,14 @@ describe("kit colour is coach-only", () => {
   });
 
   it("rejects a side that is neither home nor away", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     const res = await call("/api/match/recM1/kit", jsonInit({ side: "sideways", kit: "Blue" }));
     expect(res.status).toBe(400);
     expect(mocks.setMatchKit).not.toHaveBeenCalled();
   });
 
   it("treats a missing colour as clearing the choice", async () => {
-    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.setMatchKit.mockResolvedValue({ success: true, side: "home", kit: "" });
     const res = await call("/api/match/recM1/kit", jsonInit({ side: "home" }));
     expect(res.status).toBe(200);
@@ -635,9 +756,9 @@ describe("kit colour is coach-only", () => {
 describe("player season stats are restricted to self or coach", () => {
   it("lets a player read their own stats", async () => {
     mocks.getPlayerSeasonStats.mockResolvedValue({ gamesPlayed: 3 });
-    const res = await call(`/api/player-stats/${mocks.authorizedPlayer.personId}`);
+    const res = await call(`/api/player-stats/${PLAYER}`);
     expect(res.status).toBe(200);
-    expect(mocks.getPlayerSeasonStats).toHaveBeenCalledWith(ENV, mocks.authorizedPlayer.personId);
+    expect(mocks.getPlayerSeasonStats).toHaveBeenCalledWith(ENV, PLAYER);
   });
 
   it("stops a player reading another player's stats", async () => {
@@ -648,7 +769,7 @@ describe("player season stats are restricted to self or coach", () => {
   });
 
   it("lets a coach drill into any player", async () => {
-    mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedCoach);
+    signInAs(TOKENS.coach);
     mocks.getPlayerSeasonStats.mockResolvedValue({ gamesPlayed: 9 });
     const res = await call("/api/player-stats/recSomeoneElse");
     expect(res.status).toBe(200);
@@ -656,15 +777,86 @@ describe("player season stats are restricted to self or coach", () => {
   });
 
   it("rejects an unauthenticated read", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(
-      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
-    );
-    const res = await call("/api/player-stats/recP1");
+    signOut();
+    const res = await call(`/api/player-stats/${PLAYER}`);
     expect(res.status).toBe(401);
     expect(mocks.getPlayerSeasonStats).not.toHaveBeenCalled();
   });
 });
 
+// ---------------------------------------------------------------------------
+// Office rows (api_offices on Supabase). An Active office lets its holder sign
+// in without being a playing member and opens that office's section, and
+// nothing more; of the offices, only the Assistant Director of Hockey's
+// carries coach access, to every team. New with the move to real sign-in.
+// ---------------------------------------------------------------------------
+
+describe("office holders", () => {
+  it("lets a Section Chair who is not an Active player sign in, with the office on the session", async () => {
+    signInAs(TOKENS.chair);
+    const res = await call("/api/my-profile");
+    expect(res.status).toBe(200);
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, {
+      email: "chair@hkfc.com",
+      personId: CHAIR,
+      role: "player",
+      coachTeams: [],
+      isSectionCaptain: false,
+      officerRoles: [{ office: "sectionChair", designation: "Chairman" }],
+    });
+  });
+
+  it("opens the chairman's section to the Section Chair", async () => {
+    signInAs(TOKENS.chair);
+    mocks.getChairmanDirectory.mockResolvedValue({ people: [] });
+    const res = await call("/api/chairman/directory");
+    expect(res.status).toBe(200);
+    expect(mocks.getChairmanDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the chairman's section from an ordinary player, and from a coach", async () => {
+    for (const token of [TOKENS.player, TOKENS.coach]) {
+      signInAs(token);
+      const res = await call("/api/chairman/directory");
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: "OFFICER_ACCESS_REQUIRED" });
+    }
+    expect(mocks.getChairmanDirectory).not.toHaveBeenCalled();
+  });
+
+  it("gives a Section Chair no coach access", async () => {
+    signInAs(TOKENS.chair);
+    const res = await call("/api/ranking");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(mocks.getActiveRanking).not.toHaveBeenCalled();
+  });
+
+  it("gives the Assistant Director of Hockey coach access to every team", async () => {
+    signInAs(TOKENS.adh);
+    mocks.getActiveRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    const res = await call("/api/ranking");
+    expect(res.status).toBe(200);
+    expect(mocks.getActiveRanking).toHaveBeenCalled();
+
+    await call("/api/my-profile");
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, expect.objectContaining({
+      personId: ADH,
+      role: "coach",
+      coachTeams: ["Men's 1s", "Men's 3s"],
+    }));
+  });
+
+  it("stops counting a Retired office", async () => {
+    // The same person, the row now Retired: Active = false and no office left.
+    db.state.officers[0].status = "Retired";
+    signInAs(TOKENS.chair);
+    const res = await call("/api/my-profile");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "APPLICATION_ACCESS_DENIED" });
+    expect(mocks.getMyProfile).not.toHaveBeenCalled();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // CORS origin allow-list. ALLOWED_ORIGIN may hold several origins so the API

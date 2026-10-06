@@ -1,5 +1,5 @@
 /**
- * Registering interest to join the club (Supabase backend; migration
+ * Registering interest to join the club (migration
  * 20261001220000, owner decisions 2026-10-01), replacing the trials
  * registration forms:
  *
@@ -17,7 +17,6 @@
 import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { invalidatePeople } from "./invalidation";
 import { invalidatePlayerByEmail } from "./reference";
@@ -28,22 +27,14 @@ import { audienceOf } from "../../shared/profile";
 import { isUnderEighteen } from "./declarations";
 import { hkDateKey } from "../../shared/hkDateKey";
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Registering to join moves into Eddy at the switch-over (3 October).", 409, "NOT_YET");
-  }
-}
-
 const isCaptain = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "sectionCaptain");
-function requireCaptain(env: Env, user: AuthorizedUser): void {
-  requireSupabase(env);
+function requireCaptain(user: AuthorizedUser): void {
   if (!isCaptain(user)) throw new HttpError("This is for Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
 }
 
 /** The trial sessions list: the Section Captains and the Assistant Director of Hockey (auth.ts). */
-function requireTrialSessions(env: Env, user: AuthorizedUser): void {
-  requireSupabase(env);
-  if (!sectionsFor(user, env).includes("trials")) {
+function requireTrialSessions(user: AuthorizedUser): void {
+  if (!sectionsFor(user).includes("trials")) {
     throw new HttpError("This is for Section Captains and the Assistant Director of Hockey.", 403, "OFFICER_ACCESS_REQUIRED");
   }
 }
@@ -60,7 +51,6 @@ const nameOf = (p: { preferred_name: string | null; given_names: string | null; 
  * they stand instead.
  */
 export async function registerInterest(env: Env, email: string, body: Record<string, unknown>): Promise<JoinResult> {
-  requireSupabase(env);
   const d = db(env);
   const matches = await d.select<{ id: string; email: string; status: string | null; applicant_stage: string | null }>(
     "people",
@@ -122,7 +112,6 @@ async function referrerName(env: Env, id: string | null): Promise<string | null>
 }
 
 export async function getMyTrial(env: Env, user: AuthorizedUser): Promise<MyTrial> {
-  requireSupabase(env);
   const p = await loadTrialist(env, user.personId);
   const [sessions, chosen, referredBy] = await Promise.all([
     upcomingSessions(env),
@@ -134,7 +123,6 @@ export async function getMyTrial(env: Env, user: AuthorizedUser): Promise<MyTria
 
 /** Which upcoming sessions they can come to; replaces their earlier choice. */
 export async function saveMyTrial(env: Env, user: AuthorizedUser, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireSupabase(env);
   const p = await loadTrialist(env, user.personId);
   const upcoming = await upcomingSessions(env);
   const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((x): x is string => typeof x === "string") : [];
@@ -167,7 +155,6 @@ export function registrationGaps(p: Record<string, unknown>, hasPhoto: boolean, 
 
 /** Sends the registration: checks it's complete, then tells the Section Captains. Sending again just updates it. */
 export async function submitRegistration(env: Env, user: AuthorizedUser): Promise<{ ok: true }> {
-  requireSupabase(env);
   const t = await loadTrialist(env, user.personId);
   const d = db(env);
   const [p, photo] = await Promise.all([
@@ -226,7 +213,7 @@ async function tellCaptains(env: Env, t: TrialistRow, p: Record<string, unknown>
 // ── Section Captains (and the Assistant Director of Hockey for the sessions) ──
 
 export async function listSessions(env: Env, user: AuthorizedUser): Promise<{ sessions: (TrialSession & { count: number })[] }> {
-  requireTrialSessions(env, user);
+  requireTrialSessions(user);
   const d = db(env);
   // This season's, from a month back.
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
@@ -238,7 +225,7 @@ export async function listSessions(env: Env, user: AuthorizedUser): Promise<{ se
 }
 
 export async function addSession(env: Env, user: AuthorizedUser, body: Record<string, unknown>): Promise<{ id: string }> {
-  requireTrialSessions(env, user);
+  requireTrialSessions(user);
   const startsAt = text(body.startsAt, 40);
   const place = text(body.place, 120);
   if (!startsAt || Number.isNaN(Date.parse(startsAt))) throw new HttpError("Give the date and time.", 400, "INVALID_INPUT");
@@ -252,7 +239,7 @@ export async function addSession(env: Env, user: AuthorizedUser, body: Record<st
 }
 
 export async function removeSession(env: Env, user: AuthorizedUser, id: string): Promise<{ ok: true }> {
-  requireTrialSessions(env, user);
+  requireTrialSessions(user);
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError("Session not found.", 404, "NOT_FOUND");
   await db(env).remove("trial_sessions", `id=${eq(id)}`);
   return { ok: true };
@@ -290,7 +277,7 @@ const displayName = (v: string) => v.match(/^\s*([^<]+?)\s*</)?.[1] ?? null;
  * when and where to come.
  */
 export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId: string, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const team = text(body.team, 60);
   const when = text(body.when, 300);
   if (!team) throw new HttpError("Choose the team.", 400, "INVALID_INPUT");
@@ -375,7 +362,7 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
 
 /** Not this time: the registration is parked (Rejected) without an email; the captain gets in touch themselves. */
 export async function declineRegistration(env: Env, actor: AuthorizedUser, apiId: string): Promise<{ ok: true }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const d = db(env);
   const p = await d.one<{ id: string; applicant_stage: string | null }>("people", `select=id,applicant_stage&api_id=${eq(apiId)}`);
   if (!p) throw new HttpError("That person was not found.", 404, "NOT_FOUND");

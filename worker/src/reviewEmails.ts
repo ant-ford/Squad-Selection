@@ -1,5 +1,5 @@
 /**
- * Commitment review emails on the Supabase backend - the job of the two
+ * Commitment review emails - the job of the two former
  * Airtable "Email Commitment Form" automations:
  *
  *  - daily (the Worker's cron): every review whose period ends within 60
@@ -109,7 +109,7 @@ export async function sendDueReviewEmails(env: Env): Promise<{ sent: number; fai
   let resendCalls = 0;
   if (due.length) {
     const batch = await openMailBatch(env);
-    const used = () => stats.dbCalls + stats.airtableCalls + batch.resendCalls;
+    const used = () => stats.dbCalls + batch.resendCalls;
     try {
       for (const [i, { id }] of due.entries()) {
         if (used() + CALLS_PER_EMAIL + LOG_WRITE > SUBREQUEST_BUDGET) {
@@ -139,6 +139,6 @@ export async function sendDueReviewEmails(env: Env): Promise<{ sent: number; fai
       resendCalls = batch.resendCalls;
     }
   }
-  console.log("review emails " + JSON.stringify({ due: due.length, sent, failed, left, calls: stats.dbCalls + stats.airtableCalls + resendCalls }));
+  console.log("review emails " + JSON.stringify({ due: due.length, sent, failed, left, calls: stats.dbCalls + resendCalls }));
   return { sent, failed, left };
 }

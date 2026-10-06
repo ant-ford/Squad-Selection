@@ -1,34 +1,22 @@
 /**
- * Ranking Events - persisted audit trail for Section Rank changes.
+ * Ranking Events - persisted audit trail for Section Rank changes, one row
+ * per change (data/rankingEvents.ts):
  *
- * New Airtable table "Ranking Events" (created by the Section Captain /
- * admin; the Worker degrades gracefully until it exists):
- *
- *   Player        link (People)   - the player whose rank changed
- *   Actor         link (People)   - the coach / section captain who made the change
- *   Actor Email   text            - verified session email (identity, spec 4.3)
- *   Kind          single select   - move | reorder | activate | deactivate
- *   Old Rank      number          - previous Section Rank (blank when none)
- *   New Rank      number          - new Section Rank (blank when deactivated)
- *   Justification long text       - optional note, max 280 chars
- *   Timestamp     dateTime        - server-side, stamped at commit time
- *
- * Deliberately NOT "Selection Events": that table (a) does not exist yet in
- * the live schema and (b) has no timestamp / rank fields - it logs
- * player-in-match selections, not rank changes.
+ *   player         the player whose rank changed
+ *   actor          the coach / section captain who made the change
+ *   actor email    verified session email (identity, spec 4.3)
+ *   kind           move | reorder | activate | deactivate
+ *   old/new rank   blank when none / when deactivated
+ *   justification  optional note, max 280 chars
+ *   timestamp      server-side, stamped at commit time
  */
 
-import { AirtableError } from "./airtable";
 import { people } from "./data/people";
 import { rankingEvents, type RankingEventRow } from "./data/rankingEvents";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
 import { getCached, invalidateCachePrefix } from "./cache";
-
-// Moved to shared/schema; re-exported for existing importers.
-export { RANKING_EVENTS_TABLE } from "../../shared/schema/tableNames";
-export { RANKING_EVENTS_FIELDS } from "../../shared/schema/fieldMaps";
 
 export type RankingEventKind = "move" | "reorder" | "activate" | "deactivate";
 
@@ -109,21 +97,8 @@ export async function recordRankingEvents(env: Env, events: RankingEventInput[])
     justification: event.justification || "",
     timestamp,
   }));
-  try {
-    await rankingEvents(env).create(rows);
-  } catch (err) {
-    // Table not created yet: keep the documented graceful degradation, the
-    // same 404 carve-out the read path makes. The rank change itself has
-    // ALREADY been committed to People by the caller, so failing here would
-    // report a successful move as a 502 and invite the coach to redo it.
-    // Every OTHER failure still propagates - a real write error must surface.
-    if (err instanceof AirtableError && err.status === 404) {
-      console.error("[RankingEvents] table not created yet (404); rank change committed without an audit row:", err.message);
-      return;
-    }
-    throw err;
-  }
-  // The next read must reach Airtable immediately - never serve a stale
+  await rankingEvents(env).create(rows);
+  // The next read must reach the database immediately - never serve a stale
   // pre-write events list from the 60s cache (spec S8).
   invalidateCachePrefix("ranking-events:");
 }
@@ -291,14 +266,9 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
           };
         });
       } catch (err) {
-        // Table not created yet: keep the documented graceful degradation to
-        // an empty list. Every OTHER failure must propagate - silently
+        // A failed read must not look like an empty history: silently
         // returning [] would render a data/API problem in the UI as
         // "No ranking changes recorded yet" (spec S5).
-        if (err instanceof AirtableError && err.status === 404) {
-          console.error("[RankingEvents] table not created yet (404):", err.message);
-          return [];
-        }
         console.error("[RankingEvents] read failed:", err);
         throw new HttpError(
           "Ranking changes are temporarily unavailable",

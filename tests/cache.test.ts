@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Performance caches (evidence-based fixes):
 //   - player-by-email (60s cache; auth.ts uses it directly since B9)
 //   - scheduled-matches (10min, invalidated by syncSquad)
 //   - availability:{matchId} poll cache (25s, invalidated by writes)
+//
+// Through the in-memory repositories: "a read reached the database" is a
+// call to the repository method behind it. All of these caches are
+// per-isolate (getShared keeps only the Stats summaries in KV), so no CACHE
+// binding is needed.
 // ---------------------------------------------------------------------------
 
 import {
@@ -17,87 +22,79 @@ import { getAvailabilityForMatch, syncSquad } from "../worker/src/squad";
 import { setMyAvailability } from "../worker/src/availability";
 import { invalidateAll, invalidateCache, getCached } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import type { Env } from "../worker/src/env";
+import type { ExceptionChanges } from "../worker/src/data/availabilityExceptions";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { exception, match, person, recId, team } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
   return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
 }
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
-const TEAM_RECORDS = ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => ({
-  id: `recT${i}`,
-  fields: { "Team Name": n, "Team Rank": i + 1, Active: true, "Target Squad Size": 14 },
+const BOB = recId("P2");
+const DAVE = recId("P4");
+const ERIN = recId("P5");
+const TWIN_STALE = recId("TwinStale");
+const TWIN_ACTIVE = recId("TwinActive");
+const M1 = recId("M1");
+const M4 = recId("M4");
+const E1 = recId("E1");
+
+const db = useFakeRepos(() => ({
+  teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) =>
+    team({ id: recId(`T${i}`), teamName: n, teamRank: i + 1, active: true, targetSquadSize: 14 }),
+  ),
+  people: [
+    person({ id: BOB, preferredName: "Bob", surname: "B", email: "bob@hkfc.com", registeredTeam: "H", playingPosition: "Goalkeeper", playingAbility: "H", status: "Active" }),
+    person({ id: DAVE, preferredName: "Dave", surname: "D", email: "dave@hkfc.com", registeredTeam: "A", playingPosition: "Defender", playingAbility: "A", status: "Active" }),
+    // Email stored with capitals. The lookup must lowercase both sides
+    // (api_players.email_lower on Supabase) to reach this record.
+    person({ id: ERIN, preferredName: "Erin", surname: "E", email: "Erin.Capital@HKFC.com", registeredTeam: "A", playingPosition: "Midfielder", playingAbility: "B", status: "Active" }),
+    // A stale duplicate ahead of the live record for the same address. Ordered
+    // inactive-first on purpose: taking rows[0] would refuse this person.
+    // (Postgres keeps emails unique, so on Supabase this is the repository's
+    // defensive preference rather than a case production can produce.)
+    person({ id: TWIN_STALE, preferredName: "Twin", surname: "T", email: "twin@hkfc.com", active: false, registeredTeam: "A", playingPosition: "Forward", playingAbility: "C", status: "Inactive" }),
+    person({ id: TWIN_ACTIVE, preferredName: "Twin", surname: "T", email: "twin@hkfc.com", registeredTeam: "A", playingPosition: "Forward", playingAbility: "C", status: "Active" }),
+  ],
+  matches: [
+    match({ id: M1, matchDate: "2026-08-22T10:00:00.000Z", season: "2026-27", division: "Div 1", homeTeam: "A", awayTeam: "Valley A", venue: "P1", matchStatus: "Scheduled", selectedPlayersHome: [BOB], selectedPlayersAway: [] }),
+    match({ id: M4, matchDate: "2026-08-29T09:00:00.000Z", season: "2026-27", division: "Div 1", homeTeam: "A", awayTeam: "B", venue: "P1", matchStatus: "Scheduled", selectedPlayersHome: [], selectedPlayersAway: [BOB] }),
+  ],
+  availabilityExceptions: [
+    exception({ id: E1, player: [BOB], match: [M4], availabilityStatus: "Maybe", note: "Work", season: "2026-27" }),
+  ],
 }));
 
-const PLAYER_RECORDS = [
-  { id: "recP2", fields: { "Preferred Name": "Bob", Surname: "B", Email: "bob@hkfc.com", Active: true, "Registered Team": "H", "Playing Position": "Goalkeeper", "Playing Ability": "H", Status: "Active" } },
-  { id: "recP4", fields: { "Preferred Name": "Dave", Surname: "D", Email: "dave@hkfc.com", Active: true, "Registered Team": "A", "Playing Position": "Defender", "Playing Ability": "A", Status: "Active" } },
-  // Email stored with capitals. Airtable compares text case-sensitively, so
-  // this record is only reachable if the lookup lowercases both sides.
-  { id: "recP5", fields: { "Preferred Name": "Erin", Surname: "E", Email: "Erin.Capital@HKFC.com", Active: true, "Registered Team": "A", "Playing Position": "Midfielder", "Playing Ability": "B", Status: "Active" } },
-  // A stale duplicate ahead of the live record for the same address. Ordered
-  // inactive-first on purpose: taking records[0] would refuse this person.
-  { id: "recTwinStale", fields: { "Preferred Name": "Twin", Surname: "T", Email: "twin@hkfc.com", "Registered Team": "A", "Playing Position": "Forward", "Playing Ability": "C", Status: "Inactive" } },
-  { id: "recTwinActive", fields: { "Preferred Name": "Twin", Surname: "T", Email: "twin@hkfc.com", Active: true, "Registered Team": "A", "Playing Position": "Forward", "Playing Ability": "C", Status: "Active" } },
-];
-
-const MATCH_RECORDS = [
-  { id: "recM1", fields: { Date: "2026-08-22T10:00:00.000Z", Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "Valley A", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": ["recP2"], "Selected Players Away": [] } },
-  { id: "recM4", fields: { Date: "2026-08-29T09:00:00.000Z", Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "B", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": ["recP2"] } },
-];
-
-const EXCEPTION_RECORDS = [
-  { id: "recE1", fields: { Player: ["recP2"], Match: ["recM4"], "Availability Status": "Maybe", "Player Notes": "Work", "Season (Matches)": "2026-27" } },
-];
-
-let fetchCalls: { url: string; method: string }[] = [];
-
-function tableOf(u: string): string {
-  return decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-}
-
-function installFakeAirtable() {
-  const tables: FakeTables = {
-    People: PLAYER_RECORDS,
-    Teams: TEAM_RECORDS,
-    Matches: MATCH_RECORDS,
-    "Availability Exceptions": EXCEPTION_RECORDS,
-  };
-  const { calls } = fakeAirtable(tables);
-  fetchCalls = calls;
-}
-
-const peopleFetches = () =>
-  fetchCalls.filter((c) => c.method === "GET" && tableOf(c.url) === "People").length;
-const matchesFetches = () =>
-  fetchCalls.filter((c) => c.method === "GET" && tableOf(c.url) === "Matches").length;
-const exceptionFetches = () =>
-  fetchCalls.filter((c) => c.method === "GET" && tableOf(c.url) === "Availability Exceptions").length;
+const peopleFetches = () => db.callsTo("people", "findByEmail").length;
+const matchesFetches = () => db.callsTo("matches", "listScheduled").length;
+const exceptionFetches = () => db.callsTo("availabilityExceptions", "listForSeasons").length;
 
 beforeEach(() => {
   invalidateAll();
-  fetchCalls = [];
-  installFakeAirtable();
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  // The player dashboard also asks Supabase directly whether this player
+  // keeps volunteers, events or umpiring duties (volunteerAccess.ts,
+  // eventAccess.ts, umpiring.ts). None of them: every table is empty.
+  fakePostgrest({
+    tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
+  });
 });
 
 describe("player-by-email cache", () => {
   it("reuses the cached People record within the TTL", async () => {
     const a = await getPlayerByEmail(ENV, "dave@hkfc.com");
-    expect(a?.id).toBe("recP4");
+    expect(a?.id).toBe(DAVE);
     const callsAfterFirst = peopleFetches();
     const b = await getPlayerByEmail(ENV, "dave@hkfc.com");
-    expect(b?.id).toBe("recP4");
+    expect(b?.id).toBe(DAVE);
     expect(peopleFetches()).toBe(callsAfterFirst);
   });
 
@@ -109,12 +106,12 @@ describe("player-by-email cache", () => {
   });
 
   // Regression: the lookup sent {Email}="..." against an already-lowercased
-  // address. Airtable compares text case-sensitively, so every People record
+  // address. Airtable compared text case-sensitively, so every People record
   // whose Email held a capital letter failed to match and that person was
   // refused access as though they were not in the club at all.
   it("finds a People record whose Email is stored with capital letters", async () => {
     const found = await getPlayerByEmail(ENV, "erin.capital@hkfc.com");
-    expect(found?.id).toBe("recP5");
+    expect(found?.id).toBe(ERIN);
   });
 
   // The match is case-insensitive on both sides, so it cannot depend on the
@@ -122,7 +119,7 @@ describe("player-by-email cache", () => {
   it("matches whatever case the caller passes, against whatever case is stored", async () => {
     for (const query of ["ERIN.CAPITAL@HKFC.COM", "Erin.Capital@HKFC.com", " erin.CAPITAL@hkfc.com "]) {
       invalidatePlayerByEmail(query);
-      expect((await getPlayerByEmail(ENV, query))?.id).toBe("recP5");
+      expect((await getPlayerByEmail(ENV, query))?.id).toBe(ERIN);
     }
   });
 
@@ -131,7 +128,7 @@ describe("player-by-email cache", () => {
   // administrator was editing plainly said Active.
   it("prefers the active record when duplicates share an email", async () => {
     const found = await getPlayerByEmail(ENV, "twin@hkfc.com");
-    expect(found?.id).toBe("recTwinActive");
+    expect(found?.id).toBe(TWIN_ACTIVE);
   });
 
   it("bypasses the cache with { fresh: true } (authorization path)", async () => {
@@ -163,33 +160,33 @@ describe("scheduled-matches cache", () => {
     await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     const afterFirst = matchesFetches();
     // No newly-added players -> no eligibility revalidation, pure write path.
-    await syncSquad(ENV, "recM1", ["recP2"], "coach@hkfc.com", "home");
+    await syncSquad(ENV, M1, [BOB], "coach@hkfc.com", "home");
     await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     expect(matchesFetches()).toBeGreaterThan(afterFirst); // refetched after invalidation
   });
 });
 
 describe("availability poll cache", () => {
-  it("serves repeated polls from the 25s cache (zero Airtable calls)", async () => {
-    const r1 = await getAvailabilityForMatch(ENV, "recM4");
+  it("serves repeated polls from the 25s cache (zero database calls)", async () => {
+    const r1 = await getAvailabilityForMatch(ENV, M4);
     expect(r1.exceptions).toHaveLength(1);
-    expect(r1.exceptions[0]).toMatchObject({ playerId: "recP2", status: "Maybe" });
+    expect(r1.exceptions[0]).toMatchObject({ playerId: BOB, status: "Maybe" });
     const afterFirst = exceptionFetches();
-    const r2 = await getAvailabilityForMatch(ENV, "recM4");
+    const r2 = await getAvailabilityForMatch(ENV, M4);
     expect(r2.exceptions).toHaveLength(1);
     expect(exceptionFetches()).toBe(afterFirst);
   });
 
   it("is invalidated by an availability write so the next poll is fresh", async () => {
-    await getAvailabilityForMatch(ENV, "recM4");
+    await getAvailabilityForMatch(ENV, M4);
     const afterRead = exceptionFetches();
-    await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: "recM4", status: "Unavailable" });
-    await getAvailabilityForMatch(ENV, "recM4");
+    await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" });
+    await getAvailabilityForMatch(ENV, M4);
     // Two extra reads, both deliberate. The write's own lookup no longer
     // shares the warm per-season index: it is a read-modify-write, and
     // reading a cached snapshot meant a delete could silently target a
-    // record that was not in it. Then the invalidated post-write read hits
-    // Airtable again.
+    // record that was not in it. Then the invalidated post-write read goes
+    // to the database again.
     expect(exceptionFetches()).toBe(afterRead + 2);
   });
 });
@@ -284,7 +281,7 @@ describe("availability exceptions freshness", () => {
     expect(exceptionFetches()).toBe(before);
   });
 
-  it("goes back to Airtable with { fresh: true }", async () => {
+  it("goes back to the database with { fresh: true }", async () => {
     await getExceptionsForSeasons(ENV, SEASON);
     const before = exceptionFetches();
     await getExceptionsForSeasons(ENV, SEASON, { fresh: true });
@@ -317,69 +314,50 @@ describe("availability exceptions freshness", () => {
 // ---------------------------------------------------------------------------
 
 describe("availability writes read past the cache", () => {
-  const deleteCalls = () =>
-    fetchCalls.filter((c) => c.method === "DELETE" && tableOf(c.url) === "Availability Exceptions").length;
-  const createCalls = () =>
-    fetchCalls.filter((c) => c.method === "POST" && tableOf(c.url) === "Availability Exceptions").length;
+  /** Every change set the write sent (one apply_availability_changes call each on Supabase). */
+  const applied = () => db.callsTo("availabilityExceptions", "apply").map((c) => c.args[0] as ExceptionChanges);
+  const deleteCalls = () => applied().filter((c) => c.deleteIds.length > 0).length;
+  const createCalls = () => applied().reduce((n, c) => n + c.creates.length, 0);
 
   /** An exception this isolate's cache has never seen, as if written elsewhere. */
   const addExceptionElsewhere = (id: string, matchId: string) => {
-    EXCEPTION_RECORDS.push({
-      id,
-      fields: {
-        Player: ["recP4"],
-        Match: [matchId],
-        "Availability Status": "Unavailable",
-        "Player Notes": "",
-        "Season (Matches)": "2026-27",
-      },
-    } as (typeof EXCEPTION_RECORDS)[number]);
-    return () => {
-      const at = EXCEPTION_RECORDS.findIndex((e) => e.id === id);
-      if (at >= 0) EXCEPTION_RECORDS.splice(at, 1);
-    };
+    db.state.availabilityExceptions.push(
+      exception({ id, player: [DAVE], match: [matchId], availabilityStatus: "Unavailable", note: "", season: "2026-27" }),
+    );
   };
 
   it("deletes an exception the cache never saw, instead of silently doing nothing", async () => {
+    const STALE1 = recId("Stale1");
     // Warm the cache BEFORE the exception exists - the stale snapshot.
     await getExceptionsForSeasons(ENV, ["2026-27"]);
-    const cleanup = addExceptionElsewhere("recStale1", "recM1");
-    try {
-      await setMyAvailability(ENV, {
-        email: "dave@hkfc.com",
-        matchId: "recM1",
-        status: "Available",
-      });
-      expect(deleteCalls()).toBe(1);
-      // The id must actually reach Airtable. Asserting only that a DELETE
-      // happened is what let a batch delete with an empty query string -
-      // rejected by Airtable every single time - pass as working.
-      const deleteUrl = fetchCalls.find(
-        (c) => c.method === "DELETE" && tableOf(c.url) === "Availability Exceptions",
-      )!.url;
-      expect(deleteUrl).toContain("records%5B%5D=recStale1");
-      // And the record is gone, not merely asked about.
-      expect(EXCEPTION_RECORDS.some((e) => e.id === "recStale1")).toBe(false);
-    } finally {
-      cleanup();
-    }
+    addExceptionElsewhere(STALE1, M1);
+    await setMyAvailability(ENV, {
+      email: "dave@hkfc.com",
+      matchId: M1,
+      status: "Available",
+    });
+    expect(deleteCalls()).toBe(1);
+    // The id must actually reach the database. Asserting only that a delete
+    // happened is what let an Airtable batch delete with an empty query
+    // string - rejected every single time - pass as working.
+    const deleted = applied().find((c) => c.deleteIds.length > 0)!.deleteIds;
+    expect(deleted).toContain(STALE1);
+    // And the record is gone, not merely asked about.
+    expect(db.state.availabilityExceptions.some((e) => e.id === STALE1)).toBe(false);
   });
 
   it("updates that exception rather than writing a duplicate", async () => {
+    const STALE2 = recId("Stale2");
     await getExceptionsForSeasons(ENV, ["2026-27"]);
-    const cleanup = addExceptionElsewhere("recStale2", "recM1");
-    try {
-      const createsBefore = createCalls();
-      await setMyAvailability(ENV, {
-        email: "dave@hkfc.com",
-        matchId: "recM1",
-        status: "Maybe",
-      });
-      // A second row for the same player and match is a data problem, not
-      // just a display one: two answers, and whichever is read first wins.
-      expect(createCalls()).toBe(createsBefore);
-    } finally {
-      cleanup();
-    }
+    addExceptionElsewhere(STALE2, M1);
+    const createsBefore = createCalls();
+    await setMyAvailability(ENV, {
+      email: "dave@hkfc.com",
+      matchId: M1,
+      status: "Maybe",
+    });
+    // A second row for the same player and match is a data problem, not
+    // just a display one: two answers, and whichever is read first wins.
+    expect(createCalls()).toBe(createsBefore);
   });
 });

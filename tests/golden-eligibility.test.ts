@@ -1,12 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-
-vi.mock("../worker/src/airtable", () => ({
-  linkId: (value: unknown): string | undefined => {
-    if (Array.isArray(value)) return value[0];
-    return typeof value === "string" ? value : undefined;
-  },
-  escapeFormulaValue: (v: string) => v,
-}));
+import { describe, it, expect } from "vitest";
 
 import {
   evaluatePlayerEligibility,
@@ -15,7 +7,7 @@ import {
   type EvaluationContext,
   type VirtualSelection,
 } from "../worker/src/eligibility";
-import { linkId } from "../worker/src/airtable";
+import { linkId } from "../shared/airtableValueUtils";
 import { computeSuspensionStates } from "../worker/src/suspension";
 import type { Match, MatchCard } from "../shared/schema/domainTypes";
 import { t, p, m, mc } from "./helpers/factories";
