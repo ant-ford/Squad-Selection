@@ -319,7 +319,7 @@ export async function syncSquad(
   if (!match) throw new HttpError("Match not found", 404);
   const ref = await getReferenceData(env);
   const fieldName = getSelectionFieldName(match, ref.teamRankMap, side);
-  const cleanIds = targetPlayerIds.filter((id) => isRowId(env, "people", id));
+  const cleanIds = targetPlayerIds.filter((id) => isRowId(id));
 
     // ── Server-side eligibility revalidation (INV-003) ──────────────────
   const currentSelectedBefore = getSelectedPlayerIds(match, ref.teamRankMap, side);
@@ -455,7 +455,7 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
   const team = ref.teams.find(t => t.teamName === teamName);
   if (!team) throw new HttpError("Team not found", 404);
 
-  const validIds = playerIds.filter((id) => isRowId(env, "people", id));
+  const validIds = playerIds.filter((id) => isRowId(id));
 
   // Use team.id from reference data — avoids a redundant Airtable lookup
   await teamsRepo(env).setAutoSelectPlayers(team.id, validIds);

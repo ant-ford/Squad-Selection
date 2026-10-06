@@ -37,7 +37,7 @@ export function supabaseOfficers(env: Env): OfficersRepo {
       "api_offices",
       `select=*&office=${inList(offices)}${activeOnly ? "&status=eq.Active" : ""}&order=id`,
     );
-    // In the order the offices were asked for, as the Airtable repository returns them.
+    // In the order the offices were asked for.
     return offices.flatMap((office) => rows.filter((r) => r.office === office));
   };
   return {

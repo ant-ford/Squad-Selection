@@ -1,6 +1,6 @@
 /**
- * GET /api/files/:id?exp=&sig= - one stored file (a photo, a document), on
- * the Supabase backend. Public in the sense that the calendar feeds are: it
+ * GET /api/files/:id?exp=&sig= - one stored file (a photo, a document).
+ * Public in the sense that the calendar feeds are: it
  * needs no session, because the link itself is the permission - minted only
  * inside an authenticated response, signed, and expiring within two hours
  * (data/supabase/files.ts). Anything wrong with the link is a plain 404, so a
