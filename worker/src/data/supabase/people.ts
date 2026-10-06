@@ -39,7 +39,7 @@ export function supabasePeople(env: Env): PeopleRepo {
     async findByEmail(email) {
       const rows = await d.select<PlayerRow>("api_players", `select=*&email_lower=${eq(normalizeEmail(email))}`);
       // Postgres keeps emails unique, so this is one row at most; the Active
-      // preference is kept for parity with the Airtable repository.
+      // preference is kept as a defence.
       const chosen = rows.find((r) => r.active) ?? rows[0];
       return chosen ? toPlayer(env, chosen) : null;
     },

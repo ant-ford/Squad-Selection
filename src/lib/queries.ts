@@ -259,8 +259,10 @@ export function useQuickAvailability() {
     onMutate: async ({ fixtureId, status, notes }) => {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
       const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
+      // An answer for this fixture replaces whatever a preference said, so
+      // the card's "pref." tag goes with it.
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
-        patchFixture(old, fixtureId, { availabilityStatus: status, playerNotes: notes ?? '' }),
+        patchFixture(old, fixtureId, { availabilityStatus: status, playerNotes: notes ?? '', availabilityFromRule: false }),
       );
       return { previousData };
     },
@@ -291,7 +293,7 @@ export function useBulkAvailability() {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
       const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
-        patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status })),
+        patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status, availabilityFromRule: false })),
       );
       return { previousData };
     },

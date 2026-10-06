@@ -304,7 +304,7 @@ export async function getStatementBoard(env: Env): Promise<StatementBoard> {
  */
 export async function requestReviewEmail(env: Env, actor: AuthorizedUser, commitmentId: string) {
   const id = typeof commitmentId === "string" ? commitmentId.trim() : "";
-  if (!isRowId(env, "commitments", id)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
+  if (!isRowId(id)) throw new HttpError("Unknown commitment review.", 400, "INVALID_INPUT");
 
   // Fresh, not from the board cache: the automation may have run meanwhile.
   const row = await commitments(env).getNotifyState(id);
