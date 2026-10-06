@@ -20,7 +20,7 @@ import {
   type KitSizes,
   type KitSwap,
 } from '@shared/kit';
-import { reportMove } from './HandOutSheet';
+import { reportMove } from '@/lib/kitMoves';
 import { PersonPicker, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
 
 const failed = (err: unknown) =>

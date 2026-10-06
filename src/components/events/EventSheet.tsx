@@ -9,17 +9,13 @@ import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
 import { respondToEvent, searchEventPeople } from '@/api/events';
 import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, missingAnswer, type EventDetails, type Guest, type MyEvent, type ResponseDetails, type ResponseStatus } from '@shared/events';
-import { eventWhen, priceLines } from './eventText';
+import { eventWhen, priceLines, statusChip } from './eventText';
 import BillBox from './BillBox';
 import PosterImage from './PosterImage';
 
-const STATUSES: ResponseStatus[] = ['going', 'maybe', 'not_going'];
+export { statusChip };
 
-export const statusChip: Record<ResponseStatus, string> = {
-  going: 'bg-emerald-500/15 text-emerald-700',
-  maybe: 'bg-amber-500/15 text-amber-700',
-  not_going: 'bg-muted text-muted-foreground',
-};
+const STATUSES: ResponseStatus[] = ['going', 'maybe', 'not_going'];
 
 export interface Draft {
   status: ResponseStatus | null;

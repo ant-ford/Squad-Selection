@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import type { MyFixture } from '@/api/getMyFixtures';
@@ -14,11 +14,8 @@ import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
 import { otherGamesThatDay, needsSameDayPrompt } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
-import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
-import SeasonStatsSheet from '@/components/SeasonStatsSheet';
-import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
@@ -29,6 +26,11 @@ import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
 import UmpireViewButton from '@/components/UmpireViewButton';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+
+// Opened from the profile menu: loaded then, not with the page.
+const CalendarSyncSheet = lazy(() => import('@/components/CalendarSyncSheet'));
+const SeasonStatsSheet = lazy(() => import('@/components/SeasonStatsSheet'));
+const AvailabilityRulesSheet = lazy(() => import('@/components/AvailabilityRulesSheet'));
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -503,16 +505,20 @@ export default function PlayerDashboard() {
           }}
         />
       )}
-      {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
+      <Suspense fallback={null}>
+        {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
 
-      <SeasonStatsSheet
-        playerId={statsPlayerId}
-        playerName={data.playerName}
-        onClose={() => setStatsPlayerId(null)}
-      />
+        {statsPlayerId && (
+          <SeasonStatsSheet
+            playerId={statsPlayerId}
+            playerName={data.playerName}
+            onClose={() => setStatsPlayerId(null)}
+          />
+        )}
 
-      {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
-      {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
+        {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
+        {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
+      </Suspense>
       <AppFooter />
     </div>
   );
