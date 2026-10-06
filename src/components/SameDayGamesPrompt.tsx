@@ -1,6 +1,7 @@
 import { AlertCircle } from 'lucide-react';
 import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { availableLabel } from '@shared/availableLabel';
+import { availabilityClasses } from '@/lib/availabilityTone';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
@@ -64,13 +65,10 @@ export default function SameDayGamesPrompt({
               value={f.availabilityStatus}
               onChange={(e) => onSet(f.id, e.target.value as AvailabilityStatus)}
               aria-label={`Availability for ${f.selectionTeam || f.hkfcTeam} vs ${f.opponent}`}
-              className={`shrink-0 text-xs font-medium border rounded-full px-2 py-1 ${
-                f.availabilityStatus === 'Unavailable'
-                  ? 'bg-red-200 text-red-800 border-red-300'
-                  : f.availabilityStatus === 'Maybe'
-                  ? 'bg-amber-200 text-amber-800 border-amber-300'
-                  : 'bg-green-200 text-green-800 border-green-300'
-              }`}
+              className={`shrink-0 text-xs font-medium border rounded-full px-2 py-1 ${availabilityClasses(
+                f.availabilityStatus === 'Unavailable' || f.availabilityStatus === 'Maybe' ? f.availabilityStatus : 'Available',
+                'chip',
+              )}`}
             >
               <option value="Available">{availableLabel(f.selectionStatus === 'Selected')}</option>
               <option value="Maybe">Maybe</option>

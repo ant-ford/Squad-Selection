@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { CheckCircle2, HelpCircle, XCircle, Loader2, Info } from 'lucide-react';
+import { CheckCircle2, HelpCircle, XCircle, Info } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
+import { availabilityLabel } from '@/lib/availabilityTone';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPlayerAvailability, type AvailabilityStatus } from '@/api/setPlayerAvailability';
@@ -11,7 +12,7 @@ import { setPlayerOptInOnly } from '@/api/setPlayerOptInOnly';
 const OPTIONS: { value: AvailabilityStatus; label: string; Icon: typeof CheckCircle2 }[] = [
   { value: 'Available', label: 'Available', Icon: CheckCircle2 },
   { value: 'Maybe', label: 'Maybe', Icon: HelpCircle },
-  { value: 'Unavailable', label: 'Unavailable', Icon: XCircle },
+  { value: 'Unavailable', label: 'No', Icon: XCircle },
 ];
 
 export interface CoachAvailabilityTarget {
@@ -98,7 +99,7 @@ export default function CoachAvailabilitySheet({
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{player.name}</p>
             <p className="text-xs text-muted-foreground">
-              Currently {player.availabilityStatus || 'Available'}
+              Currently {availabilityLabel(player.availabilityStatus || 'Available')}
               {player.availabilityFromRule ? ' from their availability preferences' : ''}
             </p>
           </div>
@@ -146,10 +147,9 @@ export default function CoachAvailabilitySheet({
             />
           </div>
 
-          <Button onClick={save} disabled={saving} className="w-full mt-3">
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+          <ActionButton variant="outline" onClick={save} loading={saving} fullWidth className="mt-3">
             Save for {player.name}
-          </Button>
+          </ActionButton>
 
           {/* Season-long, and about the player rather than this fixture, so
               it sits below a divider instead of among the three answers. */}

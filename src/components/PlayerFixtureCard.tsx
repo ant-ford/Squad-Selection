@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
 import { availableLabel } from '@shared/availableLabel';
+import { availabilityClasses } from '@/lib/availabilityTone';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 interface Props {
@@ -14,12 +15,6 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
   const isUnavailable = fixture.availabilityStatus === 'Unavailable';
   const isMaybe = fixture.availabilityStatus === 'Maybe';
 
-  const statusColorMap: Record<string, string> = {
-    Available: 'bg-green-200 text-green-800 border-green-300',
-    Maybe: 'bg-amber-200 text-amber-800 border-amber-300',
-    Unavailable: 'bg-red-200 text-red-800 border-red-300',
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -31,16 +26,12 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
     <div
       // Answered states carry a heavier border and a solid tint: the old
       // fractional-opacity washes were close to invisible on a phone outdoors.
-      // The tint stops at 100 so the active availability button below, which
-      // is the 200 of the same hue, still stands off the card.
+      // The card takes the soft tint, so the active availability button below
+      // takes the solid colour to stand off it. Available stays untinted.
       className={`w-full border-2 rounded-xl p-3 text-left transition-all hover:shadow-sm cursor-pointer ${
         isSelected
           ? 'border-primary bg-primary/5'
-          : isUnavailable
-          ? 'border-red-400 bg-red-100'
-          : isMaybe
-          ? 'border-amber-400 bg-amber-100'
-          : 'border-border bg-card'
+          : availabilityClasses(isUnavailable || isMaybe ? fixture.availabilityStatus : '', 'card')
       }`}
       role="button"
       tabIndex={0}
@@ -115,7 +106,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
                   px-2 py-1 text-xs font-medium min-w-[48px] transition-colors
                   ${idx === 0 ? 'rounded-l-full' : ''}
                   ${idx === 2 ? 'rounded-r-full' : ''}
-                  ${active ? statusColorMap[value] : 'bg-background text-muted-foreground hover:bg-muted/50'}
+                  ${active ? availabilityClasses(value, 'solid') : 'bg-background text-muted-foreground hover:bg-muted/50'}
                   ${idx > 0 ? 'border-l border-border' : ''}
                 `}
               >

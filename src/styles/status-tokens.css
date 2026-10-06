@@ -1,0 +1,80 @@
+/*
+ * Status colours: success / warning / danger / info.
+ *
+ * Imported by src/index.css straight after `@import "tailwindcss";`.
+ *
+ * Same pattern as index.css: `@theme` maps each Tailwind colour onto an HSL
+ * triple held in `:root`, so these utilities exist:
+ *
+ *   bg-success              solid fill            text-success-foreground  text on the solid
+ *   bg-success-soft         soft tint             text-success-soft-foreground  text on the tint
+ *   border-success, ring-success, text-success, border-success/40 ...
+ *
+ * (and the same for warning, danger, info).
+ *
+ * Which one for coloured text: use `text-<tone>-soft-foreground`. It passes
+ * AA on the tint, on white and on the card grey for all four tones.
+ * `text-success`, `text-danger` and `text-info` also pass on white, but
+ * `text-warning` does not (amber on white is 2.1:1): use warning's solid as a
+ * fill, never as text or an icon colour on a light surface.
+ *
+ * Contrast (WCAG 2.x, computed from these HSL values; 4.5:1 is AA for normal text):
+ *
+ *   tone     solid     fg on solid   soft      soft-fg on soft   soft-fg on white / card   solid on white / card
+ *   success  #157f3c   5.07          #c9f8d9   6.87              8.07 / 7.58               5.07 / 4.77
+ *   warning  #f59f0a   6.85 (dark)   #fdedaa   6.66              7.84 / 7.37               2.14 / 2.01 (fill only)
+ *   danger   #c81924   5.82          #ffd6d9   6.46              8.53 / 8.02               5.82 / 5.47
+ *   info     #0c72b6   5.13          #d3ecfd   7.34              8.96 / 8.42               5.13 / 4.82
+ *
+ * Danger's solid IS --destructive and info's solid IS --primary (both point
+ * at those variables), so the four tones move with index.css. Their soft
+ * tints and soft-foregrounds keep the same hues.
+ * The soft tints sit between Tailwind's 100 and 200 steps: the pale washes
+ * were close to invisible on a phone outdoors (see PlayerFixtureCard).
+ *
+ * No dark theme: the app has no dark tokens in index.css, so none here.
+ */
+
+@theme {
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-success-soft: hsl(var(--success-soft));
+  --color-success-soft-foreground: hsl(var(--success-soft-foreground));
+
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-warning-soft: hsl(var(--warning-soft));
+  --color-warning-soft-foreground: hsl(var(--warning-soft-foreground));
+
+  --color-danger: hsl(var(--danger));
+  --color-danger-foreground: hsl(var(--danger-foreground));
+  --color-danger-soft: hsl(var(--danger-soft));
+  --color-danger-soft-foreground: hsl(var(--danger-soft-foreground));
+
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+  --color-info-soft: hsl(var(--info-soft));
+  --color-info-soft-foreground: hsl(var(--info-soft-foreground));
+}
+
+:root {
+  --success: 142 72% 29%;
+  --success-foreground: 0 0% 100%;
+  --success-soft: 141 76% 88%;
+  --success-soft-foreground: 143 64% 22%;
+
+  --warning: 38 92% 50%;
+  --warning-foreground: 26 83% 14%;
+  --warning-soft: 48 96% 83%;
+  --warning-soft-foreground: 23 83% 29%;
+
+  --danger: var(--destructive);
+  --danger-foreground: var(--destructive-foreground);
+  --danger-soft: 356 100% 92%;
+  --danger-soft-foreground: 356 75% 34%;
+
+  --info: var(--primary);
+  --info-foreground: var(--primary-foreground);
+  --info-soft: 204 90% 91%;
+  --info-soft-foreground: 204 80% 26%;
+}

@@ -5,12 +5,10 @@ import { safeFormat } from '@/lib/dateUtils';
 import { shortTeam } from '@/lib/format';
 import { usePlayerAttendance } from '@/lib/queries';
 import type { AttendanceCell, AttendanceStatus, AvailabilitySource } from '@/api/getPlayerAttendance';
+import { availabilityClasses, availabilityHatch } from '@/lib/availabilityTone';
 
 /** Diagonal hatching for "available, not picked": green, but visibly not a game played. */
-const HATCH = {
-  backgroundImage:
-    'repeating-linear-gradient(135deg, rgb(16 185 129 / 0.55) 0 2px, transparent 2px 6px)',
-};
+const HATCH = availabilityHatch('Available');
 
 type Look = { className: string; style?: React.CSSProperties; label: string };
 
@@ -22,24 +20,24 @@ function lookFor(cell: AttendanceCell): Look {
   const unconfirmed = cell.source === 'default' || cell.source === 'opt-in';
   switch (cell.status) {
     case 'played':
-      return { className: 'bg-emerald-200 text-emerald-800', label: 'Played' };
+      return { className: availabilityClasses('Available', 'soft'), label: 'Played' };
     case 'not-selected':
-      return { className: 'bg-emerald-50 text-emerald-700', style: HATCH, label: 'Available, not picked' };
+      return { className: availabilityClasses('Available', 'faint'), style: HATCH, label: 'Available, not picked' };
     case 'no-show':
       return { className: 'bg-background border border-neutral-300', label: 'No-show' };
     case 'selected':
       return { className: 'bg-primary text-primary-foreground', label: 'Selected' };
     case 'available':
       return unconfirmed
-        ? { className: 'bg-background text-emerald-600 border border-dashed border-emerald-500', label: 'No answer (assumed available)' }
-        : { className: 'bg-emerald-500 text-white', label: 'Available' };
+        ? { className: availabilityClasses('Available', 'dashed'), label: 'No answer (assumed available)' }
+        : { className: availabilityClasses('Available', 'solid'), label: 'Available' };
     case 'maybe':
-      return { className: 'bg-amber-300 text-amber-900', label: 'Maybe' };
+      return { className: availabilityClasses('Maybe', 'solid'), label: 'Maybe' };
     case 'unavailable':
-      if (cell.past) return { className: 'bg-rose-200 text-rose-700', label: 'Unavailable' };
+      if (cell.past) return { className: availabilityClasses('Unavailable', 'soft'), label: 'No' };
       return unconfirmed
-        ? { className: 'bg-background text-rose-500 border border-dashed border-rose-400', label: 'No answer (opt-in only)' }
-        : { className: 'bg-rose-500 text-white', label: 'Unavailable' };
+        ? { className: availabilityClasses('Unavailable', 'dashed'), label: 'No answer (opt-in only)' }
+        : { className: availabilityClasses('Unavailable', 'solid'), label: 'No' };
     case 'elsewhere':
       return {
         className: 'bg-muted/50 text-muted-foreground',
@@ -292,7 +290,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs text-muted-foreground">
         {[true, false].map((past) => (
           <div key={String(past)}>
-            <p className="mb-1.5 text-[11px] uppercase tracking-wide">{past ? 'Past' : 'Upcoming'}</p>
+            <p className="mb-1.5 text-xs uppercase tracking-wide">{past ? 'Past' : 'Upcoming'}</p>
             <ul className="space-y-1">
               {LEGEND.filter((l) => l.past === past).map((l) => (
                 <li key={`${l.sample.status}-${l.sample.source}`} className="flex items-center gap-2">
