@@ -25,14 +25,39 @@ export type EventStatus = "draft" | "published" | "cancelled";
 export type ResponseStatus = "going" | "maybe" | "not_going";
 export const RESPONSE_LABEL: Record<ResponseStatus, string> = { going: "Going", maybe: "Maybe", not_going: "Not going" };
 
-export type PaymentMode = "free" | "on_the_night" | "payme_fps" | "account";
-export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night", "payme_fps", "account"];
+export type PaymentMode = "free" | "on_the_night" | "payme_fps" | "account" | "self_funded";
+export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night", "payme_fps", "account", "self_funded"];
 export const PAYMENT_LABEL: Record<PaymentMode, string> = {
   free: "Free",
   on_the_night: "Pay on the night",
   payme_fps: "PayMe or FPS in advance",
   account: "Charged to membership accounts",
+  self_funded: "Self-funded",
 };
+
+/**
+ * Whether people are billed through Eddy (bills, payments, letting off).
+ * Self-funded (tours: everyone books their own way) is like free there,
+ * but may show an estimated cost per person (owner, 7 Oct 2026).
+ */
+export const billed = (mode: PaymentMode) => mode === "on_the_night" || mode === "payme_fps" || mode === "account";
+
+/** The event's link (e.g. its WhatsApp group): an https address, or the reason it isn't one. */
+export function cleanLink(raw: unknown): string | null | { error: string } {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!v) return null;
+  let url: URL;
+  try {
+    url = new URL(v);
+  } catch {
+    return { error: "The link wasn't understood. Paste the whole address, starting https://" };
+  }
+  if (url.protocol !== "https:" || v.length > 500) return { error: "The link must start https:// (and be under 500 characters)." };
+  return url.toString();
+}
+
+/** What the link button says: WhatsApp group invites are named as such. */
+export const linkLabel = (url: string) => (/^https:\/\/chat\.whatsapp\.com\//i.test(url) ? "Join the WhatsApp group" : "Open the event link");
 
 export { SOCIAL_FUNCTIONS };
 export type SocialFunction = (typeof SOCIAL_FUNCTIONS)[number];
@@ -269,6 +294,8 @@ export interface EventDetails {
   guestsAllowed: boolean;
   maxGuests: number | null;
   helpNeeded: string | null;
+  /** A link for those invited, such as the event's WhatsApp group. */
+  linkUrl: string | null;
   /** What it asks when people answer. */
   questions: EventQuestion[];
   socialFunction: SocialFunction | null;
@@ -375,6 +402,7 @@ export interface EventInput {
   guestsAllowed?: boolean;
   maxGuests?: number | null;
   helpNeeded?: string | null;
+  linkUrl?: string | null;
   questions?: EventQuestion[];
   socialFunction?: SocialFunction | null;
   team?: string | null;
