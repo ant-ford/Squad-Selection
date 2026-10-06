@@ -476,9 +476,10 @@ describe("the current season on Supabase", () => {
   it("rebuilds as soon as a result or card changes, and not before", async () => {
     const kv = fakeKv();
     const latest = { matches_v: "2026-10-04T09:00:00.123456+00:00", match_cards_v: "2026-10-04T09:05:00+00:00" };
-    const paths = postgrest(latest);
+    postgrest(latest);
     const season = currentSeason();
-    const builds = () => paths.filter((p) => p === "api_matches").length;
+    // The rows come from the in-memory repositories; the version reads hit PostgREST.
+    const builds = () => db.callsTo("matches", "listForSeason").length;
 
     await getStoredSummary({ ...env, CACHE: kv }, season);
     expect(builds()).toBe(1);
