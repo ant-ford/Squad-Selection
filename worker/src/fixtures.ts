@@ -4,7 +4,7 @@ import { people } from "./data/people";
 import type { Env } from "./env";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
 import { personAsPlayer } from "./authContext";
-import { getCached, getShared } from "./cache";
+import { getVersioned } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
@@ -25,14 +25,12 @@ import { outcomeOf } from "./teamRecord";
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
 /**
- * All Scheduled matches, cached 10 minutes. Selections live inside match
- * records (Selected Players Home/Away), so syncSquad invalidates this cache
- * after every write.
- *
- * Never stretched to hours: selections change constantly, and on
- * 2026-09-23, when a failed invalidation left a six-hour copy, the coach
- * dashboard showed 0/14 for a squad saved hours earlier. (Each isolate now
- * holds any such read for 30 s at most; cache.ts getShared.)
+ * All Scheduled matches, with their selections, kept under the matches and
+ * match_selections versions (cache.ts getVersioned): a squad save or an
+ * hkha-sync result moves them, so no isolate shows an old squad. (On
+ * 2026-09-23 a failed invalidation left a six-hour copy and the coach
+ * dashboard showed 0/14 for a squad saved hours earlier; nothing needs
+ * invalidating now.)
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
@@ -43,7 +41,7 @@ const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 export const SCHEDULED_MATCHES_KEY = "scheduled-matches:v2";
 
 export async function getScheduledMatches(env: Env): Promise<Match[]> {
-  return getShared<Match[]>(env, SCHEDULED_MATCHES_KEY, async () => {
+  return getVersioned<Match[]>(env, SCHEDULED_MATCHES_KEY, ["matches", "match_selections"], async () => {
     return matches(env).listScheduled();
   }, SCHEDULED_MATCHES_TTL_MS);
 }
@@ -84,7 +82,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   const unique = [...new Set(seasons.filter(Boolean))].sort();
   if (unique.length === 0) return [];
   const key = `played-matches:${unique.join(",")}`;
-  return getShared<Match[]>(env, key, async () => {
+  return getVersioned<Match[]>(env, key, ["matches", "match_selections"], async () => {
     return matches(env).listPlayedForSeasons(unique);
   }, SCHEDULED_MATCHES_TTL_MS);
 }
@@ -241,7 +239,7 @@ export interface PlayerFixtureView {
 export async function buildPlayerFixtureView(
   env: Env,
   user: Player,
-  opts: { freshAvailability?: boolean; withSquad?: boolean } = {},
+  opts: { withSquad?: boolean } = {},
 ): Promise<PlayerFixtureView> {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
@@ -394,20 +392,14 @@ export async function buildPlayerFixtureView(
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // Read past the cache for the dashboard. That is the player looking at
-  // their own answer, so it has to reflect the tap they just made: the cache
-  // is per-isolate, so a write only clears it where it happened, and landing
-  // on another isolate put a five-minute-old copy of the old status straight
-  // back - which is what "I can't change my availability" actually was.
-  //
-  // The calendar feed is the opposite case. Its own output is cached for five
-  // minutes and no calendar client refreshes faster than hourly, so paying
-  // for an uncached scan of the whole season's exceptions there bought
-  // nothing at all - and it is the single most expensive read on the path.
+  // The player looking at their own answer must see the tap they just made.
+  // This read used to skip the cache for that (a per-isolate copy put the
+  // old status straight back), costing the whole season's answers on every
+  // dashboard load. It is now kept under the availability_exceptions
+  // version, which the tap moves, so the cached copy is the current one.
   const allExceptions = await getExceptionsForSeasons(
     env,
     relevantCategorized.map((x) => x.side.match.season || ""),
-    { fresh: opts.freshAvailability ?? true },
   );
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
@@ -481,7 +473,7 @@ export async function buildPlayerFixtureView(
 export async function getPlayerFixtures(env: Env, playerId: string) {
   const player = await people(env).getById(playerId);
   if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
-  const view = await buildPlayerFixtureView(env, player, { freshAvailability: false, withSquad: true });
+  const view = await buildPlayerFixtureView(env, player, { withSquad: true });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
     playerName: player.preferredName || player.givenNames || "Player",

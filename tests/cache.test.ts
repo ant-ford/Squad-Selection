@@ -21,6 +21,7 @@ import { getMyFixtures } from "../worker/src/fixtures";
 import { getAvailabilityForMatch, syncSquad } from "../worker/src/squad";
 import { setMyAvailability } from "../worker/src/availability";
 import { invalidateAll, invalidateCache, getCached } from "../worker/src/cache";
+import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
 import type { AuthorizedUser } from "../worker/src/auth";
 import type { Env } from "../worker/src/env";
 import type { ExceptionChanges } from "../worker/src/data/availabilityExceptions";
@@ -156,13 +157,41 @@ describe("scheduled-matches cache", () => {
     expect(matchesFetches()).toBe(afterFirst);
   });
 
-  it("is invalidated by syncSquad (selections live in match records)", async () => {
-    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
+  it("is refetched after syncSquad (selections live in match records), in every isolate", async () => {
+    // Each call is its own request, reading the cache versions as the Worker does.
+    const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
+    await request(() => getMyFixtures(ENV, authUser("dave@hkfc.com")));
     const afterFirst = matchesFetches();
+    await request(() => getMyFixtures(ENV, authUser("dave@hkfc.com")));
+    expect(matchesFetches()).toBe(afterFirst); // same versions: cached
     // No newly-added players -> no eligibility revalidation, pure write path.
-    await syncSquad(ENV, M1, [BOB], "coach@hkfc.com", "home");
-    await getMyFixtures(ENV, authUser("dave@hkfc.com"));
-    expect(matchesFetches()).toBeGreaterThan(afterFirst); // refetched after invalidation
+    await request(() => syncSquad(ENV, M1, [BOB], "coach@hkfc.com", "home"));
+    await request(() => getMyFixtures(ENV, authUser("dave@hkfc.com")));
+    // The save moved the versions: no invalidation needed, the key changed.
+    expect(matchesFetches()).toBeGreaterThan(afterFirst);
+  });
+});
+
+describe("the player's own answers on the dashboard", () => {
+  // Read past the cache on every load before (173 KB a request on preview);
+  // now kept under the availability_exceptions version, which a tap moves.
+  it("are read once while nobody answers, and again after a tap, so the player sees it", async () => {
+    const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
+    const dave = () => db.signedIn("dave@hkfc.com");
+    const M5 = recId("M5");
+    const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    db.state.matches.push(match({ id: M5, matchDate: soon, season: "2026-27", division: "Div 1", homeTeam: "A", awayTeam: "Valley B", venue: "P1", matchStatus: "Scheduled" }));
+    await request(() => getMyFixtures(ENV, dave()));
+    const afterFirst = exceptionFetches();
+    expect(afterFirst).toBeGreaterThan(0);
+    await request(() => getMyFixtures(ENV, dave()));
+    expect(exceptionFetches()).toBe(afterFirst);
+
+    await request(() => setMyAvailability(ENV, { email: "dave@hkfc.com", matchId: M5, status: "Unavailable" }));
+    const before = exceptionFetches();
+    const out = await request(() => getMyFixtures(ENV, dave()));
+    expect(exceptionFetches()).toBeGreaterThan(before);
+    expect(JSON.stringify(out)).toContain("Unavailable");
   });
 });
 

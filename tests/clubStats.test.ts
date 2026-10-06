@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as cacheVersionsModule from "../worker/src/cacheVersions";
 
 // ---------------------------------------------------------------------------
 // Stats page: the per-season summary (built from Matches and Match Cards),
@@ -450,34 +451,25 @@ describe("players and careers", () => {
 
 describe("the current season on Supabase", () => {
   // hkha-sync writes results straight to Postgres and announces nothing, so
-  // the summary is keyed on when the season's rows last changed.
+  // the summary is keyed on the Matches and Match Cards cache versions,
+  // which the database moves on every real change.
   const env = {
     ...ENV,
     DATA_SUPABASE_URL: "https://proj.supabase.co",
     DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   } as any;
 
-  function postgrest(latest: Record<string, string>) {
-    const paths: string[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (input: any) => {
-      const url = new URL(String(input));
-      const view = url.pathname.replace("/rest/v1/", "");
-      paths.push(view);
-      if (view in latest) {
-        expect(url.searchParams.get("limit")).toBe("1");
-        return new Response(JSON.stringify([{ updated_at: latest[view] }]), { status: 200 });
-      }
-      return new Response("[]", { status: 200 });
-    }));
-    return paths;
+  /** read_cache_versions() answers with `versions`, as they stand when it is called. */
+  function postgrest(versions: Record<string, number>) {
+    vi.spyOn(cacheVersionsModule, "readCacheVersions").mockImplementation(async () => cacheVersionsModule.parseCacheVersions({ ...versions }));
   }
 
   it("rebuilds as soon as a result or card changes, and not before", async () => {
     const kv = fakeKv();
-    const latest = { matches_v: "2026-10-04T09:00:00.123456+00:00", match_cards_v: "2026-10-04T09:05:00+00:00" };
-    postgrest(latest);
+    const versions = { matches: 40, match_cards: 12, people: 7 };
+    postgrest(versions);
     const season = currentSeason();
-    // The rows come from the in-memory repositories; the version reads hit PostgREST.
+    // The rows come from the in-memory repositories; the versions are read from PostgREST.
     const builds = () => db.callsTo("matches", "listForSeason").length;
 
     await getStoredSummary({ ...env, CACHE: kv }, season);
@@ -487,7 +479,12 @@ describe("the current season on Supabase", () => {
     await getStoredSummary({ ...env, CACHE: kv }, season);
     expect(builds()).toBe(1);
 
-    latest.match_cards_v = "2026-10-06T02:00:00+00:00"; // hkha-sync adds a card
+    versions.people = 8; // a People edit: no rebuild
+    invalidateAll();
+    await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(builds()).toBe(1);
+
+    versions.match_cards = 13; // hkha-sync adds a card
     invalidateAll();
     const stored = await getStoredSummary({ ...env, CACHE: kv }, season);
     expect(builds()).toBe(2);

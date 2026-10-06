@@ -13,7 +13,7 @@
  * policies, so nothing else can read them.
  */
 import type { Env } from "../env";
-import { recordDbCall } from "../requestContext";
+import { noteRequestWrite, recordDbCall } from "../requestContext";
 
 export class SupabaseError extends Error {
   status: number;
@@ -168,6 +168,8 @@ export function db(env: Env): Db {
         typeof body === "object" && body ? body.code : undefined,
       );
     }
+    // A write moves the cache versions this request read at its start.
+    if (!readOnly) noteRequestWrite();
     return { body, response };
   }
 

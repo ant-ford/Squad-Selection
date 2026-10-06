@@ -1,13 +1,12 @@
 /**
- * Which caches a write to each kind of club data can make stale. Only the
- * Worker's own writes are announced: the Airtable webhook that also drove
- * these went with Airtable, and hkha-sync writes Postgres directly (the
- * Stats summary keys itself on the data instead, clubStats.ts).
+ * Which caches a write to each kind of club data can make stale, among
+ * those NOT kept under the cache versions. The reference data, matches,
+ * match cards, answers, rules, season index and per-match player lists are
+ * keyed on cache_versions (cache.ts getVersioned), which every write moves,
+ * the Worker's and hkha-sync's alike, so they need nothing here.
  *
  * Everything named is dropped in this isolate (and a Stats summary in KV
- * too): the cached reads and the structures derived from them (season
- * index, per-match player lists, calendar feeds, the 25 s poll cache), which
- * are rebuilt from fresh reads.
+ * too) and rebuilt from fresh reads.
  */
 import { invalidateShared } from "./cache";
 import type { Env } from "./env";
@@ -21,7 +20,6 @@ interface Rule {
 const INVALIDATION = {
   people: {
     keys: [
-      "club-reference",
       "ranking:active",
       "ranking:inactive",
       MEMBERSHIP_RECORDS_KEY,
@@ -30,17 +28,18 @@ const INVALIDATION = {
       WAITING_ON_KEY,
     ],
     // my-tasks: a member's player-page banner, gone once their form is in.
-    prefixes: ["player-by-email:", "players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
+    prefixes: ["calendar:", "ranking-events:", "my-tasks:"],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  // Appearances feed eligibility and play-up counts. The current Stats
-  // summary needs nothing here: it is keyed on match_cards.updated_at.
+  // Appearances feed eligibility and play-up counts: the match cards, season
+  // index and per-match lists are keyed on the cache versions, and so is
+  // the current Stats summary. Only the calendar feeds remain.
   matchCards: {
-    prefixes: ["match-cards:", "players-for-match:", "season-index:", "calendar:"],
+    prefixes: ["calendar:"],
   },
 } satisfies Record<string, Rule>;
 

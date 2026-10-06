@@ -1,4 +1,5 @@
-import type { CacheKv } from "./env";
+import type { CacheKv, Env } from "./env";
+import { readCacheVersions, type CacheVersionKey, type CacheVersions } from "./cacheVersions";
 import { currentRequestContext, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
 
 // In-memory cache for Cloudflare Worker isolate.
@@ -90,6 +91,7 @@ export async function getCached<T>(
       const data = await fetcher();
       if (pending.get(key)?.token === token) {
         store.set(key, { data, expiresAt: Date.now() + ttlMs });
+        supersede(key);
       }
       return data;
     } finally {
@@ -125,6 +127,82 @@ export function invalidateCachePrefix(prefix: string) {
 export function invalidateAll() {
   store.clear();
   pending.clear();
+  latestByBase.clear();
+}
+
+// ── Versioned keys ──────────────────────────────────────────────────────
+//
+// A value built from club data is cached under the versions of the tables
+// it was read from (cache_versions, bumped by the database on every real
+// change, whoever made it): `season-index:2026-2027@12.40.7`. A write
+// anywhere moves a version, so the next request in EVERY isolate asks for a
+// key nobody has yet and reads afresh; until then the copy is exact, so it
+// can be held for minutes. Nothing has to be invalidated.
+//
+// The versions come with sign-in (auth_context) or, on requests without
+// one (calendar feeds), from one small read the first time a request needs
+// them. A request that writes forgets them (requestContext.ts
+// noteRequestWrite), so anything it reads afterwards sees its own write.
+// Outside a request (tests calling a module directly, the crons) there are
+// no versions: the value is held 30 s under the plain key, as before.
+
+/** How long a versioned value is kept: it can't go stale, so this only bounds memory. */
+const VERSIONED_TTL_MS = 10 * 60 * 1000;
+
+/** The newest versioned key stored per base, so a superseded version is dropped, not left to expire. */
+const latestByBase = new Map<string, string>();
+
+function supersede(key: string): void {
+  const at = key.lastIndexOf("@");
+  if (at < 0) return;
+  const base = key.slice(0, at);
+  const previous = latestByBase.get(base);
+  if (previous && previous !== key) store.delete(previous);
+  latestByBase.set(base, key);
+}
+
+/**
+ * The versions this request reads under: sign-in's, or one read of
+ * read_cache_versions() shared by the whole request. Null outside a
+ * request, or when the read failed (the caller then caches as before).
+ */
+export async function requestVersions(env: Env): Promise<CacheVersions | null> {
+  const context = currentRequestContext();
+  if (!context) return null;
+  if (context.versions) return context.versions;
+  context.versionsRead ??= readCacheVersions(env).then(
+    (versions) => {
+      context.versions = versions;
+      return versions;
+    },
+    (err) => {
+      console.error("Cache versions not read:", err instanceof Error ? err.message : err);
+      return null;
+    },
+  );
+  return context.versionsRead;
+}
+
+/** `base@v1.v2...`: the key a value built from these tables is kept under. */
+export function versionedKey(base: string, deps: readonly CacheVersionKey[], versions: CacheVersions): string {
+  return `${base}@${deps.map((d) => versions[d]).join(".")}`;
+}
+
+/**
+ * getCached under the versions of the tables the value is built from.
+ * `deps` must name every table the fetcher reads (directly or through the
+ * cached reads it calls).
+ */
+export async function getVersioned<T>(
+  env: Env,
+  base: string,
+  deps: readonly CacheVersionKey[],
+  fetcher: () => Promise<T>,
+  ttlMs: number = VERSIONED_TTL_MS,
+): Promise<T> {
+  const versions = await requestVersions(env);
+  if (!versions) return (await getCached(base, fetcher, Math.min(ttlMs, LOCAL_TTL_MS))).data;
+  return (await getCached(versionedKey(base, deps, versions), fetcher, ttlMs)).data;
 }
 
 // ── Shared cache (KV) ───────────────────────────────────────────────────
