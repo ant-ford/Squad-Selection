@@ -270,7 +270,7 @@ export function MonthColumns({ rows, unit }: { rows: { month: string; count: num
           {hovered && (
             <div
               role="status"
-              className="absolute -top-1 z-10 -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
+              className="absolute -top-1 z-raised -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
               style={{ left: `${((active! + 0.5) / rows.length) * 100}%` }}
             >
               <span className="font-semibold text-foreground">{fmt(hovered.count)}</span>{' '}
@@ -562,7 +562,7 @@ export function Columns({
           {hovered && (
             <div
               role="status"
-              className="absolute -top-1 z-10 -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
+              className="absolute -top-1 z-raised -translate-x-1/2 -translate-y-full px-2 py-1 rounded-md bg-background border border-border shadow-sm text-xs whitespace-nowrap pointer-events-none"
               style={{ left: `${((active! + 0.5) / rows.length) * 100}%` }}
             >
               <span className="font-semibold text-foreground">

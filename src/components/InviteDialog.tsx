@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
-import { Copy, MessageCircle, X } from 'lucide-react';
-import { Sheet } from '@/components/ui/sheet';
+import { Copy, MessageCircle } from 'lucide-react';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 const MESSAGE = "Interested in playing hockey with HKFC? Register your interest here and we'll be in touch about trials:";
 
@@ -16,15 +16,12 @@ export default function InviteDialog({ link, onClose }: { link: string; onClose:
       .then(() => toast.success('Link copied'))
       .catch(() => toast.error("Couldn't copy: press and hold the link to copy it."));
   return (
-    <Sheet open raised onOpenChange={(next) => !next && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Invite someone to join" className="fixed inset-0 z-[61] flex items-end sm:items-center justify-center pointer-events-none">
-        <div className="bg-background rounded-t-2xl sm:rounded-lg p-4 w-full sm:max-w-sm mx-0 sm:mx-4 shadow-lg pointer-events-auto space-y-3">
-          <div className="flex items-start gap-2">
-            <p className="flex-1 text-foreground font-medium">Invite someone to join</p>
-            <button onClick={onClose} className="p-1 rounded-md hover:bg-muted text-muted-foreground" aria-label="Close">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+    <Sheet open onOpenChange={(next) => !next && onClose()}>
+      <SheetContent side="dialog">
+        <SheetHeader onClose={onClose}>
+          <SheetTitle className="font-medium">Invite someone to join</SheetTitle>
+        </SheetHeader>
+        <SheetBody className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Send this link to anyone who'd like to play with us. They register their interest, and the Section Captains are told you sent them.
           </p>
@@ -42,8 +39,8 @@ export default function InviteDialog({ link, onClose }: { link: string; onClose:
               <MessageCircle className="h-4 w-4" /> Send on WhatsApp
             </a>
           </div>
-        </div>
-      </div>
+        </SheetBody>
+      </SheetContent>
     </Sheet>
   );
 }

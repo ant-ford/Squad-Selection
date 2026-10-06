@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, X } from 'lucide-react';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { ChevronRight } from 'lucide-react';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import SeasonStats from '@/components/SeasonStats';
 import AttendanceGrid from '@/components/AttendanceGrid';
 
@@ -28,26 +28,11 @@ function PlayerDrillSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
-      <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-        {/* Grab handle: signals the sheet is dismissable by dragging. */}
-        <div className="sticky top-0 z-20 bg-background rounded-t-2xl">
-          <div className="flex justify-center pt-2.5">
-            <div className="h-1 w-9 rounded-full bg-muted-foreground/25" />
-          </div>
-          <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 border-b border-border">
-            <SheetTitle>{title}</SheetTitle>
-            <button
-              onClick={onClose}
-              aria-label={closeLabel}
-              className="shrink-0 -mr-1.5 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* The bottom inset keeps the last row clear of the home indicator. */}
-        <div className="px-5 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">{children}</div>
+      <SheetContent side="bottom">
+        <SheetHeader onClose={onClose} closeLabel={closeLabel}>
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
+        <SheetBody>{children}</SheetBody>
       </SheetContent>
     </Sheet>
   );

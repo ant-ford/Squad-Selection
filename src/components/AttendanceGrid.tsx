@@ -213,7 +213,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
         <table className="border-separate border-spacing-0.5 text-xs">
           <thead>
             <tr>
-              <th className={`${TEAM_COL} sticky left-0 z-10 bg-background shadow-[0_0_0_3px_hsl(var(--background))]`} />
+              <th className={`${TEAM_COL} sticky left-0 z-raised bg-background shadow-[0_0_0_3px_hsl(var(--background))]`} />
               {data.dates.map((d) => {
                 const isToday = d === firstUpcoming;
                 const past = d < data.today;
@@ -240,7 +240,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                 <tr key={team}>
                   <th
                     scope="row"
-                    className={`${TEAM_COL} sticky left-0 z-10 bg-background shadow-[0_0_0_3px_hsl(var(--background))] pr-1 text-left whitespace-nowrap ${
+                    className={`${TEAM_COL} sticky left-0 z-raised bg-background shadow-[0_0_0_3px_hsl(var(--background))] pr-1 text-left whitespace-nowrap ${
                       own ? 'font-semibold text-foreground' : 'font-normal text-muted-foreground'
                     }`}
                     title={own ? `${team} (their team)` : team}

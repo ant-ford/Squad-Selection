@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { ActionButton } from '@/components/ui/action-button';
 import { Textarea } from '@/components/ui/textarea';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { safeFormat } from '@/lib/dateUtils';
 import type { MyFixture } from '@/api/getMyFixtures';
 
@@ -28,11 +28,10 @@ export default function AvailabilityNoteSheet({
   return (
     <Sheet open dirty={!busy && notes.trim() !== fixture.playerNotes.trim()} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
-        <div className="px-4 py-6">
-          <SheetHeader onClose={onClose}>
-            <SheetTitle>{status === 'Maybe' ? 'Maybe' : 'Not available'} – add a note?</SheetTitle>
-          </SheetHeader>
-
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>{status === 'Maybe' ? 'Maybe' : 'Not available'} – add a note?</SheetTitle>
+        </SheetHeader>
+        <SheetBody>
           <p className="py-2 text-xs text-muted-foreground">
             {fixture.homeTeam} vs {fixture.awayTeam} • {safeFormat(fixture.date, 'EEE d MMM')}
           </p>
@@ -72,7 +71,7 @@ export default function AvailabilityNoteSheet({
               Save note
             </ActionButton>
           </div>
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

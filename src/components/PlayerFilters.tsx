@@ -1,6 +1,6 @@
 import { X, ChevronDown, ChevronRight, Search, Filter } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 export type FilterCategory = 'position' | 'eligibility' | 'selection' | 'availability' | 'ability';
@@ -199,31 +199,11 @@ export function FilterPanel({ name, onName, activeCount, onClear, children }: {
           </div>
         </div>
         <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-          <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
-            {/* SheetContent carries no padding of its own, so the padding here
-                is not decoration - without it the chips run into the edges of
-                the screen. The header is sticky because the body scrolls. */}
-            <div className="sticky top-0 z-10 bg-background rounded-t-2xl">
-              <div className="flex justify-center pt-2.5">
-                <div className="h-1 w-9 rounded-full bg-muted-foreground/25" />
-              </div>
-              <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 border-b border-border">
-                <SheetTitle>Filters</SheetTitle>
-                <button
-                  type="button"
-                  onClick={() => setIsSheetOpen(false)}
-                  aria-label="Close filters"
-                  className="shrink-0 -mr-1.5 h-10 w-10 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* The bottom inset keeps the last row clear of the home indicator. */}
-            <div className="px-5 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-              {filterContent}
-            </div>
+          <SheetContent side="bottom">
+            <SheetHeader onClose={() => setIsSheetOpen(false)} closeLabel="Close filters">
+              <SheetTitle>Filters</SheetTitle>
+            </SheetHeader>
+            <SheetBody>{filterContent}</SheetBody>
           </SheetContent>
         </Sheet>
       </>

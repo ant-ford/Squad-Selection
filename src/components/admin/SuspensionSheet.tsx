@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Minus, Plus } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import PersonPicker from '@/components/admin/PersonPicker';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import { Field } from '@/components/ui/field';
 import { Input, inputClass } from '@/components/ui/input';
@@ -68,86 +68,88 @@ export default function SuspensionSheet({
 
   return (
     <Sheet open onOpenChange={(next) => !next && close()}>
-      <SheetContent side="bottom" className="sm:max-w-lg sm:mx-auto sm:left-0 sm:right-0 p-4 space-y-4">
+      <SheetContent side="bottom" className="sm:max-w-lg sm:mx-auto sm:left-0 sm:right-0">
         <SheetHeader onClose={close}>
           <SheetTitle>{row ? 'Edit suspension' : 'Add a suspension'}</SheetTitle>
         </SheetHeader>
-        {row ? (
-          <p className="text-sm font-medium text-foreground">{row.name}</p>
-        ) : (
-          <Field label="Player" required>
-            {(control) => (
-              <PersonPicker
-                id={control.id}
-                value={picked}
-                onChange={(p) => {
-                  setPicked(p ? { id: p.id, name: p.name } : null);
-                  set({ playerId: p?.id ?? null });
-                }}
-              />
-            )}
-          </Field>
-        )}
-        <div className="space-y-1.5">
-          <span className="block text-sm font-medium text-foreground" id="susp-matches">
-            Matches
-          </span>
-          <div className="flex items-center gap-2" role="group" aria-labelledby="susp-matches">
-            <ActionButton
-              iconOnly
-              variant="outline"
-              icon={<Minus />}
-              aria-label="Decrease"
-              disabled={!until && (draft.matches ?? 0) <= MIN_MATCHES}
-              onClick={() => set({ matches: stepMatches(draft.matches, -1) })}
-            />
-            <span className="w-10 text-center text-lg font-semibold tabular-nums text-foreground" aria-live="polite">
-              {until ? '–' : draft.matches}
+        <SheetBody className="space-y-4">
+          {row ? (
+            <p className="text-sm font-medium text-foreground">{row.name}</p>
+          ) : (
+            <Field label="Player" required>
+              {(control) => (
+                <PersonPicker
+                  id={control.id}
+                  value={picked}
+                  onChange={(p) => {
+                    setPicked(p ? { id: p.id, name: p.name } : null);
+                    set({ playerId: p?.id ?? null });
+                  }}
+                />
+              )}
+            </Field>
+          )}
+          <div className="space-y-1.5">
+            <span className="block text-sm font-medium text-foreground" id="susp-matches">
+              Matches
             </span>
-            <ActionButton
-              iconOnly
-              variant="outline"
-              icon={<Plus />}
-              aria-label="Increase"
-              disabled={!until && (draft.matches ?? 0) >= MAX_MATCHES}
-              onClick={() => set({ matches: stepMatches(draft.matches, 1) })}
-            />
-            <ActionButton
-              variant={until ? 'primary' : 'outline'}
-              aria-pressed={until}
-              className="ml-auto"
-              onClick={() => set({ matches: until ? 1 : null })}
-            >
-              Until cleared
-            </ActionButton>
+            <div className="flex items-center gap-2" role="group" aria-labelledby="susp-matches">
+              <ActionButton
+                iconOnly
+                variant="outline"
+                icon={<Minus />}
+                aria-label="Decrease"
+                disabled={!until && (draft.matches ?? 0) <= MIN_MATCHES}
+                onClick={() => set({ matches: stepMatches(draft.matches, -1) })}
+              />
+              <span className="w-10 text-center text-lg font-semibold tabular-nums text-foreground" aria-live="polite">
+                {until ? '–' : draft.matches}
+              </span>
+              <ActionButton
+                iconOnly
+                variant="outline"
+                icon={<Plus />}
+                aria-label="Increase"
+                disabled={!until && (draft.matches ?? 0) >= MAX_MATCHES}
+                onClick={() => set({ matches: stepMatches(draft.matches, 1) })}
+              />
+              <ActionButton
+                variant={until ? 'primary' : 'outline'}
+                aria-pressed={until}
+                className="ml-auto"
+                onClick={() => set({ matches: until ? 1 : null })}
+              >
+                Until cleared
+              </ActionButton>
+            </div>
           </div>
-        </div>
-        <Field label="From" required>
-          <Input type="date" value={draft.fromDate} onChange={(e) => set({ fromDate: e.target.value })} />
-        </Field>
-        <Field label="Reason" required>
-          <textarea
-            className={`${inputClass} h-auto min-h-20 py-2`}
-            rows={3}
-            maxLength={280}
-            value={draft.reason}
-            onChange={(e) => set({ reason: e.target.value })}
-          />
-        </Field>
-        {error && (
-          <p role="alert" className="text-sm text-danger-soft-foreground">
-            {error}
-          </p>
-        )}
-        <ActionButton
-          fullWidth
-          size="md"
-          loading={save.isPending}
-          disabled={!!problem || (!!row && !change)}
-          onClick={() => save.mutate()}
-        >
-          {row ? 'Save' : 'Suspend'}
-        </ActionButton>
+          <Field label="From" required>
+            <Input type="date" value={draft.fromDate} onChange={(e) => set({ fromDate: e.target.value })} />
+          </Field>
+          <Field label="Reason" required>
+            <textarea
+              className={`${inputClass} h-auto min-h-20 py-2`}
+              rows={3}
+              maxLength={280}
+              value={draft.reason}
+              onChange={(e) => set({ reason: e.target.value })}
+            />
+          </Field>
+          {error && (
+            <p role="alert" className="text-sm text-danger-soft-foreground">
+              {error}
+            </p>
+          )}
+          <ActionButton
+            fullWidth
+            size="md"
+            loading={save.isPending}
+            disabled={!!problem || (!!row && !change)}
+            onClick={() => save.mutate()}
+          >
+            {row ? 'Save' : 'Suspend'}
+          </ActionButton>
+        </SheetBody>
       </SheetContent>
       {asking && (
         <ConfirmDialog

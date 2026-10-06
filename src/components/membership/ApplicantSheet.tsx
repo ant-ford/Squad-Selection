@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { FileText, Mail, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { getNumberHolders, type ApplicantCard, type NumberHolder } from '@/api/membership';
@@ -54,7 +54,7 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side={wide ? 'right' : 'bottom'} className="p-4 pb-8 overflow-y-auto">
+      <SheetContent side={wide ? 'right' : 'bottom'}>
         <SheetHeader onClose={onClose}>
           <div className="flex items-center gap-3 min-w-0">
             <Avatar card={card} size="h-12 w-12" />
@@ -64,85 +64,86 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
             </div>
           </div>
         </SheetHeader>
+        <SheetBody>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {age && <span className={`text-xs px-2 py-0.5 rounded ${ageTone(card.days)}`}>{age}</span>}
+            {card.waitingOn && <span className="text-xs text-muted-foreground">Waiting on {card.waitingOn}</span>}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {age && <span className={`text-xs px-2 py-0.5 rounded ${ageTone(card.days)}`}>{age}</span>}
-          {card.waitingOn && <span className="text-xs text-muted-foreground">Waiting on {card.waitingOn}</span>}
-        </div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {whatsApp && (
+              <a
+                href={whatsApp}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground"
+              >
+                <MessageCircle className="h-3.5 w-3.5" /> WhatsApp {card.mobileNo}
+              </a>
+            )}
+            {chase && card.chase && (
+              <a href={chase} target="_blank" rel="noreferrer" className={sheetLinkClass}>
+                <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  WhatsApp {card.chase.name} ({card.chase.role})
+                </span>
+              </a>
+            )}
+            {card.applicationForm.map((f) => (
+              <a
+                key={f.url}
+                href={f.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full"
+                title="Sports Associate Application Form"
+              >
+                <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
+              </a>
+            ))}
+          </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          {whatsApp && (
-            <a
-              href={whatsApp}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground"
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
+            <Fact label="Membership No." value={card.membershipNo} />
+            <Fact label="Status" value={card.status} />
+            <Fact label="Join Date" value={date(card.joinDate)} />
+            <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
+            <Fact label="Applied" value={date(card.appliedOn)} />
+            <Fact label="Applicant Type" value={card.applicantType} />
+            <Fact label="Category" value={card.categoryType} />
+            <Fact label="Team" value={card.team} />
+            <Fact label="Position" value={card.playingPosition} />
+            <Fact label="Sponsor" value={card.sponsor} />
+            <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
+            <Fact label="Qualified Coach" value={card.qualifiedCoach} />
+            <Fact label="Playing Level" value={card.playingLevel.join(', ')} />
+            <Fact label="Tour Interest" value={card.tourInterest.join(', ')} />
+          </dl>
+
+          <div className="space-y-4">
+            <TextBlock label="Sports Background / Involvement" text={card.sportsBackground} />
+            <TextBlock label="Personal / Family Interest" text={card.personalInterest} />
+            <TextBlock label="Selection Comments / Coach Requests" text={card.selectionComments} />
+          </div>
+
+          {canPropose && (
+            <Link
+              to={`/joiners/${card.id}`}
+              className="mb-4 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
             >
-              <MessageCircle className="h-3.5 w-3.5" /> WhatsApp {card.mobileNo}
-            </a>
+              <Mail className="h-3.5 w-3.5" /> Details, invitation, kit and registration
+            </Link>
           )}
-          {chase && card.chase && (
-            <a href={chase} target="_blank" rel="noreferrer" className={sheetLinkClass}>
-              <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">
-                WhatsApp {card.chase.name} ({card.chase.role})
-              </span>
-            </a>
-          )}
-          {card.applicationForm.map((f) => (
-            <a
-              key={f.url}
-              href={f.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full"
-              title="Sports Associate Application Form"
+          {SIGNING_STAGES.includes(card.stage) && (
+            <Link
+              to={`/sign-application/${card.id}`}
+              className="mb-4 ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
             >
-              <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
-            </a>
-          ))}
-        </div>
-
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
-          <Fact label="Membership No." value={card.membershipNo} />
-          <Fact label="Status" value={card.status} />
-          <Fact label="Join Date" value={date(card.joinDate)} />
-          <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
-          <Fact label="Applied" value={date(card.appliedOn)} />
-          <Fact label="Applicant Type" value={card.applicantType} />
-          <Fact label="Category" value={card.categoryType} />
-          <Fact label="Team" value={card.team} />
-          <Fact label="Position" value={card.playingPosition} />
-          <Fact label="Sponsor" value={card.sponsor} />
-          <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
-          <Fact label="Qualified Coach" value={card.qualifiedCoach} />
-          <Fact label="Playing Level" value={card.playingLevel.join(', ')} />
-          <Fact label="Tour Interest" value={card.tourInterest.join(', ')} />
-        </dl>
-
-        <div className="space-y-4">
-          <TextBlock label="Sports Background / Involvement" text={card.sportsBackground} />
-          <TextBlock label="Personal / Family Interest" text={card.personalInterest} />
-          <TextBlock label="Selection Comments / Coach Requests" text={card.selectionComments} />
-        </div>
-
-        {canPropose && (
-          <Link
-            to={`/joiners/${card.id}`}
-            className="mb-4 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
-          >
-            <Mail className="h-3.5 w-3.5" /> Details, invitation, kit and registration
-          </Link>
-        )}
-        {SIGNING_STAGES.includes(card.stage) && (
-          <Link
-            to={`/sign-application/${card.id}`}
-            className="mb-4 ml-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border hover:bg-muted text-foreground"
-          >
-            <FileText className="h-3.5 w-3.5" /> Application and signatures
-          </Link>
-        )}
-        {card.canApprove && <ApproveForm card={card} onDone={onClose} />}
+              <FileText className="h-3.5 w-3.5" /> Application and signatures
+            </Link>
+          )}
+          {card.canApprove && <ApproveForm card={card} onDone={onClose} />}
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

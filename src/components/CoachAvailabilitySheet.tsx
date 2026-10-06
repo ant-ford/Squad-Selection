@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import { preferenceTagLabel } from '@/lib/availabilityAnswers';
 import AvailabilityAnswerControl from '@/components/AvailabilityAnswerControl';
@@ -89,11 +89,10 @@ export default function CoachAvailabilitySheet({
       onOpenChange={(next) => !next && onClose()}
     >
       <SheetContent side="bottom">
-        <div className="px-4 py-6">
-          <SheetHeader onClose={onClose}>
-            <SheetTitle>Set availability</SheetTitle>
-          </SheetHeader>
-
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>Set availability</SheetTitle>
+        </SheetHeader>
+        <SheetBody>
           <p className="pt-2 text-sm font-medium text-foreground">{player.name}</p>
 
           <AvailabilityAnswerControl
@@ -157,7 +156,7 @@ export default function CoachAvailabilitySheet({
               </p>
             )}
           </div>
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

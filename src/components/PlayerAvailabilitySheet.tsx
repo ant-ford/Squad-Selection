@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { POS_SHORT } from '@/lib/format';
 import { availableLabel } from '@shared/availableLabel';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useTeamAvailability, type TeamAvailabilityRow } from '@/lib/queries';
 import { StatusChip } from '@/components/ui/status-chip';
 import { availabilityLabel, availabilityTone } from '@/lib/availabilityTone';
@@ -102,11 +102,10 @@ export default function PlayerAvailabilitySheet({
   return (
     <Sheet open onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
-        <div className="px-4 py-6">
-          <SheetHeader onClose={onClose}>
-            <SheetTitle>{fixture.homeTeam} vs {fixture.awayTeam}</SheetTitle>
-          </SheetHeader>
-
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>{fixture.homeTeam} vs {fixture.awayTeam}</SheetTitle>
+        </SheetHeader>
+        <SheetBody>
           <div className="py-2">
             <p className="text-xs text-muted-foreground">
               {safeFormat(fixture.date, 'EEE d MMM')} • {formatHkTime(fixture.date)} • {fixture.venue}
@@ -139,7 +138,7 @@ export default function PlayerAvailabilitySheet({
               viewerId={viewerId}
             />
           </div>
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );
