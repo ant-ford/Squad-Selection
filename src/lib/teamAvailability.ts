@@ -38,8 +38,12 @@ export function squadTone(available: number, targetSquadSize: number): StatusTon
   return 'danger';
 }
 
-/** The order the fixture detail lists its groups in: what can still be acted on first. */
-export const STATUS_ORDER: AttendanceStatus[] = [
-  'selected', 'available', 'maybe', 'unavailable', 'elsewhere',
-  'played', 'not-selected', 'no-show', 'off',
-];
+/**
+ * The order the fixture detail lists its groups in: for an upcoming game,
+ * what can still be acted on first; for a past one, what happened first.
+ */
+export function statusOrder(past: boolean): AttendanceStatus[] {
+  return past
+    ? ['played', 'not-selected', 'no-show', 'unavailable', 'elsewhere', 'off']
+    : ['selected', 'available', 'maybe', 'unavailable', 'elsewhere', 'off'];
+}

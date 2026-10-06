@@ -32,6 +32,8 @@ export interface TeamFixture {
   friendly: boolean;
   off: boolean;
   selectedCount: number;
+  /** Players on this side's Match Card, from any squad. Absent when it has none. */
+  cardCount?: number;
   goalsFor?: number;
   goalsAgainst?: number;
 }
