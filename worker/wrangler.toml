@@ -96,12 +96,18 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # list is the retention_due_v view). Report until the first list is checked.
 RETENTION_MODE = "report"
 
+# The app's owner (src/systemHealth.ts): the System line in My Tasks and the
+# alert email when the daily health check fails. Comma-separated sign-in
+# emails; alerts go to the first.
+SYSTEM_OWNER_EMAIL = "menscaptain@hkfchockey.com"
+
 # Refreshes the Airtable webhook (src/airtableWebhook.ts) once a day so it
 # does not lapse over a quiet fortnight. Harmless when no webhook is set up.
-# The second runs the data retention job (src/retention.ts RETENTION_CRON).
+# The second runs the data retention job (src/retention.ts RETENTION_CRON),
+# the third the system health check (src/systemHealth.ts HEALTH_CRON).
 # Last in the file on purpose: a TOML table header claims every key after it.
 [triggers]
-crons = ["0 3 * * *", "30 3 * * *"]
+crons = ["0 3 * * *", "30 3 * * *", "0 4 * * *"]
 
 # ── Branch preview (.github/workflows/preview.yml) ──────────────────────
 # A separate Worker, hkfc-api-preview, deployed by hand from the Actions
@@ -171,6 +177,7 @@ ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
+SYSTEM_OWNER_EMAIL = "menscaptain@hkfchockey.com"
 
 [env.preview.triggers]
 crons = []
