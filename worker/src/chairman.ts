@@ -92,6 +92,8 @@ export function toDirectoryPerson(row: DirectoryRow): DirectoryPerson {
     name: [first, surname].filter(Boolean).join(" ") || "Unnamed",
     surname,
     membershipNo: text(row.membershipNo),
+    mobile: text(row.mobileNo),
+    firstName: first,
     values,
     ...resolveEmails(row),
   };

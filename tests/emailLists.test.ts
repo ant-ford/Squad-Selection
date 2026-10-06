@@ -249,6 +249,7 @@ describe("the directory", () => {
     expect(people.find((p: any) => p.id === ID.pat)).toEqual({
       id: ID.pat,
       name: "Pat Player",
+      firstName: "Pat",
       surname: "Player",
       values: {
         status: ["Member"],

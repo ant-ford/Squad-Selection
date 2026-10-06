@@ -13,6 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
+import { listTemplates, logMessage } from "./messages";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
@@ -1060,6 +1061,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Chairman's section (Section Chairs + Section Captains table) ──────
     // The directory carries every member's email address, so it is gated on
     // the section like the membership routes.
+    // "WhatsApp these people": templates and the message log (messages.ts).
+    if (method === "GET" && pathname === "/api/messages/templates") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await listTemplates(env, user), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/messages/log") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await logMessage(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>), 200, origin);
+    }
     if (method === "GET" && pathname === "/api/chairman/directory") {
       await requireSection(request, env, "chairman");
       return json(await getChairmanDirectory(env), 200, origin);
