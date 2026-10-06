@@ -22,7 +22,7 @@ import { db } from "../data/supabase";
 import { invalidateOffices, invalidatePeople, invalidateTeams } from "../invalidation";
 import { normalizeEmail } from "../../../shared/normalizeEmail";
 import { displayName } from "../../../shared/adminPeople";
-import { adminRpc, requireSupabaseAdmin } from "./rpc";
+import { adminRpc } from "./rpc";
 import { API_ID } from "./people";
 
 /** The app's office keys and the database's roles, in the order the screen lists them. */
@@ -76,7 +76,6 @@ interface OfficeDb {
 const holder = (p: OfficeDb["person"]): Holder | null => (p ? { id: p.api_id, name: displayName(p) } : null);
 
 export async function listOffices(env: Env): Promise<{ offices: OfficeView[] }> {
-  requireSupabaseAdmin(env);
   const rows = await db(env).select<OfficeDb>(
     "offices",
     `select=id,api_id,role,designation,office_email,status,person:people!offices_person_id_fkey(api_id,preferred_name,given_names,surname)&role=in.(${ROLE_ORDER.join(",")})`,
@@ -147,7 +146,6 @@ export function parseOfficeEdit(id: string, body: Record<string, unknown>): Reco
 }
 
 export async function addOffice(env: Env, actor: AuthorizedUser, body: Record<string, unknown>): Promise<{ ok: true; id: string }> {
-  requireSupabaseAdmin(env);
   const p = parseNewOffice(body);
   const result = await adminRpc<{ id: string }>(env, "admin_save_office", { p, p_actor: actor.personId }, { messages: MESSAGES });
   await invalidateOffices(env);
@@ -155,7 +153,6 @@ export async function addOffice(env: Env, actor: AuthorizedUser, body: Record<st
 }
 
 export async function editOffice(env: Env, actor: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; id: string }> {
-  requireSupabaseAdmin(env);
   const p = parseOfficeEdit(apiId(id, "an office"), body);
   const result = await adminRpc<{ id: string }>(env, "admin_save_office", { p, p_actor: actor.personId }, { messages: MESSAGES });
   await invalidateOffices(env);
@@ -164,7 +161,6 @@ export async function editOffice(env: Env, actor: AuthorizedUser, id: string, bo
 
 /** Someone who holds (or is about to hold) an office but isn't in People. Not Active. */
 export async function createOfficeHolder(env: Env, actor: AuthorizedUser, body: Record<string, unknown>): Promise<{ ok: true; id: string }> {
-  requireSupabaseAdmin(env);
   const surname = optionalText(body, "surname", "Surname", 60);
   const email = optionalText(body, "email", "Email", 200);
   if (!surname) throw new HttpError("Enter their surname.", 400, "INVALID_INPUT");
@@ -205,7 +201,6 @@ interface TeamDb {
 }
 
 export async function listTeams(env: Env): Promise<{ teams: TeamAdminView[] }> {
-  requireSupabaseAdmin(env);
   const rows = await db(env).select<TeamDb>(
     "teams",
     "select=id,api_id,team_name,team_rank,active,target_squad_size,team_people(role,ordinal,person:people(api_id,preferred_name,given_names,surname))&order=team_rank.nullslast,team_name",
@@ -255,7 +250,6 @@ export function parseTeamChange(body: Record<string, unknown>): Record<string, u
 }
 
 export async function saveTeam(env: Env, actor: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; changed: string[] }> {
-  requireSupabaseAdmin(env);
   const team = apiId(id, "a team");
   const p = parseTeamChange(body);
   const result = await adminRpc<{ changed: string[] }>(env, "admin_save_team", { p_team: team, p_actor: actor.personId, p }, { messages: MESSAGES });

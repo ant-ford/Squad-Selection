@@ -21,7 +21,6 @@ import {
 } from "../worker/src/admin/club";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
 } as Env;

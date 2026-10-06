@@ -46,13 +46,12 @@ const INVALIDATION = {
   // per-match list built on them.
   teams: {
     keys: ["club-reference", "team-coach-links"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
+    prefixes: ["players-for-match:", "season-index:", "calendar:"],
   },
   // Who holds an office: section access, and the boards that name the
   // signing officers and sponsors.
   offices: {
-    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
-    localPrefixes: ["volunteering:office-holders"],
+    keys: [OFFICER_LINKS_KEY, MEMBERSHIP_RECORDS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY, "volunteering:office-holders"],
   },
 } satisfies Record<string, Rule>;
 
