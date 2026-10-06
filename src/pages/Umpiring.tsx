@@ -34,6 +34,7 @@ import {
   confirmedOf,
   reportCsvRows,
   reportGrid,
+  similarOutsideNames,
   umpireMark,
   umpiresMessage,
   weekEnd,
@@ -237,6 +238,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   const offers = duty.assignments.filter((a) => a.status === 'offered');
   const past = isPast(duty);
   const chosen = board.umpires?.find((u) => u.personId === who);
+  const suggestions = typing ? similarOutsideNames(outside, known) : [];
 
   if (duty.status === 'cancelled') {
     return taken ? (
@@ -343,6 +345,24 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                 )}
               </label>
             </div>
+            {suggestions.length > 0 && (
+              <p className={`flex flex-wrap items-center gap-x-3 text-sm ${warningText}`}>
+                Did you mean
+                {suggestions.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className="min-h-10 font-medium underline underline-offset-2"
+                    onClick={() => {
+                      setOutside(n);
+                      setTyping(false);
+                    }}
+                  >
+                    {n}?
+                  </button>
+                ))}
+              </p>
+            )}
             {who && !chosen?.onCommitment && (
               <label className="flex items-center gap-2 min-h-10 text-sm text-foreground">
                 <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
