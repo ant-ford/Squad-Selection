@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
+import { SHOW_PAST_BY_DEFAULT, useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -125,8 +125,9 @@ export default function PlayerDashboard() {
   // Declared before the query that reads it: results are fetched only while
   // this is on. Open by default (owner request, 2026-09-23) - players want to
   // see how the last games went. The payload is a few recent fixtures, and
-  // the played-matches read behind it is shared through KV.
-  const [showPast, setShowPast] = useState(true);
+  // the played-matches read behind it is shared through KV. Home (App.tsx)
+  // starts this same query alongside the profile.
+  const [showPast, setShowPast] = useState(SHOW_PAST_BY_DEFAULT);
   const { data, isLoading: loading } = useMyFixtures(showPast);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
@@ -134,7 +135,8 @@ export default function PlayerDashboard() {
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile).
+  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
+  // still be on its way: the menu fills in when it lands.
   const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);

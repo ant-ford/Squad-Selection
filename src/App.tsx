@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
-import { useMyProfile } from '@/lib/queries';
+import { usePrefetchQuery, useQuery } from '@tanstack/react-query';
+import { SHOW_PAST_BY_DEFAULT, myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
@@ -71,9 +72,15 @@ function AuthGate() {
 
 /** The player page, or for an applicant (or someone registering to join) their application. */
 function Home() {
+  // The player page's own reads go out with the profile, not after it. The
+  // dashboard's fixtures observer is the one that stays enabled: this one only
+  // watches for the data, so it never refetches a variant that's off screen.
+  usePrefetchQuery(myFixturesQuery(SHOW_PAST_BY_DEFAULT));
+  usePrefetchQuery(myTasksQuery);
+  const fixturesIn = useQuery({ ...myFixturesQuery(SHOW_PAST_BY_DEFAULT), enabled: false }).data !== undefined;
   const { data, isLoading } = useMyProfile();
-  if (isLoading) return <AppLoading />;
   if (data?.applicant) return <Navigate to="/apply" replace />;
+  if (isLoading && !fixturesIn) return <AppLoading />;
   return <PlayerDashboard />;
 }
 

@@ -6,7 +6,8 @@
  *
  * Gated on the "registration" section (auth.ts), which only the Hockey
  * Convenor office opens: the screen carries HKID and passport numbers.
- * Downloads and tick-offs go in activity_log (field names only).
+ * Downloads, tick-offs and edits (Registered Name, visiting flag) go in
+ * activity_log (field names only).
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -17,9 +18,12 @@ import { fileLink } from "./data/supabase/files";
 import { currentSeason } from "./seasonContext";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
+import { invalidateForTables } from "./airtableWebhook";
+import { TABLES } from "../../shared/schema/tableNames";
 import {
   REGISTRATION_CSV_HEADER,
   registrationCsvRow,
+  tidyRegisteredName,
   type RegistrationBoard,
   type RegistrationPlayer,
   type RegistrationReason,
@@ -47,11 +51,15 @@ interface PersonRow {
   email: string | null;
   registered_team: string | null;
   previous_eos: string | null;
+  is_visiting_player?: boolean;
   shirt: { shirt_no: number } | null;
 }
 
 const PERSON_COLUMNS =
-  "id,api_id,preferred_name,given_names,surname,registered_name,chinese_name,date_of_birth,hkid_no,passport_no,nationality,mobile_no,email,registered_team,previous_eos,shirt:shirt_numbers(shirt_no)";
+  "id,api_id,preferred_name,given_names,surname,registered_name,chinese_name,date_of_birth,hkid_no,passport_no,nationality,mobile_no,email,registered_team,previous_eos,is_visiting_player,shirt:shirt_numbers(shirt_no)";
+
+/** The comparison match_cards_link_person makes: trimmed, ignoring case. */
+const nameKey = (v: string | null) => (v ?? "").trim().toLowerCase();
 
 interface RegistrationRow {
   person_id: string;
@@ -114,6 +122,13 @@ export async function getRegistrationBoard(env: Env): Promise<RegistrationBoard>
     return id ? fileLink(env, id) : null;
   };
 
+  // Two Active players with one Registered Name: the card trigger links neither.
+  const nameCount = new Map<string, number>();
+  for (const p of people) {
+    const k = nameKey(p.registered_name);
+    if (k) nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
+  }
+
   const players = await Promise.all(
     people.map(async (p): Promise<RegistrationPlayer> => {
       const mine = registrations.filter((r) => r.person_id === p.id);
@@ -132,6 +147,8 @@ export async function getRegistrationBoard(env: Env): Promise<RegistrationBoard>
         previousEos: p.previous_eos || null,
         shirtNo: p.shirt?.shirt_no ?? null,
         registeredName: p.registered_name || null,
+        nameShared: (nameCount.get(nameKey(p.registered_name)) ?? 0) > 1,
+        visiting: p.is_visiting_player === true,
         surname: p.surname || null,
         givenNames: p.given_names || null,
         chineseName: p.chinese_name || null,
@@ -219,6 +236,92 @@ export async function markRegistered(env: Env, actor: AuthorizedUser, body: Reco
   const count = await recordRegistered(env, people.map((p) => p.id), me);
   await log(env, me, "registration-registered", people.map((p) => p.id), ["hkha_registrations"]);
   return { ok: true, count };
+}
+
+/**
+ * Letters (any script), spaces and the punctuation names carry. Nothing a
+ * PostgREST ilike pattern treats as a wildcard (* % _), so the clash check
+ * below is a plain comparison.
+ */
+const REGISTERED_NAME = /^[\p{L}\p{M}][\p{L}\p{M} .,'’()-]*$/u;
+const MAX_NAME = 80;
+
+export interface DetailsChange {
+  id: string;
+  /** null clears it; undefined leaves it. */
+  registeredName?: string | null;
+  visiting?: boolean;
+}
+
+/** Validates a details save from the screen; throws a 400 the screen shows as it is. */
+export function parseDetailsChange(body: Record<string, unknown>): DetailsChange {
+  const [id] = apiIds([body.id]);
+  if (!id) throw new HttpError("Choose a player.", 400, "INVALID_INPUT");
+  const change: DetailsChange = { id };
+  if ("registeredName" in body) {
+    const v = body.registeredName;
+    if (v !== null && typeof v !== "string") throw new HttpError("Registered name must be text.", 400, "INVALID_INPUT");
+    const name = tidyRegisteredName(v ?? "");
+    if (name.length > MAX_NAME) throw new HttpError(`Registered name: at most ${MAX_NAME} characters.`, 400, "INVALID_INPUT");
+    if (name && !REGISTERED_NAME.test(name)) throw new HttpError("Registered name: letters, spaces, hyphens and apostrophes only.", 400, "INVALID_INPUT");
+    change.registeredName = name || null;
+  }
+  if ("visiting" in body) {
+    if (typeof body.visiting !== "boolean") throw new HttpError("Visiting must be on or off.", 400, "INVALID_INPUT");
+    change.visiting = body.visiting;
+  }
+  if (change.registeredName === undefined && change.visiting === undefined) throw new HttpError("Nothing to save.", 400, "INVALID_INPUT");
+  return change;
+}
+
+/**
+ * Saves an Active player's Registered Name and/or visiting flag. A new name
+ * links this season's match cards that already carry it and are still
+ * unlinked (link_match_cards_by_name); the count comes back for the screen.
+ *
+ * A name another person already has is refused: the card trigger links only
+ * when exactly one person has the name, so a duplicate would stop both
+ * players' cards linking.
+ */
+export async function saveRegistrationDetails(
+  env: Env,
+  actor: AuthorizedUser,
+  body: Record<string, unknown>,
+): Promise<{ ok: true; linked: number }> {
+  requireSupabase(env);
+  const change = parseDetailsChange(body);
+  const d = db(env);
+  const p = await d.one<{ id: string; registered_name: string | null; is_visiting_player: boolean }>(
+    "people",
+    `select=id,registered_name,is_visiting_player&active=is.true&api_id=${eq(change.id)}`,
+  );
+  if (!p) throw new HttpError("Player not found.", 404, "NOT_FOUND");
+
+  const patch: Record<string, unknown> = {};
+  if (change.registeredName !== undefined && change.registeredName !== (p.registered_name || null)) {
+    if (change.registeredName && nameKey(change.registeredName) !== nameKey(p.registered_name)) {
+      // Existing names are stored trimmed (checked on preview, 6 Oct 2026), so
+      // ilike without wildcards is the trigger's lower(trim()) comparison.
+      const [holder] = await d.select<{ preferred_name: string | null; given_names: string | null; surname: string | null; active: boolean }>(
+        "people",
+        `select=id,preferred_name,given_names,surname,active&registered_name=ilike.${encodeURIComponent(change.registeredName)}&id=neq.${p.id}`,
+      );
+      if (holder) {
+        const who = [holder.preferred_name || holder.given_names, holder.surname].filter(Boolean).join(" ") || "Another player";
+        throw new HttpError(`${who}${holder.active ? "" : " (not active)"} already has this registered name.`, 409, "NAME_TAKEN");
+      }
+    }
+    patch.registered_name = change.registeredName;
+  }
+  if (change.visiting !== undefined && change.visiting !== p.is_visiting_player) patch.is_visiting_player = change.visiting;
+  if (Object.keys(patch).length === 0) return { ok: true, linked: 0 };
+
+  await d.update("people", `id=${eq(p.id)}`, patch);
+  const linked = patch.registered_name ? await d.rpc<number>("link_match_cards_by_name", { p_name: patch.registered_name }) : 0;
+  await log(env, await actorUuid(env, actor), "registration-details", [p.id], Object.keys(patch));
+  // Eligibility reads both (and a linked card can re-register a player).
+  await invalidateForTables(env, linked > 0 ? [TABLES.player, TABLES.matchCard] : [TABLES.player]);
+  return { ok: true, linked };
 }
 
 /** Takes a tick back off (ticked by mistake): they need registering again. */
