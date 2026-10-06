@@ -43,10 +43,6 @@ const PROJECTIONS: Record<string, readonly string[]> = {
   [TABLES.sectionCaptainOffice]: Object.values(OFFICER_FIELDS),
 };
 
-export function projectionFor(table: string): readonly string[] | undefined {
-  return PROJECTIONS[table];
-}
-
 export class AirtableError extends Error {
   status: number;
   constructor(message: string, status: number) {

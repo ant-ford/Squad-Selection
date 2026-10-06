@@ -5,12 +5,11 @@ import { isRowId } from "./data/ids";
 import type { Env } from "./env";
 import { getCached, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK, invalidateReferenceData } from "./reference";
-import { getScheduledMatches, SCHEDULED_MATCHES_KEY } from "./fixtures";
-import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "./eligibility";
+import { SCHEDULED_MATCHES_KEY } from "./fixtures";
+import { evaluatePlayerEligibility, type EvaluationContext } from "./eligibility";
 import { HttpError } from "./http";
-import type { KitColour, Match, Player, MatchCard, Team, AvailabilityException } from "../../shared/schema/domainTypes";
-import { ABILITY_RANK } from "../../shared/abilityRank";
-import { buildEvaluationContext, getSeasonContext } from "./seasonContext";
+import type { KitColour, Match, Player, Team } from "../../shared/schema/domainTypes";
+import { buildEvaluationContext } from "./seasonContext";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -21,7 +20,7 @@ type MatchSide = "home" | "away";
 // ── Cached match-record fetch (Performance Pass #1) ─────────────────────
 //
 // Short-TTL isolate cache for the raw match record. Only READ endpoints use
-// it (getPlayersForMatch, getSquadForMatch). Every write path reads the
+// it (getPlayersForMatch). Every write path reads the
 // record fresh from Airtable so no merge ever operates on stale data, and
 // syncSquad invalidates `match:${matchId}` immediately after each write —
 // so a coach can never be served stale selections post-update.
@@ -163,7 +162,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       shirtNo: p.shirtNoValue || "",
       // Coaches build WhatsApp click-to-chat links in the browser, so the
       // number has to reach the client. This endpoint is coach-only; the
-      // player-facing squad list (getSquadForMatch) never includes it.
+      // player-facing team list (getTeamAvailabilityForMatch) never includes it.
       mobile: p.mobileNo || "",
       // Display value: Selected Team EOS -> SOS -> Registered Team (optics).
       // Eligibility above was computed from the true Registered Team.
@@ -501,37 +500,4 @@ export async function getAvailabilityForMatch(env: Env, matchId: string) {
     AVAILABILITY_FOR_MATCH_TTL_MS,
   );
   return data;
-}
-const POSITION_ORDER: Record<string, number> = { Goalkeeper: 0, Defender: 1, Midfielder: 2, Forward: 3 };
-
-export async function getSquadForMatch(env: Env, matchId: string, side?: MatchSide) {
-  if (!matchId) throw new HttpError("matchId is required", 400);
-  // Scheduled matches are already cached (10 min, invalidated by syncSquad);
-  // reuse that copy to avoid an extra Airtable round-trip for the common
-  // case. Non-scheduled matches fall back to the per-match 30s cache.
-  const scheduled = (await getScheduledMatches(env)).find((m) => m.id === matchId);
-  const match = scheduled ?? (await getMatchRecord(env, matchId));
-  const ref = await getReferenceData(env);
-  const selectedIds = getSelectedPlayerIds(match, ref.teamRankMap, side);
-  const players = [] as { id: string; name: string; shirtNo: string; position: string; ability: string }[];
-  const playersById = new Map(ref.players.map((player) => [player.id, player]));
-  for (const playerId of selectedIds) {
-    const player = playersById.get(playerId);
-    if (!player) continue;
-    const name = [player.preferredName, player.surname].filter(Boolean).join(" ") || player.givenNames || "Unknown";
-    players.push({
-      id: player.id,
-      name,
-      shirtNo: player.shirtNoValue || "",
-      position: player.playingPosition || "",
-      ability: player.playingAbility || "",
-    });
-  }
-  players.sort((a, b) => {
-    const posA = POSITION_ORDER[a.position] ?? 99;
-    const posB = POSITION_ORDER[b.position] ?? 99;
-    if (posA !== posB) return posA - posB;
-    return (ABILITY_RANK[b.ability] ?? 0) - (ABILITY_RANK[a.ability] ?? 0);
-  });
-  return { matchId, players };
 }

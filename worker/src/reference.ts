@@ -1,6 +1,6 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
@@ -176,10 +176,6 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
     },
     rawReadTtl(env, REFERENCE_TTL_MS),
   );
-}
-
-export async function getActivePlayers(env: Env): Promise<Player[]> {
-  return people(env).listActive();
 }
 
 /**

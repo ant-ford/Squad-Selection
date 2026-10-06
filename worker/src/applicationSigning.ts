@@ -303,7 +303,7 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
   requireSupabase(env);
   const role = body.role as SignRole;
   if (!SIGN_ROLES.includes(role)) throw new HttpError("Unknown signer.", 400, "INVALID_INPUT");
-  const { p, holderOf } = await loadApplication(env, apiId);
+  const { holderOf } = await loadApplication(env, apiId);
   if (holderOf(role)?.apiId !== user.personId) throw new HttpError(`You're not the ${ROLE_LABEL[role]} on this application.`, 403, "NOT_YOURS");
   const answers = role === "sponsor" ? sponsorAnswersFrom(body) : null;
   if (answers) {

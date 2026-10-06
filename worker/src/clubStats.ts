@@ -30,7 +30,6 @@ import { STATS_CURRENT_KEY } from "./reference";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   SUMMARY_VERSION,
-  addWDL,
   emptyWDL,
   isHkfcTeam,
   type MatchResult,

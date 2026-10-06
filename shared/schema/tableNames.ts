@@ -5,7 +5,6 @@ export const TABLES = {
   availabilityException: "Availability Exceptions",
   matchCard: "Match Cards",
   abilityGroupConfiguration: "Ability Group Configuration",
-  selectionEvent: "Selection Events",
   availabilityRule: "Availability Rules",
   membershipOfficer: "Membership Officers",
   sectionChair: "Section Chairs",
