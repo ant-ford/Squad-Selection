@@ -7,6 +7,7 @@ import { supabase } from './supabase';
 import { signOut } from './auth';
 import { setAccessDenied } from './accessDenied';
 import { toast } from 'sonner';
+import { FRESH_HEADER, FRESH_WINDOW_MS } from '@shared/freshHeader';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -94,10 +95,22 @@ function toSearchParams(params?: QueryParams): string {
   return `?${search.toString()}`;
 }
 
+/**
+ * When this app last saved something (a successful non-GET). For
+ * FRESH_WINDOW_MS after it, every request carries FRESH_HEADER, so the
+ * Worker reads the person's sign-in facts afresh rather than reusing an
+ * answer from a few seconds before the save: what they saved always shows.
+ */
+let lastWriteAt = Number.NEGATIVE_INFINITY;
+
+function freshHeaders(): Record<string, string> {
+  return Date.now() - lastWriteAt < FRESH_WINDOW_MS ? { [FRESH_HEADER]: '1' } : {};
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return token ? { Authorization: `Bearer ${token}`, ...freshHeaders() } : {};
 }
 
 type RefreshOutcome = 'refreshed' | 'rejected' | 'unreachable';
@@ -168,6 +181,7 @@ async function authorisedFetch(
 async function timedFetch(method: string, path: string, init: RequestInit): Promise<Response> {
   const startedAt = performance.now();
   const response = await fetch(`${API_URL}${path}`, init);
+  if (method !== 'GET' && response.ok) lastWriteAt = Date.now();
   console.debug(
     `[perf] ${method} ${path} ${response.status} ${Math.round(performance.now() - startedAt)}ms`,
   );

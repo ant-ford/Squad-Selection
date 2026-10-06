@@ -3,6 +3,7 @@ import worker from "../worker/src/index";
 import { invalidateAll } from "../worker/src/cache";
 import type { Env } from "../worker/src/env";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
+import { FRESH_HEADER } from "../shared/freshHeader";
 import { authorize } from "../worker/src/auth";
 import { parseAuthContext } from "../worker/src/authContext";
 import { parseCacheVersions, raiseVersionFloor } from "../worker/src/cacheVersions";
@@ -137,6 +138,22 @@ describe("database calls behind a signed-in request", () => {
     expect(pg.rpcCalls("auth_context")).toHaveLength(2);
     // Someone else's write doesn't drop Ada's answer.
     await runWithRequestContext({ stats: newRequestStats(), email: "bob@hkfc.com" }, () => db(ENV).insert("notes", [{ id: "n2" }]));
+    await get("/api/my-profile");
+    expect(pg.rpcCalls("auth_context")).toHaveLength(2);
+  });
+
+  it("a request marked fresh by the app (the 10 s after its own save) reads auth_context afresh, on any isolate", async () => {
+    await get("/api/my-profile");
+    // Another isolate saw Ada a moment ago; she saved through a different one.
+    const fresh = await worker.fetch(
+      new Request("https://api.test/api/my-profile", { headers: { Authorization: `Bearer ${jwt("ada@hkfc.com")}`, [FRESH_HEADER]: "1" } }),
+      ENV,
+      CTX,
+    );
+    expect(fresh.status).toBe(200);
+    expect(pg.rpcCalls("auth_context")).toHaveLength(2);
+    expect(dbCalls(fresh)).toBeGreaterThanOrEqual(1);
+    // An older app sends no header: reused as before.
     await get("/api/my-profile");
     expect(pg.rpcCalls("auth_context")).toHaveLength(2);
   });

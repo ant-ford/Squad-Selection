@@ -3,6 +3,7 @@ import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import type { Office, OfficerRole } from "./reference";
 import { getCached, invalidateCache } from "./cache";
+import { FRESH_HEADER, FRESH_WINDOW_MS } from "../../shared/freshHeader";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
 import { noteRequestPerson, noteRequestVersions, onRequestWrite } from "./requestContext";
 import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
@@ -85,11 +86,14 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // readable claim, or a different verified email) it is asked again for
   // the verified one. One database call, with no re-lookups behind it.
   const claimed = claimedEmail(request);
-  const early = claimed ? loadAuthContext(env, claimed) : null;
+  // The app marks requests made in the 10 s after its own write (FRESH_HEADER):
+  // those read auth_context afresh, so the person always sees their own write.
+  const fresh = request.headers.get(FRESH_HEADER) === "1";
+  const early = claimed ? loadAuthContext(env, claimed, fresh) : null;
   // A rejected token must answer 401, whatever the early read did.
   early?.catch(() => undefined);
   const normalizedEmail = normalizeEmail(await verifySupabaseSession(request, env));
-  const context = early && claimed === normalizedEmail ? await early : await loadAuthContext(env, normalizedEmail);
+  const context = early && claimed === normalizedEmail ? await early : await loadAuthContext(env, normalizedEmail, fresh);
   return authorize(normalizedEmail, context);
 }
 
@@ -100,7 +104,7 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
  * Access is still decided on every request from the answer, and Supabase
  * still checks the session (60 s per token, verifySupabaseSession).
  */
-const AUTH_CONTEXT_REUSE_MS = 10 * 1000;
+const AUTH_CONTEXT_REUSE_MS = FRESH_WINDOW_MS;
 
 const authContextKey = (email: string) => `auth-context:${email}`;
 
@@ -110,7 +114,8 @@ const authContextKey = (email: string) => `auth-context:${email}`;
  * Keyed by email, never by token: the answer is about the email, and is
  * used only once Supabase has confirmed the request is that email's.
  */
-async function loadAuthContext(env: Env, email: string): Promise<AuthContext> {
+async function loadAuthContext(env: Env, email: string, fresh = false): Promise<AuthContext> {
+  if (fresh) invalidateCache(authContextKey(email));
   const { data, fromCache } = await getCached(authContextKey(email), () => authContexts(env).load(email), AUTH_CONTEXT_REUSE_MS);
   if (!fromCache) raiseVersionFloor(data.versions);
   return data;
