@@ -120,6 +120,17 @@ export async function getChairmanDirectory(env: Env): Promise<ChairmanDirectory>
   );
 }
 
+/**
+ * One person's directory entry, read on its own (~1 KB): what the events
+ * checks need to know whether the viewer is invited, without the whole
+ * directory (~200 KB). Null when there's no such person, or they resigned.
+ */
+export async function getDirectoryPerson(env: Env, personId: string): Promise<DirectoryPerson | null> {
+  if (!personId) return null;
+  const row = await people(env).getDirectoryRow(personId);
+  return row && text(row.status) !== "Resigned" ? toDirectoryPerson(row) : null;
+}
+
 export interface EmailExportInput {
   kind: "outlook" | "gmail" | "csv" | "mailto";
   people: number;

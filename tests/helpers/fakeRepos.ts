@@ -10,6 +10,8 @@ import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
 import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
 import * as suspensionsModule from "../../worker/src/data/suspensions";
+import * as seasonDataModule from "../../worker/src/data/seasonData";
+import type { SeasonData } from "../../worker/src/data/seasonData";
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import * as authContextModule from "../../worker/src/authContext";
 import * as cacheVersionsModule from "../../worker/src/cacheVersions";
@@ -263,7 +265,11 @@ function buildRepos(s: FakeState): FakeRepos {
 
   const people: PeopleRepo = {
     async listActive() {
-      return s.people.filter((p) => p.active === true).map(toPlayer);
+      // api_players_lite: no photo, CV, coach notes, Player/Coach or rank date.
+      return s.people.filter((p) => p.active === true).map((p) => {
+        const { photo: _photo, sportsBackground: _cv, selectionComments: _notes, playerCoach: _pc, rankUpdatedAt: _rank, ...lite } = toPlayer(p);
+        return lite;
+      });
     },
     async findByEmail(email) {
       const want = normalizeEmail(email);
@@ -315,12 +321,23 @@ function buildRepos(s: FakeState): FakeRepos {
     async listDirectory() {
       return s.people.filter((p) => differs(personValue(p, "status"), "Resigned")).map((p) => personRow(p, CHAIRMAN_FIELDS));
     },
+    async getDirectoryRow(id) {
+      const p = findPerson(id);
+      return p ? personRow(p, CHAIRMAN_FIELDS) : null;
+    },
     async listContactsByIds(ids) {
       const wanted = new Set([...ids].filter((id) => API_ID_RE.test(id)));
       return s.people.filter((p) => wanted.has(p.id)).map((p) => personRow(p, CONTACT_FIELDS));
     },
     async listNames() {
       return s.people.map((p) => personRow(p, NAME_FIELDS));
+    },
+    async listNamesFor(ids, emails) {
+      const wantedIds = new Set([...ids].filter((id) => API_ID_RE.test(id)));
+      const wantedEmails = new Set([...emails].map((e) => e.trim().toLowerCase()).filter(Boolean));
+      return s.people
+        .filter((p) => wantedIds.has(p.id) || (!!p.email && wantedEmails.has(p.email.trim().toLowerCase())))
+        .map((p) => ({ id: p.id, preferredName: p.preferredName || null, givenNames: p.givenNames || null, email: p.email ? p.email.trim().toLowerCase() : null }));
     },
     async getMyTaskFields(id) {
       const p = findPerson(id);
@@ -571,9 +588,11 @@ function buildRepos(s: FakeState): FakeRepos {
     async create(events) {
       for (const e of events) s.rankingEvents.push({ id: fakeUuid(), ...clone(e) });
     },
-    async listNewestFirst() {
-      return [...s.rankingEvents]
+    async listRecent(since, limit, upTo) {
+      return s.rankingEvents
+        .filter((e) => e.timestamp !== "" && e.timestamp >= since && (upTo === undefined || e.timestamp <= upTo))
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp) || a.id.localeCompare(b.id))
+        .slice(0, limit)
         .map(clone);
     },
   };
@@ -704,6 +723,8 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
     vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
+    // season_context: assembled from the same repositories, so their call logs still show the reads.
+    vi.spyOn(seasonDataModule, "seasonData").mockImplementation(() => ({ load: (season: string, player?: string) => fakeSeasonData(repos, season, player) })),
     // auth.ts reads the signed-in person through auth_context: answered from the same state.
     vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
     // A request without sign-in reads the versions: the fakes' counter.
@@ -836,4 +857,48 @@ export function authContextFrom(s: FakeState, email: string): AuthContext {
     umpire: extra.umpire === true,
     versions,
   };
+}
+
+// ── season_context ───────────────────────────────────────────────────────
+
+/**
+ * What season_context(p_season, p_player) returns for the seeded state, by
+ * the SQL's rules (supabase/migrations/*_season_context.sql): the season's
+ * matches, cards and answers; last season's Played or carded matches and
+ * carded cards; the open suspensions; a per-match summary of the teams on
+ * its cards. For a player: their cards plus every card with a goal or a
+ * card, their answers (with note and id) plus those of anyone selected (without).
+ */
+export async function fakeSeasonData(repos: FakeRepos, season: string, player?: string): Promise<SeasonData> {
+  const m = /^(\d{4})-(\d{4})$/.exec(season);
+  const prev = m ? `${Number(m[1]) - 1}-${m[1]}` : "";
+  const [matches, allCards, allExceptions, prevCards, prevAll, suspensions] = await Promise.all([
+    repos.matches.listForSeason(season),
+    repos.matchCards.listForSeason(season),
+    repos.availabilityExceptions.listForSeasons([season]),
+    prev ? repos.matchCards.listForSeason(prev, { cardedOnly: true }) : Promise.resolve([] as MatchCard[]),
+    prev ? repos.matches.listForSeason(prev) : Promise.resolve([] as Match[]),
+    repos.suspensions.listOpen(),
+  ]);
+  const cardedPrev = new Set(prevCards.map((c) => c.match?.[0]));
+  const previousMatches = prevAll.filter((x) => (x.matchStatus || "").toLowerCase() === "played" || cardedPrev.has(x.id));
+  const selected = new Set(matches.flatMap((x) => [...(x.selectedPlayersHome ?? []), ...(x.selectedPlayersAway ?? [])].map((p) => `${p}:${x.id}`)));
+  const cardSummary = new Map<string, { teams: string[]; count: number }>();
+  for (const c of allCards) {
+    const id = c.match?.[0];
+    if (!id) continue;
+    const entry = cardSummary.get(id) ?? { teams: [], count: 0 };
+    entry.count++;
+    if (c.team && !entry.teams.includes(c.team)) entry.teams.push(c.team);
+    cardSummary.set(id, entry);
+  }
+  const cards = player
+    ? allCards.filter((c) => c.player?.[0] === player || (c.goals ?? 0) > 0 || (c.cards?.length ?? 0) > 0)
+    : allCards;
+  const exceptions = player
+    ? allExceptions
+        .filter((e) => e.player?.[0] === player || selected.has(`${e.player?.[0]}:${e.match?.[0]}`))
+        .map((e) => (e.player?.[0] === player ? e : { ...e, id: "", note: "" }))
+    : allExceptions;
+  return { matches, cards, exceptions, previousMatches, previousCards: prevCards, suspensions, cardSummary };
 }

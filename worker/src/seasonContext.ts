@@ -20,7 +20,8 @@ import { matchCards } from "./data/matchCards";
 import type { Env } from "./env";
 import { getVersioned } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
-import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
+import { seasonData } from "./data/seasonData";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import {
   computeSuspensionStates,
@@ -31,7 +32,7 @@ import {
 } from "./suspension";
 import { suspensions } from "./data/suspensions";
 import {
-  computeCompletedLeagueMatchCounts,
+  completedLeagueMatchCountsFromSummary,
   type EvaluationContext,
   type VirtualSelection,
 } from "./eligibility";
@@ -161,6 +162,8 @@ export interface SeasonContext {
   suspensionByPlayer: Map<string, CardSuspensionState>;
   /** The Men's Convenor's open suspensions, served or not, keyed by player id. */
   manualSuspensionByPlayer: Map<string, ManualSuspensionState>;
+  /** The player this context was narrowed to (their own screens only), or null for the whole season. */
+  scope: string | null;
 }
 
 /**
@@ -172,31 +175,38 @@ export const SEASON_INDEX_DEPS = [
   "matches", "match_selections", "match_cards", "availability_exceptions", "people", "teams", "team_people", "suspensions",
 ] as const;
 
-export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
-  return getVersioned<SeasonContext>(env, `season-index:${season}`, SEASON_INDEX_DEPS, async () => {
+/**
+ * A season's context. `player` (a People api id) builds the narrower one
+ * for that player's own screens (season_context's player mode: their cards
+ * and answers, every goal and card, every selection): exact for evaluating,
+ * showing and counting THAT player, and never to be used for anyone else.
+ * The whole-season one (no `player`) serves the coach screens.
+ */
+export async function getSeasonContext(env: Env, season: string, player?: string): Promise<SeasonContext> {
+  const key = player ? `season-index:${season}:player:${player}` : `season-index:${season}`;
+  return getVersioned<SeasonContext>(env, key, SEASON_INDEX_DEPS, async () => {
     const prevSeason = previousSeason(season);
-    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches, ref, openManual] = await Promise.all([
-      getExceptionsForSeasons(env, [season]),
-      getMatchCardsForSeason(env, season),
-      getAllMatches(env, season),
-      prevSeason ? getMatchCardsForSeason(env, prevSeason, { cardedOnly: true }) : Promise.resolve([] as MatchCard[]),
-      prevSeason ? getAllMatches(env, prevSeason) : Promise.resolve([] as Match[]),
-      getReferenceData(env),
-      getOpenManualSuspensions(env),
-    ]);
+    const [data, ref] = await Promise.all([seasonData(env).load(season, player), getReferenceData(env)]);
+    const {
+      matches: allMatches,
+      cards: matchCards,
+      exceptions: exceptionsRaw,
+      previousMatches: prevMatches,
+      previousCards: prevMatchCards,
+      suspensions: openManual,
+    } = data;
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
-    const matchIdsWithCards = new Set<string>();
     for (const card of matchCards) {
-      const cardMatchId = linkId(card.match);
-      if (cardMatchId) matchIdsWithCards.add(cardMatchId);
       const playerId = linkId(card.player);
       if (!playerId) continue;
       const cards = matchCardsByPlayer.get(playerId) || [];
       cards.push(card);
       matchCardsByPlayer.set(playerId, cards);
     }
-    const completedLeagueMatchesByTeam = computeCompletedLeagueMatchCounts({ matchCards, matchesById });
+    // From every card, narrowed context or not (season_context's summary).
+    const matchIdsWithCards = new Set(data.cardSummary.keys());
+    const completedLeagueMatchesByTeam = completedLeagueMatchCountsFromSummary(data.cardSummary, matchesById);
     // Virtual selections + per-match and per-player indexes, built once.
     const virtualSelections: VirtualSelection[] = [];
     const selectionsByMatch = new Map<string, VirtualSelection[]>();
@@ -269,6 +279,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       previousMatches: prevMatches,
       suspensionByPlayer,
       manualSuspensionByPlayer,
+      scope: player ?? null,
     };
   });
 }
@@ -385,10 +396,12 @@ export async function buildEvaluationContext(
   teamMap: Map<string, Team>,
   allPlayers: Player[],
   targetTeam: string,
+  /** Evaluating only this player (a People api id): their narrower season context. */
+  scope?: string,
 ): Promise<{ ctx: EvaluationContext; exceptionsRaw: AvailabilityException[] }> {
   const currentSeason = match.season || "";
   const matchDate = match.matchDate || "";
-  const season = await getSeasonContext(env, currentSeason);
+  const season = await getSeasonContext(env, currentSeason, scope);
   const playersById = playersByIdFor(allPlayers);
 
   // Same-day slice (excludes the target match).
