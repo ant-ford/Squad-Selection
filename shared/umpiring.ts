@@ -253,10 +253,6 @@ export function confirmedOf(duty: Pick<UmpireDuty, "assignments">): DutyAssignme
   return duty.assignments.find((a) => a.status === "confirmed" || a.status === "no_show");
 }
 
-export function isOpen(duty: Pick<UmpireDuty, "assignments" | "status">): boolean {
-  return duty.status !== "cancelled" && !confirmedOf(duty);
-}
-
 /** Monday of the HK week a date falls in, yyyy-mm-dd. */
 export function weekOf(iso: string): string {
   const day = hkDateKey(iso);
@@ -280,15 +276,17 @@ export function seasonOf(iso: string): string {
   return `${start}-${start + 1}`;
 }
 
+const HK_PARTS_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Hong_Kong",
+  day: "numeric",
+  month: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const hkParts = (iso: string) => {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Hong_Kong",
-    day: "numeric",
-    month: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
+  const parts = HK_PARTS_FORMAT.formatToParts(new Date(iso));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return { day: get("day"), month: get("month"), hour: get("hour"), minute: get("minute") };
 };

@@ -15,7 +15,7 @@ import {
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import { getShared, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateShared } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
@@ -114,7 +114,7 @@ export async function getAbilityGroupConfig(
       }
       return map;
     },
-    rawReadTtl(env, CONFIG_CACHE_TTL_MS),
+    CONFIG_CACHE_TTL_MS,
   );
 }
 
@@ -157,7 +157,7 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
         version: Date.now(),
       };
     },
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    RANKING_CACHE_TTL_MS,
   );
   return forClients(data);
 }
@@ -177,93 +177,11 @@ export async function getInactiveRanking(env: Env): Promise<InactiveRankingEntry
     env,
     rankingCacheKey(false),
     async () => fetchInactiveRankingFromAirtable(env),
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    RANKING_CACHE_TTL_MS,
   );
 }
 
 // ── Public writes ────────────────────────────────────────────────────────
-async function executeRankMove(
-  env: Env,
-  players: Player[],
-  playerId: string,
-  newRank: number,
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  const idx = players.findIndex((p) => p.id === playerId);
-  if (idx === -1) throw new HttpError("Player not found in active ranking", 404);
-  const oldRank = players[idx].sectionRank ?? 0;
-  if (oldRank === newRank) return recomputeDerivedFieldsFromList(env, players);
-
-  const sectionRankUpdates: { id: string; rank: number; oldRank: number }[] = [];
-  for (const p of players) {
-    const r = p.sectionRank ?? 0;
-    if (p.id === playerId) {
-      sectionRankUpdates.push({ id: p.id, rank: newRank, oldRank: r });
-    } else if (newRank < oldRank && r >= newRank && r < oldRank) {
-      sectionRankUpdates.push({ id: p.id, rank: r + 1, oldRank: r });
-    } else if (newRank > oldRank && r > oldRank && r <= newRank) {
-      sectionRankUpdates.push({ id: p.id, rank: r - 1, oldRank: r });
-    }
-  }
-  
-  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail, "move", justification);
-  const rankById = new Map(sectionRankUpdates.map((u) => [u.id, u.rank]));
-  const updatedPlayers = players.map((p) => ({
-    ...p,
-    sectionRank: rankById.get(p.id) ?? p.sectionRank,
-  }));
-  updatedPlayers.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
-  return recomputeDerivedFieldsFromList(env, updatedPlayers);
-}
-
-export async function movePlayerToRank(
-  env: Env,
-  playerId: string,
-  newRank: number,
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  if (!Number.isInteger(newRank) || newRank < 1) {
-    throw new HttpError("newRank must be a positive integer", 400);
-  }
-  const note = validateJustification(justification);
-  await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
-  if (newRank > players.length) {
-    throw new HttpError(`newRank ${newRank} exceeds active player count ${players.length}`, 400);
-  }
-  return executeRankMove(env, players, playerId, newRank, actingEmail, note);
-}
-
-export async function movePlayerRelative(
-  env: Env,
-  sourceId: string,
-  targetId: string,
-  position: "above" | "below",
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  if (sourceId === targetId) {
-    throw new HttpError("Cannot move a player relative to themselves", 400);
-  }
-  await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
-  const src = players.find((p) => p.id === sourceId);
-  const tgt = players.find((p) => p.id === targetId);
-  if (!src) throw new HttpError("Source player not found in active ranking", 404);
-  if (!tgt) throw new HttpError("Target player not found in active ranking", 404);
-
-  const oldSrcRank = src.sectionRank ?? 0;
-  const tgtRank = tgt.sectionRank ?? 0;
-  let newRank = position === "above" ? tgtRank : tgtRank + 1;
-  if (oldSrcRank < newRank) newRank -= 1;
-  newRank = Math.max(1, Math.min(newRank, players.length));
-
-  const note = validateJustification(justification);
-  return executeRankMove(env, players, sourceId, newRank, actingEmail, note);
-}
-
 export async function reorderRanking(
   env: Env,
   playerIds: string[],
