@@ -100,11 +100,13 @@ import {
   getPlayersForMatch,
   getAvailabilityForMatch,
   syncSquad,
+  applySquadChanges,
   setMatchKit,
   toggleAutoSelect,
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
+import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
@@ -581,6 +583,30 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       };
       const { displaced } = await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
       return json({ success: true, displaced }, 200, origin);
+    }
+
+    // A squad save as changes: only who was added and removed, merged with
+    // anyone else's changes unless both touched the same player.
+    if (method === "POST" && pathname === "/api/squad/changes") {
+      const user = await requireCoach(request, env);
+      const body = (await readJsonBody(request)) as SquadChangesBody;
+      const result = await applySquadChanges(env, body, { email: user.email, personId: user.personId });
+      if (result.status === "conflict") {
+        const names = result.players.map((p) => p.name);
+        const message = names.length > 0
+          ? `Someone else changed ${names.join(", ")} in this squad. Check and save again.`
+          : "Someone else changed this squad. Check and save again.";
+        return json(
+          { error: "SQUAD_CONFLICT", message, players: result.players, version: result.version, selectedIds: result.selectedIds },
+          409,
+          origin,
+        );
+      }
+      return json(
+        { success: true, version: result.version, selectedIds: result.selectedIds, displaced: result.displaced },
+        200,
+        origin,
+      );
     }
 
     // ── Ranking ────────────────────────────────────────────────────────────
