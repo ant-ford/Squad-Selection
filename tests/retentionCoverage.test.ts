@@ -49,6 +49,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   // ── Someone acting on another person's record: no personal data about them ──
   "availability_exceptions.updated_by_id": { kept: "who changed another player's availability" },
   "ranking_events.actor_id": { kept: "who ranked another player" },
+  "match_selection_changes.actor_person_id": { kept: "which coach changed a squad; the added/removed ids are playing record like match_selections" },
   "activity_log.actor_person_id": { kept: "audit trail of field names only, never values" },
   "email_log.to_person_id": { kept: "delivery log by record id: no address or content" },
   "steps.waiting_on_person_id": { kept: "an officer's step on someone else's process (open ones keep them off the due list)" },

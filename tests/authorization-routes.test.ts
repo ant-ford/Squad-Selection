@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     getPlayersForMatch: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
+    applySquadChanges: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
     setMatchKit: vi.fn(),
     toggleAutoSelect: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
+  applySquadChanges: mocks.applySquadChanges,
   setMatchKit: mocks.setMatchKit,
   toggleAutoSelect: mocks.toggleAutoSelect,
   getTeamAutoSelectPlayers: mocks.getTeamAutoSelectPlayers,
@@ -480,6 +482,7 @@ describe("coach-only routes", () => {
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
     { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
+    { path: "/api/squad/changes", init: jsonInit({ matchId: "recM1", add: ["a"], remove: [], version: 0 }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
     { path: "/api/match/recM1/auto-select", init: jsonInit({ enabled: true }) },
   ];
@@ -535,6 +538,36 @@ describe("coach-only routes", () => {
     );
     expect(res.status).toBe(200);
     expect(mocks.syncSquad).toHaveBeenCalledWith(ENV, "recM1", ["a", "b"], "coach@hkfc.com", "home");
+  });
+
+  it("allows a coach on POST /api/squad/changes, acting as the session's person", async () => {
+    signInAs(TOKENS.coach);
+    mocks.applySquadChanges.mockResolvedValue({ status: "ok", version: 4, selectedIds: ["a"], displaced: [] });
+    const body = { matchId: "recM1", side: "home", add: ["a"], remove: ["b"], version: 3, actingEmail: "attacker@evil.com" };
+
+    const res = await call("/api/squad/changes", jsonInit(body));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, version: 4, selectedIds: ["a"], displaced: [] });
+    expect(mocks.applySquadChanges).toHaveBeenCalledWith(ENV, body, { email: "coach@hkfc.com", personId: COACH });
+  });
+
+  it("answers a squad conflict with 409 SQUAD_CONFLICT naming the players", async () => {
+    signInAs(TOKENS.coach);
+    mocks.applySquadChanges.mockResolvedValue({
+      status: "conflict", version: 6, selectedIds: ["a"], players: [{ id: "b", name: "Kim Lee" }, { id: "c", name: "Sam Ho" }],
+    });
+
+    const res = await call("/api/squad/changes", jsonInit({ matchId: "recM1", add: ["b"], remove: ["c"], version: 3 }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "SQUAD_CONFLICT",
+      message: "Someone else changed Kim Lee, Sam Ho in this squad. Check and save again.",
+      players: [{ id: "b", name: "Kim Lee" }, { id: "c", name: "Sam Ho" }],
+      version: 6,
+      selectedIds: ["a"],
+    });
   });
 
   it("allows a coach on POST /api/team/auto-select-players and uses the session email", async () => {
