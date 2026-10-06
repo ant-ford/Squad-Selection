@@ -262,7 +262,7 @@ export default function PlayerRanking() {
   const inactive = inactiveQuery.data ?? [];
   const changes = recentChangesQuery.data?.changes ?? [];
   const tabs = [
-    { value: 'ranking' as const, label: `Ranking (${totalActive})` },
+    { value: 'ranking' as const, label: 'Ranking' },
     { value: 'changes' as const, label: 'Recent changes' },
     { value: 'inactive' as const, label: `Inactive (${inactive.length})` },
   ];

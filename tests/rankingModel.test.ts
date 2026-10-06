@@ -4,6 +4,17 @@ import {
   reorderIds, shortStage, stageOrdinal,
 } from '../src/lib/rankingModel';
 import { emptyConfig } from '../shared/abilityGroup';
+import { abilityBadgeStyle, abilityGroupOf } from '../src/lib/abilityColour';
+
+describe('ability colours', () => {
+  it('reads the group from a grade', () => {
+    expect(abilityGroupOf('C+')).toBe('C');
+    expect(abilityGroupOf('h-')).toBe('H');
+    expect(abilityGroupOf('—')).toBeNull();
+    expect(abilityBadgeStyle('')).toEqual({});
+    expect(abilityBadgeStyle('A').backgroundColor).toMatch(/^hsl\(217 /);
+  });
+});
 
 describe('stages', () => {
   it('reads the stage number', () => {

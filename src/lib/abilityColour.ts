@@ -6,8 +6,8 @@ import type { CSSProperties } from 'react';
  * the four status tones, so they live here as one table instead of as
  * Tailwind palette classes spread over the ranking screen.
  *
- * Badge text is the hue at 24% lightness on a 92% tint: at least 7:1 for
- * every hue, so the grade reads outdoors on a phone.
+ * Badge text is the hue at 24% lightness on a 92% tint, at least 5.6:1;
+ * white on a bar fill (29% lightness) at least 4.9:1. AA needs 4.5:1.
  */
 const HUE: Record<string, number> = { A: 217, B: 190, C: 172, D: 142, E: 45, F: 25, G: 0, H: 330 };
 
@@ -32,5 +32,5 @@ export function abilityBadgeStyle(value: string | undefined | null): CSSProperti
 /** Solid fill for a group's slice of the group-size bar (white text on it). */
 export function abilityFill(group: string): string {
   const h = HUE[group] ?? 0;
-  return `hsl(${h} 70% 38%)`;
+  return `hsl(${h} 70% 29%)`;
 }
