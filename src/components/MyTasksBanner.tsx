@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { MyTask } from '@/api/getMyTasks';
 import { useMyTasks } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
+import { hkSeasonLabel } from '@/lib/season';
 
 /** "sponsor" / "Chairman" / "Membership Officer", as said in a sentence. */
 const as = (role: MyTask['role']) => (role === 'Sponsor' ? 'sponsor' : role ?? '');
@@ -10,18 +11,16 @@ const as = (role: MyTask['role']) => (role === 'Sponsor' ? 'sponsor' : role ?? '
 export function taskTitle(task: MyTask): string {
   const who = task.subject ?? 'an applicant';
   switch (task.key) {
+    case 'system':
+      return 'System check failed';
     case 'joiner':
       return 'Complete your New Joiner Form';
     case 'statement':
       return 'Complete your Player Statement';
     case 'waivers':
       return "Complete this season's Waivers & Declarations";
-    case 'details': {
-      // The season runs July to June.
-      const now = new Date();
-      const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-      return `Check your details for ${start}–${String(start + 1).slice(2)}`;
-    }
+    case 'details':
+      return `Check your details for ${hkSeasonLabel()}`;
     case 'application':
       return task.role === 'Sponsor'
         ? `Support ${who}'s membership application`

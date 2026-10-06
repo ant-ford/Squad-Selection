@@ -43,10 +43,6 @@ const PROJECTIONS: Record<string, readonly string[]> = {
   [TABLES.sectionCaptainOffice]: Object.values(OFFICER_FIELDS),
 };
 
-export function projectionFor(table: string): readonly string[] | undefined {
-  return PROJECTIONS[table];
-}
-
 export class AirtableError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -299,15 +295,6 @@ export async function airtableBatchDelete(
   return airtableFetch(env, `${tableUrl(env, table)}?${params.toString()}`, {
     method: "DELETE",
   });
-}
-
-/**
- * A request against the base itself rather than one of its tables - the
- * webhooks endpoints live at /v0/bases/{baseId}/webhooks/... (see
- * airtableWebhook.ts). Same auth, retry and instrumentation as table reads.
- */
-export async function airtableBaseRequest<T>(env: Env, pathUnderBase: string, init?: RequestInit): Promise<T | null> {
-  return airtableFetch<T>(env, `${AIRTABLE_API}/bases/${env.AIRTABLE_BASE_ID}/${pathUnderBase}`, init);
 }
 
 /** Guards against breaking a filterByFormula string via embedded quotes. */

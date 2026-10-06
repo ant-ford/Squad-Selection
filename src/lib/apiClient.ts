@@ -2,7 +2,7 @@
 // The browser never talks to Airtable directly and never sees an Airtable
 // token — it only ever calls this Worker.
 
-import { isAuthRetryableFetchError } from '@supabase/supabase-js';
+import { isAuthRetryableFetchError } from '@supabase/auth-js';
 import { supabase } from './supabase';
 import { signOut } from './auth';
 import { setAccessDenied } from './accessDenied';
