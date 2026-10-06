@@ -18,7 +18,7 @@ export function MetaLine({ date, venue }: { date: string; venue: string }) {
     days === null || days < 0
       ? 'border-border/70 text-muted-foreground'
       : days === 0
-      ? 'border-primary/30 bg-primary/10 text-primary'
+      ? 'border-primary/30 bg-primary-tint/10 text-primary'
       : days <= 6
       ? 'border-border bg-muted/60 text-foreground'
       : 'border-border/70 text-muted-foreground';

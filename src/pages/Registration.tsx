@@ -105,7 +105,7 @@ function PlayerItem({
                 <AlertTriangle className="h-3 w-3" /> Missing: {missing.join(', ')}
               </span>
             )}
-            {isVisiting(p) && <span className={`${chip} bg-primary/15 text-primary`}>No HKID: visiting player</span>}
+            {isVisiting(p) && <span className={`${chip} bg-primary-tint/10 text-primary`}>No HKID: visiting player</span>}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 mt-1 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />

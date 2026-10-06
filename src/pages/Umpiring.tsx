@@ -83,7 +83,7 @@ const NEW_NAME = '\u0000new';
 /** For the coordinator: "· playing 10:45" when a club umpire has a game then. */
 function Playing({ duty, personId }: { duty: UmpireDuty; personId: string | null }) {
   const at = personId ? duty.clashes?.[personId] : undefined;
-  return at ? <span className="text-amber-600"> · playing {at}</span> : null;
+  return at ? <span className="text-amber-700"> · playing {at}</span> : null;
 }
 
 /** What an umpire can do with a duty. */
@@ -330,10 +330,10 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
               {coordinator && <Playing duty={duty} personId={taken.personId} />}
             </>
           ) : (
-            <span className="text-amber-600 font-medium">Open</span>
+            <span className="text-amber-700 font-medium">Open</span>
           )}
           {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
-          {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-600"> · ⚠ Your game {duty.clash}</span>}
+          {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-700"> · ⚠ Your game {duty.clash}</span>}
         </p>
         {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
         {coordinator && <CoordinatorActions duty={duty} board={board} />}

@@ -68,7 +68,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
           disciplinary sense - it just means no card was recorded. */}
       <div className="mt-2.5 flex items-center gap-2 flex-wrap">
         {fixture.played ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary-tint/10 text-primary">
             Played
           </span>
         ) : (

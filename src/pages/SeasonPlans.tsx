@@ -73,7 +73,7 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
         {half && <span className={`${badge} bg-violet-500/15 text-violet-700`}>{half.short} only</span>}
         {pref === 'Next team down' && <span className={`${badge} bg-muted text-foreground`}>Next team down</span>}
         {(plan?.captaincyInterest === 'Yes' || plan?.captaincyInterest === 'Maybe') && (
-          <span className={`${badge} bg-primary/15 text-primary`}>Captain: {plan.captaincyInterest}</span>
+          <span className={`${badge} bg-primary-tint/10 text-primary`}>Captain: {plan.captaincyInterest}</span>
         )}
       </div>
     </li>
