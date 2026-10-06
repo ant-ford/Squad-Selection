@@ -16,8 +16,8 @@ import PosterImage from './PosterImage';
 const STATUSES: ResponseStatus[] = ['going', 'maybe', 'not_going'];
 
 export const statusChip: Record<ResponseStatus, string> = {
-  going: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-  maybe: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+  going: 'bg-emerald-500/15 text-emerald-700',
+  maybe: 'bg-amber-500/15 text-amber-700',
   not_going: 'bg-muted text-muted-foreground',
 };
 

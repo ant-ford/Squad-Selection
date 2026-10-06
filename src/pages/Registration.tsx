@@ -91,12 +91,12 @@ function PlayerItem({
           </span>
           <span className="flex flex-wrap gap-1 mt-0.5">
             {p.reason ? (
-              <span className={`${chip} bg-amber-500/15 text-amber-700 dark:text-amber-400`} title={p.reasonDetail ?? undefined}>
+              <span className={`${chip} bg-amber-500/15 text-amber-700`} title={p.reasonDetail ?? undefined}>
                 {REASON_LABEL[p.reason]}
                 {p.reasonDetail ? ` · ${p.reasonDetail}` : ''}
               </span>
             ) : (
-              <span className={`${chip} bg-emerald-500/15 text-emerald-700 dark:text-emerald-400`}>
+              <span className={`${chip} bg-emerald-500/15 text-emerald-700`}>
                 <Check className="h-3 w-3" /> Registered {safeFormat(p.registeredAt, 'd MMM')}
               </span>
             )}
