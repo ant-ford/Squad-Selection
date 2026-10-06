@@ -159,12 +159,11 @@ export default function PlayerDashboard() {
   const handleQuickAvailability = (fixtureId: string, status: AvailabilityStatus, notes?: string) => {
     // A fresh "No" is a new moment to ask about the rest of the day.
     if (status === 'Unavailable') setPromptDismissed(fixtureId, false);
+    // No toast on success: the card changes under the player's thumb, which
+    // says it. A failure rolls the card back and does say so.
     quickAvailability.mutate(
       { fixtureId, status, notes },
-      {
-        onSuccess: () => toast.success('Availability updated'),
-        onError: () => toast.error('Failed to update availability'),
-      },
+      { onError: () => toast.error('Could not save your answer. Try again.') },
     );
   };
 
@@ -180,8 +179,7 @@ export default function PlayerDashboard() {
     bulkAvailability.mutate(
       { date, status },
       {
-        onSuccess: () => toast.success(`Availability set for ${safeFormat(date, 'EEE d MMM')}`),
-        onError: () => toast.error('Failed to update availability'),
+        onError: () => toast.error(`Could not save your answers for ${safeFormat(date, 'EEE d MMM')}. Try again.`),
         onSettled: () => setBulkBusy(null),
       },
     );
