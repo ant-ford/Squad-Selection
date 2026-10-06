@@ -351,7 +351,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
           )}
 
           {event.manager && (
-            <Link to={`/events/manage?event=${event.id}`} className="block text-center text-sm text-primary">
+            <Link to={`/events/manage/${event.id}`} className="block text-center text-sm text-primary">
               Manage this event
             </Link>
           )}

@@ -1,12 +1,24 @@
 import { safeFormat } from '@/lib/dateUtils';
 import { toneClasses } from '@/lib/statusTone';
-import { PAYMENT_LABEL, priceText, type EventDetails, type ResponseStatus } from '@shared/events';
+import { PAYMENT_LABEL, priceText, type EventDetails, type ManagedEvent, type ResponseStatus } from '@shared/events';
+import type { StatusTone } from '@/lib/statusTone';
 
 export const statusChip: Record<ResponseStatus, string> = {
   going: toneClasses('success'),
   maybe: toneClasses('warning'),
   not_going: toneClasses('neutral'),
 };
+
+/** An event's own state on the social secretaries' screens. */
+export const EVENT_STATUS_LABEL: Record<ManagedEvent['status'], string> = { draft: 'Draft', published: 'Published', cancelled: 'Cancelled' };
+export const eventStatusTone = (s: ManagedEvent['status']): StatusTone => (s === 'published' ? 'success' : s === 'cancelled' ? 'danger' : 'neutral');
+
+/** "41 going · 6 maybe · 20 guests · 112 invited" */
+export function countsLine(e: ManagedEvent): string {
+  const c = e.counts;
+  const guests = c.adultGuests + c.childGuests;
+  return [`${c.going} going`, `${c.maybe} maybe`, guests ? `${guests} guest${guests === 1 ? '' : 's'}` : '', `${e.invited} invited`].filter(Boolean).join(' · ');
+}
 
 /** "Sat 12 Dec, 19:00 – 23:00", or across days "Fri 3 Apr, 18:00 – Sun 5 Apr" (24-hour, as the glossary says). */
 export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'>): string {
