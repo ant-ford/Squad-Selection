@@ -4,6 +4,10 @@
  *   GET  /api/history?person=<api id>         people section
  *   GET  /api/admin/people?q=<name>           people section
  *   GET  /api/admin/people/:id                people section
+ *   GET  /api/admin/offices, /api/admin/teams club section (Section Captains)
+ *   POST /api/admin/offices, /offices/:id     club section
+ *   POST /api/admin/people                    club section (a new office holder)
+ *   POST /api/admin/teams/:id                 club section
  *
  * Each route checks its own section; the person page then shows only the
  * blocks the caller's offices open (people.ts canFor), and each save checks
@@ -13,6 +17,7 @@ import type { Env } from "../env";
 import { requireSection } from "../auth";
 import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
+import { addOffice, createOfficeHolder, editOffice, listOffices, listTeams, saveTeam } from "./club";
 
 export async function readBody(request: Request): Promise<Record<string, unknown>> {
   let body: unknown;
@@ -45,6 +50,22 @@ export async function adminRoute(request: Request, env: Env, url: URL): Promise<
   if (method === "GET" && person) {
     const user = await requireSection(request, env, "people");
     return getPersonAdmin(env, user, person[1]);
+  }
+
+  // Offices and teams: Section Captains.
+  const office = pathname.match(/^\/api\/admin\/offices\/([A-Za-z0-9-]{3,64})$/);
+  const team = pathname.match(/^\/api\/admin\/teams\/([A-Za-z0-9-]{3,64})$/);
+  const club =
+    (method === "GET" && (pathname === "/api/admin/offices" || pathname === "/api/admin/teams")) ||
+    (method === "POST" && (pathname === "/api/admin/offices" || pathname === "/api/admin/people" || !!office || !!team));
+  if (club) {
+    const user = await requireSection(request, env, "club");
+    if (method === "GET") return pathname === "/api/admin/offices" ? listOffices(env) : listTeams(env);
+    const body = await readBody(request);
+    if (pathname === "/api/admin/offices") return addOffice(env, user, body);
+    if (pathname === "/api/admin/people") return createOfficeHolder(env, user, body);
+    if (office) return editOffice(env, user, office[1], body);
+    return saveTeam(env, user, team![1], body);
   }
   return undefined;
 }
