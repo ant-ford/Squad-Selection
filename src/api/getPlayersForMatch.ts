@@ -56,6 +56,10 @@ export interface MatchInfo {
   side?: 'home' | 'away';
   /** Shirt colour for that side. '' until a coach picks one. */
   kit?: KitColour;
+  /** This side's squad version when the list was read; a save sends it
+   *  back so the server can tell whether someone else changed the squad
+   *  since (POST /api/squad/changes). 0 before the first change. */
+  selectionVersion?: number;
 }
 
 /** Shirt colour options. '' means not yet decided. */

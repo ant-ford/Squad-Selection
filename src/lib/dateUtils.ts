@@ -86,6 +86,16 @@ export function safeFormat(dateStr: string | undefined | null, fmt: string, fall
   return isValid(d) ? format(asHongKongWallClock(d), fmt) : fallback;
 }
 
+/** A date with the full year, in Hong Kong: "6 Oct 2026" (the glossary's date form). */
+export function formatFullDate(dateStr: string | undefined | null, fallback = '—'): string {
+  return safeFormat(dateStr, 'd MMM yyyy', fallback);
+}
+
+/** A date and 24-hour time with the full year, in Hong Kong: "6 Oct 2026, 14:57". */
+export function formatFullDateTime(dateStr: string | undefined | null, fallback = '—'): string {
+  return safeFormat(dateStr, 'd MMM yyyy, HH:mm', fallback);
+}
+
 /**
  * True when the device is not on Hong Kong time, so a displayed time is
  * worth labelling. In Hong Kong the label would be noise on every card;

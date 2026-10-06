@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { StepShell, errorText, type StepProps } from '@/components/profile/steps';
+import { differs } from '@/lib/drafts';
 import { safeFormat } from '@/lib/dateUtils';
 import { saveMyTrial, submitRegistration } from '@/api/trials';
 import type { MyTrial } from '@shared/trials';
@@ -43,7 +44,14 @@ export function TrialDatesStep({ trial, ...nav }: Omit<StepProps, 'details'> & {
     if (!bad) save.mutate();
   };
   return (
-    <StepShell title="Trials" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell
+      title="Trials"
+      {...nav}
+      onNext={next}
+      busy={save.isPending}
+      problem={problem}
+      dirty={!save.isSuccess && differs({ chosen, none }, { chosen: trial.chosen, none: trial.registeredAt !== null && trial.chosen.length === 0 })}
+    >
       <p className="text-xs text-muted-foreground">Which trial sessions can you come to?</p>
       <div className="space-y-1">
         {trial.sessions.map((s) => (

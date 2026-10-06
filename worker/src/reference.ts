@@ -66,14 +66,6 @@ export interface OfficerRole {
 }
 
 /**
- * The cache that held every Active office by person. Offices now come with
- * the person from auth_context on every request, so nothing is cached under
- * it; the name stays while open work still lists it among the caches an
- * office change drops.
- */
-export const OFFICER_LINKS_KEY = "officer-links";
-
-/**
  * The applicant records behind the membership board and Insights
  * (membership.ts). Declared here rather than there so invalidation.ts can
  * name it without a circular import. v2: holds rows keyed by column name

@@ -9,6 +9,7 @@ import * as rulesModule from "../../worker/src/data/availabilityRules";
 import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
 import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
+import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import * as authContextModule from "../../worker/src/authContext";
 import * as cacheVersionsModule from "../../worker/src/cacheVersions";
@@ -30,6 +31,8 @@ import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRu
 import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
 import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
 import type { MembershipEventsRepo, NewMembershipEvent } from "../../worker/src/data/membershipEvents";
+import type { SuspensionsRepo } from "../../worker/src/data/suspensions";
+import type { ManualSuspension } from "../../worker/src/suspension";
 import type { CommitmentsRepo } from "../../worker/src/data/commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../../worker/src/data/commitments";
 import type { FieldList, Row } from "../../worker/src/data/rows";
@@ -106,6 +109,8 @@ export interface FakeState {
   rankingEvents: RankingEventRow[];
   membershipEvents: NewMembershipEvent[];
   commitments: FakeCommitment[];
+  /** Open manual suspensions (api_suspensions, cleared_at null). */
+  suspensions: ManualSuspension[];
 }
 
 export type RepoName = keyof FakeState;
@@ -122,6 +127,7 @@ export interface FakeRepos {
   rankingEvents: RankingEventsRepo;
   membershipEvents: MembershipEventsRepo;
   commitments: CommitmentsRepo;
+  suspensions: SuspensionsRepo;
 }
 
 export interface RepoCall {
@@ -154,7 +160,7 @@ export interface FakeReposHandle {
 export function emptyState(): FakeState {
   return {
     people: [], teams: [], officers: [], matches: [], matchCards: [], availabilityExceptions: [], availabilityRules: [],
-    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [],
+    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [], suspensions: [],
   };
 }
 
@@ -364,6 +370,32 @@ function buildRepos(s: FakeState): FakeRepos {
         if (value !== undefined) (m as unknown as Record<string, unknown>)[key] = clone(value);
       }
     },
+    // apply_squad_changes: adds and removes applied to the squad as it is
+    // now, the version bumped per real change, and a derby add taken off the
+    // other side. No change history is kept, so it never reports a conflict;
+    // spy on it to return one.
+    async applySelectionChanges(id, change) {
+      const m = s.matches.find((x) => x.id === id);
+      if (!m) throw new HttpError(`No match ${id}`, 404, "NOT_FOUND");
+      const [listKey, otherKey, versionKey, otherVersionKey] = change.side === "home"
+        ? (["selectedPlayersHome", "selectedPlayersAway", "selectionVersionHome", "selectionVersionAway"] as const)
+        : (["selectedPlayersAway", "selectedPlayersHome", "selectionVersionAway", "selectionVersionHome"] as const);
+      const before = m[listKey] ?? [];
+      const removed = before.filter((pid) => change.remove.includes(pid));
+      const added = [...new Set(change.add)].filter((pid) => !before.includes(pid));
+      if (added.length === 0 && removed.length === 0) {
+        return { status: "unchanged", version: m[versionKey] ?? 0, selected: [...before] };
+      }
+      m[listKey] = [...before.filter((pid) => !removed.includes(pid)), ...added];
+      m[versionKey] = (m[versionKey] ?? 0) + 1;
+      let otherVersion: number | null = null;
+      const other = m[otherKey] ?? [];
+      if (other.some((pid) => added.includes(pid))) {
+        m[otherKey] = other.filter((pid) => !added.includes(pid));
+        otherVersion = m[otherVersionKey] = (m[otherVersionKey] ?? 0) + 1;
+      }
+      return { status: "ok", version: m[versionKey], otherVersion, added, removed, selected: [...m[listKey]] };
+    },
     async listForSeason(season) {
       return s.matches.filter((m) => !season || m.season === season).map(clone);
     },
@@ -508,9 +540,15 @@ function buildRepos(s: FakeState): FakeRepos {
     },
   };
 
+  const suspensions: SuspensionsRepo = {
+    async listOpen() {
+      return s.suspensions.map(clone);
+    },
+  };
+
   return {
     people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents,
-    membershipEvents, commitments,
+    membershipEvents, commitments, suspensions,
   };
 }
 
@@ -591,6 +629,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(rankingEventsModule, "rankingEvents").mockImplementation(() => repos.rankingEvents),
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
+    vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
     // auth.ts reads the signed-in person through auth_context: answered from the same state.
     vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
     // A request without sign-in reads the versions: the fakes' counter.

@@ -1,7 +1,17 @@
+import { useState } from "react";
+import { CalendarPlus } from "lucide-react";
 import CalendarSheet from "@/components/CalendarSheet";
+import { ActionButton } from "@/components/ui/action-button";
 import { apiGet } from "@/lib/apiClient";
 
+/**
+ * The team calendar for the selected tab: an icon button in the fixture
+ * list's toolbar that opens the calendar sheet. It used to be a wide
+ * "Subscribe to Team Calendar" button in the toolbar itself, which squeezed
+ * the team tabs out of sight on a phone.
+ */
 export function CoachCalendarExport({ activeTab }: { activeTab: string }) {
+  const [open, setOpen] = useState(false);
   if (!activeTab || activeTab === "all") return null;
 
   const fetchLink = async () => {
@@ -12,10 +22,24 @@ export function CoachCalendarExport({ activeTab }: { activeTab: string }) {
   };
 
   return (
-    <CalendarSheet
-      fetchLink={fetchLink}
-      inline
-      generateLabel="Subscribe to Team Calendar"
-    />
+    <>
+      <ActionButton
+        variant="ghost"
+        iconOnly
+        icon={<CalendarPlus />}
+        aria-label={`${activeTab} calendar`}
+        title={`${activeTab} calendar`}
+        onClick={() => setOpen(true)}
+      />
+      {open && (
+        <CalendarSheet
+          fetchLink={fetchLink}
+          title={`${activeTab} calendar`}
+          description={`${activeTab}'s fixtures in your calendar app, kept up to date.`}
+          generateLabel="Get calendar link"
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }

@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
@@ -86,7 +85,6 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
  * captain. Section Captains see every team, a coach their own.
  */
 export default function SeasonPlans() {
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data: board, isLoading, error, refetch } = useQuery({ queryKey: ['seasonPlanBoard'], queryFn: getSeasonPlanBoard, staleTime: 60_000 });
   const setParam = (key: string, value: string | null) => {
@@ -101,12 +99,7 @@ export default function SeasonPlans() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Season plans">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Season plans" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">
         {isLoading ? (
           <div className="space-y-3">

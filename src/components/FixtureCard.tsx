@@ -4,13 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
+import { availabilityClasses } from '@/lib/availabilityTone';
+import { toneClasses } from '@/lib/statusTone';
+import { isShortfallUrgent } from '@/lib/readiness';
 
 // Same wording and tones as the player's own past-fixture card, so a result
 // reads identically whichever side of the app you are on.
 const OUTCOME_STYLE: Record<'win' | 'draw' | 'loss', string> = {
-  win: 'bg-green-100 text-green-800 border-green-200',
-  draw: 'bg-muted text-muted-foreground border-border',
-  loss: 'bg-red-100 text-red-800 border-red-200',
+  win: toneClasses('success', 'chip'),
+  draw: toneClasses('neutral', 'chip'),
+  loss: toneClasses('danger', 'chip'),
 };
 
 const OUTCOME_LABEL: Record<'win' | 'draw' | 'loss', string> = {
@@ -52,7 +55,8 @@ function NamePopover({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="flex items-center gap-0.5 cursor-pointer"
+        className="flex items-center gap-0.5 cursor-pointer py-3 -my-3"
+        aria-expanded={open}
       >
         {count} {label}
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -103,7 +107,7 @@ function ClashIndicator({
         title={`${conflicts.length} player${conflicts.length > 1 ? 's' : ''} selected for two teams on the same day`}
         aria-label="Same-day clash warning"
       >
-        <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+        <AlertTriangle className="h-3.5 w-3.5 text-warning-soft-foreground" />
       </button>
       {open && (
         <>
@@ -138,6 +142,9 @@ export default function FixtureCard({
   const time = formatHkTime(fixture.date);
   const shortfall = fixture.targetSquadSize - fixture.selectedCount;
   const isFull = shortfall <= 0;
+  // "N short" in red only in the last two days before push-back. Earlier, a
+  // squad still filling up is normal and the count says enough.
+  const shortNow = shortfall > 0 && isShortfallUrgent(fixture.date);
 
   const openMatch = () =>
     navigate(`/coach/match/${fixture.id.replace(/-home$/, '').replace(/-away$/, '')}?side=${fixture.isHome ? 'home' : 'away'}`);
@@ -182,10 +189,10 @@ export default function FixtureCard({
                 {fixture.selectedCount} / {fixture.targetSquadSize}
                 {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
               </span>
-              {(shortfall > 0 || fixture.maybeCount > 0) && (
+              {(shortNow || fixture.maybeCount > 0) && (
                 <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
-                  {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
-                  {fixture.maybeCount > 0 && <span className="text-amber-700">{fixture.maybeCount} maybe</span>}
+                  {shortNow && <span className="text-danger-soft-foreground">{shortfall} short</span>}
+                  {fixture.maybeCount > 0 && <span className={availabilityClasses('Maybe', 'text')}>{fixture.maybeCount} maybe</span>}
                 </p>
               )}
             </>
@@ -204,7 +211,7 @@ export default function FixtureCard({
       )}
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
         <NamePopover names={maybeNames} label="maybe" count={fixture.maybeCount} />
-        <NamePopover names={unavailNames} label="unavail" count={fixture.unavailableCount} />
+        <NamePopover names={unavailNames} label="no" count={fixture.unavailableCount} />
       </div>
     </div>
   );

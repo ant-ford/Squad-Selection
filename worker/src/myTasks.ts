@@ -195,7 +195,7 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   // Events they are invited to and have not answered (events.ts).
   for (const e of await eventTasks(env, user).catch(() => [])) tasks.push({ id: `event:${e.id}`, key: "event", subject: e.title, url: `/?event=${e.id}`, due: e.due });
   // Registers to take for events they keep (events.ts).
-  for (const e of await registerTasks(env, user).catch(() => [])) tasks.push({ id: `register:${e.id}`, key: "register", subject: e.title, url: `/events/manage?event=${e.id}` });
+  for (const e of await registerTasks(env, user).catch(() => [])) tasks.push({ id: `register:${e.id}`, key: "register", subject: e.title, url: `/events/manage/${e.id}?tab=register` });
   // The owner: the daily health check found something (systemHealth.ts).
   if (await systemNeedsLook(env, user)) tasks.push({ id: "system", key: "system", url: "/system" });
   tasks.sort((a, b) => ORDER[a.key] - ORDER[b.key] || (a.subject ?? "").localeCompare(b.subject ?? ""));
