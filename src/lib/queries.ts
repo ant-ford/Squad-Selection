@@ -9,6 +9,7 @@ import { getMyFixtures, type GetMyFixturesOutput, type MyFixture } from '@/api/g
 import { setMyAvailability, setMyAvailabilityForDate } from '@/api/setMyAvailability';
 import { getPlayerStats } from '@/api/getPlayerStats';
 import { getPlayerAttendance } from '@/api/getPlayerAttendance';
+import { getTeamAttendance } from '@/api/getTeamAttendance';
 import {
   approveApplicant,
   getMembershipBoard,
@@ -181,6 +182,14 @@ export function usePlayerAttendance(playerId: string) {
     queryKey: ['playerAttendance', playerId],
     queryFn: () => getPlayerAttendance(playerId),
     enabled: !!playerId,
+    staleTime: 60_000,
+  });
+}
+
+export function useTeamAttendance() {
+  return useQuery({
+    queryKey: ['teamAttendance'],
+    queryFn: getTeamAttendance,
     staleTime: 60_000,
   });
 }
