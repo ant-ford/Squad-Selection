@@ -36,7 +36,7 @@ export default function KitSizesSection({ kit, value, onChange }: { kit: Details
         <SizeSelect label="Socks" value={value.socks} options={KIT_SIZE_OPTIONS.socks} onChange={set('socks')} />
       </div>
       {kit.printedShirt?.size && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Your #{kit.printedShirt.shirtNo} shirt is printed in {kit.printedShirt.size}, so its size can't change.
         </p>
       )}

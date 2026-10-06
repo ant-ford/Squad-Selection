@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Copy, Trash2, Users } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Copy, Trash2 } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { fieldInput } from '@/components/profile/ProfileFields';
@@ -20,7 +19,6 @@ import { addTrialSession, listTrialSessions, removeTrialSession } from '@/api/tr
  * will be in touch about a practice.
  */
 export default function TrialSessionsPage() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   // The trials section: the Section Captains and Assistant Director of Hockey offices, on the Supabase backend only.
@@ -136,14 +134,7 @@ export default function TrialSessionsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Trial sessions">
-        {profile?.sections?.includes('membership') && (
-          <button onClick={() => navigate('/membership')} className={headerNavClass()}>
-            <Users className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Membership</span>
-          </button>
-        )}
-      </AppHeader>
+      <AppHeader title="Trial sessions" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

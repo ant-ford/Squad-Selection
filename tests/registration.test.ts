@@ -51,7 +51,7 @@ const blank: RegistrationPlayer = {
 
 describe("HKHA registration", () => {
   it("opens to the Hockey Convenor only", () => {
-    expect(sectionsFor(convenor)).toEqual(["registration", "dataChecks"]);
+    expect(sectionsFor(convenor)).toEqual(["registration", "people", "dataChecks", "discipline"]);
     expect(sectionsFor(captain)).not.toContain("registration");
   });
 

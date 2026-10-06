@@ -28,6 +28,10 @@ const Waivers = lazy(() => import('./pages/Waivers'));
 const Kit = lazy(() => import('./pages/Kit'));
 // HKHA registration details (the Hockey Convenor only).
 const Registration = lazy(() => import('./pages/Registration'));
+const People = lazy(() => import('./pages/People'));
+const PersonAdmin = lazy(() => import('./pages/PersonAdmin'));
+const Suspensions = lazy(() => import('./pages/Suspensions'));
+const Club = lazy(() => import('./pages/Club'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
@@ -43,6 +47,8 @@ const QuizTake = lazy(() => import('./pages/QuizTake'));
 const Join = lazy(() => import('./pages/Join'));
 const TrialSessions = lazy(() => import('./pages/TrialSessions'));
 const ManageEvents = lazy(() => import('./pages/ManageEvents'));
+// One event, as a page: /events/manage/new or /events/manage/:id.
+const ManageEvent = lazy(() => import('./pages/ManageEvent'));
 const CheckIn = lazy(() => import('./pages/CheckIn'));
 // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
@@ -119,12 +125,18 @@ function RouteError() {
       <p className="text-sm text-muted-foreground max-w-sm">
         Reload to try again.
       </p>
-      <button
-        onClick={() => window.location.reload()}
-        className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-      >
-        Reload
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          onClick={() => window.location.reload()}
+          className="min-h-10 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+        >
+          Reload
+        </button>
+        {/* A full load rather than a router navigation: the router that failed may not recover. */}
+        <a href="/" className="min-h-10 inline-flex items-center px-4 py-2 rounded-md border border-border text-sm font-medium text-foreground">
+          Player view
+        </a>
+      </div>
     </div>
   );
 }
@@ -214,6 +226,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <ManageEvents />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/events/manage/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <ManageEvent />
           </Suspense>
         ),
       },
@@ -322,6 +342,38 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: '/people',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <People />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/people/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <PersonAdmin />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/suspensions',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Suspensions />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/club',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Club />
+          </Suspense>
+        ),
+      },
+      {
         path: '/waivers',
         element: (
           <Suspense fallback={<RouteSkeleton />}>
@@ -378,6 +430,8 @@ const router = createBrowserRouter([
           },
         ],
       },
+      // An address Eddy doesn't have (an old link, a typo) lands on the player page.
+      { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
 ]);

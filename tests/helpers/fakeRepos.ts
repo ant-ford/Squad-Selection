@@ -9,6 +9,7 @@ import * as rulesModule from "../../worker/src/data/availabilityRules";
 import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
 import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
+import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
@@ -23,6 +24,8 @@ import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRu
 import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
 import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
 import type { MembershipEventsRepo, NewMembershipEvent } from "../../worker/src/data/membershipEvents";
+import type { SuspensionsRepo } from "../../worker/src/data/suspensions";
+import type { ManualSuspension } from "../../worker/src/suspension";
 import type { CommitmentsRepo } from "../../worker/src/data/commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../../worker/src/data/commitments";
 import type { FieldList, Row } from "../../worker/src/data/rows";
@@ -99,6 +102,8 @@ export interface FakeState {
   rankingEvents: RankingEventRow[];
   membershipEvents: NewMembershipEvent[];
   commitments: FakeCommitment[];
+  /** Open manual suspensions (api_suspensions, cleared_at null). */
+  suspensions: ManualSuspension[];
 }
 
 export type RepoName = keyof FakeState;
@@ -115,6 +120,7 @@ export interface FakeRepos {
   rankingEvents: RankingEventsRepo;
   membershipEvents: MembershipEventsRepo;
   commitments: CommitmentsRepo;
+  suspensions: SuspensionsRepo;
 }
 
 export interface RepoCall {
@@ -141,7 +147,7 @@ export interface FakeReposHandle {
 export function emptyState(): FakeState {
   return {
     people: [], teams: [], officers: [], matches: [], matchCards: [], availabilityExceptions: [], availabilityRules: [],
-    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [],
+    abilityGroups: [], rankingEvents: [], membershipEvents: [], commitments: [], suspensions: [],
   };
 }
 
@@ -512,9 +518,15 @@ function buildRepos(s: FakeState): FakeRepos {
     },
   };
 
+  const suspensions: SuspensionsRepo = {
+    async listOpen() {
+      return s.suspensions.map(clone);
+    },
+  };
+
   return {
     people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents,
-    membershipEvents, commitments,
+    membershipEvents, commitments, suspensions,
   };
 }
 
@@ -570,6 +582,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(rankingEventsModule, "rankingEvents").mockImplementation(() => repos.rankingEvents),
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
+    vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
   ];
 
   const handle: FakeReposHandle = {

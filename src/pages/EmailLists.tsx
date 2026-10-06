@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ChevronDown, Copy, Download, Mail, Plus, Search, User, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Copy, Download, Mail, Plus, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useChairmanDirectory, useMyProfile } from '@/lib/queries';
@@ -127,13 +127,16 @@ export default function EmailLists() {
   if (profileLoading) return <PageSkeleton />;
   if (!allowed) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background p-6">
-        <div className="text-center space-y-3">
-          <p className="text-lg font-semibold text-foreground">Chairman's access required</p>
-          <p className="text-sm text-muted-foreground">Email lists are for the Section Chairs and Section Captains.</p>
-          <button onClick={() => navigate('/')} className="text-sm text-primary underline">
-            Go to Player Dashboard
-          </button>
+      <div className="min-h-screen bg-background">
+        <AppHeader title="Email lists" />
+        <div className="flex items-center justify-center p-6 pt-16">
+          <div className="text-center space-y-3">
+            <p className="text-lg font-semibold text-foreground">Chairman's access required</p>
+            <p className="text-sm text-muted-foreground">Email lists are for the Section Chairs and Section Captains.</p>
+            <button onClick={() => navigate('/')} className="min-h-10 px-3 text-sm text-primary underline">
+              Player view
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -170,12 +173,7 @@ export default function EmailLists() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <AppHeader subtitle="Email lists">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Email lists" />
 
       <main className="flex-1 container mx-auto px-4 py-4">
         {isLoading ? (

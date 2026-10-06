@@ -13,15 +13,7 @@ vi.mock("../worker/src/reference", () => ({
   getOfficerLinks: mocks.getOfficerLinks,
 }));
 
-import {
-  isSectionCaptainUser,
-  requireAuthorizedUser,
-  requireCoach,
-  requireSection,
-  requireSectionCaptain,
-  sectionsFor,
-  normalizeEmail,
-} from "../worker/src/auth";
+import { requireAuthorizedUser, requireCoach, requireSection, sectionsFor, normalizeEmail } from "../worker/src/auth";
 import { HttpError } from "../worker/src/http";
 import { invalidateAll } from "../worker/src/cache";
 
@@ -58,7 +50,6 @@ const officerLinks = {
     recCoach: [{ office: "sectionChair", designation: "Men's Captain" }],
     recCaptainRow: [{ office: "sectionCaptain", designation: "Men's Vice Captain" }],
     recAdh: [{ office: "assistantDirector", designation: "" }],
-    recConvenor: [{ office: "hockeyConvenor", designation: "Men's Convenor" }],
   },
 };
 
@@ -79,8 +70,6 @@ const people = {
   sectionCaptainRow: { id: "recCaptainRow", email: "vice@personal.com", active: false, playerCoach: [] },
   // The Assistant Director of Hockey office: no Teams link at all.
   assistantDirector: { id: "recAdh", email: "adh@hkfc.com", active: false, playerCoach: [] },
-  // The Men's Convenor office: not a coach, not a Section Captain.
-  convenor: { id: "recConvenor", email: "convenor@hkfc.com", active: true, playerCoach: [] },
 };
 
 // ---------------------------------------------------------------------------
@@ -446,49 +435,6 @@ describe("requireCoach", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Section Captains only (owner decision 2026-10-06): making players active
-// or inactive. A Teams link as Section Captain or the Section Captain office.
-// ---------------------------------------------------------------------------
-
-describe("requireSectionCaptain", () => {
-  it.each([
-    ["a Teams-linked Section Captain", "sectionCaptain"],
-    ["a Section Captain office holder with no Teams link", "sectionCaptainRow"],
-  ] as const)("lets %s through", async (_label, who) => {
-    supabaseReturns(people[who].email);
-    mocks.getPlayerByEmail.mockResolvedValue(people[who]);
-
-    await expect(requireSectionCaptain(authedRequest(), ENV)).resolves.toMatchObject({ personId: people[who].id });
-  });
-
-  it.each([
-    ["a team coach", "activeCoach"],
-    ["the Assistant Director of Hockey", "assistantDirector"],
-    ["the Men's Convenor", "convenor"],
-    ["a membership officer", "membershipOfficer"],
-    ["an ordinary player", "activePlayer"],
-  ] as const)("refuses %s with 403 SECTION_CAPTAIN_REQUIRED", async (_label, who) => {
-    supabaseReturns(people[who].email);
-    mocks.getPlayerByEmail.mockResolvedValue(people[who]);
-
-    await expectError(requireSectionCaptain(authedRequest(), ENV), 403, "SECTION_CAPTAIN_REQUIRED");
-  });
-
-  it("still refuses a disabled account first", async () => {
-    supabaseReturns("inactive@hkfc.com");
-    mocks.getPlayerByEmail.mockResolvedValue(people.inactivePlayer);
-
-    await expectError(requireSectionCaptain(authedRequest(), ENV), 403, "APPLICATION_ACCESS_DENIED");
-  });
-
-  it("isSectionCaptainUser reads both sources", () => {
-    expect(isSectionCaptainUser({ isSectionCaptain: true, officerRoles: [] })).toBe(true);
-    expect(isSectionCaptainUser({ isSectionCaptain: false, officerRoles: [{ office: "sectionCaptain", designation: "" }] })).toBe(true);
-    expect(isSectionCaptainUser({ isSectionCaptain: false, officerRoles: [{ office: "hockeyConvenor", designation: "" }] })).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Officers' sections (owner decision 2026-09-25)
 //   membership: Membership Officers + Section Captains table
 //   chairman:   Section Chairs + Section Captains table
@@ -498,9 +444,9 @@ describe("requireSectionCaptain", () => {
 
 describe("officers' sections", () => {
   it.each([
-    ["a membership officer", "membershipOfficer", ["membership"]],
+    ["a membership officer", "membershipOfficer", ["membership", "people"]],
     ["a section chair", "chairman", ["chairman"]],
-    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman", "kit", "planning", "trials", "dataChecks"]],
+    ["a Section Captains row", "sectionCaptainRow", ["membership", "chairman", "kit", "planning", "trials", "people", "club", "dataChecks"]],
     ["an ordinary player", "activePlayer", []],
     // Teams.Section Captain is coach access; it opens neither section.
     ["a Teams-linked section captain with no officer row", "sectionCaptain", []],
@@ -589,6 +535,6 @@ describe("the Assistant Director of Hockey", () => {
 
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
-    expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials", "dataChecks"]);
+    expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials", "people", "club", "dataChecks"]);
   });
 });

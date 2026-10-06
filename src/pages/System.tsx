@@ -1,7 +1,6 @@
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Check, User, X } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check, X } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, apiGet } from '@/lib/apiClient';
@@ -22,7 +21,6 @@ const card = 'rounded-xl border border-border bg-card';
 
 /** System health: the owner and the Section Captains (worker/src/systemHealth.ts). */
 export default function System() {
-  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ['system'],
     queryFn: () => apiGet<SystemView>('/api/system'),
@@ -87,12 +85,7 @@ export default function System() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="System">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="System" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>
