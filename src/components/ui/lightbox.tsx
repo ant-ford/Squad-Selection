@@ -1,23 +1,25 @@
-import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useReturnFocus } from '@/components/ui/sheet';
+import { useDialogLib, type DialogLib } from '@/components/ui/dialogLib';
 
 /**
  * A picture full screen on a dark backdrop. A tap anywhere, the close button
  * or Escape closes it, and focus goes back to what opened it.
  */
 export function Lightbox({ src, alt, onClose }: { src: string | null; alt: string; onClose: () => void }) {
+  const Dialog = useDialogLib(!!src);
+  if (!Dialog) return null;
   return (
     <Dialog.Root open={!!src} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-overlay bg-black/85" />
-        {src && <LightboxContent src={src} alt={alt} onClose={onClose} />}
+        {src && <LightboxContent Dialog={Dialog} src={src} alt={alt} onClose={onClose} />}
       </Dialog.Portal>
     </Dialog.Root>
   );
 }
 
-function LightboxContent({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function LightboxContent({ Dialog, src, alt, onClose }: { Dialog: DialogLib; src: string; alt: string; onClose: () => void }) {
   const returnFocus = useReturnFocus();
   return (
     <Dialog.Content

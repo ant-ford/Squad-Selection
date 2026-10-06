@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { DialogLibContext, useDialogLib } from '@/components/ui/dialogLib';
 
 /** How SheetHeader's close button reaches the open sheet's "ask first" check. */
 const SheetGuard = createContext<((close: () => void) => void) | null>(null);
@@ -15,6 +15,8 @@ const SheetGuard = createContext<((close: () => void) => void) | null>(null);
  * - Escape and a tap on the backdrop close only the top layer: a dialog
  *   opened from a sheet closes first.
  * - The page behind can't scroll, and screen readers hear only the sheet.
+ *
+ * Radix itself loads on first use (ui/dialogLib), not with the first page.
  *
  * `dirty`: the sheet holds something typed and not saved. The backdrop,
  * Escape and SheetHeader's close button then ask before closing; a Cancel
@@ -43,14 +45,18 @@ export function Sheet({
     [dirty],
   );
 
+  const Dialog = useDialogLib(open);
+  if (!Dialog) return null;
   return (
     <SheetGuard.Provider value={guard}>
-      <Dialog.Root open={open} onOpenChange={(next) => (next ? onOpenChange?.(true) : guard(() => onOpenChange?.(false)))}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-overlay bg-black/40" />
-          {children}
-        </Dialog.Portal>
-      </Dialog.Root>
+      <DialogLibContext.Provider value={Dialog}>
+        <Dialog.Root open={open} onOpenChange={(next) => (next ? onOpenChange?.(true) : guard(() => onOpenChange?.(false)))}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-overlay bg-black/40" />
+            {children}
+          </Dialog.Portal>
+        </Dialog.Root>
+      </DialogLibContext.Provider>
       {pending && (
         <ConfirmDialog
           title="Discard changes?"
@@ -125,6 +131,7 @@ export function SheetContent({
   /** The title read out when the sheet has no SheetTitle. */
   label?: string;
 }) {
+  const Dialog = useContext(DialogLibContext)!;
   const box = useRef<HTMLDivElement>(null);
   const returnFocus = useReturnFocus();
   return (
@@ -183,6 +190,7 @@ export function SheetHeader({
 }
 
 export function SheetTitle({ children, className = 'text-lg font-semibold' }: { children: React.ReactNode; className?: string }) {
+  const Dialog = useContext(DialogLibContext)!;
   return <Dialog.Title className={`text-foreground ${className}`}>{children}</Dialog.Title>;
 }
 
