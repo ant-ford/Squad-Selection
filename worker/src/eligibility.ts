@@ -1,4 +1,4 @@
-import { linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
 import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
 import { playUpAllowance } from "../../shared/playUpAllowance";
 import { hkfcSides } from "./match";

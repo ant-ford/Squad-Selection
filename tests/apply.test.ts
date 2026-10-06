@@ -1,25 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakePostgrest, SUPABASE_TEST_ENV, type PostgrestOptions } from "./helpers/postgrest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { applicationGaps, getApply, saveFamily, saveTrials, submitApplication } from "../worker/src/apply";
 import { APPLICATION_VERSION, ageOn, childNeedsHkid, childSigns, requiredTicks, spouseProblem } from "../shared/application";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { ...SUPABASE_TEST_ENV } as Env;
 const user = { email: "a@x.com", personId: "recAPP", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 
-type Call = { url: URL; method: string; body: any };
-function fake(tables: Record<string, unknown>) {
-  const calls: Call[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
-    const url = new URL(input);
-    const body = init.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ url, method: init.method ?? "GET", body });
-    const name = url.pathname.split("/").pop()!;
-    const t = tables[name];
-    const reply = typeof t === "function" ? (t as (c: Call) => unknown)({ url, method: init.method ?? "GET", body }) : t;
-    return new Response(JSON.stringify(reply ?? []), { status: 200 });
-  }));
-  return calls;
+/** Supabase with this applicant in People and nothing else on file, plus `tables`. */
+function fake(tables: Record<string, Record<string, unknown>[]>, opts: Omit<PostgrestOptions, "tables"> = {}) {
+  const pg = fakePostgrest({
+    tables: {
+      people: [complete], family_members: [], relatives: [], previous_clubs: [], applicant_trials: [], applications: [], files: [],
+      ...structuredClone(tables),
+    },
+    rpc: { submit_application: () => ({}) },
+    ...opts,
+  });
+  return pg;
 }
 afterEach(() => vi.unstubAllGlobals());
 
@@ -65,10 +64,9 @@ describe("the new joiner application", () => {
   });
 
   it("saves the family, replacing what was there", async () => {
-    const calls = fake({
-      people: [complete],
-      family_members: (c: Call) => (c.method === "POST" ? c.body.map((r: any, i: number) => ({ id: `f${i}`, ...r })) : []),
-    });
+    let n = 0;
+    const pg = fake({}, { defaults: { family_members: (r) => ({ id: `f${n++}`, ...r }) } });
+    const calls = pg.calls;
     const spouse = { salutation: "Mrs", surname: "Lee", givenNames: "Jo", dateOfBirth: "1991-02-03", gender: "Female", hkidNo: "B234567(1)", nationality: "British", email: "jo@x.com", mobileNo: "+852 5555 2222" };
     const ids = await saveFamily(env, user, { spouse, children: [{ surname: "Lee", givenNames: "Kim", dateOfBirth: "2015-01-01", gender: "F" }], relatives: [{ name: "Pat Lee", membershipNo: "M9", relationship: "Parent" }] });
     expect(ids).toEqual({ spouseId: "f0", childIds: ["f1"] });
@@ -77,11 +75,14 @@ describe("the new joiner application", () => {
     expect(upsert.body[0]).toMatchObject({ relation: "spouse", ordinal: 1, given_names: "Jo", date_of_birth: "1991-02-03" });
     const removed = calls.find((c) => c.method === "DELETE" && c.url.pathname.endsWith("/family_members"))!;
     expect(removed.url.searchParams.get("id")).toBe("not.in.(f0,f1)");
+    // What is stored now: the spouse and the child, and the relative.
+    expect(pg.tables.family_members.map((r) => [r.id, r.relation])).toEqual([["f0", "spouse"], ["f1", "child"]]);
+    expect(pg.tables.relatives).toMatchObject([{ person_id: "u1", name: "Pat Lee" }]);
     await expect(saveFamily(env, user, { spouse: { ...spouse, email: "" }, children: [], relatives: [] })).rejects.toThrow(/email/);
   });
 
   it("needs participation details when trials are given", async () => {
-    fake({ people: [complete] });
+    fake({});
     await expect(saveTrials(env, user, { trials: [{ date: "2026-08-16", types: ["Playing"], division: "Division 2" }] })).rejects.toThrow(/participation details/);
   });
 
@@ -93,11 +94,15 @@ describe("the new joiner application", () => {
   it("submits: checks it's complete and the boxes, stores the signatures and moves it on", async () => {
     const put = vi.fn();
     const files = { put, delete: vi.fn() } as unknown as R2Bucket;
-    const calls = fake({
-      people: [complete],
-      files: (c: Call) => (c.method === "POST" ? [{ id: "sig1" }] : [{ id: "p1", kind: "photo" }, { id: "h1", kind: "hkid" }]),
-      submit_application: {},
-    });
+    const { calls } = fake(
+      {
+        files: [
+          { id: "p1", kind: "photo", person_id: "u1", family_member_id: null },
+          { id: "h1", kind: "hkid", person_id: "u1", family_member_id: null },
+        ],
+      },
+      { defaults: { files: (r) => ({ id: "sig1", ...r }) } },
+    );
     await expect(submitApplication({ ...env, FILES: files } as Env, user, { version: APPLICATION_VERSION, accepted: [], signatures: { applicant: PNG } })).rejects.toThrow(/Tick every box/);
     await submitApplication({ ...env, FILES: files } as Env, user, { version: APPLICATION_VERSION, accepted: ["hockey_notes"], signatures: { applicant: PNG } });
     const rpc = calls.find((c) => c.url.pathname.endsWith("/rpc/submit_application"))!;
@@ -108,7 +113,7 @@ describe("the new joiner application", () => {
 
   it("refuses a second submission from someone whose application was already sent (in Fillout before the switch-over)", async () => {
     const files = { put: vi.fn(), delete: vi.fn() } as unknown as R2Bucket;
-    const calls = fake({ people: [{ ...complete, applicant_stage: "6. Membership Officer (Signed)" }], submit_application: {} });
+    const { calls } = fake({ people: [{ ...complete, applicant_stage: "6. Membership Officer (Signed)" }] });
     await expect(
       submitApplication({ ...env, FILES: files } as Env, user, { version: APPLICATION_VERSION, accepted: ["hockey_notes"], signatures: { applicant: PNG } }),
     ).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/already been sent/) });

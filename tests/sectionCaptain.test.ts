@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Section Captains share coach access (Teams."Section Captain" field). That
 // determination is made exactly once, in worker/src/auth.ts's
@@ -6,63 +6,51 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // derivation itself: isSectionCaptain -> coachTeams = every team name).
 // These tests prove getMyProfile / getMyFixtures surface what the
 // AuthorizedUser says, rather than re-deriving it from Teams links.
-
-const mocks = vi.hoisted(() => ({
-  getPlayerByEmail: vi.fn(),
-  getReferenceData: vi.fn(),
-  getExceptionsForSeasons: vi.fn(),
-}));
-
-vi.mock("../worker/src/reference", () => ({
-  getPlayerByEmail: mocks.getPlayerByEmail,
-  getReferenceData: mocks.getReferenceData,
-  getExceptionsForSeasons: mocks.getExceptionsForSeasons,
-}));
+//
+// Runs on the Supabase path: the player and teams come from the in-memory
+// repositories, so the Teams links really are there to be (wrongly) re-read:
+// Ada is Section Captain of HKFC A only, yet must coach both teams.
 
 import { getMyProfile } from "../worker/src/profile";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { person, recId, team } from "./helpers/factories";
 
-const ENV = { AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "test-base" } as any;
+const ENV = { ...SUPABASE_TEST_ENV } as unknown as Env;
 
-const captain = {
-  id: "recCap",
-  preferredName: "Ada",
-  givenNames: "Ada",
-  email: "ada@hkfc.com",
-  active: true,
-  registeredTeam: "HKFC B",
-  playingPosition: "Forward",
-  shirtNoValue: "9",
-  playerCoach: [],
-};
+const CAP = recId("Cap");
+const OTHER = recId("Other");
 
-const teams = [
-  {
-    id: "recT1", teamName: "HKFC A", coach: ["recOther"], teamCaptain: [],
-    sectionCaptain: ["recCap"], teamRank: 1, targetSquadSize: 16,
-  },
-  {
-    id: "recT2", teamName: "HKFC B", coach: [], teamCaptain: [],
-    sectionCaptain: [], teamRank: 2, targetSquadSize: 16,
-  },
-];
-
-const ref = {
-  teams,
-  players: [
-    captain,
-    { id: "recOther", preferredName: "Other", givenNames: "Other", email: "o@hkfc.com" },
+useFakeRepos(() => ({
+  people: [
+    person({
+      id: CAP,
+      preferredName: "Ada",
+      givenNames: "Ada",
+      email: "ada@hkfc.com",
+      active: true,
+      registeredTeam: "HKFC B",
+      playingPosition: "Forward",
+      shirtNoValue: "9",
+      playerCoach: [],
+    }),
+    person({ id: OTHER, preferredName: "Other", givenNames: "Other", email: "o@hkfc.com", active: true }),
   ],
-  teamRankMap: { "HKFC A": 1, "HKFC B": 2 },
-};
+  teams: [
+    team({ teamName: "HKFC A", coach: [OTHER], teamCaptain: [], sectionCaptain: [CAP], teamRank: 1, targetSquadSize: 16 }),
+    team({ teamName: "HKFC B", coach: [], teamCaptain: [], sectionCaptain: [], teamRank: 2, targetSquadSize: 16 }),
+  ],
+}));
 
 // The AuthorizedUser auth.ts would produce for Ada: Section Captain, so
 // coachTeams is every team name (see B7 - the single source of coach truth).
 const captainAuthUser: AuthorizedUser = {
   email: "ada@hkfc.com",
-  personId: "recCap",
+  personId: CAP,
   role: "coach",
   coachTeams: ["HKFC A", "HKFC B"],
   isSectionCaptain: true,
@@ -71,21 +59,15 @@ const captainAuthUser: AuthorizedUser = {
 
 beforeEach(() => {
   invalidateAll();
-  vi.clearAllMocks();
-  mocks.getPlayerByEmail.mockResolvedValue(captain);
-  mocks.getReferenceData.mockResolvedValue(ref);
-  mocks.getExceptionsForSeasons.mockResolvedValue([]);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ records: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    ),
-  );
+  // Both screens also ask Supabase directly whether Ada keeps volunteers,
+  // events or umpiring duties. Nothing seeded: none of them.
+  fakePostgrest({
+    tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("Section Captains share coach access", () => {
