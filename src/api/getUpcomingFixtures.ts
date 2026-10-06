@@ -1,3 +1,4 @@
+import type { FixtureChange } from '@shared/fixtureChange';
 import { apiGet } from '@/lib/apiClient';
 
 export interface UpcomingFixture {
@@ -10,6 +11,8 @@ export interface UpcomingFixture {
   isHome: boolean;
   division: string;
   venue: string;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
   targetSquadSize: number;
   selectedCount: number;
   selectedIds?: string[];

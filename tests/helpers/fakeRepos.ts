@@ -423,6 +423,11 @@ function buildRepos(s: FakeState): FakeRepos {
     async listScheduled() {
       return s.matches.filter((m) => m.matchStatus === "Scheduled").map(clone);
     },
+    async listCalledOffSince(sinceIso) {
+      return s.matches
+        .filter((m) => ["Rescheduled", "Cancelled", "Postponed"].includes(m.matchStatus) && (m.changedAt ?? "") >= sinceIso)
+        .map(clone);
+    },
     async listPlayedForSeasons(seasons) {
       return s.matches.filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? "")).map(clone);
     },

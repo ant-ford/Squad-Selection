@@ -15,6 +15,7 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import { hkfcSides } from "./match";
 
+import { fixtureChange } from "../../shared/fixtureChange";
 type MatchSide = "home" | "away";
 
 // ── Cached match-record fetch ───────────────────────────────────────────
@@ -203,6 +204,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     // The version of the squad listed here, read from the same record, so
     // the two always agree. A save sends it back (POST /api/squad/changes).
     selectionVersion: (resolvedSide === "away" ? match.selectionVersionAway : match.selectionVersionHome) ?? 0,
+    /** Moved or venue changed in the last 7 days: Notify offers a message about it. */
+    change: fixtureChange(match) ?? undefined,
   };
   return { match: matchInfo, players };
 }

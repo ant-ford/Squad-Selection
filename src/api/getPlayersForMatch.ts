@@ -1,3 +1,4 @@
+import type { FixtureChange } from '@shared/fixtureChange';
 import { apiGet, apiPost } from '@/lib/apiClient';
 
 export interface EligibilityIssue {
@@ -60,6 +61,8 @@ export interface MatchInfo {
    *  back so the server can tell whether someone else changed the squad
    *  since (POST /api/squad/changes). 0 before the first change. */
   selectionVersion?: number;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
 }
 
 /** Shirt colour options. '' means not yet decided. */
