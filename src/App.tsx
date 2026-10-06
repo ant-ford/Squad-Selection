@@ -30,6 +30,7 @@ const Kit = lazy(() => import('./pages/Kit'));
 const Registration = lazy(() => import('./pages/Registration'));
 const People = lazy(() => import('./pages/People'));
 const PersonAdmin = lazy(() => import('./pages/PersonAdmin'));
+const Suspensions = lazy(() => import('./pages/Suspensions'));
 // Season plans by team (Section Captains; coaches for their own teams).
 const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
 // The member details update (one section per screen).
@@ -342,6 +343,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <PersonAdmin />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/suspensions',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Suspensions />
           </Suspense>
         ),
       },
