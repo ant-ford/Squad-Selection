@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Copy, MessageCircle, User } from 'lucide-react';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import { DateHeading } from '@/components/shared';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
@@ -519,7 +520,7 @@ export default function Umpiring() {
                 ) : (
                   byDay.map(([day, duties]) => (
                     <section key={day}>
-                      <h2 className="text-xs font-bold uppercase tracking-wide text-foreground mb-1.5">{safeFormat(noon(day), 'EEEE d MMMM')}</h2>
+                      <DateHeading date={noon(day)} />
                       <ul className="rounded-xl border border-border bg-card divide-y divide-border">
                         {duties.map((d) => (
                           <DutyCard key={d.id} duty={d} board={data} />
