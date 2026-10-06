@@ -67,7 +67,7 @@ export async function runRetention(env: Env): Promise<RetentionResult> {
 /**
  * Deletes the queued R2 objects whose delete_after has passed, then their
  * queue rows; a failure leaves both for the next run. Removal queues a key
- * 35 days ahead (migration 20261006200102): daily database backups are kept
+ * 35 days ahead (migration 20261007000102): daily database backups are kept
  * 35 days, and a restored backup must not point at files that are gone.
  */
 export async function deleteQueuedFiles(env: Env, now = new Date()): Promise<number> {

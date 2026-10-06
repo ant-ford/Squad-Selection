@@ -1,7 +1,7 @@
 # Data retention
 
 How long Eddy keeps a person's personal details, and how they are removed.
-Migrations `20261002160000_data_retention.sql` and `20261006200102_retention_without_archive.sql`, Worker `src/retention.ts`.
+Migrations `20261002160000_data_retention.sql` and `20261007000102_retention_without_archive.sql`, Worker `src/retention.ts`.
 
 ## The rule
 

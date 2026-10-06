@@ -252,7 +252,7 @@ export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<
  * (delete_own_profile, migration 20261002160000). Their name and playing
  * record stay. The app asks them to type DELETE first; so does this. Their
  * files are queued and leave R2 35 days later with the nightly run, like
- * every removal's (migration 20261006200102), so a restored backup never
+ * every removal's (migration 20261007000102), so a restored backup never
  * points at a missing file.
  */
 export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {

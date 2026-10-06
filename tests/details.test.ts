@@ -213,7 +213,7 @@ describe("delete my profile", () => {
     expect(calls.some((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))).toBe(false);
     await expect(deleteMyProfile(e, user, { confirm: "DELETE" })).resolves.toEqual({ ok: true });
     expect(calls.find((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))?.body).toEqual({ p_person: "u1" });
-    // R2 objects wait 35 days, for the backups (migration 20261006200102).
+    // R2 objects wait 35 days, for the backups (migration 20261007000102).
     expect(files.delete).not.toHaveBeenCalled();
     expect(calls.some((c) => c.url.pathname.endsWith("/r2_deletions"))).toBe(false);
   });
