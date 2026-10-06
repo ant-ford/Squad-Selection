@@ -91,10 +91,16 @@ const POSITIONS = {
 /**
  * Focus goes back to whatever had it when the overlay opened. Radix would
  * send it to a Dialog.Trigger, and these overlays are opened from state, so
- * they have none.
+ * they have none. Opened from a menu item, which is about to disappear, it
+ * goes back to the button that opened the menu (the menu's aria-labelledby).
  */
 export function useReturnFocus() {
-  const [opener] = useState(() => document.activeElement);
+  const [opener] = useState(() => {
+    const el = document.activeElement;
+    const menu = el?.closest('[role=menu]');
+    const button = menu?.getAttribute('aria-labelledby');
+    return (button && document.getElementById(button)) || el;
+  });
   return (e: Event) => {
     e.preventDefault();
     if (opener instanceof HTMLElement && opener.isConnected) opener.focus();

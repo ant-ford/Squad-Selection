@@ -333,12 +333,14 @@ export default function EmailLists() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Escape' && setSearch('')}
+                  aria-controls="email-list-matches"
                   placeholder="Add someone who is not on the list"
                   className="w-full h-9 rounded-md border border-border bg-background pl-8 pr-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                   aria-label="Add someone to the list"
                 />
                 {matchesSearch.length > 0 && (
-                  <ul className="absolute z-10 mt-1 w-full bg-background border border-border rounded-md shadow-sm max-h-64 overflow-y-auto">
+                  <ul id="email-list-matches" aria-label="People who match" className="absolute z-raised mt-1 w-full bg-background border border-border rounded-md shadow-sm max-h-64 overflow-y-auto">
                     {matchesSearch.map((p) => (
                       <li key={p.id}>
                         <button

@@ -321,7 +321,6 @@ export default function PlayerRanking() {
                           style={{
                             position: 'absolute', top: 0, left: 0, width: '100%',
                             transform: `translateY(${virtualRow.start}px)`,
-                            zIndex: openMenuPlayerId === p.id ? 50 : undefined,
                           }}
                         >
                           {showDivider && <GroupDivider group={prevGrp!} />}
@@ -436,8 +435,6 @@ export default function PlayerRanking() {
         playerName={attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? {}) : undefined}
         onClose={() => setAttendancePlayerId(null)}
       />
-
-      {openMenuPlayerId !== null && <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />}
 
       <Lightbox src={expandedPhoto} alt="Player photo" onClose={() => setExpandedPhoto(null)} />
 

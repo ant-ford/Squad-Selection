@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent } from 'react';
+import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
@@ -10,6 +10,7 @@ import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 import { abilityBadgeStyle } from '@/lib/abilityColour';
 import { nameOf, shortStage } from '@/lib/rankingModel';
 import { toneClasses } from '@/lib/statusTone';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 export interface RankingRowActions {
   onMoveStep: (id: string, dir: 'up' | 'down') => void;
@@ -81,7 +82,7 @@ export function RankingRow(
   return (
     <div
       data-rank={rank}
-      style={{ ...props.style, zIndex: props.menuOpen ? 50 : undefined }}
+      style={props.style}
       className={`flex items-center gap-2 py-1 px-2 border rounded-lg transition-colors select-none ${
         isApplicant ? toneClasses('warning', 'faint') : 'bg-card'
       } ${isDragging ? 'border-primary' : isApplicant ? 'border-warning/60' : 'border-border'}`}
@@ -200,72 +201,43 @@ export function RankingRow(
 
 function RowMenu(props: RankingRowProps & { name: string }) {
   const { player, menuOpen, onMenuOpenChange } = props;
-  // The list scrolls inside its own box, which clips anything hanging out of
-  // it - so for the last rows the menu opens upwards instead.
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuUp, setMenuUp] = useState(false);
-  useLayoutEffect(() => {
-    const menu = menuRef.current;
-    if (!menuOpen || !menu) {
-      setMenuUp(false);
-      return;
-    }
-    const box = menu.closest('[data-rank-list]')?.getBoundingClientRect();
-    const bottomLimit = Math.min(window.innerHeight, box?.bottom ?? Infinity);
-    const topLimit = Math.max(0, box?.top ?? 0);
-    const rect = menu.getBoundingClientRect();
-    const trigger = menu.parentElement!.getBoundingClientRect();
-    setMenuUp(rect.bottom > bottomLimit && trigger.top - rect.height - 4 >= topLimit);
-  }, [menuOpen]);
-
-  const item = 'w-full flex items-center gap-2 text-left text-sm min-h-10 px-2 rounded hover:bg-muted';
-  const choose = (fn: () => void) => () => { onMenuOpenChange(false); fn(); };
-
   return (
-    <div className="relative shrink-0" onPointerDown={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onMenuOpenChange(!menuOpen); }}
-        className="h-10 w-8 -my-1 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-        aria-label={`More actions for ${props.name}`}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-      >
-        <MoreVertical className="h-4 w-4" />
-      </button>
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          role="menu"
-          className={`absolute right-0 ${menuUp ? 'bottom-10' : 'top-10'} z-40 w-52 bg-card border border-border rounded-md shadow-lg p-1`}
+    // The row drags and long-presses on pointer down; the menu is neither.
+    <div className="shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+      <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+        <DropdownMenuTrigger
+          onClick={(e) => e.stopPropagation()}
+          className="h-10 w-8 -my-1 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label={`More actions for ${props.name}`}
         >
-          <button type="button" role="menuitem" onClick={choose(() => props.onOpenMoveToRank(player.id))} className={item}>
+          <MoreVertical className="h-4 w-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-52" onPointerDown={(e) => e.stopPropagation()}>
+          <DropdownMenuItem onSelect={() => props.onOpenMoveToRank(player.id)}>
             <ArrowUpDown className="h-4 w-4" /> Move to rank
-          </button>
-          <div className="my-1 h-px bg-border" />
-          <button type="button" role="menuitem" onClick={choose(() => props.onViewStats(player.id))} className={item}>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => props.onViewStats(player.id)}>
             <BarChart3 className="h-4 w-4" /> Season stats
-          </button>
-          <button type="button" role="menuitem" onClick={choose(() => props.onViewAttendance(player.id))} className={item}>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => props.onViewAttendance(player.id)}>
             <CalendarDays className="h-4 w-4" /> Attendance
-          </button>
+          </DropdownMenuItem>
           {props.onMakeInactive && (
             <>
-              <div className="my-1 h-px bg-border" />
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => { if (props.draftPending) return; onMenuOpenChange(false); props.onMakeInactive?.(player.id); }}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => props.onMakeInactive?.(player.id)}
                 disabled={props.draftPending}
                 title={props.draftPending ? 'Save or discard your reorder first' : undefined}
-                className={`${item} text-danger-soft-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
+                className="text-danger-soft-foreground"
               >
                 <UserMinus className="h-4 w-4" /> Make inactive
-              </button>
+              </DropdownMenuItem>
             </>
           )}
-        </div>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
