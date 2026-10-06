@@ -96,8 +96,10 @@ export interface Env {
   /** OpenRouter model for the review drafts, e.g. "qwen/qwen3.8-27b". */
   AI_DRAFT_MODEL?: string;
   /**
-   * The app's owner (src/systemHealth.ts), comma-separated sign-in emails:
-   * gets the System line in My Tasks and the alert email (to the first).
+   * The app's owner (src/systemHealth.ts): People api_ids, comma-separated.
+   * Opens /system and gets the System line in My Tasks.
    */
-  SYSTEM_OWNER_EMAIL?: string;
+  SYSTEM_OWNER_IDS?: string;
+  /** Where the system health alert goes (src/systemHealth.ts). */
+  SYSTEM_ALERT_EMAIL?: string;
 }

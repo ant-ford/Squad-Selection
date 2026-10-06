@@ -13,7 +13,9 @@
  * The daily HEALTH_CRON checks them (evaluateHealth) and, when something is
  * wrong, emails the owner once (after the review emails, never into the
  * last few of the day's email allowance). The owner also gets a System line
- * in My Tasks, which opens /system. The owner is SYSTEM_OWNER_EMAIL; the
+ * in My Tasks, which opens /system. The owner is SYSTEM_OWNER_IDS (People
+ * api_ids, so no personal address sits in the public config) and the alert
+ * goes to SYSTEM_ALERT_EMAIL; the
  * Section Captains can open /system too.
  *
  * GitHub turns off scheduled workflows in a public repository after 60 days
@@ -26,7 +28,6 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { HttpError } from "./http";
 import { DAILY_LIMIT, sendEmail } from "./mailer";
 import { getCached } from "./cache";
-import { normalizeEmail } from "../../shared/normalizeEmail";
 
 /** The health check's own cron (worker/wrangler.toml [triggers]): after the review emails (03:00) and retention (03:30). */
 export const HEALTH_CRON = "0 4 * * *";
@@ -133,17 +134,18 @@ export function evaluateHealth(snapshot: HealthSnapshot, opts: { now: Date; skip
 
 // ── Who ───────────────────────────────────────────────────────────────────
 
-/** SYSTEM_OWNER_EMAIL, comma-separated; the first is where alerts go. */
-export function ownerEmails(env: Pick<Env, "SYSTEM_OWNER_EMAIL">): string[] {
-  return (env.SYSTEM_OWNER_EMAIL ?? "").split(",").map(normalizeEmail).filter(Boolean);
+/** SYSTEM_OWNER_IDS: People api_ids, comma-separated. */
+export function ownerIds(env: Pick<Env, "SYSTEM_OWNER_IDS">): string[] {
+  return (env.SYSTEM_OWNER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
 }
 
-export function isSystemOwner(env: Pick<Env, "SYSTEM_OWNER_EMAIL">, user: Pick<AuthorizedUser, "email">): boolean {
-  return ownerEmails(env).includes(normalizeEmail(user.email));
+/** Matched on the signed-in person's People record (AuthorizedUser.personId is its api_id). */
+export function isSystemOwner(env: Pick<Env, "SYSTEM_OWNER_IDS">, user: Pick<AuthorizedUser, "personId">): boolean {
+  return ownerIds(env).includes(user.personId);
 }
 
 /** The owner, and the Section Captains (the officers' table, as for the officers' sections in auth.ts). */
-export function canViewSystem(env: Pick<Env, "SYSTEM_OWNER_EMAIL">, user: Pick<AuthorizedUser, "email" | "officerRoles">): boolean {
+export function canViewSystem(env: Pick<Env, "SYSTEM_OWNER_IDS">, user: Pick<AuthorizedUser, "personId" | "officerRoles">): boolean {
   return isSystemOwner(env, user) || user.officerRoles.some((r) => r.office === "sectionCaptain");
 }
 
@@ -384,16 +386,17 @@ export function shouldAlert(snap: HealthSnapshot, sentToday: number, now: Date):
 }
 
 async function alertOwner(env: Env, snap: HealthSnapshot, failed: HealthCheck[], now: Date): Promise<boolean> {
-  const to = ownerEmails(env)[0];
+  const to = env.SYSTEM_ALERT_EMAIL?.trim();
   if (!to) return false;
   try {
     const d = db(env);
     const sentToday = await d.rpc<number>("emails_sent_today", {});
     if (!shouldAlert(snap, sentToday, now)) return false;
-    const [owner] = await d.select<{ id: string }>("people", `select=id&email=${eq(to)}&limit=1`);
+    const ownerId = ownerIds(env)[0];
+    const [owner] = ownerId ? await d.select<{ id: string }>("people", `select=id&api_id=${eq(ownerId)}&limit=1`) : [];
     const app = (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
     await sendEmail(env, {
-      // email_log.to_person_id is nullable: the owner's mailbox need not be on a People record.
+      // The owner's people.id for email_log (nullable, when SYSTEM_OWNER_IDS is unset).
       toPersonId: (owner?.id ?? null) as unknown as string,
       to,
       subject: "Eddy: system check failed",

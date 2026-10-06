@@ -108,16 +108,17 @@ describe("the owner's alert", () => {
 });
 
 describe("who sees it", () => {
-  const env = { SYSTEM_OWNER_EMAIL: "Owner@Example.com, other@example.com" } as Env;
-  it("matches the owner's sign-in email, any case", () => {
-    expect(isSystemOwner(env, { email: "owner@example.com" })).toBe(true);
-    expect(isSystemOwner(env, { email: "other@example.com" })).toBe(true);
-    expect(isSystemOwner(env, { email: "someone@example.com" })).toBe(false);
-    expect(isSystemOwner({} as Env, { email: "owner@example.com" })).toBe(false);
+  const env = { SYSTEM_OWNER_IDS: "recOwner, recOther" } as Env;
+  it("matches the signed-in person's People api_id", () => {
+    expect(isSystemOwner(env, { personId: "recOwner" })).toBe(true);
+    expect(isSystemOwner(env, { personId: "recOther" })).toBe(true);
+    expect(isSystemOwner(env, { personId: "recSomeone" })).toBe(false);
+    expect(isSystemOwner({} as Env, { personId: "recOwner" })).toBe(false);
   });
   it("lets the Section Captains open /system", () => {
-    expect(canViewSystem(env, { email: "x@example.com", officerRoles: [{ office: "sectionCaptain", designation: "" }] })).toBe(true);
-    expect(canViewSystem(env, { email: "x@example.com", officerRoles: [{ office: "membershipOfficer", designation: "" }] })).toBe(false);
+    expect(canViewSystem(env, { personId: "recX", officerRoles: [{ office: "sectionCaptain", designation: "" }] })).toBe(true);
+    expect(canViewSystem(env, { personId: "recX", officerRoles: [{ office: "membershipOfficer", designation: "" }] })).toBe(false);
+    expect(canViewSystem(env, { personId: "recOwner", officerRoles: [] })).toBe(true);
   });
 });
 
