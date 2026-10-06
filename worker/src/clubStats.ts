@@ -8,7 +8,7 @@
  *   - the current season under a key that carries when this season's
  *     Matches and Match Cards last changed (currentVersion), so a result
  *     hkha-sync writes straight to Postgres shows on the next request.
- * Building a past season costs about thirty Airtable pages, inside the
+ * Building a past season costs a handful of database reads, inside the
  * Workers plan's fifty subrequests, which is why the page asks for one
  * season per request and adds seasons up itself.
  *
@@ -27,7 +27,6 @@ import { matches as matchesRepo } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -51,8 +50,6 @@ const PAST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * leaves no newer updated_at behind.
  */
 const CURRENT_TTL_MS = 6 * 60 * 60 * 1000;
-/** On the Airtable backend nothing announces a change, so the summary is only kept briefly. */
-const CURRENT_UNVERSIONED_TTL_MS = 10 * 60 * 1000;
 export const STATS_CURRENT_KEY = "stats-summary:current";
 
 export interface CardCount {
@@ -345,12 +342,11 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
 }
 
 /**
- * A past season is read straight from Airtable, not through the squad app's
- * shared season caches: it is built once a month at most, and caching its
- * two-thousand Match Cards as well as its summary would spend two more of
- * the Cloudflare account's 1,000 daily KV writes (shared with production)
- * on data nobody reads again. The current season does use those caches -
- * the squad pages have them warm - unless `fresh` asks for rows read now.
+ * A past season is read straight from the database, not through the squad
+ * app's season caches: it is built once a month at most, and its
+ * two-thousand Match Cards are read again by nobody. The current season does
+ * use those caches - the squad pages have them warm - unless `fresh` asks
+ * for rows read now.
  */
 async function seasonRows(env: Env, season: string, fresh: boolean): Promise<{ matches: Match[]; cards: MatchCard[] }> {
   if (season === currentSeason() && !fresh) {
@@ -375,10 +371,9 @@ async function buildFor(env: Env, season: string, fresh = false): Promise<Stored
 /**
  * When this season's Matches and Match Cards last changed: the newest
  * updated_at of each, two one-row reads. Postgres keeps updated_at on every
- * write, hkha-sync's included. Null on the Airtable backend.
+ * write, hkha-sync's included.
  */
-async function currentVersion(env: Env, season: string): Promise<string | null> {
-  if (backendFor(env, "matches") !== "supabase" || backendFor(env, "matchCards") !== "supabase") return null;
+async function currentVersion(env: Env, season: string): Promise<string> {
   const latest = async (view: string) => {
     const rows = await db(env).select<{ updated_at: string }>(view, `select=updated_at&season=${eq(season)}&order=updated_at.desc&limit=1`);
     return rows[0]?.updated_at.replace(/\D/g, "") || "0";
@@ -395,10 +390,8 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   if (season > current) throw new HttpError("That season has not started.", 400, "INVALID_INPUT");
   if (season === current) {
     const version = await currentVersion(env, season);
-    const stored = version
-      ? // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
-        await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS)
-      : await getShared<StoredSummary>(env, STATS_CURRENT_KEY, () => buildFor(env, season), CURRENT_UNVERSIONED_TTL_MS);
+    // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
+    const stored = await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS);
     // Across 1 July the fixed key may still hold last season's summary.
     if (stored.summary.season === season && stored.summary.version === SUMMARY_VERSION) return stored;
     return buildFor(env, season);

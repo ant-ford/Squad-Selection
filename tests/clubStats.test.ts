@@ -453,7 +453,6 @@ describe("the current season on Supabase", () => {
   // the summary is keyed on when the season's rows last changed.
   const env = {
     ...ENV,
-    DATA_BACKEND: "supabase",
     DATA_SUPABASE_URL: "https://proj.supabase.co",
     DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   } as any;

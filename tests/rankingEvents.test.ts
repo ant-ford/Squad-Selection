@@ -6,10 +6,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // The reads and writes run on the Supabase path: the real repositories
 // against fakePostgrest (tests/helpers/rankingDb.ts). A write is one
 // insert_ranking_events call; the read is api_ranking_events.
-//
-// The three tests at the end (the missing-table carve-out) still run on
-// Airtable: rankingEvents.ts only forgives an AirtableError 404, so that rule
-// does not hold on Supabase. See the note on that block.
 // ---------------------------------------------------------------------------
 
 import {
@@ -20,7 +16,6 @@ import {
   recordRankingEvents,
   getRankingEvents,
   MAX_JUSTIFICATION_CHARS,
-  RANKING_EVENTS_TABLE,
 } from "../worker/src/rankingEvents";
 import { invalidateAll, getCached } from "../worker/src/cache";
 import { getRecentChanges } from "../worker/src/dashboard";
@@ -381,67 +376,10 @@ describe("ranking-events cache invalidation", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// NOT CONVERTED: the missing-table carve-out (Airtable only).
-//
-// recordRankingEvents and getRankingEvents forgive a missing table only when
-// the error is an AirtableError with status 404. On Supabase a missing
-// relation or function is a SupabaseError (PostgREST answers 404), which is
-// not forgiven: the write rejects and the read becomes a 502. So these three
-// rules do not hold on the Supabase path, and are kept here, on Airtable,
-// until that is decided (the table always exists on Supabase, so the
-// carve-out may simply go with the Airtable code). The Supabase behaviour is
-// pinned below so the difference is visible.
-// ---------------------------------------------------------------------------
-
-const AIRTABLE_ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
-  CALENDAR_SECRET: "***",
-  SUPABASE_URL: "https://test.supabase.co",
-  SUPABASE_ANON_KEY: "***",
-} as any;
-
-/** Airtable answering 404 (table not found) for Ranking Events, an empty table for everything else. */
-function installMissingAirtableTable() {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((url: any) => {
-      const u = String(url);
-      if (!u.includes("api.airtable.com")) return Promise.resolve(new Response("{}", { status: 404 }));
-      const table = decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-      if (table === RANKING_EVENTS_TABLE) return Promise.resolve(new Response("Table not found", { status: 404 }));
-      return Promise.resolve(new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    }),
-  );
-}
-
-describe("missing Ranking Events table (Airtable only; see the note above)", () => {
-  it("degrades gracefully when the table does not exist (404) — the rank change is already committed", async () => {
-    // The caller has ALREADY written the new Section Rank to People by the
-    // time this runs. Rejecting on a 404 would report a successful move as a
-    // 502 and invite the coach to redo it, so a missing audit table must not
-    // fail the request - matching getRankingEvents' documented 404 carve-out.
-    installMissingAirtableTable();
-    await expect(
-      recordRankingEvents(AIRTABLE_ENV, [
-        { playerId: "recP1", actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 },
-      ]),
-    ).resolves.toBeUndefined();
-  });
-
-  it("returns [] when the table does not exist", async () => {
-    installMissingAirtableTable();
-    const changes = await getRankingEvents(AIRTABLE_ENV, 7);
-    expect(changes).toEqual([]);
-  });
-
-  it("keeps the graceful [] degradation only for a missing table (404)", async () => {
-    installMissingAirtableTable();
-    await expect(getRankingEvents(AIRTABLE_ENV, 7)).resolves.toEqual([]);
-  });
-
-  it("on Supabase, a missing table or function is NOT forgiven (the difference above)", async () => {
+// A failed audit write or read is never forgiven: there is no missing-table
+// carve-out (the table always exists), so a write rejects and a read is a 502.
+describe("a failing Ranking Events table", () => {
+  it("is not forgiven: the write rejects and the read is a 502", async () => {
     db = rankingDb({ people: coachAndPlayer(), handlers: { "rpc/insert_ranking_events": failWith(404), api_ranking_events: failWith(404) } });
     await expect(
       recordRankingEvents(ENV, [{ playerId: P1, actorEmail: "coach@hkfc.com", kind: "move", oldRank: 1, newRank: 2 }]),
