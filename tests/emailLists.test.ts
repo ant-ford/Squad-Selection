@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // The chairman's email lists: the shared matching and output (instant, in
 // the app), and the Worker's directory and export log, driven through the
-// real router and auth path.
+// real router and auth path on the Supabase backend's in-memory
+// repositories.
 // ---------------------------------------------------------------------------
 
 import {
@@ -21,11 +22,12 @@ import {
   type DirectoryPerson,
 } from "../shared/emailLists";
 import { resolveEmails } from "../worker/src/chairman";
-import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
-import { resetMissingFieldCache } from "../worker/src/airtable";
-import { CHAIRMAN_FIELDS } from "../shared/schema/fieldMaps";
 import worker from "../worker/src/index";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { office, person as personRow, recId } from "./helpers/factories";
 
 const person = (id: string, values: Record<string, string[]>, emails: string[] = [`${id}@x.com`]): DirectoryPerson => ({
   id,
@@ -169,51 +171,55 @@ describe("which address a person is written to", () => {
 // ── Through the router ────────────────────────────────────────────────
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
 const ID = { chair: "recChair000000001", captain: "recCaptain0000001", officer: "recOfficer0000001", pat: "recPat00000000001", ray: "recRay00000000001" };
 
-function tables(): FakeTables {
-  return {
-    People: [
-      { id: ID.chair, fields: { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com", Status: "Member" } },
-      { id: ID.captain, fields: { "Preferred Name": "Cap", Surname: "Tain", Email: "cap@personal.com", Status: "Member", Active: true } },
-      { id: ID.officer, fields: { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com", Status: "Member" } },
-      {
-        id: ID.pat,
-        fields: {
-          "Preferred Name": "Pat", Surname: "Player", Email: "pat@home.com", Status: "Member", Active: true,
-          "Registered Team": "HKFC D", "Selected Team EOS": "HKFC C", "Member Type": "Main",
-          "Touring Committee": ["Not Interested"], "Qualified Umpire": "Not Applicable",
-          "Tour Interest": ["Bangkok 11s (5-6 Dec 2026)"],
-          "HKID No.": "A123456(7)", "Bank Account No.": "000-111", "Home Street": "1 Secret Road",
-        },
-      },
-      { id: ID.ray, fields: { "Preferred Name": "Ray", Surname: "Resigned", Email: "ray@home.com", Status: "Resigned" } },
-    ],
-    Teams: [],
-    "Membership Officers": [{ id: "recMO", fields: { Status: "Active", Member: [ID.officer] } }],
-    "Section Chairs": [{ id: "recSC", fields: { Status: "Active", Designation: "Chairman", Member: [ID.chair] } }],
-    "Section Captains": [{ id: "recCP", fields: { Status: "Active", Member: [ID.captain] } }],
-  };
-}
+/** Inactive unless the overrides say otherwise, as the old People fixture was. */
+const row = (id: string, overrides: Partial<FakePerson>) => personRow({ id, active: false, ...overrides });
 
-let data: FakeTables;
-let handle: ReturnType<typeof fakeAirtable>;
+const db = useFakeRepos(() => ({
+  people: [
+    row(ID.chair, { preferredName: "Charles", surname: "Chair", email: "charles@personal.com", status: "Member" }),
+    row(ID.captain, { preferredName: "Cap", surname: "Tain", email: "cap@personal.com", status: "Member", active: true }),
+    row(ID.officer, { preferredName: "Olive", surname: "Officer", email: "olive@personal.com", status: "Member" }),
+    row(ID.pat, {
+      preferredName: "Pat", surname: "Player", email: "pat@home.com", status: "Member", active: true,
+      registeredTeam: "HKFC D", selectedTeamEos: "HKFC C",
+      crm: {
+        memberType: "Main", touringCommittee: ["Not Interested"], qualifiedUmpire: "Not Applicable",
+        tourInterest: ["Bangkok 11s (5-6 Dec 2026)"],
+        // CRM-only columns no directory view carries.
+        ...({ hkidNo: "A123456(7)", bankAccountNo: "000-111", homeStreet: "1 Secret Road" } as FakePerson["crm"]),
+      },
+    }),
+    row(ID.ray, { preferredName: "Ray", surname: "Resigned", email: "ray@home.com", status: "Resigned" }),
+  ],
+  officers: [
+    office("membershipOfficer", ID.officer, { id: recId("MO") }),
+    office("sectionChair", ID.chair, { id: recId("SC"), designation: "Chairman" }),
+    office("sectionCaptain", ID.captain, { id: recId("CP") }),
+  ],
+}));
 
 beforeEach(() => {
   invalidateAll();
-  resetMissingFieldCache();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-09-25T04:00:00Z"));
-  data = tables();
-  handle = fakeAirtable(data);
+  // Supabase vouches for any token: "token-for-<email>" signs in as <email>.
+  // Nothing here queries PostgREST directly; a request that did would fail the test.
+  fakePostgrest({
+    tables: {},
+    other: (_url, init) => {
+      const auth = String((init.headers as Record<string, string>).Authorization ?? "");
+      return new Response(JSON.stringify({ email: auth.replace(/^Bearer token-for-/, "") }), { status: 200 });
+    },
+  });
 });
 
 afterEach(() => {
@@ -222,12 +228,6 @@ afterEach(() => {
 });
 
 async function as(email: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const airtable = handle.fetchMock as unknown as typeof fetch;
-  vi.stubGlobal("fetch", vi.fn((url: any, opts?: any) =>
-    String(url).startsWith(ENV.SUPABASE_URL)
-      ? Promise.resolve(new Response(JSON.stringify({ email }), { status: 200 }))
-      : airtable(url, opts),
-  ));
   const headers = { Authorization: `Bearer token-for-${email}`, "Content-Type": "application/json", Origin: "https://app.test" };
   return worker.fetch(new Request(`https://api.test${path}`, { ...init, headers }), ENV, { waitUntil: () => {} } as any);
 }
@@ -266,8 +266,8 @@ describe("the directory", () => {
 
   it("asks People for the list fields only, never the CRM", async () => {
     const res = await body(await as("charles@personal.com", "/api/chairman/directory"));
-    const read = handle.calls.find((c) => c.url.includes("/People?") && decodeURIComponent(c.url).includes("Resigned"));
-    expect(requestedFields(read!.url)).toEqual(Object.values(CHAIRMAN_FIELDS));
+    // The directory view (CHAIRMAN_FIELDS) is the only People read besides sign-in.
+    expect([...new Set(db.callsTo("people").map((c) => c.method))].sort()).toEqual(["findByEmail", "listDirectory"]);
     expect(JSON.stringify(res)).not.toMatch(/HKID|A123456|000-111|Secret Road/);
   });
 });
@@ -284,13 +284,13 @@ describe("the export log", () => {
       description: "Status: Member; Team: HKFC C",
     });
     expect(res.status).toBe(200);
-    expect(data["Membership Events"]?.map((r) => r.fields)).toEqual([
+    expect(db.state.membershipEvents).toEqual([
       {
-        "Event Type": "Exported",
-        Notes: "Email list copied for Outlook: 40 addresses, 42 people. Status: Member; Team: HKFC C",
-        Actor: [ID.chair],
-        "Actor Email": "charles@personal.com",
-        Timestamp: "2026-09-25T04:00:00.000Z",
+        eventType: "Exported",
+        notes: "Email list copied for Outlook: 40 addresses, 42 people. Status: Member; Team: HKFC C",
+        actorId: ID.chair,
+        actorEmail: "charles@personal.com",
+        timestamp: "2026-09-25T04:00:00.000Z",
       },
     ]);
   });
@@ -298,6 +298,6 @@ describe("the export log", () => {
   it("is refused outside the chairman's section, and for an unknown kind", async () => {
     expect((await log("olive@personal.com", { kind: "csv", people: 1, addresses: 1 })).status).toBe(403);
     expect((await log("charles@personal.com", { kind: "fax", people: 1, addresses: 1 })).status).toBe(400);
-    expect(data["Membership Events"]).toBeUndefined();
+    expect(db.state.membershipEvents).toEqual([]);
   });
 });
