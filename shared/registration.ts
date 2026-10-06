@@ -35,8 +35,12 @@ export interface RegistrationPlayer {
   /** The team they ended last season in. */
   previousEos: string | null;
   shirtNo: number | null;
-  /** HKHA format, "SURNAME Given Names". */
+  /** HKHA format, "SURNAME Given Names". Match cards are linked to the player by it. */
   registeredName: string | null;
+  /** Another Active player has the same Registered Name, so neither's cards link. */
+  nameShared?: boolean;
+  /** People.Is Visiting Player: fixed to the registered team (eligibility §6). */
+  visiting?: boolean;
   surname: string | null;
   givenNames: string | null;
   chineseName: string | null;
@@ -70,6 +74,7 @@ export function missingDetails(p: RegistrationPlayer, today: string): string[] {
   const missing: string[] = [];
   if (!p.team) missing.push("Registered team");
   if (!p.registeredName) missing.push("Registered name");
+  else if (p.nameShared) missing.push("Unique registered name");
   if (!p.dateOfBirth) missing.push("Date of birth");
   if (!p.nationality) missing.push("Nationality");
   if (!p.hkidNo && !p.passportNo) missing.push("HKID or passport number");
@@ -81,6 +86,21 @@ export function missingDetails(p: RegistrationPlayer, today: string): string[] {
 
 /** Without an HKID a player registers as a visiting player, with restrictions (owner, 2026-10-01). */
 export const isVisiting = (p: Pick<RegistrationPlayer, "hkidNo" | "passportNo">): boolean => !p.hkidNo && !!p.passportNo;
+
+/** Trimmed, with runs of spaces (non-breaking ones too) made single, as hkha-sync stores a card's name. */
+export const tidyRegisteredName = (v: string): string => v.replace(/\s+/g, " ").trim();
+
+/**
+ * A Registered Name in the format the club's existing ones use, as HockeyHK
+ * prints it on match cards: "SURNAME Given Names". Only a suggestion: many
+ * players are registered with more given names (a Chinese name, a middle
+ * name) than the club holds, so the Convenor checks it before saving.
+ */
+export function suggestRegisteredName(surname: string | null, givenNames: string | null): string | null {
+  const s = tidyRegisteredName(surname ?? "");
+  if (!s) return null;
+  return tidyRegisteredName(`${s.toUpperCase()} ${givenNames ?? ""}`);
+}
 
 /** The download's columns, in HockeyHK's order (the Fillout registration list). */
 export const REGISTRATION_CSV_HEADER = [

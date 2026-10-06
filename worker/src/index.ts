@@ -88,7 +88,7 @@ import {
   swapItem,
   topUpCsv,
 } from "./kit";
-import { getRegistrationBoard, markRegistered, registrationCsv, unmarkRegistered } from "./registration";
+import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -124,7 +124,8 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
-import { newRequestStats, runWithRequestContext, serverTimingHeader } from "./requestContext";
+import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
+import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
 export type { Env };
 
@@ -155,16 +156,24 @@ export default {
     const stats = newRequestStats();
     const startedAt = Date.now();
     const waitUntil = ctx?.waitUntil ? (p: Promise<unknown>) => ctx.waitUntil(p) : undefined;
-    return runWithRequestContext({ stats, waitUntil }, async () => {
+    const context: RequestContext = { stats, waitUntil };
+    return runWithRequestContext(context, async () => {
       let response: Response;
       try {
         response = await handleRequest(request, env);
       } catch (err) {
         console.error("Unhandled worker error:", err instanceof Error ? err.stack : err);
+        noteRequestError(err);
         response = errorJson("Internal Server Error", 500, resolveOrigin(request, env.ALLOWED_ORIGIN));
       }
       const totalMs = Date.now() - startedAt;
       const { pathname } = new URL(request.url);
+      // Every 5xx goes into error_log after the response (systemHealth.ts).
+      if (response.status >= 500 && waitUntil) {
+        const { error, personId } = context;
+        const copy = error === undefined ? response.clone() : null;
+        waitUntil(logServerError(env, { route: pathname, status: response.status, requestId: request.headers.get("cf-ray"), error, personId, response: copy }));
+      }
       if (pathname !== "/health") {
         console.log(
           "request " +
@@ -195,11 +204,17 @@ export default {
    * (retention.ts), on its own so it has a run's outside calls to itself.
    */
   async scheduled(event: { cron: string }, env: Env): Promise<void> {
-    if (event.cron === RETENTION_CRON) {
-      await runRetention(env);
+    // HEALTH_CRON: the daily system health check (systemHealth.ts). Each job
+    // records a heartbeat, which is what that check reads.
+    if (event.cron === HEALTH_CRON) {
+      await runHealthCron(env);
       return;
     }
-    await sendDueReviewEmails(env);
+    if (event.cron === RETENTION_CRON) {
+      await withHeartbeat(env, "retention", () => runRetention(env));
+      return;
+    }
+    await withHeartbeat(env, "review-emails", () => sendDueReviewEmails(env));
   },
 };
 
@@ -467,6 +482,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && pathname === "/api/my-tasks") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getMyTasks(env, user), 200, origin);
+    }
+    // ── System health (systemHealth.ts) ───────────────────────────────────
+    // A crash the app hit: signed-in only, small, rate-limited per person.
+    if (method === "POST" && pathname === "/api/client-error") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await logClientError(env, user, await readClientError(request)), 200, origin);
+    }
+    // The owner and the Section Captains (checked in getSystemView).
+    if (method === "GET" && pathname === "/api/system") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await getSystemView(env, user), 200, origin);
     }
     if (method === "GET" && pathname === "/api/my-fixtures") {
       const user = await requireAuthorizedUser(request, env);
@@ -835,6 +861,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
         if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
+        if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
       }
     }
 
@@ -976,6 +1003,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     return errorJson("Not Found", 404, origin, "NOT_FOUND");
   } catch (err) {
     if (err instanceof HttpError) return errorJson(err.message, err.status, origin, err.code);
+    noteRequestError(err); // for error_log: every branch below is a 5xx
     if (err instanceof SupabaseError) {
       // Which table, status and code - enough to diagnose from the screen,
       // never the database's message, which can quote a value.

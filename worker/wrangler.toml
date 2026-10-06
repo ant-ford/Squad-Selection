@@ -77,12 +77,20 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # list is the retention_due_v view). Report until the first list is checked.
 RETENTION_MODE = "report"
 
+# The app's owner (src/systemHealth.ts): People api_ids, comma-separated,
+# not emails (this file is public). They open /system and get the System
+# line in My Tasks. The alert email when the daily health check fails goes
+# to SYSTEM_ALERT_EMAIL.
+SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
+SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
+
 # The first sends the commitment review emails that are due
 # (src/reviewEmails.ts); the second runs the data retention job
-# (src/retention.ts RETENTION_CRON).
+# (src/retention.ts RETENTION_CRON); the third the system health check
+# (src/systemHealth.ts HEALTH_CRON).
 # Last in the file on purpose: a TOML table header claims every key after it.
 [triggers]
-crons = ["0 3 * * *", "30 3 * * *"]
+crons = ["0 3 * * *", "30 3 * * *", "0 4 * * *"]
 
 # ── Branch preview (.github/workflows/preview.yml) ──────────────────────
 # A separate Worker, hkfc-api-preview, deployed by hand from the Actions
@@ -142,6 +150,9 @@ ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
+# The owner's People row in eddy-preview has the same api_id.
+SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
+SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
 
 [env.preview.triggers]
 crons = []

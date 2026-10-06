@@ -13,7 +13,6 @@ worker/.wrangler/
 # Environment files / secrets
 .env
 .env.*
-!.env.example
 !.env.production
 !.env.preview-api
 
@@ -25,10 +24,12 @@ worker/.dev.vars
 
 # Local Supabase CLI state
 supabase/.temp/
-supabase.temp/
 
 # Test / coverage output
 coverage/
+
+# TypeScript incremental build state
+*.tsbuildinfo
 
 # Project-generated code snapshots
 docs/Project_Code_*
@@ -39,10 +40,14 @@ Thumbs.db
 .vscode/
 .idea/
 
-# User Instructions
+# Owner's local files
 HKFC Squad Selections.jpg
 HKFC Squad Selections.pptx
+
+# Claude Code local settings and worktrees
 .claude/
+
+# Local secrets (KEY=value, one per line). Never commit.
 eddy-secrets.txt
 
 # Airtable import/parity working files: raw club data, never committed

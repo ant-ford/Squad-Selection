@@ -12,7 +12,7 @@ const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
  */
 export function statementStatus(card: Card, today: string): { label: string; tone: string } | null {
   if (card.stage === NOT_STARTED) {
-    if (card.notifyRequested) return { label: 'Email requested', tone: 'bg-primary/10 text-primary' };
+    if (card.notifyRequested) return { label: 'Email requested', tone: 'bg-primary-tint/10 text-primary' };
     if (card.inAutoWindow) return { label: 'Automatic email due: check the automation', tone: ageTone(14) };
     if (card.periodEnd && card.periodEnd < today) return { label: `Period ended ${date(card.periodEnd)}`, tone: ageTone(30) };
     if (card.autoNoticeOn) return { label: `Automatic email ${date(card.autoNoticeOn)}`, tone: ageTone(null) };

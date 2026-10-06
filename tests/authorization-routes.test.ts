@@ -255,9 +255,10 @@ beforeEach(() => {
   invalidateAll();
   // Defaults: signed in as the ordinary player, so coach-only routes reject.
   signInAs(TOKENS.player);
-  // Only the sign-in check leaves the Worker; no table is seeded, so any
-  // PostgREST read a route made here would fail the test.
-  fakePostgrest({ tables: {}, other: supabaseAuth });
+  // Only the sign-in check leaves the Worker, plus the error_log row every
+  // 5xx writes (systemHealth.ts). No other table is seeded, so any other
+  // PostgREST call a route made here would fail the test.
+  fakePostgrest({ tables: { error_log: [] }, other: supabaseAuth });
   requireAuthorizedUserSpy = vi.spyOn(auth, "requireAuthorizedUser");
 
   mocks.getMyProfile.mockResolvedValue({
