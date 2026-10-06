@@ -175,7 +175,7 @@ export default function PlayerFilters({ filters, onChange }: PlayerFiltersProps)
           return (
             <div key={g.group} className="flex items-center gap-1">
               <button onClick={toggleGroup}
-                className={`${CHIP_CLASS} ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary/40 text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                className={`${CHIP_CLASS} ${allSelected ? 'bg-primary text-primary-foreground' : someSelected ? 'bg-primary-tint/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                 {g.group}
               </button>
               <button onClick={() => setExpandedAbility(isExpanded ? null : g.group)}

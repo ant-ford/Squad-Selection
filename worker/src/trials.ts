@@ -19,10 +19,9 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { invalidatePlayerByEmail } from "./reference";
 import { sendEmail } from "./mailer";
-import { TABLES } from "../../shared/schema/tableNames";
 import { PROFILE_SECTIONS, checkValue, fieldsFor, isShown, sectionProblem, type ProfileValues } from "../../shared/profile";
 import { TRIAL_STAGE, type JoinResult, type JoinerTrial, type MyTrial, type TrialSession } from "../../shared/trials";
 import { audienceOf } from "../../shared/profile";
@@ -78,7 +77,7 @@ export async function registerInterest(env: Env, email: string, body: Record<str
   await d.insert("people", [{ email, status: "Applicant", applicant_stage: TRIAL_STAGE, active: false, referred_by_id: referrer?.id ?? null }]);
   // Their next request must find the new record, not a cached "nobody".
   invalidatePlayerByEmail(email, env);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { status: "registering", stage: TRIAL_STAGE };
 }
 
@@ -179,7 +178,7 @@ export async function submitRegistration(env: Env, user: AuthorizedUser): Promis
   if (gaps.length) throw new HttpError(`Not quite finished:\n${gaps.map((g) => `• ${g}`).join("\n")}`, 400, "INCOMPLETE");
   const first = !t.trial_registered_at;
   await d.update("people", `id=${eq(t.id)}`, { trial_registered_at: new Date().toISOString() });
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   if (first) await tellCaptains(env, t, p ?? {}).catch((err) => console.error("Registration email not sent:", err instanceof Error ? err.message : err));
   return { ok: true };
 }
@@ -384,6 +383,6 @@ export async function declineRegistration(env: Env, actor: AuthorizedUser, apiId
   await d.update("people", `id=${eq(p.id)}`, { applicant_stage: "Rejected" });
   const me = await d.one<{ id: string }>("people", `select=id&api_id=${eq(actor.personId)}`);
   await d.insert("activity_log", [{ actor_person_id: me?.id ?? null, action: "trial-declined", entity: "people", entity_id: p.id, fields: ["applicant_stage"] }]).catch(() => undefined);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }

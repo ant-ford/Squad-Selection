@@ -49,6 +49,13 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     .filter((t) => (t.teamCaptain || []).includes(user.id))
     .map((t) => t.teamName || "");
 
+  // Separate reads, asked together rather than one after another.
+  const [volunteers, events, umpiring] = await Promise.all([
+    canSeeVolunteers(env, authUser),
+    canManageEvents(env, authUser),
+    umpiringAccess(env, authUser),
+  ]);
+
   return {
     preferredName:
       user.preferredName ||
@@ -87,13 +94,13 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     seasonPlans: canSeeSeasonPlans(env, authUser),
 
     // Whether the Volunteers screen is theirs: officers, coaches, captains.
-    volunteers: await canSeeVolunteers(env, authUser),
+    volunteers,
 
     // Whether the Events screen is theirs: social secretaries and Section Captains.
-    events: await canManageEvents(env, authUser),
+    events,
 
     // The umpiring duties: the club's umpires, and the Umpire Coordinator.
-    umpiring: await umpiringAccess(env, authUser),
+    umpiring,
 
     captainTeams,
 

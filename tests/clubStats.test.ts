@@ -9,7 +9,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
 import { resetMissingFieldCache } from "../worker/src/airtable";
-import { buildSeasonSummary } from "../worker/src/clubStats";
+import { buildSeasonSummary, getStoredSummary } from "../worker/src/clubStats";
+import { currentSeason } from "../worker/src/seasonContext";
+import { fakeKv } from "./helpers/kv";
 import { clubRecord, combineSeasons, leaders, splitsAcrossTeams, type SeasonSummary } from "../shared/clubStats";
 import type { Match, MatchCard } from "../shared/schema/domainTypes";
 import worker from "../worker/src/index";
@@ -439,5 +441,53 @@ describe("players and careers", () => {
     expect(career.results[0]).toMatchObject({ home: "HKFC A", away: "HKFC B", team: "HKFC B", goals: 0 });
     expect(career.results.map((r) => outcomeFor(r, r.team))).toEqual(["l", "l", "l", "l"]);
     expect(careerOf([one], "recP1")!.results.map((r) => [r.away, r.goals])).toEqual([["Valley A", 2], ["HKFC B", 1]]);
+  });
+});
+
+describe("the current season on Supabase", () => {
+  // hkha-sync writes results straight to Postgres and announces nothing, so
+  // the summary is keyed on when the season's rows last changed.
+  const env = {
+    ...ENV,
+    DATA_BACKEND: "supabase",
+    DATA_SUPABASE_URL: "https://proj.supabase.co",
+    DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
+  } as any;
+
+  function postgrest(latest: Record<string, string>) {
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: any) => {
+      const url = new URL(String(input));
+      const view = url.pathname.replace("/rest/v1/", "");
+      paths.push(view);
+      if (view in latest) {
+        expect(url.searchParams.get("limit")).toBe("1");
+        return new Response(JSON.stringify([{ updated_at: latest[view] }]), { status: 200 });
+      }
+      return new Response("[]", { status: 200 });
+    }));
+    return paths;
+  }
+
+  it("rebuilds as soon as a result or card changes, and not before", async () => {
+    const kv = fakeKv();
+    const latest = { matches_v: "2026-10-04T09:00:00.123456+00:00", match_cards_v: "2026-10-04T09:05:00+00:00" };
+    const paths = postgrest(latest);
+    const season = currentSeason();
+    const builds = () => paths.filter((p) => p === "api_matches").length;
+
+    await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(builds()).toBe(1);
+
+    invalidateAll(); // another isolate, same KV
+    await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(builds()).toBe(1);
+
+    latest.match_cards_v = "2026-10-06T02:00:00+00:00"; // hkha-sync adds a card
+    invalidateAll();
+    const stored = await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(builds()).toBe(2);
+    expect(stored.summary.season).toBe(season);
+    expect(kv.writes.filter((k) => k.startsWith("stats-summary:current@"))).toHaveLength(2);
   });
 });
