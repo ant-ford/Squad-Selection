@@ -206,7 +206,7 @@ export async function getMyFixtures(
   // an upcoming fixture, not to read last month's scores.
   let pastFixtures: PastFixture[] = [];
   if (opts.includePast) {
-    const ctx = await getSeasonContext(env, currentSeason());
+    const ctx = await getSeasonContext(env, currentSeason(), user.id);
     pastFixtures = buildPastFixtures({
       playerId: user.id,
       teams: [view.displayTeam, user.registeredTeam || ""],
@@ -385,7 +385,7 @@ export async function buildPlayerFixtureView(
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team, playerId);
     // Portal gate = the engine itself (no neutralisation): mere availability
     // for a higher team no longer blocks (product decision 2026-09-03),
     // while an actual selection for a higher team still does.
