@@ -55,7 +55,7 @@ beforeEach(() => {
   // getMyFixtures also asks Supabase directly whether this player keeps
   // volunteers, events or umpiring duties. None of them.
   fakePostgrest({
-    tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
+    tables: { api_offices: [], api_suspensions: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
   });
 });
 

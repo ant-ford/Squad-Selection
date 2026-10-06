@@ -66,7 +66,7 @@ const selected = (matchId: string) => db.state.matches.find((m) => m.id === matc
 beforeEach(() => {
   invalidateAll();
   // Nothing here should reach Supabase directly; any request fails the test.
-  fakePostgrest({ tables: {} });
+  fakePostgrest({ tables: { api_suspensions: [] } });
 });
 afterEach(() => vi.unstubAllGlobals());
 

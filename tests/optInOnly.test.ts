@@ -83,7 +83,7 @@ const stored = () => db.state.availabilityExceptions;
 beforeEach(() => {
   invalidateAll();
   // Nothing here should reach Supabase directly; any request fails the test.
-  fakePostgrest({ tables: {} });
+  fakePostgrest({ tables: { api_suspensions: [] } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
