@@ -400,7 +400,7 @@ function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBo
       </div>
       {/* Status and the buttons share a row, so more duties fit on a screen;
           the coordinator's assign form and paid offers take a row of their own. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-h-10">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <p className="text-sm mr-auto">
           {cancelled ? (
             <span className={toneClasses('danger', 'text')}>
