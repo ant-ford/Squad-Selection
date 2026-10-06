@@ -9,9 +9,9 @@ export default function AppHeader({ subtitle, menu, children }: { subtitle?: str
   return (
     <header className="w-full border-b border-border bg-card">
       <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2">
-        <div className="flex items-baseline gap-2 min-w-0">
-          {menu && <div className="self-center -ml-1.5 shrink-0">{menu}</div>}
-          <div className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 self-center">
+        <div className="flex items-center gap-2 min-w-0">
+          {menu && <div className="-ml-1.5 shrink-0">{menu}</div>}
+          <div className="h-7 w-7 sm:h-8 sm:w-8 shrink-0">
             <img src="/assets/logo-plain.svg" alt="Eddy" className="h-full w-full object-contain" />
           </div>
           {/* Shortens rather than sliding under the actions when a header has many
