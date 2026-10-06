@@ -196,7 +196,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
             </p>
           )}
           {set.mismatches.map((m) => (
-            <p key={m} className="text-xs text-amber-700 dark:text-amber-300 flex gap-1 items-start">
+            <p key={m} className="text-xs text-amber-700 flex gap-1 items-start">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" aria-hidden /> {m}
             </p>
           ))}
