@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
 import { resetMissingFieldCache } from "../worker/src/airtable";
-import { invalidateForTables } from "../worker/src/airtableWebhook";
+import { invalidateCommitments, invalidatePeople } from "../worker/src/invalidation";
 import { waiversDoneThisSeason } from "../worker/src/myTasks";
 import worker from "../worker/src/index";
 
@@ -173,14 +173,14 @@ describe("the person's own forms", () => {
   it("goes as soon as the base shows the statement submitted", async () => {
     await tasksFor("pat@hkfc.com"); // warm the caches
     data.Commitments[0].fields["Review Progress"] = "Member Submitted (with Sponsor)";
-    await invalidateForTables(ENV, ["Commitments"]); // what the webhook does
+    await invalidateCommitments(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["waivers"]);
   });
 
   it("goes as soon as the base shows this season's waivers", async () => {
     await tasksFor("pat@hkfc.com");
     data.People[0].fields["Last Submission: Waivers & Declarations"] = "2026-09-26T03:00:00.000Z";
-    await invalidateForTables(ENV, ["People"]);
+    await invalidatePeople(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["statement"]);
   });
 });
@@ -216,7 +216,7 @@ describe("what the processes are waiting on someone for", () => {
     // Chris signs: stage 4 now waits on the chairman.
     data.People.find((r) => r.id === ID.sam)!.fields["Applicant Stage"] = "4. Sponsor (Signed)";
     data.People.find((r) => r.id === ID.sam)!.fields["Sponsored By Chair"] = ["recChairRow000001"];
-    await invalidateForTables(ENV, ["People"]);
+    await invalidatePeople(ENV);
     expect((await tasksFor("chris@hkfc.com")).map((t: any) => t.key)).toEqual(["review"]);
     expect((await tasksFor("charles@hkfc.com")).map((t: any) => t.subject)).toEqual(["Cara Applicant", "Sam Applicant"]);
   });

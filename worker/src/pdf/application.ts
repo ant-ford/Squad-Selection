@@ -17,10 +17,9 @@
 import type { Env } from "../env";
 import type { AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
-import { invalidateForTables } from "../airtableWebhook";
+import { invalidatePeople } from "../invalidation";
 import { people as peopleData } from "../data/people";
 import { recordMembershipEvent } from "../membership";
-import { TABLES } from "../../../shared/schema/tableNames";
 import { ACCEPTED_STAGE } from "../../../shared/membershipStages";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
@@ -438,7 +437,7 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
       newStage: ACCEPTED_STAGE,
       notes: "Existing HKFC member: levy form sent to the front desk",
     });
-    await invalidateForTables(env, [TABLES.player]);
+    await invalidatePeople(env);
   }
   return { sentAt, sentTo: to };
 }

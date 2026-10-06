@@ -11,6 +11,7 @@
  * and a Rejected applicant is only known to have applied.
  */
 import { NEEDS_FIXING, PIPELINE_STAGES, type BoardColumn } from "./membershipStages";
+import { seasonStartYear } from "./season";
 
 export interface InsightFact {
   name: string;
@@ -71,11 +72,8 @@ function yearEarlier(day: string): string {
   return `${y - 1}-${pad(m)}-${pad(Math.min(d, last))}`;
 }
 
-/** The club's season runs July to June: "2026-2027" starts 1 July 2026. */
-export function seasonStartYear(today: string): number {
-  const [y, m] = today.split("-").map(Number);
-  return m >= 7 ? y : y - 1;
-}
+// Lives in ./season so the player page can use it without this module.
+export { seasonStartYear };
 
 export function seasonLabel(startYear: number): string {
   return `${startYear}-${String(startYear + 1).slice(2)}`;

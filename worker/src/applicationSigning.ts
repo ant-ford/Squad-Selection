@@ -24,14 +24,13 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { inBackground } from "./requestContext";
 import { pdfsEnabled } from "./pdf/render";
 import { makeApplicationPdf, pdfFor, recipientFor, sendApplication } from "./pdf/application";
-import { TABLES } from "../../shared/schema/tableNames";
 import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
 
 const SIGNING_STAGES = Object.keys(TURN_BY_STAGE);
@@ -322,7 +321,7 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
     }
     throw err;
   }
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   // The last signature: the application, as one PDF, for the Membership
   // Officer to check and send. After the response; a slow render never holds it up.
   if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, apiId));

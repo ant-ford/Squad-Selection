@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { useQueryClient } from '@tanstack/react-query';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
@@ -12,14 +11,11 @@ import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
-import { otherGamesThatDay, needsSameDayPrompt } from '@/lib/sameDayGames';
+import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
-import CalendarSyncSheet from '@/components/CalendarSyncSheet';
 import AppFooter from '@/components/AppFooter';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
-import SeasonStatsSheet from '@/components/SeasonStatsSheet';
-import AvailabilityRulesSheet from '@/components/AvailabilityRulesSheet';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
@@ -30,6 +26,11 @@ import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
 import UmpireViewButton from '@/components/UmpireViewButton';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+
+// Opened from the profile menu: loaded then, not with the page.
+const CalendarSyncSheet = lazy(() => import('@/components/CalendarSyncSheet'));
+const SeasonStatsSheet = lazy(() => import('@/components/SeasonStatsSheet'));
+const AvailabilityRulesSheet = lazy(() => import('@/components/AvailabilityRulesSheet'));
 
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
@@ -121,20 +122,21 @@ function DayAvailabilityControl({
 export default function PlayerDashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  // Declared before the query that reads it: results are fetched only while
-  // this is on. Open by default (owner request, 2026-09-23) - players want to
-  // see how the last games went. The payload is a few recent fixtures, and
-  // the played-matches read behind it is shared through KV.
+  // Open by default (owner request, 2026-09-23) - players want to see how the
+  // last games went. Results are always fetched (a few recent fixtures, read
+  // from the cached season context) and hiding them is display-only, so the
+  // toggle never swaps the page back to the skeleton for a refetch. Home
+  // (App.tsx) starts this same query alongside the profile.
   const [showPast, setShowPast] = useState(true);
-  const { data, isLoading: loading } = useMyFixtures(showPast);
+  const { data, isLoading: loading } = useMyFixtures(true);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
   const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile).
+  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
+  // still be on its way: the menu fills in when it lands.
   const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
@@ -228,6 +230,7 @@ export default function PlayerDashboard() {
     () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
     [data],
   );
+  const fixturesByDay = useMemo(() => groupByHkDay(allFixtures), [allFixtures]);
 
   // A fixture link the coach shared on WhatsApp (?fixture=<match id>) opens
   // that fixture's sheet once the list has loaded. A game that isn't on
@@ -272,11 +275,11 @@ export default function PlayerDashboard() {
   // Under a My Team card the player is out for, while they still read as in
   // for another game that day.
   const renderSameDayPrompt = (f: MyFixture) => {
-    const others = otherGamesThatDay(f, allFixtures);
+    const key = dateKey(f.date);
+    const others = otherGamesThatDay(f, fixturesByDay.get(key) ?? []);
     const open = promptsOpen.has(f.id);
     if (!open && (!needsSameDayPrompt(f, others) || isPromptDismissed(f.id))) return null;
     if (others.length === 0) return null;
-    const key = dateKey(f.date);
     return (
       <SameDayGamesPrompt
         fixture={f}
@@ -460,9 +463,7 @@ export default function PlayerDashboard() {
 
           {showPast && (
             <div className="mt-3 space-y-2">
-              {loading ? (
-                <p className="text-sm text-muted-foreground py-2">Loading results…</p>
-              ) : (data.pastFixtures ?? []).length === 0 ? (
+              {(data.pastFixtures ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground py-2">
                   No fixtures played in the last few weeks.
                 </p>
@@ -505,23 +506,20 @@ export default function PlayerDashboard() {
           }}
         />
       )}
-      {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
+      <Suspense fallback={null}>
+        {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
 
-      <SeasonStatsSheet
-        playerId={statsPlayerId}
-        playerName={data.playerName}
-        onClose={() => setStatsPlayerId(null)}
-      />
+        {statsPlayerId && (
+          <SeasonStatsSheet
+            playerId={statsPlayerId}
+            playerName={data.playerName}
+            onClose={() => setStatsPlayerId(null)}
+          />
+        )}
 
-      {showRules && (
-        <AvailabilityRulesSheet
-          onClose={() => {
-            setShowRules(false);
-            // A new rule changes the default on every unanswered fixture.
-            queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
-          }}
-        />
-      )}
+        {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
+        {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
+      </Suspense>
       <AppFooter />
     </div>
   );

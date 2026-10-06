@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { PartyPopper } from 'lucide-react';
 import { getMyEvents } from '@/api/events';
 import { RESPONSE_LABEL } from '@shared/events';
-import EventSheet, { statusChip } from './EventSheet';
-import { eventWhen } from './eventText';
+import { eventWhen, statusChip } from './eventText';
+
+// Loaded when an event is opened, not with the player page.
+const EventSheet = lazy(() => import('./EventSheet'));
 
 /**
  * Special events on the player page, beside the fixtures: those they're
@@ -60,12 +62,16 @@ export default function EventsSection({ enabled }: { enabled: boolean }) {
             ) : answer ? (
               <span className={`shrink-0 text-xs font-medium px-2 py-1 rounded ${statusChip[answer]}`}>{RESPONSE_LABEL[answer]}</span>
             ) : e.open && e.invited ? (
-              <span className="shrink-0 text-xs font-medium px-2 py-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-400">Answer</span>
+              <span className="shrink-0 text-xs font-medium px-2 py-1 rounded bg-amber-500/15 text-amber-700">Answer</span>
             ) : null}
           </button>
         );
       })}
-      {open && <EventSheet event={open} onClose={close} />}
+      {open && (
+        <Suspense fallback={null}>
+          <EventSheet event={open} onClose={close} />
+        </Suspense>
+      )}
     </section>
   );
 }
