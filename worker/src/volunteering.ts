@@ -10,8 +10,7 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { canSeeVolunteers } from "./volunteerAccess";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidatePeople } from "./invalidation";
 import {
   COACH_LEVELS,
   EMPTY_ROLES,
@@ -138,7 +137,7 @@ export async function saveVolunteering(env: Env, user: AuthorizedUser, body: Rec
     throw err;
   }
   // The chairman's email lists group people by these answers.
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 

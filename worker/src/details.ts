@@ -10,10 +10,9 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
-import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
@@ -210,7 +209,7 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   }
   const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p), idHidden: p.hkid_hidden });
   await db(env).update("people", `id=${eq(p.id)}`, patch);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -261,7 +260,7 @@ export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Reco
   const p = await loadPerson(env, user.personId);
   await db(env).rpc("delete_own_profile", { p_person: p.id });
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -272,7 +271,7 @@ export async function confirmDetails(env: Env, user: AuthorizedUser) {
   await db(env).update("people", `id=${eq(p.id)}`, { profile_updated_at: new Date().toISOString() });
   // The My Tasks line goes at once, not when its minute's cache runs out.
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -322,6 +321,6 @@ export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, b
     await d.remove("files", `id=in.(${old.map((o) => o.id).join(",")})`);
     await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
   }
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true, url: kind === "photo" ? await fileLink(env, file.id) : null };
 }

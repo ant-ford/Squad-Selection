@@ -579,7 +579,7 @@ export default function SquadSelection() {
             inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium
             transition-all duration-150 border select-none
             ${autoSelectEnabled
-              ? 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/15'
+              ? 'bg-primary-tint/10 text-primary border-primary/30 hover:bg-primary-tint/15'
               : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
             }
             ${autoSelectPending ? 'opacity-60' : ''}
@@ -666,7 +666,7 @@ export default function SquadSelection() {
               {priorityPlayers.map(p => (
                 <span
                   key={p.id}
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary-tint/10 text-primary font-medium"
                 >
                   {p.preferredName}
                   <button onClick={() => handleRemovePriority(p.id)} className="hover:text-destructive ml-0.5">
@@ -773,7 +773,7 @@ export default function SquadSelection() {
         <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-50 items-center" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
             {pendingPlayers.slice(0, 4).map(p => (
-              <span key={p.id} className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary shrink-0 font-medium">
+              <span key={p.id} className="text-xs px-2 py-1 rounded-full bg-primary-tint/10 text-primary shrink-0 font-medium">
                 {initials(p.preferredName)}
               </span>
             ))}
