@@ -527,8 +527,8 @@ function AnswersPanel({ e, data }: { e: ManagedEvent; data: ResponsesView }) {
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">Answers ({data.responses.length})</h2>
+        <div className="flex items-center justify-end gap-2">
+          <h2 className="sr-only">Answers ({data.responses.length})</h2>
           {data.responses.some((r) => r.status !== 'not_going') && (
             <ActionButton
               variant="ghost"

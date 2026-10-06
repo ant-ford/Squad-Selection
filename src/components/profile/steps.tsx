@@ -84,7 +84,7 @@ export function StepShell({
     <section className="rounded-xl border border-border bg-card p-4 space-y-4">
       {leave.prompt}
       <div>
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
           Step {step} of {total}
         </p>
         <h2 className="text-base font-semibold text-foreground">{title}</h2>
@@ -134,7 +134,7 @@ export function MembershipStep({ details, ...nav }: StepProps) {
       <dl className="grid grid-cols-2 gap-3">
         {rows.map(([k, v]) => (
           <div key={k}>
-            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted-foreground">{k}</dt>
             <dd className="text-sm text-foreground">{v || '–'}</dd>
           </div>
         ))}
@@ -184,7 +184,7 @@ function AddressPreview({ lines }: { lines: string[] }) {
   if (lines.length === 0) return null;
   return (
     <div className="rounded-md border border-border bg-muted/40 p-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">How your address reads</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">How your address reads</p>
       {lines.map((l) => (
         <p key={l} className="text-sm text-foreground">
           {l}

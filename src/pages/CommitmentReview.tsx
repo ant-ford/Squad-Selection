@@ -45,7 +45,7 @@ function Card({ title, children, note }: { title: string; children: ReactNode; n
     <section className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
+        {note && <span className="text-xs text-muted-foreground">{note}</span>}
       </div>
       {children}
     </section>
@@ -56,7 +56,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return (
     <label className="block text-xs text-muted-foreground">
       <span className="block text-foreground/80">{label}</span>
-      {hint && <span className="block text-[11px] leading-snug mt-0.5">{hint}</span>}
+      {hint && <span className="block text-xs leading-snug mt-0.5">{hint}</span>}
       <span className="block mt-1">{children}</span>
     </label>
   );
@@ -72,7 +72,7 @@ const HINTS = {
 function Answer({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="py-1.5">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm text-foreground whitespace-pre-wrap">{value || '—'}</p>
     </div>
   );
@@ -86,7 +86,7 @@ function Waiting({ children }: { children: ReactNode }) {
 function DraftNote({ drafts }: { drafts: Record<string, string> }) {
   if (Object.keys(drafts).length === 0) return null;
   return (
-    <p className="text-[11px] rounded-md bg-muted/60 text-muted-foreground px-2 py-1.5">
+    <p className="text-xs rounded-md bg-muted/60 text-muted-foreground px-2 py-1.5">
       Some answers start from a suggested draft. Check and edit them before you sign: what you submit is your review.
     </p>
   );
@@ -182,7 +182,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           })}
         </div>
         {recordedSocialFunctions(review.eventsAttended).length > 0 && (
-          <p className="text-[11px] text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
+          <p className="text-xs text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
         )}
       </fieldset>
       <Field label="Other contributions" hint={HINTS.otherContributions}>
@@ -323,7 +323,7 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
       <Answer label="Recommendation" value={r.recommendation} />
       {r.signatureUrl && (
         <div className="py-1.5">
-          <p className="text-[11px] text-muted-foreground">Signed</p>
+          <p className="text-xs text-muted-foreground">Signed</p>
           <img src={r.signatureUrl} alt="Sponsor's signature" className="h-16 rounded bg-white object-contain" />
         </div>
       )}
@@ -427,7 +427,7 @@ function OfficerReviewView({ review }: { review: ReviewView }) {
       <Answer label="Recommended commitment reduction" value={r.recommendedReduction} />
       {r.signatureUrl && (
         <div className="py-1.5">
-          <p className="text-[11px] text-muted-foreground">Signed</p>
+          <p className="text-xs text-muted-foreground">Signed</p>
           <img src={r.signatureUrl} alt="Membership Officer's signature" className="h-16 rounded bg-white object-contain" />
         </div>
       )}
@@ -511,18 +511,18 @@ export default function CommitmentReview() {
                 ].map(([label, value]) => (
                   <div key={label as string} className="rounded-lg bg-muted/50 py-2">
                     <p className="text-lg font-semibold text-foreground">{value ?? '—'}</p>
-                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="text-xs text-muted-foreground">{label}</p>
                   </div>
                 ))}
               </div>
               {review.attendance.teamsPlayed.length > 0 && (
-                <p className="text-[11px] text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
+                <p className="text-xs text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
               )}
               {!!review.gamesUmpiredInEddy && (
-                <p className="text-[11px] text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
+                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
               )}
               {!!review.eventsAttended?.length && (
-                <p className="text-[11px] text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Events attended (recorded in Eddy): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
                 </p>
               )}

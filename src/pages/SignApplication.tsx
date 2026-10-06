@@ -28,7 +28,7 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground whitespace-pre-line">{value || '–'}</dd>
     </div>
   );
