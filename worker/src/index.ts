@@ -1,12 +1,10 @@
-import { AirtableError, airtableList } from "./airtable";
+import { AirtableError } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest, serveClubDoc } from "./files";
 import { db, SupabaseError } from "./data/supabase";
-import { shadowSummary } from "./data/shadow";
 import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
 import { RETENTION_CRON, runRetention } from "./retention";
-import { TABLES } from "../../shared/schema/tableNames";
 import type { Env } from "./env";
 import {
   json,
@@ -92,7 +90,7 @@ import {
   swapItem,
   topUpCsv,
 } from "./kit";
-import { getRegistrationBoard, markRegistered, registrationCsv, unmarkRegistered } from "./registration";
+import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -131,7 +129,6 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
-import { handleAirtableWebhook, refreshAirtableWebhook, WEBHOOK_ROUTE } from "./airtableWebhook";
 import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
 import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
@@ -210,9 +207,8 @@ export default {
   },
 
   /**
-   * Daily: keep the Airtable webhook from lapsing (airtableWebhook.ts), and
-   * on the Supabase backend send the commitment review emails that are due
-   * (reviewEmails.ts) - the job the Airtable 60-day automation did.
+   * Daily: on the Supabase backend, send the commitment review emails that
+   * are due (reviewEmails.ts) - the job the Airtable 60-day automation did.
    * RETENTION_CRON, half an hour later, is the data retention job
    * (retention.ts), on its own so it has a run's outside calls to itself.
    */
@@ -227,7 +223,6 @@ export default {
       if (backendFor(env, "people") === "supabase") await withHeartbeat(env, "retention", () => runRetention(env));
       return;
     }
-    await refreshAirtableWebhook(env);
     if (backendFor(env, "commitments") === "supabase") await withHeartbeat(env, "review-emails", () => sendDueReviewEmails(env));
   },
 };
@@ -240,39 +235,20 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   if (method === "OPTIONS") return handleOptions(origin);
 
-  // Airtable's change notifications. Signed by Airtable, not by a user
-  // session, so it sits outside the authenticated routes; airtableWebhook.ts
-  // verifies the signature and answers 404 until a webhook is configured.
-  if (pathname === WEBHOOK_ROUTE) return handleAirtableWebhook(request, env);
-
   try {
     // ── Health Check (Public) ──────────────────────────────────────────────
     if (method === "GET" && pathname === "/health") {
       // ?deep=1 additionally reports whether the Worker's own credentials
-      // still work. Plain /health only proves the Worker is running, which is
-      // exactly why a rejected Airtable token once looked like a frontend
-      // fault: sign-in succeeded, /health was green, and every screen behind
-      // the login failed. There is no unauthenticated route that touches
-      // Airtable, so confirming the token previously meant signing in.
+      // still work: the Supabase data project, once one is configured. Plain
+      // /health only proves the Worker is running, which is exactly why a
+      // rejected Airtable token once looked like a frontend fault: sign-in
+      // succeeded, /health was green, and every screen behind the login
+      // failed.
       //
       // Reports "ok" or "error" and nothing else - no message, no record, no
       // configuration. The detail stays in Workers Logs. Cached for 60s so it
-      // cannot be used to hammer Airtable.
+      // cannot be used to hammer the database.
       if (url.searchParams.get("deep") === "1") {
-        const { data: airtable } = await getCached<"ok" | "error">(
-          "health:airtable",
-          async () => {
-            try {
-              await airtableList(env, TABLES.team, { maxRecords: "1" });
-              return "ok";
-            } catch (err) {
-              console.error("Health check: Airtable unreachable:", err instanceof Error ? err.message : err);
-              return "error";
-            }
-          },
-          60 * 1000,
-        );
-        // The Supabase data project, once one is configured - same rules: ok or error, nothing more.
         const supabase = env.DATA_SUPABASE_URL
           ? (
               await getCached<"ok" | "error">(
@@ -290,9 +266,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               )
             ).data
           : undefined;
-        // Preview only: this isolate's shadow-read comparison counts (no values, no ids).
-        const shadow = env.DATA_SHADOW_READ === "on" ? shadowSummary() : undefined;
-        return json({ status: "ok", airtable, ...(supabase ? { supabase } : {}), ...(shadow ? { shadow } : {}), timestamp: new Date().toISOString() }, 200, origin);
+        return json({ status: "ok", ...(supabase ? { supabase } : {}), timestamp: new Date().toISOString() }, 200, origin);
       }
       return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
     }
@@ -939,6 +913,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
         if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
+        if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
       }
     }
 

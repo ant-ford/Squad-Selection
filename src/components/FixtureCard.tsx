@@ -178,14 +178,14 @@ export default function FixtureCard({
             </span>
           ) : (
             <>
-              <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+              <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
                 {fixture.selectedCount} / {fixture.targetSquadSize}
                 {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
               </span>
               {(shortfall > 0 || fixture.maybeCount > 0) && (
                 <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
                   {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
-                  {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
+                  {fixture.maybeCount > 0 && <span className="text-amber-700">{fixture.maybeCount} maybe</span>}
                 </p>
               )}
             </>

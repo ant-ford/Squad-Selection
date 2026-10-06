@@ -35,15 +35,6 @@ export interface Env {
    */
   CACHE?: CacheKv;
   /**
-   * Airtable webhook credentials (worker/src/airtableWebhook.ts). Both are
-   * optional: without them the webhook route answers 404, and the raw-table
-   * caches fall back to the short TTLs that Airtable-side edits relied on
-   * before there was a webhook to announce them.
-   */
-  AIRTABLE_WEBHOOK_ID?: string;
-  /** The webhook's macSecretBase64, as a Worker secret. */
-  AIRTABLE_WEBHOOK_SECRET?: string;
-  /**
    * Which store the data modules use: "airtable" (the default when unset)
    * or "supabase". See worker/src/data/backend.ts.
    */
@@ -59,8 +50,6 @@ export interface Env {
   DATA_SUPABASE_URL?: string;
   /** That project's secret key (sb_secret_...), as a Worker secret. Sent only in the apikey header. */
   DATA_SUPABASE_SECRET_KEY?: string;
-  /** "on" (preview only): serve Airtable, and compare each read with Supabase in the background (data/shadow.ts). */
-  DATA_SHADOW_READ?: string;
   /** This Worker's public origin, for links it hands out (signed file links). */
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
