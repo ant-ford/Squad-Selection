@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computePlayerSeasonStats } from "../worker/src/playerStats";
-import { mapMatchCard } from "../shared/mappers/matchCardMapper";
+import { toMatchCard } from "../worker/src/data/supabase/mappers";
 import type { Match, MatchCard, Player } from "../shared/schema/domainTypes";
 
 const SEASON = "2026-2027";
@@ -394,10 +394,14 @@ describe("season boundary", () => {
     expect(stats.goals).toBe(0);
   });
 
-  it("counts cards read from Airtable, where Season is a lookup array", () => {
-    const raw = mapMatchCard({
-      id: "recC1",
-      fields: { Player: ["recP1"], Match: ["recM1"], Team: TEAM, Season: [SEASON], "Goals Scored": 2 },
+  // Airtable returned Season as a lookup array, which once dropped every
+  // card; Supabase's api_match_cards has it as a plain column. Either way a
+  // card read from the store must carry the season as a string and count.
+  it("counts cards read from the store, with the season as the match's", () => {
+    const raw = toMatchCard({
+      id: "recC1", player: "recP1", match: "recM1", team: TEAM, player_team: null, play_up: false, goalkeeper: false,
+      jersey_number: null, goals_scored: 2, cards: [], u21: false, vp: false, captain: false, season: SEASON,
+      fixture_id: null, raw_player_name: null,
     });
     expect(raw.season).toBe(SEASON);
     const stats = computePlayerSeasonStats({

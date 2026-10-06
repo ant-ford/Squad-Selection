@@ -3,23 +3,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // The membership section's Statements board: yearly commitment reviews by
 // Review Progress, and Notify now. Driven through the real router and auth
-// path, like membership.test.ts.
+// path, like membership.test.ts, on the Supabase backend's in-memory
+// repositories.
 // ---------------------------------------------------------------------------
 
-import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
-import { resetMissingFieldCache } from "../worker/src/airtable";
-import { COMMITMENT_FIELDS } from "../shared/schema/fieldMaps";
+import { HttpError } from "../worker/src/http";
 import worker from "../worker/src/index";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakeCommitment, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { commitment, office, person as personRow, recId } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
 // 12:00 on 25 September 2026 in Hong Kong. The automation's 60-day window
 // runs to 24 November 2026.
@@ -31,6 +33,7 @@ const ID = {
   captain: "recCaptain0000001",
   player: "recPlayer00000001",
   resigned: "recResigned000001",
+  sponsorPerson: "recSponsorChris01",
   // Commitments rows.
   due: "recCmtDue00000001", // Not Started, period ends after the window
   inWindow: "recCmtWindow00001", // Not Started, period ends inside the window
@@ -48,71 +51,80 @@ const ID = {
   blank: "recCmtBlank000001",
 };
 
-function tables(): FakeTables {
-  const person = (id: string, fields: Record<string, unknown>) => ({ id, fields: { Active: false, ...fields } });
-  const cmt = (id: string, fields: Record<string, unknown>) => ({
-    id,
-    fields: { People: [ID.player], "Full Name": ["Pat Player"], "Membership No.": ["1001"], ...fields },
-  });
+const SPONSOR_ROW = "recSponsorRow0001";
+
+/** Inactive unless the overrides say otherwise, as the old People fixture was. */
+const person = (id: string, overrides: Partial<FakePerson>) => personRow({ id, active: false, ...overrides });
+/** A Commitments row linked to Pat, as the view returns it (lookups as one-element lists). */
+const cmt = (id: string, fields: Partial<FakeCommitment>) =>
+  commitment({ id, people: [ID.player], fullName: ["Pat Player"], membershipNo: ["1001"], ...fields });
+
+function seed() {
   return {
-    People: [
-      person(ID.officer, { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com" }),
-      person(ID.chair, { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com" }),
-      person(ID.captain, { "Preferred Name": "Cap", Surname: "Tain", Email: "cap@personal.com" }),
+    people: [
+      person(ID.officer, { preferredName: "Olive", surname: "Officer", email: "olive@personal.com" }),
+      person(ID.chair, { preferredName: "Charles", surname: "Chair", email: "charles@personal.com" }),
+      person(ID.captain, { preferredName: "Cap", surname: "Tain", email: "cap@personal.com" }),
       person(ID.player, {
-        "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member",
-        "Mobile No.": "9123 4567", Photo: [{ url: "https://dl.airtable.com/pat.jpg", filename: "pat.jpg" }],
+        preferredName: "Pat", surname: "Player", email: "pat@hkfc.com", active: true, status: "Member", mobileNo: "9123 4567",
+        crm: { photo: [{ url: "https://files.test/pat.jpg", filename: "pat.jpg" }] },
       }),
-      person("recSponsorChris01", { "Preferred Name": "Chris", Surname: "Coach", "Mobile No.": "9876 5432" }),
-      person(ID.resigned, { "Preferred Name": "Ray", Surname: "Resigned", Status: "Resigned" }),
+      person(ID.sponsorPerson, { preferredName: "Chris", surname: "Coach", mobileNo: "9876 5432" }),
+      person(ID.resigned, { preferredName: "Ray", surname: "Resigned", status: "Resigned" }),
     ],
-    Teams: [],
-    "Membership Officers": [{ id: "recMO", fields: { Status: "Active", Designation: "Men's Membership Officer", Member: [ID.officer] } }],
-    "Section Chairs": [{ id: "recSC", fields: { Status: "Active", Designation: "Chairman", Member: [ID.chair] } }],
-    "Section Captains": [{ id: "recCP", fields: { Status: "Active", Designation: "Men's Captain", Member: [ID.captain] } }],
-    Sponsors: [{ id: "recSponsorRow0001", fields: { Status: "Active", Member: ["recSponsorChris01"] } }],
-    Commitments: [
+    officers: [
+      office("membershipOfficer", ID.officer, { id: recId("MO"), designation: "Men's Membership Officer" }),
+      office("sectionChair", ID.chair, { id: recId("SC"), designation: "Chairman" }),
+      office("sectionCaptain", ID.captain, { id: recId("CP"), designation: "Men's Captain" }),
+      office("sponsor", ID.sponsorPerson, { id: SPONSOR_ROW }),
+    ],
+    commitments: [
       cmt(ID.due, {
-        "Review Progress": "Not Started", "Year #": 1, "Period Start": "2025-12-01", "Period End": "2026-11-30",
-        Period: "2025-12-01 to 2026-11-30", "Sponsor Preferred Name": ["Chris"], "Selected Team EOS": ["HKFC C"],
-        // Never requested, so never on the board.
-        "Combined Context": "=== MEMBER INPUTS ===", "Recommendation (AI)": { state: "generated", value: "x" },
+        reviewProgress: "Not Started", yearNo: 1, periodStart: "2025-12-01", periodEnd: "2026-11-30",
+        period: "2025-12-01 to 2026-11-30", sponsorName: ["Chris"], selectedTeamEos: ["HKFC C"],
+        // Not in the board's view, so never on the board.
+        ...({ combinedContext: "=== MEMBER INPUTS ===", recommendationAi: { state: "generated", value: "x" } } as Partial<FakeCommitment>),
       }),
-      cmt(ID.inWindow, { "Review Progress": "Not Started", "Year #": 2, "Period Start": "2025-11-01", "Period End": "2026-10-31" }),
-      cmt(ID.requested, { "Review Progress": "Not Started", "Notify Now": true, "Period Start": "2026-01-01", "Period End": "2026-12-31" }),
-      cmt(ID.overdue, { "Review Progress": "Not Started", "Year #": 1, "Period Start": "2025-09-01", "Period End": "2026-08-31" }),
-      cmt(ID.ancient, { "Review Progress": "Not Started", "Year #": 1, "Period Start": "2022-07-01", "Period End": "2023-06-30" }),
-      cmt(ID.notified, { "Review Progress": "Notified Member", "Period Start": "2025-10-15", "Period End": "2026-10-14" }),
+      cmt(ID.inWindow, { reviewProgress: "Not Started", yearNo: 2, periodStart: "2025-11-01", periodEnd: "2026-10-31" }),
+      cmt(ID.requested, { reviewProgress: "Not Started", notifyNow: true, periodStart: "2026-01-01", periodEnd: "2026-12-31" }),
+      cmt(ID.overdue, { reviewProgress: "Not Started", yearNo: 1, periodStart: "2025-09-01", periodEnd: "2026-08-31" }),
+      cmt(ID.ancient, { reviewProgress: "Not Started", yearNo: 1, periodStart: "2022-07-01", periodEnd: "2023-06-30" }),
+      cmt(ID.notified, { reviewProgress: "Notified Member", periodStart: "2025-10-15", periodEnd: "2026-10-14" }),
       cmt(ID.memberIn, {
-        "Review Progress": "Member Submitted (with Sponsor)", "Period Start": "2025-10-01", "Period End": "2026-09-30",
-        "Member Submission Date": "2026-09-10T03:00:00.000Z", "Sponsor Preferred Name": ["Chris"], Sponsor: ["recSponsorRow0001"],
-        "Matches: Played": 14, "Player: Teams Played": ["HKFC C", "HKFC D"], Practices: "Moderate 50-70%",
-        "Player Statement": [{ url: "https://dl.airtable.com/statement.pdf", filename: "statement.pdf" }],
+        reviewProgress: "Member Submitted (with Sponsor)", periodStart: "2025-10-01", periodEnd: "2026-09-30",
+        memberSubmittedAt: "2026-09-10T03:00:00.000Z", sponsorName: ["Chris"], sponsorLink: [SPONSOR_ROW],
+        matchesPlayed: 14, teamsPlayed: ["HKFC C", "HKFC D"], practices: "Moderate 50-70%",
+        playerStatement: [{ url: "https://files.test/statement.pdf", filename: "statement.pdf" }],
       }),
       cmt(ID.completeRecent, {
-        "Review Progress": "Complete", "Period Start": "2025-08-01", "Period End": "2026-07-31",
-        "Membership Officer Submission Date": "2026-07-20T03:00:00.000Z",
+        reviewProgress: "Complete", periodStart: "2025-08-01", periodEnd: "2026-07-31",
+        officerSubmittedAt: "2026-07-20T03:00:00.000Z",
       }),
-      cmt(ID.completeJune, { "Review Progress": "Complete", "Period Start": "2025-07-01", "Period End": "2026-06-30" }),
-      cmt(ID.completeOld, { "Review Progress": "Complete", "Period Start": "2023-04-01", "Period End": "2024-03-31" }),
-      cmt(ID.future, { "Review Progress": "Not Started", "Year #": 2, "Period Start": "2026-12-01", "Period End": "2027-11-30" }),
-      { id: ID.orphan, fields: { "Review Progress": "Not Started", "Period Start": "2026-01-01", "Period End": "2026-12-31" } },
-      cmt(ID.ofResigned, { People: [ID.resigned], "Review Progress": "Notified Member", "Period Start": "2025-10-01", "Period End": "2026-09-30" }),
-      cmt(ID.blank, { "Period Start": "2025-11-15", "Period End": "2026-11-14" }),
+      cmt(ID.completeJune, { reviewProgress: "Complete", periodStart: "2025-07-01", periodEnd: "2026-06-30" }),
+      cmt(ID.completeOld, { reviewProgress: "Complete", periodStart: "2023-04-01", periodEnd: "2024-03-31" }),
+      cmt(ID.future, { reviewProgress: "Not Started", yearNo: 2, periodStart: "2026-12-01", periodEnd: "2027-11-30" }),
+      commitment({ id: ID.orphan, reviewProgress: "Not Started", periodStart: "2026-01-01", periodEnd: "2026-12-31" }),
+      cmt(ID.ofResigned, { people: [ID.resigned], reviewProgress: "Notified Member", periodStart: "2025-10-01", periodEnd: "2026-09-30" }),
+      cmt(ID.blank, { periodStart: "2025-11-15", periodEnd: "2026-11-14" }),
     ],
   };
 }
 
-let data: FakeTables;
-let handle: ReturnType<typeof fakeAirtable>;
+const db = useFakeRepos(seed);
 
 beforeEach(() => {
   invalidateAll();
-  resetMissingFieldCache();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  data = tables();
-  handle = fakeAirtable(data);
+  // Supabase vouches for any token: "token-for-<email>" signs in as <email>.
+  // Nothing here queries PostgREST directly; a request that did would fail the test.
+  fakePostgrest({
+    tables: {},
+    other: (_url, init) => {
+      const auth = String((init.headers as Record<string, string>).Authorization ?? "");
+      return new Response(JSON.stringify({ email: auth.replace(/^Bearer token-for-/, "") }), { status: 200 });
+    },
+  });
 });
 
 afterEach(() => {
@@ -121,13 +133,6 @@ afterEach(() => {
 });
 
 async function as(email: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const airtable = handle.fetchMock as unknown as typeof fetch;
-  vi.stubGlobal("fetch", vi.fn((url: any, opts?: any) => {
-    if (String(url).startsWith(ENV.SUPABASE_URL)) {
-      return Promise.resolve(new Response(JSON.stringify({ email }), { status: 200 }));
-    }
-    return airtable(url, opts);
-  }));
   const headers = { Authorization: `Bearer token-for-${email}`, "Content-Type": "application/json", Origin: "https://app.test" };
   return worker.fetch(new Request(`https://api.test${path}`, { ...init, headers }), ENV, { waitUntil: () => {} } as any);
 }
@@ -143,10 +148,9 @@ const board = async () => {
 const notify = (email: string, commitmentId: string) =>
   as(email, "/api/membership/statements/notify", { method: "POST", body: JSON.stringify({ commitmentId }) });
 
-const patches = () =>
-  handle.fetchMock.mock.calls
-    .filter(([, init]: any[]) => init?.method === "PATCH")
-    .map(([url, init]: any[]) => ({ url: String(url), fields: JSON.parse(init.body).fields }));
+/** Every Commitments write (Notify Now is the only one there is). */
+const patches = () => db.callsTo("commitments", "setNotifyNow").map((c) => c.args[0]);
+const row = (id: string) => db.state.commitments.find((r) => r.id === id)!;
 
 describe("who can open the Statements board", () => {
   it.each([
@@ -209,7 +213,7 @@ describe("the board", () => {
   it("carries the member's photo and mobile, and the sponsor while the review waits on them", async () => {
     const { cards } = await board();
     const due = cards.find((c: any) => c.id === ID.due);
-    expect(due).toMatchObject({ photo: "https://dl.airtable.com/pat.jpg", mobileNo: "9123 4567" });
+    expect(due).toMatchObject({ photo: "https://files.test/pat.jpg", mobileNo: "9123 4567" });
     expect(due.chase).toBeUndefined();
     expect(cards.find((c: any) => c.id === ID.memberIn).chase).toEqual({
       role: "Sponsor",
@@ -229,14 +233,14 @@ describe("the board", () => {
       matchesPlayed: 14,
       teamsPlayed: ["HKFC C", "HKFC D"],
       practices: "Moderate 50-70%",
-      playerStatement: [{ url: "https://dl.airtable.com/statement.pdf", filename: "statement.pdf" }],
+      playerStatement: [{ url: "https://files.test/statement.pdf", filename: "statement.pdf" }],
     });
   });
 
   it("asks Commitments for the board's fields only, never the AI or combined context", async () => {
     const res = await board();
-    const read = handle.calls.find((c) => c.url.includes("/Commitments?"));
-    expect(requestedFields(read!.url)).toEqual(Object.values(COMMITMENT_FIELDS));
+    // The board's view (COMMITMENT_FIELDS) is its only Commitments read.
+    expect(db.callsTo("commitments").map((c) => c.method)).toEqual(["listReviewBoard"]);
     expect(JSON.stringify(res)).not.toMatch(/MEMBER INPUTS|"state"/);
   });
 });
@@ -245,24 +249,23 @@ describe("Notify now", () => {
   it("ticks Notify Now and nothing else, leaving Review Progress to the automation", async () => {
     const res = await notify("olive@personal.com", ID.due);
     expect(res.status).toBe(200);
-    expect(patches()).toEqual([
-      { url: expect.stringContaining(`/Commitments/${ID.due}`), fields: { "Notify Now": true } },
-    ]);
-    const row = data.Commitments.find((r) => r.id === ID.due)!;
-    expect(row.fields["Review Progress"]).toBe("Not Started");
-    expect(row.fields.People).toEqual([ID.player]); // the link was never sent
+    expect(patches()).toEqual([ID.due]);
+    // statements.ts never sets Review Progress itself: moving the row is the
+    // repository's job (start_review on Supabase), with the email.
+    expect(row(ID.due).reviewProgress).toBe("Not Started");
+    expect(row(ID.due).people).toEqual([ID.player]); // the link was never written
   });
 
   it("records the request in Membership Events", async () => {
     await notify("cap@personal.com", ID.due);
-    expect(data["Membership Events"]?.map((r) => r.fields)).toEqual([
+    expect(db.state.membershipEvents).toEqual([
       {
-        "Event Type": "Notified",
-        Person: [ID.player],
-        Notes: "Commitment review email requested early for Year 1 (2025-12-01 to 2026-11-30).",
-        Actor: [ID.captain],
-        "Actor Email": "cap@personal.com",
-        Timestamp: NOW.toISOString(),
+        eventType: "Notified",
+        personId: ID.player,
+        notes: "Commitment review email requested early for Year 1 (2025-12-01 to 2026-11-30).",
+        actorId: ID.captain,
+        actorEmail: "cap@personal.com",
+        timestamp: NOW.toISOString(),
       },
     ]);
   });
@@ -291,20 +294,18 @@ describe("Notify now", () => {
     expect((await notify("olive@personal.com", "recNoSuchRow00001")).status).toBe(404);
   });
 
-  it("says plainly when the checkbox is missing from the base", async () => {
-    const airtable = handle.fetchMock as unknown as typeof fetch;
-    handle.fetchMock = vi.fn((url: any, init?: any) =>
-      init?.method === "PATCH"
-        ? Promise.resolve(
-            new Response('{"error":{"type":"UNKNOWN_FIELD_NAME","message":"Unknown field name: \\"Notify Now\\""}}', {
-              status: 422,
-            }),
-          )
-        : airtable(url, init),
-    ) as any;
+  // Airtable refused with SETUP_REQUIRED while the base had no Notify Now
+  // checkbox. Supabase has no such setup step; its counterpart is
+  // start_review finding the review already started (by someone else, just
+  // now), which refuses with ALREADY_STARTED. Either way: a plain 409, and
+  // nothing written to the log.
+  it("says plainly when the review was started meanwhile", async () => {
+    vi.spyOn(db.repos.commitments, "setNotifyNow").mockRejectedValue(
+      new HttpError("This review has already been started.", 409, "ALREADY_STARTED"),
+    );
     const res = await notify("olive@personal.com", ID.overdue);
     expect(res.status).toBe(409);
-    expect(await body(res)).toMatchObject({ error: "SETUP_REQUIRED" });
-    expect(data["Membership Events"] ?? []).toHaveLength(0);
+    expect(await body(res)).toMatchObject({ error: "ALREADY_STARTED" });
+    expect(db.state.membershipEvents).toHaveLength(0);
   });
 });
