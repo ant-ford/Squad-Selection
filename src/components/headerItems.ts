@@ -1,4 +1,5 @@
 import {
+  Ban,
   BookOpenCheck,
   CalendarClock,
   ClipboardList,
@@ -40,6 +41,7 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
     p.events && { to: '/events/manage', label: 'Events', icon: PartyPopper },
     s.includes('kit') && { to: '/kit', label: 'Kit', icon: Shirt },
     s.includes('registration') && { to: '/registration', label: 'HKHA registration', icon: IdCard },
+    s.includes('discipline') && { to: '/suspensions', label: 'Suspensions', icon: Ban },
     s.includes('people') && { to: '/people', label: 'People', icon: Contact },
   ];
   return all.filter((i): i is MenuEntry => !!i);
