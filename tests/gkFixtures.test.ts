@@ -12,15 +12,16 @@ import {
 import { invalidateAll } from "../worker/src/cache";
 import type { ReferenceData } from "../worker/src/reference";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { exception, match, person, recId, team } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
   return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
 }
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
@@ -107,72 +108,77 @@ describe("isSpecialGoalkeeper", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getMyFixtures integration (fake Airtable)
+// getMyFixtures integration (in-memory repositories, Supabase path)
 // ---------------------------------------------------------------------------
 
-const TEAM_RECORDS = ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => ({
-  id: `recT${i}`,
-  fields: { "Team Name": n, "Team Rank": i + 1, Active: true, "Target Squad Size": 14 },
+const P2 = recId("P2");
+const M1 = recId("M1");
+const M4 = recId("M4");
+const M6 = recId("M6");
+const E1 = recId("E1");
+
+const db = useFakeRepos(() => ({
+  teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) =>
+    team({ id: recId(`T${i}`), teamName: n, teamRank: i + 1, active: true, targetSquadSize: 14 }),
+  ),
+  people: [
+    person({
+      id: P2, preferredName: "Bob", surname: "B", email: "bob@hkfc.com", active: true, registeredTeam: "H",
+      playingPosition: "Goalkeeper", playingAbility: "H", status: "Active",
+    }),
+    person({
+      id: recId("P4"), preferredName: "Dave", surname: "D", email: "dave@hkfc.com", active: true, registeredTeam: "A",
+      playingPosition: "Defender", playingAbility: "A", status: "Active",
+    }),
+  ],
+  matches: [
+    match({
+      id: M1, matchDate: futureIso(3), season: "2026-27", division: "Div 1", homeTeam: "A", awayTeam: "Valley A",
+      venue: "P1", matchStatus: "Scheduled", selectedPlayersHome: [P2], selectedPlayersAway: [],
+    }),
+    match({
+      id: M4, matchDate: futureIso(4), season: "2026-27", division: "Div 1", homeTeam: "A", awayTeam: "B",
+      venue: "P1", matchStatus: "Scheduled", selectedPlayersHome: [], selectedPlayersAway: [P2],
+    }),
+    match({
+      id: M6, matchDate: futureIso(5), season: "2026-27", division: "Div 5", homeTeam: "Valley B", awayTeam: "Valley C",
+      venue: "Other", matchStatus: "Scheduled", selectedPlayersHome: [], selectedPlayersAway: [],
+    }),
+  ],
+  availabilityExceptions: [
+    exception({ id: E1, player: [P2], match: [M4], availabilityStatus: "Maybe", note: "Work", season: "2026-27" }),
+  ],
 }));
-
-const PLAYER_RECORDS = [
-  { id: "recP2", fields: { "Preferred Name": "Bob", Surname: "B", Email: "bob@hkfc.com", Active: true, "Registered Team": "H", "Playing Position": "Goalkeeper", "Playing Ability": "H", Status: "Active" } },
-  { id: "recP4", fields: { "Preferred Name": "Dave", Surname: "D", Email: "dave@hkfc.com", Active: true, "Registered Team": "A", "Playing Position": "Defender", "Playing Ability": "A", Status: "Active" } },
-];
-
-const MATCH_RECORDS = [
-  { id: "recM1", fields: { Date: futureIso(3), Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "Valley A", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": ["recP2"], "Selected Players Away": [] } },
-  { id: "recM4", fields: { Date: futureIso(4), Season: "2026-27", Division: "Div 1", "Home Team": "A", "Away Team": "B", Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": ["recP2"] } },
-  { id: "recM6", fields: { Date: futureIso(5), Season: "2026-27", Division: "Div 5", "Home Team": "Valley B", "Away Team": "Valley C", Venue: "Other", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": [] } },
-];
-
-const EXCEPTION_RECORDS = [
-  { id: "recE1", fields: { Player: ["recP2"], Match: ["recM4"], "Availability Status": "Maybe", "Player Notes": "Work", "Season (Matches)": "2026-27" } },
-];
-
-let fetchCalls: { url: string; method: string }[] = [];
-
-function tableOf(u: string): string {
-  return decodeURIComponent((u.match(/\/v0\/[^/]+\/([^/?]+)/) ?? [])[1] ?? "");
-}
-
-function installFakeAirtable() {
-  const tables: FakeTables = {
-    People: PLAYER_RECORDS,
-    Teams: TEAM_RECORDS,
-    Matches: MATCH_RECORDS,
-    "Availability Exceptions": EXCEPTION_RECORDS,
-  };
-  const { calls } = fakeAirtable(tables);
-  fetchCalls = calls;
-}
 
 beforeEach(() => {
   invalidateAll();
-  fetchCalls = [];
-  installFakeAirtable();
+  // The player dashboard also asks Supabase directly whether this player
+  // keeps volunteers, events or umpiring duties (volunteerAccess.ts,
+  // eventAccess.ts, umpiring.ts). None of them: every table is empty.
+  fakePostgrest({
+    tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
+  });
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const exceptionFetches = () =>
-  fetchCalls.filter((c) => c.method === "GET" && tableOf(c.url) === "Availability Exceptions").length;
+const exceptionFetches = () => db.callsTo("availabilityExceptions", "listForSeasons").length;
 
 describe("getMyFixtures - special goalkeeper view", () => {
   it("returns every upcoming HKFC fixture (one card per match, derbies single)", async () => {
     const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
     expect(out.specialGoalkeeperView).toBe(true);
     expect(out.displayTeam).toBe("H"); // banner copy uses the team name, never "lowest ranked"
-    expect(out.fixtures.map((f: any) => f.id)).toEqual(["recM1", "recM4"]);
+    expect(out.fixtures.map((f: any) => f.id)).toEqual([M1, M4]);
     // Derby A vs B is a single card, not two.
-    expect(out.fixtures.filter((f: any) => f.id === "recM4")).toHaveLength(1);
+    expect(out.fixtures.filter((f: any) => f.id === M4)).toHaveLength(1);
   });
 
   it("excludes matches with no HKFC side", async () => {
     const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    expect(out.fixtures.some((f: any) => f.id === "recM6")).toBe(false);
+    expect(out.fixtures.some((f: any) => f.id === M6)).toBe(false);
   });
 
   it("sorts by date ascending", async () => {
@@ -183,8 +189,8 @@ describe("getMyFixtures - special goalkeeper view", () => {
 
   it("maps selection status from either side", async () => {
     const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    const m1 = out.fixtures.find((f: any) => f.id === "recM1");
-    const m4 = out.fixtures.find((f: any) => f.id === "recM4");
+    const m1 = out.fixtures.find((f: any) => f.id === M1);
+    const m4 = out.fixtures.find((f: any) => f.id === M4);
     expect(m1.selectionStatus).toBe("Selected");
     // Selected for the away side of the A vs B derby -> card shows that side.
     expect(m4.selectionStatus).toBe("Selected");
@@ -193,12 +199,12 @@ describe("getMyFixtures - special goalkeeper view", () => {
 
   it("maps per-match availability exceptions (Maybe) and defaults to Available", async () => {
     const out = await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    const m1 = out.fixtures.find((f: any) => f.id === "recM1");
-    const m4 = out.fixtures.find((f: any) => f.id === "recM4");
+    const m1 = out.fixtures.find((f: any) => f.id === M1);
+    const m4 = out.fixtures.find((f: any) => f.id === M4);
     expect(m1.availabilityStatus).toBe("Available");
     expect(m4.availabilityStatus).toBe("Maybe");
     expect(m4.playerNotes).toBe("Work");
-    expect(m4.availabilityExceptionId).toBe("recE1");
+    expect(m4.availabilityExceptionId).toBe(E1);
   });
 
   it("fetches exceptions in bulk by season - never once per fixture", async () => {
@@ -209,7 +215,7 @@ describe("getMyFixtures - special goalkeeper view", () => {
   it("does not change the normal player experience", async () => {
     const out = await getMyFixtures(ENV, authUser("dave@hkfc.com"));
     expect(out.specialGoalkeeperView).toBeUndefined();
-    expect(out.fixtures.map((f: any) => f.id)).toEqual(["recM1", "recM4"]);
+    expect(out.fixtures.map((f: any) => f.id)).toEqual([M1, M4]);
     expect(out.fixtures.every((f: any) => f.hkfcTeam === "A")).toBe(true);
   });
 });
