@@ -206,7 +206,7 @@ export async function getMyFixtures(
   // an upcoming fixture, not to read last month's scores.
   let pastFixtures: PastFixture[] = [];
   if (opts.includePast) {
-    const ctx = await getSeasonContext(env, currentSeason());
+    const ctx = await getSeasonContext(env, currentSeason(), user.id);
     pastFixtures = buildPastFixtures({
       playerId: user.id,
       teams: [view.displayTeam, user.registeredTeam || ""],
@@ -385,7 +385,7 @@ export async function buildPlayerFixtureView(
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team, playerId);
     // Portal gate = the engine itself (no neutralisation): mere availability
     // for a higher team no longer blocks (product decision 2026-09-03),
     // while an actual selection for a higher team still does.
@@ -403,15 +403,13 @@ export async function buildPlayerFixtureView(
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // The player looking at their own answer must see the tap they just made.
-  // This read used to skip the cache for that (a per-isolate copy put the
-  // old status straight back), costing the whole season's answers on every
-  // dashboard load. It is now kept under the availability_exceptions
-  // version, which the tap moves, so the cached copy is the current one.
-  const allExceptions = await getExceptionsForSeasons(
-    env,
-    relevantCategorized.map((x) => x.side.match.season || ""),
-  );
+  // Their own answers and the selected players' (the squad on a card), from
+  // the player's own season context (season_context's player mode), which
+  // the eligibility gating above has already built: no whole-season answers
+  // read. Kept under the availability_exceptions version, so a tap shows at
+  // once.
+  const seasons = [...new Set(relevantCategorized.map((x) => x.side.match.season || "").filter(Boolean))];
+  const allExceptions = (await Promise.all(seasons.map((s) => getSeasonContext(env, s, playerId)))).flatMap((c) => c.exceptionsRaw);
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   const playerRules = await getRulesForPlayer(env, playerId);
