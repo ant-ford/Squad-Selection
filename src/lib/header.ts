@@ -8,30 +8,51 @@ export function backTarget(locationKey: string | undefined, parent: string): -1 
   return locationKey && locationKey !== 'default' ? -1 : parent;
 }
 
-/** The Player view / Coach view switch: only for people who can open the coach screens. */
-export function canSwitchView(p?: { isCoach?: boolean; isSectionCaptain?: boolean; applicant?: boolean } | null): boolean {
-  return !!p && !p.applicant && (!!p.isCoach || !!p.isSectionCaptain);
+export type View = 'player' | 'coach' | 'umpire';
+
+type SwitchProfile = { isCoach?: boolean; isSectionCaptain?: boolean; applicant?: boolean; umpiring?: unknown } | null | undefined;
+
+/**
+ * The views the Player / Coach / Umpire switch offers this person, in order.
+ * Player is everyone's; Coach for those who can open the coach screens;
+ * Umpire for the club's umpires and the Umpire Coordinator (profile.umpiring,
+ * the same flag that used to show Umpire view in the menu). Applicants get none.
+ */
+export function switchViews(p: SwitchProfile): View[] {
+  if (!p || p.applicant) return [];
+  return [
+    'player',
+    ...(p.isCoach || p.isSectionCaptain ? (['coach'] as const) : []),
+    ...(p.umpiring ? (['umpire'] as const) : []),
+  ];
 }
 
-/** Which side of the switch the current screen belongs to, if either. */
-export function currentView(pathname: string): 'player' | 'coach' | null {
+/** The switch shows when there is something to switch between. */
+export function canSwitchView(p: SwitchProfile): boolean {
+  return switchViews(p).length > 1;
+}
+
+/** Which view the current screen belongs to, if any. */
+export function currentView(pathname: string): View | null {
   if (pathname === '/') return 'player';
   if (pathname === '/coach' || pathname.startsWith('/coach/')) return 'coach';
+  if (pathname === '/umpiring' || pathname.startsWith('/umpiring/')) return 'umpire';
   return null;
 }
 
-export type HeaderControl = 'back' | 'menu' | 'player' | 'coach' | 'profile';
+export type HeaderControl = 'back' | 'menu' | 'switch' | 'profile';
 
 /**
- * The header's buttons on a phone, left to right. At most four: on a child
- * screen the back arrow takes the switch's place (the switch returns from
- * the sm breakpoint up, and the logo still goes home).
+ * The header's controls on a phone, left to right. At most four: the
+ * switch is one segmented control, and on a child screen the back arrow
+ * takes its place (the switch returns from the sm breakpoint up, and the
+ * logo still goes home).
  */
 export function phoneControls({ back, canSwitch, applicant }: { back: boolean; canSwitch: boolean; applicant?: boolean }): HeaderControl[] {
   const out: HeaderControl[] = [];
   if (back) out.push('back');
   if (!applicant) out.push('menu');
-  if (canSwitch && !back) out.push('player', 'coach');
+  if (canSwitch && !back) out.push('switch');
   out.push('profile');
   return out;
 }
