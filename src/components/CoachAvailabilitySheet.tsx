@@ -44,9 +44,9 @@ export default function CoachAvailabilitySheet({
   onClose: () => void;
   onSaved: (status: AvailabilityStatus, notes: string, exceptionId: string | null) => void;
 }) {
-  const [status, setStatus] = useState<AvailabilityStatus>(
-    (['Available', 'Maybe', 'Unavailable'] as const).find((s) => s === player.availabilityStatus) ?? 'Available',
-  );
+  const startStatus: AvailabilityStatus =
+    (['Available', 'Maybe', 'Unavailable'] as const).find((s) => s === player.availabilityStatus) ?? 'Available';
+  const [status, setStatus] = useState<AvailabilityStatus>(startStatus);
   const [notes, setNotes] = useState(player.playerNotes);
   const [saving, setSaving] = useState(false);
   const [optInOnly, setOptInOnly] = useState(player.optInOnly === true);
@@ -89,7 +89,11 @@ export default function CoachAvailabilitySheet({
   };
 
   return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
+    <Sheet
+      open
+      dirty={!saving && (status !== startStatus || notes.trim() !== (player.playerNotes ?? '').trim())}
+      onOpenChange={(next) => !next && onClose()}
+    >
       <SheetContent side="bottom">
         <div className="px-4 py-6">
           <SheetHeader onClose={onClose}>

@@ -9,6 +9,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
+import { differs } from '@/lib/drafts';
+import { useDraft } from '@/lib/useDraft';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
 import { safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
@@ -78,44 +82,6 @@ function Waiting({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
-/**
- * Form state kept in this browser until the submission succeeds, so a failed
- * submit, a reload or a dropped connection never loses what was typed.
- * Storage can be unavailable (private mode); the form then works without it.
- */
-function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => void, () => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const saved = localStorage.getItem(key);
-      if (!saved) return initial;
-      // What was typed wins, but a box left empty keeps its starting value
-      // (an AI draft that arrived after the form was first opened).
-      const start = initial as Record<string, unknown>;
-      const empty = (v: unknown) => v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
-      const kept = Object.entries(JSON.parse(saved) as Record<string, unknown>).filter(([field, v]) => !empty(v) || empty(start[field]));
-      return { ...initial, ...Object.fromEntries(kept) };
-    } catch {
-      return initial;
-    }
-  });
-  const set = (next: T) => {
-    setValue(next);
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-    } catch {
-      /* not kept */
-    }
-  };
-  const clear = () => {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      /* nothing to clear */
-    }
-  };
-  return [value, set, clear];
-}
-
 /** Shown above a reviewer's form when some answers start from an AI suggestion. */
 function DraftNote({ drafts }: { drafts: Record<string, string> }) {
   if (Object.keys(drafts).length === 0) return null;
@@ -150,7 +116,7 @@ function SubmitError({ error }: { error: unknown }) {
 
 function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const options = review.options ?? { sponsors: [], officers: [], usualSponsor: null };
-  const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, {
+  const start: MemberReport = {
     // From the duties Eddy recorded; they can change it.
     gamesUmpired: gamesUmpiredChoice(review.gamesUmpiredInEddy),
     practices: '',
@@ -162,7 +128,8 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
     lowParticipationReason: '',
     sponsor: options.usualSponsor ?? '',
     officer: review.officer.office ?? (options.officers.length === 1 ? options.officers[0].id : ''),
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, start);
   const [confirming, setConfirming] = useState(false);
   const set = <K extends keyof MemberReport>(k: K, v: MemberReport[K]) => setForm({ ...form, [k]: v });
   const toggleSocial = (s: string) =>
@@ -178,6 +145,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
     },
   });
   const complete = !!form.gamesUmpired && !!form.practices && !!form.sponsor;
+  const leave = useUnsavedChanges(!submit.isSuccess && differs(form, start), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -245,6 +213,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           </select>
         </Field>
       </div>
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Submit Player Statement'}
@@ -289,11 +258,12 @@ function MemberReportView({ review }: { review: ReviewView }) {
 
 function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const ai = review.drafts ?? {};
-  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, {
+  const start = {
     sectionService: ai.sectionService ?? '',
     hkfcService: ai.hkfcService ?? '',
     recommendation: ai.recommendation ?? '',
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, start);
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -307,6 +277,7 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
     },
   });
   const complete = !!form.sectionService.trim() && !!form.hkfcService.trim() && !!form.recommendation.trim() && !!sig;
+  const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -321,6 +292,7 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
         <textarea className={area} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} />
       </Field>
       <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and submit'}
@@ -363,14 +335,15 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
 
 function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const ai = review.drafts ?? {};
-  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, {
+  const start = {
     playersAvailable: typeof review.teamActivePlayers === 'number' ? String(review.teamActivePlayers) : '',
     optimumPlayers: '',
     isPlayerNeeded: ai.isPlayerNeeded ?? '',
     otherComments: ai.otherComments ?? '',
     otherInformation: ai.otherInformation ?? '',
     recommendedReduction: '',
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, start);
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -385,6 +358,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
   });
   const n = (v: string) => /^\d{1,3}$/.test(v);
   const complete = n(form.playersAvailable) && n(form.optimumPlayers) && !!form.isPlayerNeeded.trim() && !!form.recommendedReduction && !!sig;
+  const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -417,6 +391,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
         </select>
       </Field>
       <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and complete review'}

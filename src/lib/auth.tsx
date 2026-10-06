@@ -3,6 +3,7 @@ import type { User } from '@supabase/auth-js';
 import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 import { setAccessDenied } from './accessDenied';
+import { clearAllDrafts } from './drafts';
 
 interface AuthContextValue {
   user: User | null;
@@ -102,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async (): Promise<void> => {
     await signOut();
+    // Log out (not a lapsed session) also drops form drafts kept on this
+    // device, so the next person on a shared phone can't see them.
+    clearAllDrafts();
     setUser(null);
   };
 

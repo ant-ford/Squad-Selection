@@ -78,7 +78,7 @@ export default function HandOutSheet({ board, onClose, onDone }: { board: KitBoa
   });
 
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <Sheet open dirty={!!collector || extra.length > 0 || numberInput.trim() !== ''} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side={wide ? 'right' : 'bottom'} className="p-4 pb-8 overflow-y-auto flex flex-col gap-3">
         <SheetHeader onClose={onClose}>
           <SheetTitle>Hand out kit</SheetTitle>

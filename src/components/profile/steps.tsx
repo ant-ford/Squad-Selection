@@ -10,6 +10,11 @@ import KitSizesSection from '@/components/profile/KitSizesSection';
 import SeasonPlanSection from '@/components/SeasonPlanSection';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { ApiError } from '@/lib/apiClient';
+import { useAuth } from '@/lib/auth';
+import { differs } from '@/lib/drafts';
+import { useDraft } from '@/lib/useDraft';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { DRAFT_KEPT_MESSAGE, UNSAVED_MESSAGE } from '@/lib/unsavedChanges';
 import { safeFormat } from '@/lib/dateUtils';
 import { confirmDetails, readIdDocument, saveDetailsSection, saveKitSizes } from '@/api/details';
 import { submitSeasonPlan } from '@/api/seasonPlan';
@@ -41,7 +46,13 @@ export const secondary = 'h-10 px-4 rounded-md border border-border bg-backgroun
 
 export const errorText = (err: unknown) => (err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Please try again.');
 
-/** One screen: its content, then Back and the step's own save. */
+/**
+ * One screen: its content, then Back and the step's own save.
+ *
+ * `dirty`: answers on this screen aren't saved yet. Leaving the page then
+ * asks first (moving between steps doesn't: a step with a draft keeps it).
+ * The one step on screen holds the page's only leave check.
+ */
 export function StepShell({
   title,
   step,
@@ -52,6 +63,8 @@ export function StepShell({
   nextLabel = 'Save and next',
   busy,
   problem,
+  dirty = false,
+  draftKept = false,
 }: {
   title: string;
   step: number;
@@ -62,9 +75,14 @@ export function StepShell({
   nextLabel?: string;
   busy?: boolean;
   problem?: string | null;
+  dirty?: boolean;
+  /** The step keeps a draft on the device (useDraft), so leaving loses nothing yet. */
+  draftKept?: boolean;
 }) {
+  const leave = useUnsavedChanges(dirty && !busy, draftKept ? DRAFT_KEPT_MESSAGE : UNSAVED_MESSAGE);
   return (
     <section className="rounded-xl border border-border bg-card p-4 space-y-4">
+      {leave.prompt}
       <div>
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
           Step {step} of {total}
@@ -176,10 +194,19 @@ function AddressPreview({ lines }: { lines: string[] }) {
   );
 }
 
+/** Never kept in a draft on the device: ID and bank numbers. */
+const NOT_IN_DRAFTS = (fields: FieldSpec[]) =>
+  fields.filter((f) => f.type === 'hkid' || f.type === 'branch' || f.type === 'account' || f.key === 'passportNo').map((f) => f.key);
+
 export function SectionStep({ section, details, ...nav }: StepProps & { section: SectionSpec }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   // Everything the section could ask, so a choice that shows more questions keeps their saved answers.
-  const [values, setValues] = useState<ProfileValues>(() => Object.fromEntries(section.fields.map((f) => [f.key, details.values[f.key] ?? null])));
+  const saved: ProfileValues = Object.fromEntries(section.fields.map((f) => [f.key, details.values[f.key] ?? null]));
+  // Kept on this device until the step is saved, so a dropped connection or a reload loses nothing.
+  const [values, setValues, clearDraft] = useDraft<ProfileValues>(user ? `draft:details:${user.id}:${section.key}` : null, saved, {
+    omit: NOT_IN_DRAFTS(section.fields),
+  });
   // On the application step the questions follow the type of application chosen.
   const who: Audience = section.key === 'application' ? audienceOf('Applicant', values.applicantType as string | null) : details.audience;
   // A member whose ID is hidden is neither shown nor asked for it (owner, 2026-10-02).
@@ -212,6 +239,7 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
   const save = useMutation({
     mutationFn: () => saveDetailsSection(section.key, Object.fromEntries(asked.map((f) => [f.key, isShown(f, values) ? (values[f.key] ?? null) : null]))),
     onSuccess: () => {
+      clearDraft();
       void queryClient.invalidateQueries({ queryKey: ['myDetails'] });
       nav.onDone();
     },
@@ -243,7 +271,15 @@ export function SectionStep({ section, details, ...nav }: StepProps & { section:
     else save.mutate();
   };
   return (
-    <StepShell title={section.title} {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell
+      title={section.title}
+      {...nav}
+      onNext={next}
+      busy={save.isPending}
+      problem={problem}
+      dirty={!save.isSuccess && differs(values, saved)}
+      draftKept={!!user}
+    >
       {confirmInactive && (
         <ConfirmDialog
           title="Not playing this season?"
@@ -344,7 +380,7 @@ export function KitStep({ details, ...nav }: StepProps) {
     if (!bad) save.mutate();
   };
   return (
-    <StepShell title="Kit sizes" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell title="Kit sizes" {...nav} onNext={next} busy={save.isPending} problem={problem} dirty={!save.isSuccess && differs(sizes, kit.sizes)}>
       <KitSizesSection kit={kit} value={sizes} onChange={setSizes} />
     </StepShell>
   );
@@ -368,7 +404,7 @@ export function SeasonPlanStep({ details, initial, ...nav }: StepProps & { initi
     if (!bad) save.mutate();
   };
   return (
-    <StepShell title="Season plan" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell title="Season plan" {...nav} onNext={next} busy={save.isPending} problem={problem} dirty={!save.isSuccess && differs(answers, initial ?? EMPTY_SEASON_PLAN)}>
       <SeasonPlanSection season={details.season} value={answers} onChange={setAnswers} />
     </StepShell>
   );
@@ -392,7 +428,7 @@ export function VolunteeringStep({ initial, ...nav }: Omit<StepProps, 'details'>
     if (!bad) save.mutate();
   };
   return (
-    <StepShell title="Volunteering" {...nav} onNext={next} busy={save.isPending} problem={problem}>
+    <StepShell title="Volunteering" {...nav} onNext={next} busy={save.isPending} problem={problem} dirty={!save.isSuccess && differs(answers, initial)}>
       <VolunteeringSection value={answers} onChange={setAnswers} heading={false} />
     </StepShell>
   );

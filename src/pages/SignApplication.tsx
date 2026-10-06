@@ -8,6 +8,7 @@ import AppFooter from '@/components/AppFooter';
 import SignBlock from '@/components/SignBlock';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary } from '@/components/profile/steps';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { Skeleton } from '@/components/ui/skeleton';
 import { safeFormat } from '@/lib/dateUtils';
 import { getSigningView, getSponsorDrafts, remakeApplicationPdf, sendApplication, signApplication } from '@/api/signing';
@@ -311,7 +312,13 @@ function SponsorSign({ v }: { v: SigningView }) {
       trainingComments: a.trainingComments || drafts.data.trainingComments || '',
     }));
   }, [drafts.data]);
-  const set = (k: keyof SponsorAnswers) => (value: string) => setAnswers((a) => ({ ...a, [k]: value }));
+  // Typed in (the AI drafts filling the boxes don't count).
+  const [touched, setTouched] = useState(false);
+  const set = (k: keyof SponsorAnswers) => (value: string) => {
+    setTouched(true);
+    setAnswers((a) => ({ ...a, [k]: value }));
+  };
+  const leave = useUnsavedChanges(!sign.isSuccess && (touched || (!!sig && sig !== 'saved')));
   const submit = () => {
     const bad = sponsorProblem(answers) ?? (!sig ? 'Sign the application.' : null);
     setProblem(bad);
@@ -338,6 +345,7 @@ function SponsorSign({ v }: { v: SigningView }) {
         <p className="text-xs font-medium text-foreground">Your signature</p>
         <SignBlock savedUrl={v.savedSignatureUrl} onChange={setSig} />
       </div>
+      {leave.prompt}
       {problem && (
         <p role="alert" className="text-xs text-destructive">
           {problem}
@@ -356,6 +364,7 @@ function OfficerSign({ v, role }: { v: SigningView; role: 'chair' | 'officer' })
   const [sig, setSig] = useState<string | null | 'saved'>(v.savedSignatureUrl ? 'saved' : null);
   const [problem, setProblem] = useState<string | null>(null);
   const sign = useSign(v, role);
+  const leave = useUnsavedChanges(!sign.isSuccess && !!sig && sig !== 'saved');
   const submit = () => {
     if (!sig) return setProblem('Sign the application.');
     setProblem(null);
@@ -364,6 +373,7 @@ function OfficerSign({ v, role }: { v: SigningView; role: 'chair' | 'officer' })
   return (
     <Block title={`Sign as ${ROLE_LABEL[role]}`}>
       <SignBlock savedUrl={v.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       {problem && (
         <p role="alert" className="text-xs text-destructive">
           {problem}

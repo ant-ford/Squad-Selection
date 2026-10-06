@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useParams, useNavigate, useSearchParams, useBlocker } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
 import { ArrowLeft, Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
@@ -12,7 +13,6 @@ import NotifySquadSheet from '@/components/NotifySquadSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
 import { fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
-import ConfirmDialog from '@/components/ConfirmDialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
@@ -322,14 +322,7 @@ export default function SquadSelection() {
 
   const hasChanges = pendingDeltas.length > 0;
 
-  useEffect(() => {
-    if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasChanges]);
-
-  const blocker = useBlocker(hasChanges);
+  const leave = useUnsavedChanges(hasChanges, 'Your squad changes will be lost.');
 
   const handleFilterChange = useCallback((f: FilterState) => {
     eligibilityDefaultedRef.current = false;
@@ -788,17 +781,7 @@ export default function SquadSelection() {
         </div>
       )}
 
-      {blocker.state === 'blocked' && (
-        <ConfirmDialog
-          title="Discard unsaved changes?"
-          message="You have pending selection changes that will be lost."
-          confirmLabel="Discard"
-          cancelLabel="Stay"
-          destructive
-          onConfirm={() => blocker.proceed()}
-          onCancel={() => blocker.reset()}
-        />
-      )}
+      {leave.prompt}
 
       {showNotify && notifyFixture && (
         <NotifySquadSheet
