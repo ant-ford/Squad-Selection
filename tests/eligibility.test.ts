@@ -1,16 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-
-// Mock the airtable module so linkId just passes strings through
-vi.mock("../worker/src/airtable", () => ({
-  linkId: (value: unknown): string | undefined => {
-    if (Array.isArray(value)) return value[0];
-    return typeof value === "string" ? value : undefined;
-  },
-  escapeFormulaValue: (v: string) => v,
-}));
+import { describe, it, expect } from "vitest";
 
 import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
-import { linkId } from "../worker/src/airtable";
+import { linkId } from "../shared/airtableValueUtils";
 import type { Match, MatchCard, Team } from "../shared/schema/domainTypes";
 import { t, p, m, mc } from "./helpers/factories";
 

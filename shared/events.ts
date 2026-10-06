@@ -8,6 +8,7 @@
  */
 import { ANY, GROUPS, type Selection } from "./emailLists";
 import { SOCIAL_FUNCTIONS } from "./commitmentReview";
+import { csvCell } from "./csv";
 
 export const EVENT_TYPES = ["social_function", "team_social", "tournament", "tour", "trial"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -194,11 +195,6 @@ export function cleanGuests(raw: unknown, allowed: boolean, max: number | null):
 /** Answers can change until the deadline, or until it starts when there's none. */
 export function isOpen(e: { status: EventStatus; startsAt: string; respondBy: string | null }, now = Date.now()): boolean {
   return e.status === "published" && now < Date.parse(e.respondBy ?? e.startsAt);
-}
-
-/** Shown on the player page until the day after it ends. */
-export function isCurrent(e: { startsAt: string; endsAt: string | null }, now = Date.now()): boolean {
-  return Date.parse(e.endsAt ?? e.startsAt) + 86_400_000 > now;
 }
 
 const HOUR = 3_600_000;
@@ -491,21 +487,16 @@ export interface ChargeList {
 
 /** The treasurer's list: one line per payer, with what it's for. */
 export function chargesCsv(title: string, date: string, payers: PayerCharge[]): string {
-  const cell = (v: string | number | null) => {
-    const t = v == null ? "" : String(v);
-    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-  };
   const rows = [["Name", "Membership no.", "Amount (HK$)", "For", "Event", "Date"]];
   for (const p of payers.filter((x) => x.total > 0)) {
     const what = p.lines.map((l) => (l.what === "Member" ? l.name : `${l.name} (${l.what.toLowerCase()})`)).join("; ");
     rows.push([p.name, p.membershipNo ?? "", p.total.toFixed(2), what, title, date]);
   }
-  return rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  return csvLines(rows);
 }
 
 /** Everyone's answers, for the caterer or the organiser: one line per person, then each guest. */
 export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name: string; status: ResponseStatus; guests: Guest[]; answers: Record<string, string>; canHelp: boolean; notes: string | null }[]): string {
-  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const dietary = asksDietary(event.questions);
   const header = ["Name", "Answer", "Guest of", ...event.questions.map((q) => q.label), "Can help", "Note"];
   const out = [header];
@@ -515,7 +506,12 @@ export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name:
       out.push([g.name, `Guest (${g.age})`, r.name, ...event.questions.map((q) => (q.key === DIETARY.key && dietary ? g.dietary ?? "" : "")), "", ""]);
     }
   }
-  return out.map((row) => row.map(cell).join(",")).join("\r\n");
+  return csvLines(out);
+}
+
+/** Rows to CSV lines, each cell kept from running as a formula. No line ending after the last row. */
+function csvLines(rows: string[][]): string {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
 // ── Who came (the register and check-in) ─────────────────────────────────

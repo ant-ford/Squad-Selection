@@ -15,10 +15,10 @@ import {
 } from '@shared/seasonPlan';
 
 const LEVEL_TONE: Record<string, string> = {
-  all: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  most: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-  some: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  none: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+  all: 'bg-emerald-500/15 text-emerald-700',
+  most: 'bg-sky-500/15 text-sky-700',
+  some: 'bg-amber-500/15 text-amber-700',
+  none: 'bg-rose-500/15 text-rose-700',
 };
 const badge = 'text-[11px] font-medium px-2 py-0.5 rounded-full';
 
@@ -70,10 +70,10 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
         ) : (
           <span className={`${badge} bg-muted text-muted-foreground`}>{plan ? 'How much not given' : 'Not answered'}</span>
         )}
-        {half && <span className={`${badge} bg-violet-500/15 text-violet-700 dark:text-violet-300`}>{half.short} only</span>}
+        {half && <span className={`${badge} bg-violet-500/15 text-violet-700`}>{half.short} only</span>}
         {pref === 'Next team down' && <span className={`${badge} bg-muted text-foreground`}>Next team down</span>}
         {(plan?.captaincyInterest === 'Yes' || plan?.captaincyInterest === 'Maybe') && (
-          <span className={`${badge} bg-primary/15 text-primary`}>Captain: {plan.captaincyInterest}</span>
+          <span className={`${badge} bg-primary-tint/10 text-primary`}>Captain: {plan.captaincyInterest}</span>
         )}
       </div>
     </li>

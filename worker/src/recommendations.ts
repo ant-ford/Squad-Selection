@@ -3,7 +3,7 @@ import { getPlayersForMatch } from "./squad";
 import { getReferenceData } from "./reference";
 import { HttpError } from "./http";
 import { ABILITY_RANK } from "../../shared/abilityRank";
-import { playUpAllowance } from "./playUp";
+import { playUpAllowance } from "../../shared/playUpAllowance";
 
 export interface RecommendationCandidate {
   id: string;

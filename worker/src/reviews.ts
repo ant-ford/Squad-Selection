@@ -25,7 +25,7 @@ import { API_ID_RE } from "./data/ids";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidateCommitments } from "./invalidation";
 import { draftNextStep } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { inBackground } from "./requestContext";
@@ -37,7 +37,6 @@ import { getReferenceData } from "./reference";
 import { attendedEvents } from "./eventAttendance";
 import { gamesUmpiredBetween } from "./umpiring";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
-import { TABLES } from "../../shared/schema/tableNames";
 import {
   GAMES_UMPIRED,
   PRACTICES,
@@ -464,7 +463,7 @@ export async function submitMemberReport(env: Env, user: AuthorizedUser, rawId: 
       .rpc<NextStep[]>("submit_member_report", { p_commitment: id, p_actor: user.personId, p: report })
       .catch(submissionError);
     at("cache");
-    await invalidateForTables(env, [TABLES.commitment]);
+    await invalidateCommitments(env);
     draftNextStep(env, id, "sponsor");
     at("email");
     return { ok: true, emailed: await notifyNext(env, id, next?.[0], "sponsor") };
@@ -486,7 +485,7 @@ export async function submitSponsorReview(env: Env, user: AuthorizedUser, rawId:
       .rpc<NextStep[]>("submit_sponsor_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
       .catch(submissionError);
     at("cache");
-    await invalidateForTables(env, [TABLES.commitment]);
+    await invalidateCommitments(env);
     draftNextStep(env, id, "officer");
     at("email");
     return { ok: true, emailed: await notifyNext(env, id, next?.[0], "officer") };
@@ -506,7 +505,7 @@ export async function submitOfficerReview(env: Env, user: AuthorizedUser, rawId:
       .rpc("submit_officer_review", { p_commitment: id, p_actor: user.personId, p: review, p_signature: file })
       .catch(submissionError);
     at("cache");
-    await invalidateForTables(env, [TABLES.commitment]);
+    await invalidateCommitments(env);
     // The signed Player Statement, to the Membership Officer: after the
     // response, so a slow render never holds up the submission.
     if (pdfsEnabled(env)) void inBackground(() => makePlayerStatement(env, id));

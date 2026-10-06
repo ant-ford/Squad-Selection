@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { HeartHandshake } from 'lucide-react';
 import { getMyVolunteering } from '@/api/volunteering';
 import { hkDateKey } from '@shared/hkDateKey';
-import { seasonStartYear } from '@shared/membershipInsights';
+import { seasonStartYear } from '@shared/season';
 
 /**
  * On the player page, until they've saved their volunteering this season

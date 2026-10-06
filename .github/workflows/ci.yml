@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       # scripts/check-migrations.mjs: no two migrations share a version
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
@@ -179,30 +179,30 @@ jobs:
           api "accounts/$account/workers/domains" | jq -c "{success, errors: $err, domains: [.result[]? | {hostname, service, environment}]}"
           echo "::endgroup::"
 
+      # The Worker's secrets travel with the version (--secrets-file), so the
+      # code and its secrets go live as one deployment. They used to be set
+      # afterwards with `wrangler secret put`, which refuses whenever the
+      # newest version isn't the deployed one. Cloudflare's Workers Builds
+      # upload a version for every pull request branch, so on a busy day a
+      # deploy failed halfway (6 Oct 2026, run 37414414656).
+      #
+      # Kept in the production environment and sent on every deploy, so
+      # rotating one is only a GitHub change. Values go from the environment
+      # into a file only this job can read, never onto a command line or into
+      # this (public) log. A secret not yet in the environment is left out and
+      # the Worker keeps its current value: --secrets-file is additive.
       - name: Deploy API Worker (hkfc-api)
-        run: npx wrangler deploy --config worker/wrangler.toml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      # Worker secrets kept in the production environment, set on every deploy
-      # so rotating one is only a GitHub change. stdin only: a value never
-      # reaches the command line or this (public) log. A secret not yet in
-      # the environment is skipped, leaving the Worker's current one alone.
-      - name: Set Worker secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DATA_SUPABASE_SECRET_KEY: ${{ secrets.DATA_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          for name in DATA_SUPABASE_SECRET_KEY RESEND_API_KEY OPENROUTER_API_KEY; do
-            value="${!name}"
-            if [ -z "$value" ]; then
-              echo "$name is not in the production environment yet; skipped."
-              continue
-            fi
-            printf '%s' "$value" | npx wrangler secret put "$name" --config worker/wrangler.toml
-          done
+          umask 077
+          secrets="$RUNNER_TEMP/worker-secrets.json"
+          trap 'rm -f "$secrets"' EXIT
+          node scripts/worker-secrets.mjs DATA_SUPABASE_SECRET_KEY RESEND_API_KEY OPENROUTER_API_KEY > "$secrets"
+          npx wrangler deploy --config worker/wrangler.toml --secrets-file "$secrets"
 
       # The render-pdf Edge Function (supabase/functions) on eddy-production,
       # which fills PDF templates for the Worker. It checks callers with the

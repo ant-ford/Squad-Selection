@@ -1,5 +1,5 @@
 import { MapPin, Calendar, Clock } from 'lucide-react';
-import { safeFormat, formatHkTime, countdownLabel, hkDaysUntil } from '@/lib/dateUtils';
+import { safeFormat, formatHkTime, daysLabel, hkDaysUntil } from '@/lib/dateUtils';
 import { FIXTURE_DATE } from './DateHeading';
 
 /**
@@ -11,14 +11,14 @@ import { FIXTURE_DATE } from './DateHeading';
  * on every fixture would tell a player nothing about which one to act on.
  */
 export function MetaLine({ date, venue }: { date: string; venue: string }) {
-  const countdown = countdownLabel(date);
   const days = hkDaysUntil(date);
+  const countdown = daysLabel(days);
 
   const tone =
     days === null || days < 0
       ? 'border-border/70 text-muted-foreground'
       : days === 0
-      ? 'border-primary/30 bg-primary/10 text-primary'
+      ? 'border-primary/30 bg-primary-tint/10 text-primary'
       : days <= 6
       ? 'border-border bg-muted/60 text-foreground'
       : 'border-border/70 text-muted-foreground';

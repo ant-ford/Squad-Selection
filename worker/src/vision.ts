@@ -5,7 +5,8 @@
  * passport photos (idRead.ts) and payment screenshots (paymentRead.ts).
  */
 import type { Env } from "./env";
-import { DEFAULT_DRAFT_MODEL } from "./reviewDrafts";
+import { DEFAULT_DRAFT_MODEL, OPENROUTER_TIMEOUT_MS } from "./reviewDrafts";
+import { isTimeout } from "./http";
 
 /** A picture as a data URL, at most ~5 MB. */
 export const MAX_IMAGE_CHARS = 7_000_000;
@@ -18,6 +19,8 @@ export async function askAboutPicture(env: Env, opts: { system: string; prompt: 
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
+      // Ending a hung call: a timeout is a failed read, below, like any other.
+      signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
@@ -45,7 +48,8 @@ export async function askAboutPicture(env: Env, opts: { system: string; prompt: 
     }
     return reply;
   } catch (err) {
-    console.error(`${opts.label} failed: ${err instanceof Error ? err.message : String(err)}`);
+    const why = isTimeout(err) ? `no answer within ${OPENROUTER_TIMEOUT_MS / 1000} s` : err instanceof Error ? err.message : String(err);
+    console.error(`${opts.label} failed: ${why}`);
     return null;
   }
 }

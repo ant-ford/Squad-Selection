@@ -3,30 +3,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // Membership section: the applicant board, the active-members export and
 // Approve. Driven through the real router and the real auth path, with a
-// stubbed Supabase session and the fake Airtable, so access is tested along
-// with behaviour.
+// stubbed Supabase session and the in-memory repositories (Supabase
+// backend), so access is tested along with behaviour.
 // ---------------------------------------------------------------------------
 
-import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
-import { resetMissingFieldCache } from "../worker/src/airtable";
 import { csvCell } from "../worker/src/membership";
-import { MEMBERSHIP_FIELDS } from "../shared/schema/fieldMaps";
+import { SupabaseError } from "../worker/src/data/supabase";
 import worker from "../worker/src/index";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { office, person as personRow, recId, team } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
 // 12:00 on 25 September 2026 in Hong Kong.
 const NOW = new Date("2026-09-25T04:00:00Z");
 
-// Record ids are rec + 14 characters, as Airtable's are.
+// Row ids are rec + 14 characters (or uuids): isRowId() refuses anything else.
 const ID = {
   officer: "recOfficer0000001",
   chair: "recChair000000001",
@@ -47,67 +48,114 @@ const ID = {
   atOfficer: "recAtOfficer00001",
 };
 
-function tables(): FakeTables {
-  const person = (id: string, fields: Record<string, unknown>) => ({ id, fields: { Active: false, ...fields } });
+// The office rows the applicants' "Sponsored By" links point to.
+const OFFICE = {
+  membershipOfficer: recId("MO"),
+  sectionChair: recId("SC"),
+  sectionCaptain: recId("CP"),
+  sponsor: "recSponsorRow0001",
+};
+
+const COMMITMENT_LINK = recId("Commitment0001");
+
+/** CRM-only columns (HKID, bank) that no membership row view carries. */
+const crmOnly = (extra: Record<string, unknown>) => extra as FakePerson["crm"];
+
+/** Inactive unless the overrides say otherwise, as the old People fixture was. */
+const person = (id: string, overrides: Partial<FakePerson>) => personRow({ id, active: false, ...overrides });
+
+function seed() {
   return {
-    People: [
-      person(ID.officer, { "Preferred Name": "Olive", Surname: "Officer", Email: "olive@personal.com", "Mobile No.": "6111 2222" }),
-      person(ID.chair, { "Preferred Name": "Charles", Surname: "Chair", Email: "charles@personal.com", "Mobile No.": "6333 4444" }),
-      person(ID.sponsorPerson, { "Preferred Name": "Chris", Surname: "Coach", "Mobile No.": "9876 5432", "HKID No.": "B765432(1)" }),
+    people: [
+      person(ID.officer, { preferredName: "Olive", surname: "Officer", email: "olive@personal.com", mobileNo: "6111 2222" }),
+      person(ID.chair, { preferredName: "Charles", surname: "Chair", email: "charles@personal.com", mobileNo: "6333 4444" }),
+      person(ID.sponsorPerson, { preferredName: "Chris", surname: "Coach", mobileNo: "9876 5432", crm: crmOnly({ hkidNo: "B765432(1)" }) }),
       person(ID.atChair, {
-        "Preferred Name": "Cara", Surname: "Chairwait", "Applicant Stage": "4. Sponsor (Signed)", Status: "Applicant",
-        "Application Date": "2026-08-01T02:00:00.000Z", "Sponsored By Chair": ["recSC"],
+        preferredName: "Cara", surname: "Chairwait", applicantStage: "4. Sponsor (Signed)", status: "Applicant",
+        crm: { applicationDate: "2026-08-01T02:00:00.000Z", sponsoredByChair: [OFFICE.sectionChair] },
       }),
       person(ID.atOfficer, {
-        "Preferred Name": "Otto", Surname: "Officerwait", "Applicant Stage": "5. Chairman (Signed)", Status: "Applicant",
-        "Application Date": "2026-08-01T02:00:00.000Z", "Sponsored By Membership Officer": ["recMO"],
+        preferredName: "Otto", surname: "Officerwait", applicantStage: "5. Chairman (Signed)", status: "Applicant",
+        crm: { applicationDate: "2026-08-01T02:00:00.000Z", sponsoredByOfficer: [OFFICE.membershipOfficer] },
       }),
-      person(ID.captain, { "Preferred Name": "Cap", Surname: "Tain", Email: "cap@personal.com" }),
-      person(ID.player, { "Preferred Name": "Pat", Surname: "Player", Email: "pat@hkfc.com", Active: true, Status: "Member", "Membership No.": "1001", "Given Name(s)": "Patrick" }),
+      person(ID.captain, { preferredName: "Cap", surname: "Tain", email: "cap@personal.com" }),
+      person(ID.player, {
+        preferredName: "Pat", surname: "Player", email: "pat@hkfc.com", active: true, status: "Member", givenNames: "Patrick",
+        crm: { membershipNo: "1001" },
+      }),
       person(ID.atSponsor, {
-        "Preferred Name": "Sam", Surname: "Sponsorwait", "Given Name(s)": "Samuel",
-        "Applicant Stage": "3. Club Application (Signed)", Status: "Applicant",
-        "Application Date": "2026-08-26T02:00:00.000Z", "Sponsor Preferred Name": ["Chris"], "Sponsored By Sponsor": ["recSponsorRow0001"],
-        "Mobile No.": "9123 4567", "Date of Birth": "2008-01-02", "Tour Interest": ["Bangkok 11s (5-6 Dec 2026)"], "Playing Level": ["Division 2"],
-        Photo: [{ url: "https://dl.airtable.com/sam.jpg", filename: "sam.jpg" }],
-        "Sports Associate Application Form": [{ url: "https://dl.airtable.com/form.pdf", filename: "form.pdf" }],
-        // CRM-only fields the board must never carry.
-        "HKID No.": "A123456(7)", "Bank Account No.": "000-111",
+        preferredName: "Sam", surname: "Sponsorwait", givenNames: "Samuel",
+        applicantStage: "3. Club Application (Signed)", status: "Applicant", mobileNo: "9123 4567",
+        crm: crmOnly({
+          applicationDate: "2026-08-26T02:00:00.000Z", sponsorName: ["Chris"], sponsoredBySponsor: [OFFICE.sponsor],
+          dateOfBirth: "2008-01-02", tourInterest: ["Bangkok 11s (5-6 Dec 2026)"], playingLevel: ["Division 2"],
+          photo: [{ url: "https://files.test/sam.jpg", filename: "sam.jpg" }],
+          applicationForm: [{ url: "https://files.test/form.pdf", filename: "form.pdf" }],
+          // CRM-only fields the board must never carry.
+          hkidNo: "A123456(7)", bankAccountNo: "000-111",
+        }),
       }),
-      person(ID.atStage6, {
-        "Preferred Name": "Una", Surname: "Ready", "Given Name(s)": "Una",
-        "Applicant Stage": "6. Membership Officer (Signed)", Status: "Applicant",
-        "Application Date": "2026-06-01T02:00:00.000Z", "Stage Updated At": "2026-09-15T02:00:00.000Z", "Date of Birth": "2003-05-14",
-        Commitments: ["recCommitment0001"],
+      Object.assign(
+        person(ID.atStage6, {
+          preferredName: "Una", surname: "Ready", givenNames: "Una",
+          applicantStage: "6. Membership Officer (Signed)", status: "Applicant",
+          crm: { applicationDate: "2026-06-01T02:00:00.000Z", stageUpdatedAt: "2026-09-15T02:00:00.000Z", dateOfBirth: "2003-05-14" },
+        }),
+        // A link column no row view carries: Approve must leave it alone.
+        { commitments: [COMMITMENT_LINK] },
+      ),
+      person(ID.acceptedRecent, {
+        preferredName: "New", surname: "Joiner", applicantStage: "Accepted", status: "Member", active: true, givenNames: "Newton",
+        crm: { joinDate: "2026-07-01", membershipNo: "2001" },
       }),
-      person(ID.acceptedRecent, { "Preferred Name": "New", Surname: "Joiner", "Applicant Stage": "Accepted", Status: "Member", "Join Date": "2026-07-01", Active: true, "Membership No.": "2001", "Given Name(s)": "Newton" }),
-      person(ID.acceptedOld, { "Preferred Name": "Old", Surname: "Hand", "Applicant Stage": "Accepted", Status: "Member", "Join Date": "2023-01-10", Active: true, "Membership No.": "=HYPERLINK(\"x\")", "Given Name(s)": "Oliver, Jr" }),
-      person(ID.pendingRecent, { "Preferred Name": "Penny", Surname: "Pending", "Applicant Stage": "Pending", Status: "Applicant", "Application Date": "2026-08-01T02:00:00.000Z" }),
-      person(ID.rejectedOld, { "Preferred Name": "Rex", Surname: "Rejected", "Applicant Stage": "Rejected", Status: "Applicant", "Application Date": "2025-06-01T02:00:00.000Z" }),
-      person(ID.resigned, { "Preferred Name": "Ray", Surname: "Resigned", "Applicant Stage": "2. Section Captain Invitation", Status: "Resigned" }),
-      person(ID.longMember, { "Preferred Name": "Lou", Surname: "Longtime", Status: "Member", Active: true, "Membership No.": "0999", "Given Name(s)": "Louis" }),
-      person(ID.broken, { "Preferred Name": "Bo", Surname: "Broken", "Applicant Stage": "undefined", Status: "Applicant" }),
+      person(ID.acceptedOld, {
+        preferredName: "Old", surname: "Hand", applicantStage: "Accepted", status: "Member", active: true, givenNames: "Oliver, Jr",
+        crm: { joinDate: "2023-01-10", membershipNo: "=HYPERLINK(\"x\")" },
+      }),
+      person(ID.pendingRecent, {
+        preferredName: "Penny", surname: "Pending", applicantStage: "Pending", status: "Applicant",
+        crm: { applicationDate: "2026-08-01T02:00:00.000Z" },
+      }),
+      person(ID.rejectedOld, {
+        preferredName: "Rex", surname: "Rejected", applicantStage: "Rejected", status: "Applicant",
+        crm: { applicationDate: "2025-06-01T02:00:00.000Z" },
+      }),
+      person(ID.resigned, { preferredName: "Ray", surname: "Resigned", applicantStage: "2. Section Captain Invitation", status: "Resigned" }),
+      person(ID.longMember, { preferredName: "Lou", surname: "Longtime", status: "Member", active: true, givenNames: "Louis", crm: { membershipNo: "0999" } }),
+      person(ID.broken, { preferredName: "Bo", surname: "Broken", applicantStage: "undefined", status: "Applicant" }),
       // Active, but registered without the membership process: not in the export.
-      person(ID.visitor, { "Preferred Name": "Vic", Surname: "Visitor", "Applicant Stage": "Temporary", Status: "Applicant", Active: true, "Given Name(s)": "Victor", "Application Date": "2026-09-01T02:00:00.000Z" }),
+      person(ID.visitor, {
+        preferredName: "Vic", surname: "Visitor", applicantStage: "Temporary", status: "Applicant", active: true, givenNames: "Victor",
+        crm: { applicationDate: "2026-09-01T02:00:00.000Z" },
+      }),
     ],
-    Teams: [],
-    "Membership Officers": [{ id: "recMO", fields: { Status: "Active", Designation: "Men's Membership Officer", Member: [ID.officer] } }],
-    "Section Chairs": [{ id: "recSC", fields: { Status: "Active", Designation: "Chairman", Member: [ID.chair] } }],
-    "Section Captains": [{ id: "recCP", fields: { Status: "Active", Designation: "Men's Captain", Member: [ID.captain] } }],
-    Sponsors: [{ id: "recSponsorRow0001", fields: { Status: "Active", Designation: "Team Captain", Member: [ID.sponsorPerson] } }],
+    teams: [],
+    officers: [
+      office("membershipOfficer", ID.officer, { id: OFFICE.membershipOfficer, designation: "Men's Membership Officer" }),
+      office("sectionChair", ID.chair, { id: OFFICE.sectionChair, designation: "Chairman" }),
+      office("sectionCaptain", ID.captain, { id: OFFICE.sectionCaptain, designation: "Men's Captain" }),
+      office("sponsor", ID.sponsorPerson, { id: OFFICE.sponsor, designation: "Team Captain" }),
+    ],
   };
 }
 
-let data: FakeTables;
-let handle: ReturnType<typeof fakeAirtable>;
+const db = useFakeRepos(seed);
+const findPerson = (id: string) => db.state.people.find((p) => p.id === id)!;
 
 beforeEach(() => {
   invalidateAll();
-  resetMissingFieldCache();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  data = tables();
-  handle = fakeAirtable(data);
+  // Supabase vouches for any token: "token-for-<email>" signs in as <email>.
+  // Nothing in the membership section queries PostgREST directly, so a
+  // request that did would be a problem and fail the test.
+  fakePostgrest({
+    tables: {},
+    other: (_url, init) => {
+      const auth = String((init.headers as Record<string, string>).Authorization ?? "");
+      return new Response(JSON.stringify({ email: auth.replace(/^Bearer token-for-/, "") }), { status: 200 });
+    },
+  });
 });
 
 afterEach(() => {
@@ -115,15 +163,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Calls the router as whoever `email` is; Supabase vouches for any token. */
+/** Calls the router as whoever `email` is. */
 async function as(email: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const airtable = handle.fetchMock as unknown as typeof fetch;
-  vi.stubGlobal("fetch", vi.fn((url: any, opts?: any) => {
-    if (String(url).startsWith(ENV.SUPABASE_URL)) {
-      return Promise.resolve(new Response(JSON.stringify({ email }), { status: 200 }));
-    }
-    return airtable(url, opts);
-  }));
   const headers = { Authorization: `Bearer token-for-${email}`, "Content-Type": "application/json", Origin: "https://app.test" };
   return worker.fetch(new Request(`https://api.test${path}`, { ...init, headers }), ENV, { waitUntil: () => {} } as any);
 }
@@ -134,10 +175,11 @@ const body = async (res: Response): Promise<any> => res.json();
 const approve = (email: string, input: Record<string, unknown>) =>
   as(email, "/api/membership/approve", { method: "POST", body: JSON.stringify(input) });
 
+/** Every People write, as the record id and the patch. */
 const patches = () =>
-  handle.fetchMock.mock.calls
-    .filter(([, init]: any[]) => init?.method === "PATCH")
-    .map(([url, init]: any[]) => ({ url: String(url), fields: JSON.parse(init.body).fields }));
+  db.calls
+    .filter((c) => c.repo === "people" && (c.method === "update" || c.method === "updateMany"))
+    .map((c) => ({ id: c.args[0], fields: c.args[1] as Record<string, unknown> }));
 
 describe("who can open the membership section", () => {
   it.each([
@@ -192,8 +234,8 @@ describe("the board", () => {
       appliedOn: "2026-08-26",
       days: 30, // no stage date yet: counted from the application
       canApprove: false,
-      photo: "https://dl.airtable.com/sam.jpg",
-      applicationForm: [{ url: "https://dl.airtable.com/form.pdf", filename: "form.pdf" }],
+      photo: "https://files.test/sam.jpg",
+      applicationForm: [{ url: "https://files.test/form.pdf", filename: "form.pdf" }],
       tourInterest: ["Bangkok 11s (5-6 Dec 2026)"],
       playingLevel: ["Division 2"],
     });
@@ -221,22 +263,22 @@ describe("the board", () => {
 
   it("reads the people it contacts by id, for name, mobile and photo only", async () => {
     const res = await board();
-    const formulaOf = (url: string) => new URLSearchParams(url.split("?")[1] ?? "").get("filterByFormula") ?? "";
-    const reads = handle.calls.filter((c) => c.url.includes("/People?") && formulaOf(c.url).startsWith("OR(RECORD_ID()"));
+    // One contact read, naming exactly the three office holders.
+    const reads = db.callsTo("people", "listContactsByIds");
     expect(reads).toHaveLength(1);
-    expect(requestedFields(reads[0].url)).toEqual(["Preferred Name", "Given Name(s)", "Surname", "Mobile No.", "Photo", "Status"]);
+    expect([...(reads[0].args[0] as string[])].sort()).toEqual([ID.chair, ID.officer, ID.sponsorPerson].sort());
     expect(JSON.stringify(res)).not.toMatch(/B765432/);
   });
 
   it("asks People for the membership fields only, never the CRM", async () => {
     const res = await board();
-    // The board's own read, told apart from the sign-in lookup by its filter.
-    const formulaOf = (url: string) => new URLSearchParams(url.split("?")[1] ?? "").get("filterByFormula") ?? "";
-    const reads = handle.calls.filter(
-      (c) => c.url.includes("/People?") && formulaOf(c.url).startsWith('AND({Applicant Stage}!=""'),
+    // The board's own read is the membership view, and no wider People read
+    // (the squad list, the chairman's directory) goes into it: only sign-in
+    // and the contact lookup besides.
+    expect(db.callsTo("people", "listMembershipBoard").length).toBeGreaterThan(0);
+    expect([...new Set(db.callsTo("people").map((c) => c.method))].sort()).toEqual(
+      ["findByEmail", "listContactsByIds", "listMembershipBoard"],
     );
-    expect(reads.length).toBeGreaterThan(0);
-    expect(requestedFields(reads[0].url)).toEqual(Object.values(MEMBERSHIP_FIELDS));
     expect(JSON.stringify(res)).not.toMatch(/HKID|A123456|Bank|000-111/);
   });
 });
@@ -261,16 +303,13 @@ describe("the active-members export", () => {
 
   it("records who exported it", async () => {
     await as("olive@personal.com", "/api/membership/active-members");
-    expect(data["Membership Events"]).toEqual([
+    expect(db.state.membershipEvents).toEqual([
       {
-        id: expect.any(String),
-        fields: {
-          "Event Type": "Exported",
-          Notes: "Active members CSV, 4 rows",
-          Actor: [ID.officer],
-          "Actor Email": "olive@personal.com",
-          Timestamp: NOW.toISOString(),
-        },
+        eventType: "Exported",
+        notes: "Active members CSV, 4 rows",
+        actorId: ID.officer,
+        actorEmail: "olive@personal.com",
+        timestamp: NOW.toISOString(),
       },
     ]);
   });
@@ -293,53 +332,49 @@ describe("Approve", () => {
     expect(res.status).toBe(200);
     expect(patches()).toEqual([
       {
-        url: expect.stringContaining(`/People/${ID.atStage6}`),
+        id: ID.atStage6,
         fields: {
-          Status: "Member",
-          "Applicant Stage": "Accepted",
-          Active: true,
-          "Join Date": "2026-09-25",
-          "Commitment End Date": "2028-09-24",
-          "Membership No.": "3001",
+          status: "Member",
+          applicantStage: "Accepted",
+          active: true,
+          joinDate: "2026-09-25",
+          commitmentEndDate: "2028-09-24",
+          membershipNo: "3001",
         },
       },
     ]);
-    // The link field was never sent, so it is untouched.
-    const una = data.People.find((r) => r.id === ID.atStage6)!;
-    expect(una.fields.Commitments).toEqual(["recCommitment0001"]);
+    // The link column was never named, so it is untouched.
+    const una = findPerson(ID.atStage6) as FakePerson & { commitments?: string[] };
+    expect(una.commitments).toEqual([COMMITMENT_LINK]);
   });
 
   it("records the approval in Membership Events", async () => {
     await approve("olive@personal.com", valid);
-    expect(data["Membership Events"]?.map((r) => r.fields)).toEqual([
+    expect(db.state.membershipEvents).toEqual([
       {
-        "Event Type": "Approved",
-        Person: [ID.atStage6],
-        "Previous Stage": "6. Membership Officer (Signed)",
-        "New Stage": "Accepted",
-        "Membership No.": "3001",
-        "Join Date": "2026-09-25",
-        "Commitment End Date": "2028-09-24",
-        "Shared Membership No.": false,
-        Actor: [ID.officer],
-        "Actor Email": "olive@personal.com",
-        Timestamp: NOW.toISOString(),
+        eventType: "Approved",
+        personId: ID.atStage6,
+        previousStage: "6. Membership Officer (Signed)",
+        newStage: "Accepted",
+        membershipNo: "3001",
+        joinDate: "2026-09-25",
+        commitmentEndDate: "2028-09-24",
+        sharedMembershipNo: false,
+        actorId: ID.officer,
+        actorEmail: "olive@personal.com",
+        timestamp: NOW.toISOString(),
       },
     ]);
   });
 
   it("still approves when the audit row cannot be written", async () => {
-    const airtable = handle.fetchMock as unknown as typeof fetch;
-    const failing = vi.fn((url: any, init?: any) =>
-      String(url).includes("/Membership%20Events")
-        ? Promise.resolve(new Response('{"error":{"type":"UNKNOWN_FIELD_NAME"}}', { status: 422 }))
-        : airtable(url, init),
-    );
-    handle.fetchMock = failing as any;
+    const record = vi
+      .spyOn(db.repos.membershipEvents, "record")
+      .mockRejectedValue(new SupabaseError("Could not find the function public.log_activity", 404, "PGRST202"));
     const res = await approve("olive@personal.com", valid);
     expect(res.status).toBe(200);
-    expect(failing.mock.calls.some(([url]) => String(url).includes("/Membership%20Events"))).toBe(true);
-    expect(data.People.find((r) => r.id === ID.atStage6)!.fields["Applicant Stage"]).toBe("Accepted");
+    expect(record).toHaveBeenCalled();
+    expect(findPerson(ID.atStage6).applicantStage).toBe("Accepted");
   });
 
   it("shows the result on the board straight away", async () => {
@@ -373,10 +408,10 @@ describe("Approve", () => {
   it("shares a Membership No. once the officer has seen who has it, and says so in the log", async () => {
     const res = await approve("olive@personal.com", { ...valid, membershipNo: "1001", sharedNumberAcknowledged: true });
     expect(res.status).toBe(200);
-    expect(patches()[0].fields["Membership No."]).toBe("1001");
-    expect(data["Membership Events"]?.[0].fields).toMatchObject({
-      "Shared Membership No.": true,
-      Notes: "Shares Membership No. with Pat Player (Member)",
+    expect(patches()[0].fields.membershipNo).toBe("1001");
+    expect(db.state.membershipEvents[0]).toMatchObject({
+      sharedMembershipNo: true,
+      notes: "Shares Membership No. with Pat Player (Member)",
     });
   });
 
@@ -419,19 +454,20 @@ describe("Insights", () => {
       days: 30,
       sponsor: "Chris",
     });
-    expect(JSON.stringify(res)).not.toMatch(/9123|dl\.airtable\.com|HKID|Bank/);
+    expect(JSON.stringify(res)).not.toMatch(/9123|files\.test|HKID|Bank/);
     // Every season, not just the board's last 12 months.
     expect(res.facts.map((f: any) => f.name)).toContain("Old Hand");
   });
 
   it("counts each team's Active players by position, against its matchday squad size", async () => {
-    data.Teams.push(
-      { id: "recTeamC", fields: { "Team Name": "HKFC C", "Team Rank": 3, Active: true, "Target Squad Size": 16 } },
-      { id: "recTeamD", fields: { "Team Name": "HKFC D", "Team Rank": 4, Active: true } },
+    db.state.teams.push(
+      team({ id: recId("TeamC"), teamName: "HKFC C", teamRank: 3, active: true, targetSquadSize: 16 }),
+      // No squad size set: counted against 16.
+      team({ id: recId("TeamD"), teamName: "HKFC D", teamRank: 4, active: true, targetSquadSize: undefined }),
     );
-    Object.assign(data.People.find((r) => r.id === ID.player)!.fields, { "Registered Team": "HKFC D", "Selected Team EOS": "HKFC C", "Playing Position": "Goalkeeper" });
-    Object.assign(data.People.find((r) => r.id === ID.longMember)!.fields, { "Registered Team": "HKFC C", "Playing Position": "Defender" });
-    Object.assign(data.People.find((r) => r.id === ID.acceptedRecent)!.fields, { "Registered Team": "HKFC D" });
+    Object.assign(findPerson(ID.player), { registeredTeam: "HKFC D", selectedTeamEos: "HKFC C", playingPosition: "Goalkeeper" });
+    Object.assign(findPerson(ID.longMember), { registeredTeam: "HKFC C", playingPosition: "Defender" });
+    Object.assign(findPerson(ID.acceptedRecent), { registeredTeam: "HKFC D" });
 
     const { teams } = await body(await as("olive@personal.com", "/api/membership/insights"));
     expect(teams).toEqual([

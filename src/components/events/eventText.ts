@@ -1,5 +1,11 @@
 import { safeFormat } from '@/lib/dateUtils';
-import { PAYMENT_LABEL, priceText, type EventDetails } from '@shared/events';
+import { PAYMENT_LABEL, priceText, type EventDetails, type ResponseStatus } from '@shared/events';
+
+export const statusChip: Record<ResponseStatus, string> = {
+  going: 'bg-emerald-500/15 text-emerald-700',
+  maybe: 'bg-amber-500/15 text-amber-700',
+  not_going: 'bg-muted text-muted-foreground',
+};
 
 /** "Sat 12 Dec, 7:00 pm – 11:00 pm", or across days "Fri 3 Apr, 6:00 pm – Sun 5 Apr". */
 export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'>): string {

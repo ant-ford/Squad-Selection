@@ -129,9 +129,8 @@ export interface GetMyFixturesOutput {
  */
 export async function getMyFixtures(includePast = false): Promise<GetMyFixturesOutput> {
   return apiGet<GetMyFixturesOutput>('/api/my-fixtures', {
-    // Results come from the cached season context, so this adds no Airtable
-    // call, but it is real payload on a screen most players open to answer
-    // an upcoming fixture. Requested only when the past view is showing.
+    // Results come from the cached season context, so this adds no extra
+    // read. The dashboard always asks for them and hides them in the UI.
     past: includePast ? '1' : undefined,
   });
 }
