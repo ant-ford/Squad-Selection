@@ -10,6 +10,8 @@ const as = (role: MyTask['role']) => (role === 'Sponsor' ? 'sponsor' : role ?? '
 export function taskTitle(task: MyTask): string {
   const who = task.subject ?? 'an applicant';
   switch (task.key) {
+    case 'system':
+      return 'System check failed';
     case 'joiner':
       return 'Complete your New Joiner Form';
     case 'statement':

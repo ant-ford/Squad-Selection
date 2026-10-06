@@ -84,4 +84,11 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   /** OpenRouter model for the review drafts, e.g. "qwen/qwen3.8-27b". */
   AI_DRAFT_MODEL?: string;
+  /**
+   * The app's owner (src/systemHealth.ts): People api_ids, comma-separated.
+   * Opens /system and gets the System line in My Tasks.
+   */
+  SYSTEM_OWNER_IDS?: string;
+  /** Where the system health alert goes (src/systemHealth.ts). */
+  SYSTEM_ALERT_EMAIL?: string;
 }
