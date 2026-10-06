@@ -17,7 +17,7 @@ type Call = { url: URL; method: string; body: any };
 /** One fake for PostgREST and Resend together. */
 function fakeServices(opts: {
   sentToday?: number;
-  resend?: "ok" | "fail" | "unverified-domain" | "unverified-domain-always";
+  resend?: "ok" | "fail" | "timeout" | "unverified-domain" | "unverified-domain-always";
   started?: object[];
   due?: string[];
   /** The first this-many claims have their token refused once (data/supabase.ts tries again). */
@@ -34,6 +34,7 @@ function fakeServices(opts: {
     if (url.host === "api.resend.com") {
       resendCalls++;
       if (opts.resend === "fail") return reply({ message: "invalid from" }, 422);
+      if (opts.resend === "timeout") throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
       if (opts.resend === "unverified-domain" && resendCalls === 1) return reply({ message: "The hkfchockey.com domain is not verified." }, 403);
       if (opts.resend === "unverified-domain-always" && c.body.from.includes("hkfchockey")) {
         return reply({ message: "The hkfchockey.com domain is not verified." }, 403);
@@ -220,6 +221,13 @@ describe("commitment review emails", () => {
     calls = fakeServices({ started: [started], due: ["recA", "recB"], sentToday: DAILY_LIMIT - 1 });
     expect(await sendDueReviewEmails(base)).toEqual({ sent: 1, failed: 0, left: 1 });
     expect(calls.filter((c) => c.url.pathname.endsWith("/rpc/start_review"))).toHaveLength(1);
+  });
+
+  it("releases a review when Resend does not answer in time, as when it refuses", async () => {
+    const calls = fakeServices({ started: [started], resend: "timeout" });
+    await expect(startReview(base, "recC1")).rejects.toThrow(MailerError);
+    expect(calls.find((c) => c.url.pathname.endsWith("/rpc/undo_review_start"))!.body).toEqual({ p_step: "s-uuid" });
+    expect(logRows(calls)[0]).toMatchObject({ status: "failed", error: expect.stringContaining("no answer within 10 s") });
   });
 
   it("the daily run releases a review whose email failed, and logs the failure with the rest", async () => {

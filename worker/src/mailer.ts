@@ -22,6 +22,7 @@
  */
 import type { Env } from "./env";
 import { db } from "./data/supabase";
+import { isTimeout } from "./http";
 
 /** Addresses a day: Resend allows 100, and about 30 are left for sign-in codes. */
 export const DAILY_LIMIT = 70;
@@ -80,6 +81,13 @@ export async function flushMailBatch(env: Env, batch: MailBatch): Promise<void> 
 /** Room for this many more addresses today. */
 export const roomToday = (batch: MailBatch, recipients: number) => batch.sentToday + recipients <= DAILY_LIMIT;
 
+/**
+ * How long Resend gets to answer. It usually answers in well under a
+ * second; 10 s allows for a slow moment (or fetching a PDF attachment)
+ * without leaving a request, or the daily run, hanging on it.
+ */
+export const RESEND_TIMEOUT_MS = 10_000;
+
 export async function sendEmail(env: Env, email: Email, batch?: MailBatch): Promise<{ id: string }> {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) throw new MailerError("Email is not configured (RESEND_API_KEY / MAIL_FROM)");
   const d = db(env);
@@ -99,23 +107,35 @@ export async function sendEmail(env: Env, email: Email, batch?: MailBatch): Prom
       }
     : { to: [email.to], cc: email.cc?.length ? email.cc : undefined, subject: email.subject, text: email.text, attachments };
 
-  const post = (from: string, replyTo?: string) => {
+  /**
+   * Resend's answer. No answer in time (or none at all) is status 0 and goes
+   * down the same path as a refusal: logged as failed, then a MailerError.
+   * Resend may still have sent it; the log says it did not answer.
+   */
+  const post = async (from: string, replyTo?: string): Promise<{ status: number; ok: boolean; body: { id?: string; message?: string } }> => {
     if (batch) batch.resendCalls++;
-    return fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, reply_to: replyTo, ...message }),
-    });
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, reply_to: replyTo, ...message }),
+        signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+      });
+      return { status: res.status, ok: res.ok, body: (await res.json().catch(() => ({}))) as { id?: string; message?: string } };
+    } catch (err) {
+      const why = isTimeout(err) ? `no answer within ${RESEND_TIMEOUT_MS / 1000} s` : `unreachable: ${err instanceof Error ? err.message : String(err)}`;
+      return { status: 0, ok: false, body: { message: why } };
+    }
   };
   let sender = email.from ?? env.MAIL_FROM;
   let res = await post(sender, email.replyTo);
-  let body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  let body = res.body;
   if (!res.ok && email.from && unverifiedSender(res.status, String(body.message ?? ""))) {
     // The captain's domain is not verified in Resend yet: send as Eddy, replies to him.
     console.warn("Sender domain not verified in Resend; sending from MAIL_FROM with Reply-To");
     sender = env.MAIL_FROM;
     res = await post(sender, email.replyTo ?? addressOf(email.from));
-    body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+    body = res.body;
   }
   const ok = res.ok && typeof body.id === "string";
   const row = {
@@ -136,6 +156,6 @@ export async function sendEmail(env: Env, email: Email, batch?: MailBatch): Prom
   } else {
     await d.insert("email_log", [row]).catch((err) => console.error("email_log write failed:", err instanceof Error ? err.message : err));
   }
-  if (!ok) throw new MailerError(`Resend refused the email (${res.status})`);
+  if (!ok) throw new MailerError(res.status ? `Resend refused the email (${res.status})` : `Resend did not take the email (${body.message})`);
   return { id: body.id! };
 }
