@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     syncSquad: vi.fn(),
     applySquadChanges: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
+    getTeamAttendance: vi.fn(),
     setMatchKit: vi.fn(),
     toggleAutoSelect: vi.fn(),
     getTeamAutoSelectPlayers: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock("../worker/src/ranking", () => ({
   deactivatePlayer: mocks.deactivatePlayer,
 }));
 vi.mock("../worker/src/playerStats", () => ({ getPlayerSeasonStats: mocks.getPlayerSeasonStats }));
+vi.mock("../worker/src/teamAttendance", () => ({ getTeamAttendance: mocks.getTeamAttendance }));
 vi.mock("../worker/src/dashboard", () => ({
   getRecentChanges: mocks.getRecentChanges,
 }));
@@ -692,6 +694,7 @@ describe("read routes require authentication", () => {
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
     ["/api/recent-changes", () => mocks.getRecentChanges],
+    ["/api/team-attendance", () => mocks.getTeamAttendance],
   ])("denies %s to a non-coach", async (path, handler) => {
     const res = await call(path);
     expect(res.status).toBe(403);
@@ -726,6 +729,14 @@ describe("read routes require authentication", () => {
     const plain = await call("/api/match/recM1/players");
     expect(await plain.json()).toEqual(squad);
     expect(mocks.recommendationOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a coach through to the team availability dashboard", async () => {
+    signInAs(TOKENS.coach);
+    mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
+    const res = await call("/api/team-attendance");
+    expect(res.status).toBe(200);
+    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV);
   });
 
   it("allows a coach through to recent-changes", async () => {

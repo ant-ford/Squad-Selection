@@ -114,6 +114,32 @@ vi.mock("../worker/src/data/matchCards", () => ({
 vi.mock("../worker/src/data/suspensions", () => ({
   suspensions: () => ({ listOpen: async () => [] }),
 }));
+// season_context: this season's matches, cards and answers, nothing from last season.
+vi.mock("../worker/src/data/seasonData", () => ({
+  seasonData: () => ({
+    load: async (s: string) => {
+      const mine = s === SEASON;
+      const cardSummary = new Map<string, { teams: string[]; count: number }>();
+      for (const c of mine ? data.matchCards : []) {
+        const id = c.match?.[0];
+        if (!id) continue;
+        const entry = cardSummary.get(id) ?? { teams: [], count: 0 };
+        entry.count++;
+        if (c.team && !entry.teams.includes(c.team)) entry.teams.push(c.team);
+        cardSummary.set(id, entry);
+      }
+      return {
+        matches: mine ? data.allMatches : [],
+        cards: mine ? data.matchCards : [],
+        exceptions: mine ? data.exceptions : [],
+        previousMatches: [],
+        previousCards: [],
+        suspensions: [],
+        cardSummary,
+      };
+    },
+  }),
+}));
 vi.mock("../worker/src/reference", async (orig) => {
   const real: any = await orig();
   return {
