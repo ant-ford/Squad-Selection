@@ -28,19 +28,16 @@ const INVALIDATION = {
       WAITING_ON_KEY,
     ],
     // my-tasks: a member's player-page banner, gone once their form is in.
-    prefixes: ["calendar:", "ranking-events:", "my-tasks:"],
+    prefixes: ["ranking-events:", "my-tasks:"],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
   commitments: {
     keys: [STATEMENT_RECORDS_KEY, WAITING_ON_KEY],
   },
-  // Appearances feed eligibility and play-up counts: the match cards, season
-  // index and per-match lists are keyed on the cache versions, and so is
-  // the current Stats summary. Only the calendar feeds remain.
-  matchCards: {
-    prefixes: ["calendar:"],
-  },
+  // Appearances feed eligibility, play-up counts, the Stats summary and the
+  // calendar feeds: all keyed on the cache versions now, so nothing to drop.
+  matchCards: {},
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */

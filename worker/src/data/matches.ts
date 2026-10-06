@@ -17,6 +17,12 @@ export interface MatchesRepo {
   listScheduled(): Promise<Match[]>;
   /** Played matches in any of the given (non-empty, de-duplicated) seasons. */
   listPlayedForSeasons(seasons: string[]): Promise<Match[]>;
+  /**
+   * The same matches with only what a team record reads (date, season,
+   * competition, teams, scores, venue): the calendar feed's form lines.
+   * About half the bytes; no selections, kit or umpires.
+   */
+  listResultsForSeasons(seasons: string[]): Promise<Match[]>;
 }
 
 export function matches(env: Env): MatchesRepo {

@@ -87,6 +87,17 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   }, SCHEDULED_MATCHES_TTL_MS);
 }
 
+/**
+ * Played matches for two seasons with only what a team record reads, for
+ * the calendar feeds' form lines (about half the bytes of
+ * getPlayedMatchesForSeasons: no selections, kit or umpires).
+ */
+export async function getResultsForSeasons(env: Env, seasons: string[]): Promise<Match[]> {
+  const unique = [...new Set(seasons.filter(Boolean))].sort();
+  if (unique.length === 0) return [];
+  return getVersioned<Match[]>(env, `results:${unique.join(",")}`, ["matches"], () => matches(env).listResultsForSeasons(unique));
+}
+
 // ---------------------------------------------------------------------------
 // Lowest-ranked team Goalkeeper schedule
 // ---------------------------------------------------------------------------
