@@ -42,11 +42,11 @@ function lookFor(cell: AttendanceCell): Look {
         : { className: 'bg-rose-500 text-white', label: 'Unavailable' };
     case 'elsewhere':
       return {
-        className: 'bg-muted/50 text-muted-foreground/70',
+        className: 'bg-muted/50 text-muted-foreground',
         label: `${cell.past ? 'Played' : 'Selected'} for ${cell.elsewhereTeam ?? 'another side'}`,
       };
     case 'off':
-      return { className: 'bg-muted/40 text-muted-foreground/60', label: 'Cancelled / rescheduled' };
+      return { className: 'bg-muted/40 text-muted-foreground', label: 'Cancelled / rescheduled' };
   }
 }
 
@@ -225,7 +225,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                     ref={isToday ? todayRef : undefined}
                     title={safeFormat(d, 'EEE d MMM')}
                     className={`${DATE_COL} pb-1 font-normal text-center leading-tight ${
-                      past ? 'text-muted-foreground/70' : 'text-foreground'
+                      past ? 'text-muted-foreground' : 'text-foreground'
                     } ${isToday ? 'border-l-2 border-primary' : ''}`}
                   >
                     <span className="block font-semibold tabular-nums">{safeFormat(d, 'd')}</span>
@@ -304,7 +304,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
           </div>
         ))}
         <p className="sm:col-span-2 flex items-center gap-2">
-          <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground/70 text-[9px] font-semibold">C</span>
+          <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground text-[9px] font-semibold">C</span>
           With another side that day (the letter says which)
         </p>
       </div>

@@ -5,8 +5,9 @@
  *   - past seasons under `stats-summary:v<N>:<season>` for thirty days (they
  *     do not change; a correction shows within a month, or at once by
  *     bumping SUMMARY_VERSION);
- *   - the current season under one fixed key that the webhook drops whenever
- *     Matches or Match Cards change.
+ *   - the current season under a key that carries when this season's
+ *     Matches and Match Cards last changed (currentVersion), so a result
+ *     hkha-sync writes straight to Postgres shows on the next request.
  * Building a past season costs about thirty Airtable pages, inside the
  * Workers plan's fifty subrequests, which is why the page asks for one
  * season per request and adds seasons up itself.
@@ -26,7 +27,8 @@ import { matches as matchesRepo } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import { isFriendly } from "./playUp";
 import { parseCardValue } from "./suspension";
-import { STATS_CURRENT_KEY } from "./reference";
+import { backendFor } from "./data/backend";
+import { db, eq } from "./data/supabase";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
   SUMMARY_VERSION,
@@ -43,8 +45,15 @@ import {
 import { buildNameDictionary, canonicalKey, parseUmpire, type ParsedUmpire } from "../../shared/umpires";
 
 const PAST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-/** A backstop only: the webhook drops the current season when a result or card changes. */
+/**
+ * The current season's summary. A changed result or card moves the key
+ * (currentVersion), so this is a backstop only, for a deleted row, which
+ * leaves no newer updated_at behind.
+ */
 const CURRENT_TTL_MS = 6 * 60 * 60 * 1000;
+/** On the Airtable backend nothing announces a change, so the summary is only kept briefly. */
+const CURRENT_UNVERSIONED_TTL_MS = 10 * 60 * 1000;
+export const STATS_CURRENT_KEY = "stats-summary:current";
 
 export interface CardCount {
   yellow: number;
@@ -341,10 +350,10 @@ async function getPlayerNames(env: Env): Promise<PlayerNames> {
  * two-thousand Match Cards as well as its summary would spend two more of
  * the Cloudflare account's 1,000 daily KV writes (shared with production)
  * on data nobody reads again. The current season does use those caches -
- * the squad pages have them warm.
+ * the squad pages have them warm - unless `fresh` asks for rows read now.
  */
-async function seasonRows(env: Env, season: string): Promise<{ matches: Match[]; cards: MatchCard[] }> {
-  if (season === currentSeason()) {
+async function seasonRows(env: Env, season: string, fresh: boolean): Promise<{ matches: Match[]; cards: MatchCard[] }> {
+  if (season === currentSeason() && !fresh) {
     const [matches, cards] = await Promise.all([getAllMatches(env, season), getMatchCardsForSeason(env, season)]);
     return { matches, cards };
   }
@@ -357,10 +366,25 @@ async function seasonRows(env: Env, season: string): Promise<{ matches: Match[];
   return { matches, cards };
 }
 
-async function buildFor(env: Env, season: string): Promise<StoredSummary> {
-  const [{ matches, cards }, people] = await Promise.all([seasonRows(env, season), getPlayerNames(env)]);
+async function buildFor(env: Env, season: string, fresh = false): Promise<StoredSummary> {
+  const [{ matches, cards }, people] = await Promise.all([seasonRows(env, season, fresh), getPlayerNames(env)]);
   const today = hkDateKey(new Date().toISOString());
   return buildSeasonSummary({ season, matches, cards, names: people.names, byFullName: people.byFullName, today });
+}
+
+/**
+ * When this season's Matches and Match Cards last changed: the newest
+ * updated_at of each, two one-row reads. Postgres keeps updated_at on every
+ * write, hkha-sync's included. Null on the Airtable backend.
+ */
+async function currentVersion(env: Env, season: string): Promise<string | null> {
+  if (backendFor(env, "matches") !== "supabase" || backendFor(env, "matchCards") !== "supabase") return null;
+  const latest = async (view: string) => {
+    const rows = await db(env).select<{ updated_at: string }>(view, `select=updated_at&season=${eq(season)}&order=updated_at.desc&limit=1`);
+    return rows[0]?.updated_at.replace(/\D/g, "") || "0";
+  };
+  const [matches, cards] = await Promise.all([latest("matches_v"), latest("match_cards_v")]);
+  return `${matches}.${cards}`;
 }
 
 /** A season's stored summary, building it when it is not kept yet. */
@@ -370,7 +394,11 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   const current = currentSeason();
   if (season > current) throw new HttpError("That season has not started.", 400, "INVALID_INPUT");
   if (season === current) {
-    const stored = await getShared<StoredSummary>(env, STATS_CURRENT_KEY, () => buildFor(env, season), CURRENT_TTL_MS);
+    const version = await currentVersion(env, season);
+    const stored = version
+      ? // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
+        await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS)
+      : await getShared<StoredSummary>(env, STATS_CURRENT_KEY, () => buildFor(env, season), CURRENT_UNVERSIONED_TTL_MS);
     // Across 1 July the fixed key may still hold last season's summary.
     if (stored.summary.season === season && stored.summary.version === SUMMARY_VERSION) return stored;
     return buildFor(env, season);

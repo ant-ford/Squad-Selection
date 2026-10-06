@@ -15,7 +15,7 @@ import {
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import { getShared, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateShared } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
@@ -114,7 +114,7 @@ export async function getAbilityGroupConfig(
       }
       return map;
     },
-    rawReadTtl(env, CONFIG_CACHE_TTL_MS),
+    CONFIG_CACHE_TTL_MS,
   );
 }
 
@@ -157,7 +157,7 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
         version: Date.now(),
       };
     },
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    RANKING_CACHE_TTL_MS,
   );
   return forClients(data);
 }
@@ -177,7 +177,7 @@ export async function getInactiveRanking(env: Env): Promise<InactiveRankingEntry
     env,
     rankingCacheKey(false),
     async () => fetchInactiveRankingFromAirtable(env),
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    RANKING_CACHE_TTL_MS,
   );
 }
 

@@ -297,15 +297,6 @@ export async function airtableBatchDelete(
   });
 }
 
-/**
- * A request against the base itself rather than one of its tables - the
- * webhooks endpoints live at /v0/bases/{baseId}/webhooks/... (see
- * airtableWebhook.ts). Same auth, retry and instrumentation as table reads.
- */
-export async function airtableBaseRequest<T>(env: Env, pathUnderBase: string, init?: RequestInit): Promise<T | null> {
-  return airtableFetch<T>(env, `${AIRTABLE_API}/bases/${env.AIRTABLE_BASE_ID}/${pathUnderBase}`, init);
-}
-
 /** Guards against breaking a filterByFormula string via embedded quotes. */
 export function escapeFormulaValue(value: string): string {
   return value.replace(/"/g, '\\"');

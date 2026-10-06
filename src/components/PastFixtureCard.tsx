@@ -68,7 +68,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
           disciplinary sense - it just means no card was recorded. */}
       <div className="mt-2.5 flex items-center gap-2 flex-wrap">
         {fixture.played ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary-tint/10 text-primary">
             Played
           </span>
         ) : (
@@ -93,7 +93,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
       {(fixture.scorers.length > 0 || fixture.cards.length > 0) && (
         <div className="mt-2.5 pt-2.5 border-t border-border space-y-1">
           {fixture.scorers.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-foreground">
               <span className="font-medium text-foreground">Scorers</span>{' '}
               {fixture.scorers
                 .map((s) => (s.goals && s.goals > 1 ? `${s.name} (${s.goals})` : s.name))
@@ -101,7 +101,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
             </p>
           )}
           {fixture.cards.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-foreground">
               <span className="font-medium text-foreground">Cards</span>{' '}
               {fixture.cards.map((c) => `${c.name} (${(c.cards ?? []).join(', ')})`).join(', ')}
             </p>

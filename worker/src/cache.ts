@@ -1,41 +1,6 @@
 import type { CacheKv } from "./env";
 import { currentRequestContext, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
 
-/**
- * How long a raw Airtable table read may be reused once a webhook announces
- * Airtable-side edits (see airtableWebhook.ts). Before the webhook, a short
- * TTL was the only way an edit made in Airtable itself - a result entered,
- * a player moved between teams - reached the app, and every expiry meant a
- * full re-read of the table. With the webhook doing that job the TTL is a
- * safety net, not the mechanism.
- */
-export const WEBHOOK_BACKED_TTL_MS = 6 * 60 * 60 * 1000;
-
-/**
- * TTL for a raw table read: `shortTtlMs` until a webhook is configured,
- * hours afterwards. Writes the Worker makes itself invalidate explicitly
- * either way, so this only governs edits made directly in Airtable.
- *
- * Requires BOTH settings, exactly as webhookConfigured() does, and the two
- * MUST agree. Keying this on the secret alone meant a half-finished set-up
- * - secret stored, id still commented out in wrangler.toml, which is
- * precisely how the first attempt went - stretched every cache to six
- * hours while the notification route stayed 404. Nothing would then have
- * told the Worker the base had changed, so a result entered in Airtable
- * could have taken six hours to reach the app: strictly worse than having
- * no webhook at all. Every partial state must fall back to short TTLs.
- *
- * Duplicated rather than imported because airtableWebhook.ts imports this
- * module; a cycle between them is not worth one predicate.
- */
-export function rawReadTtl(
-  env: { AIRTABLE_WEBHOOK_ID?: string; AIRTABLE_WEBHOOK_SECRET?: string },
-  shortTtlMs: number,
-): number {
-  const configured = Boolean(env.AIRTABLE_WEBHOOK_ID && env.AIRTABLE_WEBHOOK_SECRET);
-  return configured ? Math.max(shortTtlMs, WEBHOOK_BACKED_TTL_MS) : shortTtlMs;
-}
-
 // In-memory cache for Cloudflare Worker isolate.
 // Data persists within a single isolate's lifetime and is refreshed after TTL.
 // Multiple concurrent requests in the same isolate share the cache.

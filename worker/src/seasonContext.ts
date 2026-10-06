@@ -11,14 +11,14 @@
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
  * reads underneath it are shared through KV and live much longer).
  * Invalidated by: syncSquad (selections changed), setAvailability and
- * setMyAvailability (exceptions changed), and the Airtable webhook.
+ * setMyAvailability (exceptions changed), and People writes (invalidation.ts).
  */
 
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import type { Env } from "./env";
-import { getCached, getShared, rawReadTtl } from "./cache";
+import { getCached, getShared } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -39,7 +39,7 @@ import type {
 // ── Season-scoped fetches ───────────────────────────────────────────────
 const SEASON_READ_TTL_MS = 10 * 60 * 1000;
 
-// Always the short TTL, never the webhook-backed six hours: these records
+// Always the short TTL, never hours: these records
 // carry squad selections, which the eligibility engine's same-day checks
 // read. See SCHEDULED_MATCHES_TTL_MS in fixtures.ts for why.
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
@@ -67,12 +67,39 @@ export async function getMatchCardsForSeason(
   const key = opts.cardedOnly ? `match-cards:${season}:carded` : `match-cards:${season}`;
   return getShared<MatchCard[]>(env, key, async () => {
     return matchCards(env).listForSeason(season, opts);
-  }, rawReadTtl(env, SEASON_READ_TTL_MS));
+  }, SEASON_READ_TTL_MS);
 }
 
-export function getSameDayMatches(allMatches: Match[], targetDate: string): Match[] {
-  const target = hkDateKey(targetDate);
-  return allMatches.filter((m) => hkDateKey(m.matchDate) === target);
+/**
+ * Matches grouped by Hong Kong day, built on first use and kept for as long
+ * as the array itself. The season context's `allMatches` lives for the
+ * context's lifetime, so one index serves every candidate fixture (and every
+ * request) that context answers - rather than one hkDateKey per match per
+ * fixture, which was most of /api/my-fixtures' CPU with a full season loaded.
+ *
+ * The length check rebuilds the index if the array has been grown or shrunk
+ * since; nothing in the worker mutates a season's matches after reading them.
+ */
+const dayIndexes = new WeakMap<readonly Match[], { length: number; byDay: Map<string, Match[]> }>();
+
+function dayIndexFor(allMatches: readonly Match[]): Map<string, Match[]> {
+  const cached = dayIndexes.get(allMatches);
+  if (cached && cached.length === allMatches.length) return cached.byDay;
+  const byDay = new Map<string, Match[]>();
+  for (const m of allMatches) {
+    const day = hkDateKey(m.matchDate);
+    const bucket = byDay.get(day);
+    if (bucket) bucket.push(m);
+    else byDay.set(day, [m]);
+  }
+  dayIndexes.set(allMatches, { length: allMatches.length, byDay });
+  return byDay;
+}
+
+/** Every match on targetDate's Hong Kong day, in `allMatches` order. A fresh array each call. */
+export function getSameDayMatches(allMatches: readonly Match[], targetDate: string): Match[] {
+  const bucket = dayIndexFor(allMatches).get(hkDateKey(targetDate));
+  return bucket ? bucket.slice() : [];
 }
 
 export function previousSeason(season: string): string | null {
@@ -277,7 +304,8 @@ export async function buildEvaluationContext(
   ]);
   if (nonDefaultPlayerIds.size > 0 && sameDayFixtures.length > 0) {
     const answered = new Set(season.exceptionIndex.map((e) => `${e.playerId}:${e.matchId}`));
-    const dateByMatch = new Map(sameDayMatches.map((m) => [m.id, hkDateKey(m.matchDate)]));
+    // Every same-day fixture shares the target's Hong Kong day.
+    const sameDay = hkDateKey(matchDate);
     for (const playerId of nonDefaultPlayerIds) {
       const player = playersById.get(playerId);
       if (!player) continue;
@@ -288,7 +316,7 @@ export async function buildEvaluationContext(
         if (answered.has(key)) continue;
         const fixtureRank = teamRankMap[fixture.teamName] ?? UNRANKED_TEAM_RANK;
         const { status } = effectiveAvailability("", rules, {
-          date: dateByMatch.get(fixture.matchId) || "",
+          date: sameDay,
           isPlayUp: fixtureRank < playerRank,
           isSupport: fixtureRank > playerRank,
         }, { optInOnly: player.optInOnly });

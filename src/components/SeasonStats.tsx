@@ -36,7 +36,7 @@ function DetailRow({ label, value, hint }: { label: string; value: string; hint?
     <div className="flex items-baseline justify-between gap-3 py-2">
       <span className="text-sm text-muted-foreground">
         {label}
-        {hint && <span className="ml-1.5 text-[11px] text-muted-foreground/70">{hint}</span>}
+        {hint && <span className="ml-1.5 text-[11px] text-muted-foreground">{hint}</span>}
       </span>
       <span className="text-sm font-medium tabular-nums text-foreground">{value}</span>
     </div>
@@ -55,7 +55,7 @@ function GameDetail({ game }: { game: PlayerGameResult }) {
       </div>
       <p className="mt-0.5 text-muted-foreground">{safeFormat(game.date, 'EEE d MMM')}</p>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-muted-foreground">
+        <span className={game.goals === 0 ? 'text-muted-foreground' : 'text-foreground'}>
           {game.goals === 0 ? 'No goals' : `${game.goals} goal${game.goals === 1 ? '' : 's'}`}
         </span>
         {game.cards.length === 0 ? (
