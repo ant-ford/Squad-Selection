@@ -12,7 +12,7 @@ import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
-import { otherGamesThatDay, needsSameDayPrompt } from '@/lib/sameDayGames';
+import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import CalendarSyncSheet from '@/components/CalendarSyncSheet';
@@ -228,6 +228,7 @@ export default function PlayerDashboard() {
     () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
     [data],
   );
+  const fixturesByDay = useMemo(() => groupByHkDay(allFixtures), [allFixtures]);
 
   // A fixture link the coach shared on WhatsApp (?fixture=<match id>) opens
   // that fixture's sheet once the list has loaded. A game that isn't on
@@ -272,11 +273,11 @@ export default function PlayerDashboard() {
   // Under a My Team card the player is out for, while they still read as in
   // for another game that day.
   const renderSameDayPrompt = (f: MyFixture) => {
-    const others = otherGamesThatDay(f, allFixtures);
+    const key = dateKey(f.date);
+    const others = otherGamesThatDay(f, fixturesByDay.get(key) ?? []);
     const open = promptsOpen.has(f.id);
     if (!open && (!needsSameDayPrompt(f, others) || isPromptDismissed(f.id))) return null;
     if (others.length === 0) return null;
-    const key = dateKey(f.date);
     return (
       <SameDayGamesPrompt
         fixture={f}
