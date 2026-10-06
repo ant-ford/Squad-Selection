@@ -12,11 +12,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { getPlayersForMatch } from "../worker/src/squad";
 import { invalidateAll } from "../worker/src/cache";
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { exception, match, person, recId, rule, team } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
@@ -27,55 +28,64 @@ const ENV = {
 // players' answers.
 const DAY = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
 
-const TEAMS = [
-  { id: "recTB", fields: { "Team Name": "HKFC B", "Team Rank": 2, Active: true } },
-  { id: "recTC", fields: { "Team Name": "HKFC C", "Team Rank": 3, Active: true } },
-];
+const PLAIN = recId("Plain");
+const RULE = recId("Rule");
+const EXPLICIT = recId("Explicit");
+const MAYBE = recId("Maybe");
+const OVERRIDE = recId("Override");
+const MC = recId("MC");
+const MB = recId("MB");
 
-const person = (id: string, name: string, position = "Defender") => ({
-  id,
-  fields: { "Preferred Name": name, Email: `${name}@hkfc.com`, Active: true, "Registered Team": "HKFC C", "Playing Position": position, "Playing Ability": "C" },
-});
+const player = (id: string, name: string, position = "Defender") =>
+  person({
+    id,
+    preferredName: name,
+    email: `${name}@hkfc.com`,
+    active: true,
+    registeredTeam: "HKFC C",
+    playingPosition: position,
+    playingAbility: "C",
+  });
 
-const match = (id: string, team: string, hour: string) => ({
-  id,
-  fields: { Date: `${DAY}T${hour}:00:00.000Z`, Season: "2026-2027", "Home Team": team, "Away Team": "Valley", "Match Status": "Scheduled" },
-});
+const fixture = (id: string, homeTeam: string, hour: string) =>
+  match({ id, matchDate: `${DAY}T${hour}:00:00.000Z`, season: "2026-2027", homeTeam, awayTeam: "Valley", matchStatus: "Scheduled" });
 
-let state: Record<string, any[]>;
+const answer = (id: string, playerId: string, status: string) =>
+  exception({ id, player: [playerId], match: [MB], availabilityStatus: status, season: "2026-2027" });
+
+useFakeRepos(() => ({
+  people: [
+    player(PLAIN, "Plain"),
+    player(RULE, "Rule", "Goalkeeper"),
+    player(EXPLICIT, "Explicit"),
+    player(MAYBE, "Maybe"),
+    player(OVERRIDE, "Override"),
+  ],
+  teams: [
+    team({ id: recId("TB"), teamName: "HKFC B", teamRank: 2, active: true }),
+    team({ id: recId("TC"), teamName: "HKFC C", teamRank: 3, active: true }),
+  ],
+  matches: [fixture(MC, "HKFC C", "05"), fixture(MB, "HKFC B", "07")],
+  availabilityExceptions: [
+    // Explicit: said no to the B game.
+    answer(recId("X1"), EXPLICIT, "Unavailable"),
+    // Maybe: only a maybe for the B game.
+    answer(recId("X2"), MAYBE, "Maybe"),
+    // Override: a preference says no to play-ups, but they answered Maybe
+    // for this one, and an explicit answer beats the preference.
+    answer(recId("X3"), OVERRIDE, "Maybe"),
+  ],
+  matchCards: [],
+  availabilityRules: [
+    rule({ id: recId("R1"), player: [RULE], ruleType: "Play-ups", availability: "Unavailable", active: true }),
+    rule({ id: recId("R2"), player: [OVERRIDE], ruleType: "Play-ups", availability: "Unavailable", active: true }),
+  ],
+}));
 
 beforeEach(() => {
   invalidateAll();
-  state = {
-    People: [
-      person("recPlain", "Plain"),
-      person("recRule", "Rule", "Goalkeeper"),
-      person("recExplicit", "Explicit"),
-      person("recMaybe", "Maybe"),
-      person("recOverride", "Override"),
-    ],
-    Teams: TEAMS.map((t) => ({ id: t.id, fields: { ...t.fields } })),
-    Matches: [match("recMC", "HKFC C", "05"), match("recMB", "HKFC B", "07")],
-    "Availability Exceptions": [
-      // Explicit: said no to the B game.
-      { id: "recX1", fields: { Player: ["recExplicit"], Match: ["recMB"], "Availability Status": "Unavailable", "Season (Matches)": "2026-2027" } },
-      // Maybe: only a maybe for the B game.
-      { id: "recX2", fields: { Player: ["recMaybe"], Match: ["recMB"], "Availability Status": "Maybe", "Season (Matches)": "2026-2027" } },
-      // Override: a preference says no to play-ups, but they answered Maybe
-      // for this one, and an explicit answer beats the preference.
-      { id: "recX3", fields: { Player: ["recOverride"], Match: ["recMB"], "Availability Status": "Maybe", "Season (Matches)": "2026-2027" } },
-    ],
-    "Match Cards": [],
-    "Availability Rules": [
-      { id: "recR1", fields: { Player: ["recRule"], "Rule Type": "Play-ups", Availability: "Unavailable", Active: true } },
-      { id: "recR2", fields: { Player: ["recOverride"], "Rule Type": "Play-ups", Availability: "Unavailable", Active: true } },
-    ],
-  };
-  const tables: FakeTables = {};
-  for (const name of Object.keys(state)) {
-    Object.defineProperty(tables, name, { get: () => state[name], enumerable: true });
-  }
-  fakeAirtable(tables);
+  // Nothing here should reach Supabase directly; any request fails the test.
+  fakePostgrest({ tables: {} });
 });
 
 afterEach(() => {
@@ -83,19 +93,19 @@ afterEach(() => {
 });
 
 async function rows() {
-  const { players } = await getPlayersForMatch(ENV, "recMC");
+  const { players } = await getPlayersForMatch(ENV, MC);
   return new Map(players.map((p) => [p.id, p]));
 }
 
 describe("the same-day availability chip on the C team's list", () => {
   it("names B for a player who has said nothing about the B game", async () => {
-    const plain = (await rows()).get("recPlain")!;
+    const plain = (await rows()).get(PLAIN)!;
     expect(plain.warnings).toContain("Available for HKFC B on same day");
     expect(plain.sameDayHigherTeam).toBe("HKFC B");
   });
 
   it("is silent for a player whose preference says no to play-ups", async () => {
-    const keeper = (await rows()).get("recRule")!;
+    const keeper = (await rows()).get(RULE)!;
     expect(keeper.warnings).toEqual([]);
     expect(keeper.sameDayHigherTeam).toBeNull();
     expect(keeper.conflicts.filter((c) => c.type === "available")).toEqual([]);
@@ -105,16 +115,16 @@ describe("the same-day availability chip on the C team's list", () => {
   });
 
   it("is silent for a player who answered Unavailable for the B game", async () => {
-    const explicit = (await rows()).get("recExplicit")!;
+    const explicit = (await rows()).get(EXPLICIT)!;
     expect(explicit.warnings).toEqual([]);
     expect(explicit.sameDayHigherTeam).toBeNull();
   });
 
   it("still names B for a Maybe", async () => {
-    expect((await rows()).get("recMaybe")!.warnings).toContain("Available for HKFC B on same day");
+    expect((await rows()).get(MAYBE)!.warnings).toContain("Available for HKFC B on same day");
   });
 
   it("lets an explicit Maybe for the B game beat a no-play-ups preference", async () => {
-    expect((await rows()).get("recOverride")!.warnings).toContain("Available for HKFC B on same day");
+    expect((await rows()).get(OVERRIDE)!.warnings).toContain("Available for HKFC B on same day");
   });
 });
