@@ -79,6 +79,10 @@ describe("syncSquad: higher team priority", () => {
     expect(selected(HIGH)).toEqual([UMA]);
     expect(selected(LOW)).toEqual([KIM]);
     expect(displaced).toEqual([{ playerId: UMA, playerName: "Uma S", team: "HKFC D", matchId: LOW }]);
+    // Applied to the lower squad as it is now (apply_squad_changes), with no version check.
+    expect(db.callsTo("matches", "applySelectionChanges").map((c) => c.args)).toEqual([[
+      LOW, { side: "home", add: [], remove: [UMA], version: null, actorId: null, source: "release" },
+    ]]);
   });
 
   it("does the same for any player, not only U21s", async () => {
@@ -110,6 +114,7 @@ describe("syncSquad: higher team priority", () => {
 
     expect(displaced).toEqual([]);
     expect(selected(LOW)).toEqual([SAM]);
+    expect(db.callsTo("matches", "applySelectionChanges")).toEqual([]);
   });
 
   it("still rejects the reverse: a lower team cannot take a player a higher team has", async () => {

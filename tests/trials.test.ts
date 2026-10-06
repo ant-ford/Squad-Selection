@@ -5,7 +5,6 @@ import { declineRegistration, invitePracticeTrial, registerInterest, registratio
 import { parseSection } from "../worker/src/details";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   RESEND_API_KEY: "re_test",

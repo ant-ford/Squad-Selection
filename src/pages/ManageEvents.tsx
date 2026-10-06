@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, PartyPopper, Plus, X } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { PartyPopper, Plus, X } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
-import HelpLink from '@/components/HelpLink';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { ActionButton } from '@/components/ui/action-button';
@@ -168,13 +167,7 @@ export default function ManageEventsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Events">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">My page</span>
-        </button>
-        <HelpLink guide="events" />
-      </AppHeader>
+      <AppHeader title="Events" guide="events" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

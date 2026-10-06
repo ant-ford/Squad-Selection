@@ -163,9 +163,8 @@ const RULES_TTL_MS = 5 * 60 * 1000;
  * player's own view and a coach's whole-squad view; the table is small
  * (a handful of rows per player at most).
  *
- * Shared across isolates like the other raw table reads. Per-isolate, a
- * player saving a preference cleared only the isolate that took the write,
- * and every other one kept answering from its own copy.
+ * Held for at most 30 s in each isolate (cache.ts getShared), so a saved
+ * preference reaches every isolate within that.
  *
  * A failed read is NOT cached. It used to be: the read returned an empty
  * list on any error and that empty list sat in the cache for five minutes,

@@ -35,7 +35,7 @@ function KitToggle({ matchId, side, kit }: { matchId: string; side: 'home' | 'aw
 
   return (
     <div className="flex items-center gap-1.5 shrink-0" aria-label="Kit colour">
-      <span className="text-[11px] text-muted-foreground hidden sm:inline">Kit</span>
+      <span className="text-xs text-muted-foreground hidden sm:inline">Kit</span>
       {(['Blue', 'White'] as const).map((colour) => {
         const active = current === colour;
         return (

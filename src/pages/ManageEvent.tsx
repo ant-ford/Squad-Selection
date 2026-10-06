@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Copy, Download, Plus, QrCode, Search, X } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Copy, Download, Plus, QrCode, Search, X } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
-import HelpLink from '@/components/HelpLink';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import FileUpload from '@/components/profile/FileUpload';
 import { errorText } from '@/components/profile/steps';
@@ -18,7 +17,8 @@ import { StatusChip } from '@/components/ui/status-chip';
 import { TabPanel, Tabs, type TabItem } from '@/components/ui/tabs';
 import { ResponseEditor, answerLine, draftOf, statusChip, type Draft } from '@/components/events/EventSheet';
 import { EVENT_STATUS_LABEL, countsLine, eventStatusTone, eventWhen, fromLocalInput, priceLines, toLocalInput } from '@/components/events/eventText';
-import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
+import PaymentsSection from '@/components/events/PaymentsSection';
+import { saveCsv } from '@/lib/saveCsv';
 import PosterImage from '@/components/events/PosterImage';
 import RegisterSection from '@/components/events/RegisterSection';
 import CheckInQrSheet from '@/components/events/CheckInQrSheet';
@@ -49,6 +49,7 @@ import {
   answersCsv,
   asksDietary,
   audienceOptions,
+  billed,
   registerOpen,
   describeAudience,
   type EventInput,
@@ -83,6 +84,7 @@ type Form = {
   guestAdultPrice: string;
   guestChildPrice: string;
   helpNeeded: string;
+  linkUrl: string;
   dietary: boolean;
   dietaryRequired: boolean;
   ownQuestions: { label: string; required: boolean }[];
@@ -108,6 +110,7 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   guestAdultPrice: num(e?.guestAdultPrice ?? null),
   guestChildPrice: num(e?.guestChildPrice ?? null),
   helpNeeded: e?.helpNeeded ?? '',
+  linkUrl: e?.linkUrl ?? '',
   dietary: e ? asksDietary(e.questions) : false,
   dietaryRequired: !!e?.questions.find((q) => q.key === DIETARY.key)?.required,
   ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => ({ label: q.label, required: !!q.required })) ?? [],
@@ -133,6 +136,7 @@ const inputOf = (f: Form, id: string | null): EventInput => ({
   guestAdultPrice: priceOrNull(f.guestAdultPrice),
   guestChildPrice: priceOrNull(f.guestChildPrice),
   helpNeeded: f.helpNeeded,
+  linkUrl: f.linkUrl,
   questions: [
     ...(f.dietary ? [{ ...DIETARY, required: f.dietaryRequired }] : []),
     ...f.ownQuestions.filter((q) => q.label.trim()).map((q, i) => ({ key: `q${i + 1}`, label: q.label, required: q.required })),
@@ -176,7 +180,8 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
     else delete audience[key];
     set({ audience });
   };
-  const paid = f.paymentMode !== 'free';
+  const paid = billed(f.paymentMode);
+  const selfFunded = f.paymentMode === 'self_funded';
 
   return (
     <div className="space-y-4">
@@ -248,8 +253,8 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
             ))}
           </select>
         </Field>
-        {paid && (
-          <Field label="Member price (HK$)">
+        {(paid || selfFunded) && (
+          <Field label={selfFunded ? 'Estimated cost each (HK$, optional)' : 'Member price (HK$)'}>
             <Input type="number" min={0} inputMode="decimal" value={f.memberPrice} onChange={(e) => set({ memberPrice: e.target.value })} />
           </Field>
         )}
@@ -286,6 +291,9 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
           )}
         </div>
       )}
+      <Field label="Link">
+        <Input type="url" inputMode="url" value={f.linkUrl} onChange={(e) => set({ linkUrl: e.target.value })} placeholder="e.g. the event's WhatsApp group link" />
+      </Field>
       <Field label="Help needed">
         <Input value={f.helpNeeded} onChange={(e) => set({ helpNeeded: e.target.value })} placeholder="e.g. 3 for the BBQ and setting up" />
       </Field>
@@ -534,7 +542,7 @@ function AnswersPanel({ e, data }: { e: ManagedEvent; data: ResponsesView }) {
               variant="ghost"
               icon={<Download />}
               className="text-primary"
-              onClick={() => downloadCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}
+              onClick={() => saveCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}
             >
               Download
             </ActionButton>
@@ -567,7 +575,7 @@ function AnswersPanel({ e, data }: { e: ManagedEvent; data: ResponsesView }) {
                     ))}
                   {r.status !== 'not_going' && e.questions.map((q) => (r.answers[q.key] ? <p key={q.key}>{q.label}: {r.answers[q.key]}</p> : null))}
                   {r.canHelp && <p>Can help</p>}
-                  {e.paymentMode !== 'free' && r.status === 'going' && (
+                  {billed(e.paymentMode) && r.status === 'going' && (
                     <p>
                       {r.waived ? 'Let off the charge · ' : ''}
                       <button className="text-primary min-h-10" disabled={waive.isPending} onClick={() => waive.mutate({ personId: r.personId, waived: !r.waived })}>
@@ -670,7 +678,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
     ? [
         { value: 'details', label: 'Details' },
         ...(e.status !== 'draft' ? [{ value: 'answers' as const, label: `Answers (${data!.responses.length})` }] : []),
-        ...(e.status !== 'draft' && e.paymentMode !== 'free' ? [{ value: 'payments' as const, label: 'Payments' }] : []),
+        ...(e.status !== 'draft' && billed(e.paymentMode) ? [{ value: 'payments' as const, label: 'Payments' }] : []),
         ...(e.status === 'published' && registerOpen(e) ? [{ value: 'register' as const, label: 'Register' }] : []),
       ]
     : [];
@@ -723,7 +731,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div className="space-y-1">
           <div className="flex items-start gap-2">
-            <h1 className="flex-1 min-w-0 text-lg font-semibold text-foreground">{e ? e.title : 'New event'}</h1>
+            <h2 className="flex-1 min-w-0 text-lg font-semibold text-foreground">{e ? e.title : 'New event'}</h2>
             {e && <StatusChip tone={eventStatusTone(e.status)}>{EVENT_STATUS_LABEL[e.status]}</StatusChip>}
           </div>
           {e && (
@@ -780,13 +788,7 @@ export default function ManageEventPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Events">
-        <button onClick={() => navigate('/events/manage')} className={headerNavClass()} aria-label="Events">
-          <ArrowLeft className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Events</span>
-        </button>
-        <HelpLink guide="events" />
-      </AppHeader>
+      <AppHeader title={isNew ? "New event" : "Event"} back="/events/manage" guide="events" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

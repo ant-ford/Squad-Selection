@@ -2,8 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Mail, Users } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check, Mail } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import PhoneInput from '@/components/profile/PhoneInput';
@@ -85,7 +85,6 @@ function OfficePick({ value, options, onChange, placeholder = 'Choose…' }: { v
  */
 export default function JoinerEditPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   // The planning section is the Section Captains office, on the Supabase backend only.
   const allowed = profile?.sections?.includes('planning') ?? false;
@@ -110,12 +109,7 @@ export default function JoinerEditPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle={id ? 'New joiner' : 'Propose a new joiner'}>
-        <button onClick={() => navigate('/membership')} className={headerNavClass()}>
-          <Users className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Membership</span>
-        </button>
-      </AppHeader>
+      <AppHeader title={id ? 'New joiner' : 'Propose a new joiner'} back="/membership" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

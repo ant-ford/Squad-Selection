@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import SignBlock from '@/components/SignBlock';
 import { fieldInput } from '@/components/profile/ProfileFields';
@@ -43,7 +43,6 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
  */
 export default function SignApplicationPage() {
   const { id = '' } = useParams();
-  const navigate = useNavigate();
   const view = useQuery({ queryKey: ['signing', id], queryFn: () => getSigningView(id) });
 
   const body = () => {
@@ -63,12 +62,7 @@ export default function SignApplicationPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Membership application">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Membership application" back="/" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>
@@ -89,7 +83,7 @@ function Application({ v }: { v: SigningView }) {
           <img src={v.photoUrl || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" onError={fallBackToDefaultPhoto} />
         </div>
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-foreground">{v.name}</h1>
+          <h2 className="text-lg font-semibold text-foreground">{v.name}</h2>
           <p className="text-xs text-muted-foreground">
             {v.applicationType}
             {v.categoryType ? ` · ${v.categoryType}` : ''} · submitted {safeFormat(v.submittedAt, 'd MMM yyyy')}

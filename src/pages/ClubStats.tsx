@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { useSearchParams } from 'react-router-dom';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChartCard, Columns, DataTable, HBars, StatTile, TeamStackedBars, teamColour } from '@/components/membership/charts';
@@ -54,7 +53,6 @@ const divisionLabel = (d?: string) => (d ? leagueLabel(d) : undefined);
  * here. No player's cards appear on this page.
  */
 export default function ClubStats() {
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const today = hkDateKey(new Date().toISOString());
   const y = seasonStartYear(today);
@@ -94,12 +92,7 @@ export default function ClubStats() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <AppHeader subtitle="Stats">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Stats" />
 
       <main className="flex-1 container mx-auto px-4 py-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2">

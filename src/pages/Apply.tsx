@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { LogOut } from 'lucide-react';
-import AppHeader, { headerIconClass } from '@/components/AppHeader';
-import { useAuth } from '@/lib/auth';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
@@ -50,7 +48,6 @@ function ToPlayerPage() {
 
 export default function ApplyPage() {
   const queryClient = useQueryClient();
-  const { logout } = useAuth();
   const [params, setParams] = useSearchParams();
   const details = useQuery({ queryKey: ['myDetails'], queryFn: getMyDetails });
   const view = useQuery({ queryKey: ['apply'], queryFn: getApply });
@@ -173,12 +170,8 @@ export default function ApplyPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle={trialist ? 'Register to join' : 'New joiner application'}>
-        {/* Applicants' home is this page (App.tsx Home), so no Player View. */}
-        <button onClick={() => void logout()} className={headerIconClass} aria-label="Log out" title="Log out">
-          <LogOut className="h-4 w-4" />
-        </button>
-      </AppHeader>
+      {/* Applicants' home is this page (App.tsx Home): the header leaves out the burger and the switch for them. */}
+      <AppHeader title={trialist ? 'Register to join' : 'New joiner application'} />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
         {body()}
       </main>
