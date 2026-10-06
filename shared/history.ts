@@ -1,8 +1,10 @@
 /**
- * A person's change history (GET /api/history): what was done to their
- * record, by whom and when, in plain words. Built from the activity log,
- * which holds field NAMES only, never values, and from the ranking events
- * that made them active or inactive.
+ * Change history (GET /api/history?person= or ?match=): what was done, by
+ * whom and when, in plain words. Built from the activity log, the squad
+ * changes (match_selection_changes) and the ranking events that made someone
+ * active or inactive. The log keeps old and new values for non-personal
+ * fields only (migration 20261007160004_change_history); personal fields
+ * show by name.
  */
 
 export interface HistoryEntry {
@@ -14,9 +16,16 @@ export interface HistoryEntry {
   action: string;
   /** A short sentence for the list, e.g. "Membership details changed". */
   summary: string;
-  /** What changed, as labels ("Member type"), never values. */
+  /** What changed: labels ("Mobile"), or label and values for non-personal fields ("Position: Defender → Goalkeeper"). */
   fields: string[];
 }
+
+/** Who acted when no person did (activity_log.actor_label). */
+export const ACTOR_LABELS: Record<string, string> = {
+  "hkha-sync": "HKHA fixtures",
+  eddy: "Eddy",
+  sql: "the database",
+};
 
 /** Short labels for activity log actions. Unknown actions are worded from their name. */
 export const ACTION_LABELS: Record<string, string> = {
@@ -56,6 +65,16 @@ export const ACTION_LABELS: Record<string, string> = {
   // Data retention
   remove_personal_data: "Personal details removed",
   delete_own_profile: "Deleted their profile",
+  // Logged by the database (audit_row) and squad saves
+  "row-update": "Changed",
+  "row-insert": "Fixture added",
+  "row-delete": "Fixture removed",
+  "row-team-role": "Team role changed",
+  "row-office-insert": "Office added",
+  "row-office-update": "Office changed",
+  "row-office-delete": "Office removed",
+  "row-availability": "Availability answered for them",
+  squad: "Squad changed",
 };
 
 /** Labels for the column names the log records. Unknown names are worded from the name. */
@@ -97,6 +116,39 @@ export const FIELD_LABELS: Record<string, string> = {
   target_squad_size: "Target squad size",
   designation: "Designation",
   office_email: "Office email",
+  // Logged by the database (audit_row)
+  opt_in_only: "Opt-In Only",
+  previous_eos: "Last season's team",
+  playing_level: "Playing level",
+  playing_ability: "Ability",
+  player_coach: "Player or coach",
+  sports_type: "Sports type",
+  is_suspended: "Suspended",
+  matches_to_serve: "Matches to serve",
+  qualified_coach: "Coaching qualification",
+  qualified_umpire: "Umpiring qualification",
+  hkid_hidden: "HKID hidden",
+  mobile_no: "Mobile",
+  email: "Email",
+  selection_comments: "Selection comments",
+  auto_select: "Auto-select priority",
+  match_date: "Date and time",
+  venue: "Venue",
+  division: "Division",
+  home_team: "Home team",
+  away_team: "Away team",
+  home_kit: "Home kit",
+  away_kit: "Away kit",
+  home_score: "Home score",
+  away_score: "Away score",
+  ump_1: "Umpire 1",
+  ump_2: "Umpire 2",
+  match_status: "Status",
+  fixture_id: "HKHA fixture",
+  lock_hkha_sync: "Kept from HKHA updates",
+  auto_select_enabled: "Auto-select",
+  person_id: "Holder",
+  player_notes: "Note",
 };
 
 const sentence = (s: string) => {
@@ -119,4 +171,36 @@ export function fieldLabel(field: string): string {
   const detail = i < 0 ? "" : field.slice(i + 1).trim();
   const label = FIELD_LABELS[name] ?? sentence(name);
   return detail ? `${label}, ${detail}` : label;
+}
+
+const HK_WHEN = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Hong_Kong",
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** A fixture's date and time in Hong Kong, e.g. "Sat 10 Oct, 14:30". */
+export function matchWhen(iso: string | null | undefined): string {
+  if (!iso) return "no date";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : HK_WHEN.format(d).replace(/,? (\d\d:\d\d)$/, ", $1");
+}
+
+/** One logged value as words: on/off, "none", a fixture time in Hong Kong. */
+export function valueText(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "none";
+  if (typeof value === "boolean") return value ? "on" : "off";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "none";
+  if (field === "match_date" && typeof value === "string") return matchWhen(value);
+  return String(value);
+}
+
+/** A field that changed: "Position: Defender → Goalkeeper", or its label when no values were kept. */
+export function changeText(field: string, values?: unknown): string {
+  if (!Array.isArray(values) || values.length !== 2) return fieldLabel(field);
+  return `${fieldLabel(field)}: ${valueText(field, values[0])} → ${valueText(field, values[1])}`;
 }
