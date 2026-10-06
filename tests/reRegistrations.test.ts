@@ -13,7 +13,6 @@ import { HttpError } from "../worker/src/http";
 import { parseResolve, resolveRegistrationEvent } from "../worker/src/reRegistrations";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
@@ -104,13 +103,6 @@ describe("resolveRegistrationEvent", () => {
     rpcAnswers({ status: 200, body: {} });
     await expect(resolveRegistrationEvent(env, captain, "x';drop", { action: "keep" })).rejects.toMatchObject({ status: 404 });
     expect(calls).toHaveLength(0);
-  });
-
-  it("is refused on the Airtable backend", async () => {
-    await expect(resolveRegistrationEvent({ ...env, DATA_BACKEND: "airtable" } as Env, captain, EVENT, { action: "keep" })).rejects.toMatchObject({
-      status: 409,
-      code: "NOT_YET",
-    });
   });
 });
 

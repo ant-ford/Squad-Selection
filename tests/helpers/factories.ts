@@ -180,7 +180,7 @@ export function office(kind: FakeOffice["office"], member: string | null, overri
   return { id: nextId("Office"), office: kind, designation: null, status: "Active", member, ...overrides };
 }
 
-/** A Commitments row, keyed by COMMITMENT_FIELDS / REVIEW_TASK_FIELDS keys. */
+/** A Commitments row, keyed by COMMITMENT_FIELDS / REVIEW_TASK_FIELDS names. */
 export function commitment(overrides: Partial<FakeCommitment> = {}): FakeCommitment {
   return { id: nextId("Commitment"), ...overrides };
 }

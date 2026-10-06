@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Ranking engine (worker/src/ranking.ts), on the Supabase path.
 //
 // Regression coverage for the activatePlayer rank-hole bug: an Applicant
-// already present in fetchActiveRankingFromAirtable's pool (with their own
+// already present in fetchActiveRanking's pool (with their own
 // Section Rank) must keep that rank on activation instead of being appended
 // past the end of the list.
 //

@@ -1,6 +1,6 @@
 /**
- * POST /api/admin/registration-events/:id/resolve (Supabase backend;
- * section "dataChecks": the Men's Convenor and the Section Captains).
+ * POST /api/admin/registration-events/:id/resolve (section "dataChecks":
+ * the Men's Convenor and the Section Captains).
  *
  * An automatic re-registration that couldn't be worked out safely is left
  * at needs_review (auto_reregister). The officer either moves the player up
@@ -11,7 +11,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, SupabaseError } from "./data/supabase";
 import { invalidatePeople } from "./invalidation";
 
@@ -44,9 +43,6 @@ export async function resolveRegistrationEvent(
   eventId: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; team: string }> {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Re-registrations are on the Supabase backend only.", 409, "NOT_YET");
-  }
   if (!UUID.test(eventId)) throw new HttpError("Re-registration not found.", 404, "NOT_FOUND");
   const change = parseResolve(body);
 

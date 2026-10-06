@@ -5,7 +5,6 @@ import { getRegistrationBoard, parseDetailsChange, saveRegistrationDetails } fro
 import { missingDetails, suggestRegisteredName, tidyRegisteredName, type RegistrationPlayer } from "../shared/registration";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.example",
@@ -148,10 +147,6 @@ describe("saving registration details", () => {
     const all = fake((table, method, url) => (table === "people" ? people({ ...sam, registered_name: "LEE Sam", is_visiting_player: true })(method, url) : []));
     expect(await saveRegistrationDetails(env, convenor, { id: "rec1", registeredName: "LEE Sam", visiting: true })).toEqual({ ok: true, linked: 0 });
     expect(all.filter((c) => c.method !== "GET")).toHaveLength(0);
-  });
-
-  it("is on the Supabase backend only", async () => {
-    await expect(saveRegistrationDetails({ ...env, DATA_BACKEND: "airtable" } as Env, convenor, { id: "rec1", visiting: true })).rejects.toMatchObject({ status: 409 });
   });
 });
 
