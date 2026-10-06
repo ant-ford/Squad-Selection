@@ -2,10 +2,8 @@
   "name": "eddy-airtable-migration",
   "private": true,
   "type": "module",
-  "description": "One-off Airtable -> Supabase import and parity check. Not part of the app build.",
+  "description": "Loader scripts for Eddy data and private files. Not part of the app build.",
   "scripts": {
-    "import": "node import-airtable.mjs",
-    "parity": "node parity.mjs",
     "test": "node --test"
   },
   "dependencies": {

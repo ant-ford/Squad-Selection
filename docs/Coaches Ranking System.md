@@ -1,5 +1,10 @@
 # HKFC Squad Selection App – Ranking-Based Ability System (Implementation Specification)
 
+> **Status, October 2026:** the ranking and ability rules here are current. They are implemented in `worker/src/ranking.ts` and `shared/abilityGroup.ts`.
+> - Storage is now Postgres (`people.section_rank`, `ability_group_config`), so the "Airtable Changes" section is history.
+> - "Move To Rank" and "Move Relative To Another Player" have no screen.
+> - Rank changes are recorded in `ranking_events`, which supersedes "Audit Trail Features" under Out of Scope.
+
 ## Objective
 
 Replace the current manually maintained ability rating system (A+, A, A−, B+, B, B−, etc.) with a ranking-based system.

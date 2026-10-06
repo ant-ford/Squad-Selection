@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* Self-hosted: one variable file (latin, 300-800). Preloaded from index.html by
+   the preload-font plugin in vite.config.ts. */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('@fontsource-variable/open-sans/files/open-sans-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Accented letters outside Latin-1 (Ł, ő, ć, ş…), for names. The browser
+   fetches this file only when a page contains one of these characters, so
+   it is neither preloaded nor precached. */
+@font-face {
+  font-family: 'Open Sans';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('@fontsource-variable/open-sans/files/open-sans-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -9,6 +32,7 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-tint: hsl(var(--primary-tint));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-muted: hsl(var(--muted));
@@ -26,7 +50,7 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --font-sans: 'Open Sans', sans-serif;
-  --font-mono: 'Source Code Pro', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
@@ -44,21 +68,22 @@
   --card-foreground: 210 25% 7.8431%;
   --popover: 0 0% 100%;
   --popover-foreground: 210 25% 7.8431%;
-  --primary: 203.8863 88.2845% 53.1373%;
+  --primary: 204 88% 38%;
+  --primary-tint: 203.8863 88.2845% 53.1373%;
   --primary-foreground: 0 0% 100%;
   --secondary: 210 25% 7.8431%;
   --secondary-foreground: 0 0% 100%;
   --muted: 240 1.9608% 90%;
-  --muted-foreground: 210 25% 7.8431%;
+  --muted-foreground: 210 10% 38%;
   --accent: 211.5789 51.3514% 92.7451%;
-  --accent-foreground: 203.8863 88.2845% 53.1373%;
-  --destructive: 356.3033 90.5579% 54.3137%;
+  --accent-foreground: 204 88% 38%;
+  --destructive: 356 78% 44%;
   --destructive-foreground: 0 0% 100%;
   --border: 201.4286 30.4348% 90.9804%;
   --input: 200 23.0769% 97.4510%;
-  --ring: 202.8169 89.1213% 53.1373%;
+  --ring: 204 88% 38%;
   --font-sans: 'Open Sans', sans-serif;
-  --font-mono: 'Source Code Pro', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --shadow-x: 0px;
   --shadow-y: 2px;
   --shadow-blur: 0px;

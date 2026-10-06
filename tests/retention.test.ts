@@ -1,6 +1,6 @@
 ﻿import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
-import { MAX_PER_RUN, R2_BATCH, runRetention } from "../worker/src/retention";
+import { MAX_PER_RUN, R2_BATCH, deleteQueuedFiles, runRetention } from "../worker/src/retention";
 
 type Call = { url: URL; method: string; body: any };
 
@@ -39,7 +39,6 @@ function fakeBucket() {
 }
 
 const base = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
 } as Env;
@@ -89,6 +88,16 @@ describe("data retention job", () => {
     expect(deleted.flat()).toEqual(queue);
     expect(result.filesDeleted).toBe(queue.length);
     expect(calls.filter((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "DELETE")).toHaveLength(2);
+  });
+
+  it("asks only for objects whose 35 days are up, oldest first", async () => {
+    const calls = fakeDb({ queue: ["people/x/photo/1.jpg"] });
+    const { bucket } = fakeBucket();
+    const now = new Date("2026-11-10T03:30:00.000Z");
+    await deleteQueuedFiles({ ...base, FILES: bucket }, now);
+    const list = calls.find((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "GET")!;
+    expect(list.url.searchParams.get("delete_after")).toBe(`lte.${now.toISOString()}`);
+    expect(list.url.searchParams.get("order")).toBe("delete_after,r2_key");
   });
 
   it("keeps the queue rows when the R2 delete fails", async () => {

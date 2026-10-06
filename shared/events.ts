@@ -8,6 +8,7 @@
  */
 import { ANY, GROUPS, type Selection } from "./emailLists";
 import { SOCIAL_FUNCTIONS } from "./commitmentReview";
+import { csvCell } from "./csv";
 
 export const EVENT_TYPES = ["social_function", "team_social", "tournament", "tour", "trial"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -24,14 +25,39 @@ export type EventStatus = "draft" | "published" | "cancelled";
 export type ResponseStatus = "going" | "maybe" | "not_going";
 export const RESPONSE_LABEL: Record<ResponseStatus, string> = { going: "Going", maybe: "Maybe", not_going: "Not going" };
 
-export type PaymentMode = "free" | "on_the_night" | "payme_fps" | "account";
-export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night", "payme_fps", "account"];
+export type PaymentMode = "free" | "on_the_night" | "payme_fps" | "account" | "self_funded";
+export const PAYMENT_MODES_OFFERED: readonly PaymentMode[] = ["free", "on_the_night", "payme_fps", "account", "self_funded"];
 export const PAYMENT_LABEL: Record<PaymentMode, string> = {
   free: "Free",
   on_the_night: "Pay on the night",
   payme_fps: "PayMe or FPS in advance",
   account: "Charged to membership accounts",
+  self_funded: "Self-funded",
 };
+
+/**
+ * Whether people are billed through Eddy (bills, payments, letting off).
+ * Self-funded (tours: everyone books their own way) is like free there,
+ * but may show an estimated cost per person (owner, 7 Oct 2026).
+ */
+export const billed = (mode: PaymentMode) => mode === "on_the_night" || mode === "payme_fps" || mode === "account";
+
+/** The event's link (e.g. its WhatsApp group): an https address, or the reason it isn't one. */
+export function cleanLink(raw: unknown): string | null | { error: string } {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  if (!v) return null;
+  let url: URL;
+  try {
+    url = new URL(v);
+  } catch {
+    return { error: "The link wasn't understood. Paste the whole address, starting https://" };
+  }
+  if (url.protocol !== "https:" || v.length > 500) return { error: "The link must start https:// (and be under 500 characters)." };
+  return url.toString();
+}
+
+/** What the link button says: WhatsApp group invites are named as such. */
+export const linkLabel = (url: string) => (/^https:\/\/chat\.whatsapp\.com\//i.test(url) ? "Join the WhatsApp group" : "Open the event link");
 
 export { SOCIAL_FUNCTIONS };
 export type SocialFunction = (typeof SOCIAL_FUNCTIONS)[number];
@@ -196,11 +222,6 @@ export function isOpen(e: { status: EventStatus; startsAt: string; respondBy: st
   return e.status === "published" && now < Date.parse(e.respondBy ?? e.startsAt);
 }
 
-/** Shown on the player page until the day after it ends. */
-export function isCurrent(e: { startsAt: string; endsAt: string | null }, now = Date.now()): boolean {
-  return Date.parse(e.endsAt ?? e.startsAt) + 86_400_000 > now;
-}
-
 const HOUR = 3_600_000;
 /** An event without an end time is taken to last three hours. */
 export const eventEnds = (e: { startsAt: string; endsAt: string | null }) => Date.parse(e.endsAt ?? e.startsAt) + (e.endsAt ? 0 : 3 * HOUR);
@@ -273,6 +294,8 @@ export interface EventDetails {
   guestsAllowed: boolean;
   maxGuests: number | null;
   helpNeeded: string | null;
+  /** A link for those invited, such as the event's WhatsApp group. */
+  linkUrl: string | null;
   /** What it asks when people answer. */
   questions: EventQuestion[];
   socialFunction: SocialFunction | null;
@@ -379,6 +402,7 @@ export interface EventInput {
   guestsAllowed?: boolean;
   maxGuests?: number | null;
   helpNeeded?: string | null;
+  linkUrl?: string | null;
   questions?: EventQuestion[];
   socialFunction?: SocialFunction | null;
   team?: string | null;
@@ -491,21 +515,16 @@ export interface ChargeList {
 
 /** The treasurer's list: one line per payer, with what it's for. */
 export function chargesCsv(title: string, date: string, payers: PayerCharge[]): string {
-  const cell = (v: string | number | null) => {
-    const t = v == null ? "" : String(v);
-    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-  };
   const rows = [["Name", "Membership no.", "Amount (HK$)", "For", "Event", "Date"]];
   for (const p of payers.filter((x) => x.total > 0)) {
     const what = p.lines.map((l) => (l.what === "Member" ? l.name : `${l.name} (${l.what.toLowerCase()})`)).join("; ");
     rows.push([p.name, p.membershipNo ?? "", p.total.toFixed(2), what, title, date]);
   }
-  return rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  return csvLines(rows);
 }
 
 /** Everyone's answers, for the caterer or the organiser: one line per person, then each guest. */
 export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name: string; status: ResponseStatus; guests: Guest[]; answers: Record<string, string>; canHelp: boolean; notes: string | null }[]): string {
-  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const dietary = asksDietary(event.questions);
   const header = ["Name", "Answer", "Guest of", ...event.questions.map((q) => q.label), "Can help", "Note"];
   const out = [header];
@@ -515,7 +534,12 @@ export function answersCsv(event: Pick<EventDetails, "questions">, rows: { name:
       out.push([g.name, `Guest (${g.age})`, r.name, ...event.questions.map((q) => (q.key === DIETARY.key && dietary ? g.dietary ?? "" : "")), "", ""]);
     }
   }
-  return out.map((row) => row.map(cell).join(",")).join("\r\n");
+  return csvLines(out);
+}
+
+/** Rows to CSV lines, each cell kept from running as a formula. No line ending after the last row. */
+function csvLines(rows: string[][]): string {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
 // ── Who came (the register and check-in) ─────────────────────────────────

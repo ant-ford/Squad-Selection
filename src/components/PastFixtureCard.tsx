@@ -30,15 +30,28 @@ function cardTone(card: string): string {
   return 'bg-amber-100 text-amber-800 border-amber-200';
 }
 
+/**
+ * The score in the same order as the title: home team's goals first, the way
+ * HKHA lists results. goalsFor/goalsAgainst are HKFC's side; the Won / Drew /
+ * Lost badge next to it keeps that perspective.
+ */
+export function scoreInFixtureOrder(f: Pick<PastFixture, 'goalsFor' | 'goalsAgainst' | 'isHome'>): [number, number] | null {
+  if (f.goalsFor === null || f.goalsAgainst === null) return null;
+  return f.isHome ? [f.goalsFor, f.goalsAgainst] : [f.goalsAgainst, f.goalsFor];
+}
+
 export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
-  const hasScore = fixture.goalsFor !== null && fixture.goalsAgainst !== null;
+  const score = scoreInFixtureOrder(fixture);
 
   return (
     <div className="bg-card border border-border rounded-xl p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-foreground truncate">
-            {fixture.hkfcTeam} <span className="text-muted-foreground">v</span> {fixture.opponent}
+          {/* Home team first, as on the upcoming fixture cards. */}
+          <p className="font-semibold text-sm text-foreground truncate">
+            {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
+            <span className="text-muted-foreground font-normal"> vs </span>
+            {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
           </p>
           <div className="mt-1">
             <MetaLine date={fixture.date} venue={fixture.venue} />
@@ -46,9 +59,9 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
         </div>
 
         <div className="flex flex-col items-end gap-1 shrink-0">
-          {hasScore ? (
+          {score ? (
             <span className="text-lg font-semibold tabular-nums leading-none text-foreground">
-              {fixture.goalsFor}&ndash;{fixture.goalsAgainst}
+              {score[0]}&ndash;{score[1]}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">No score</span>
@@ -68,7 +81,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
           disciplinary sense - it just means no card was recorded. */}
       <div className="mt-2.5 flex items-center gap-2 flex-wrap">
         {fixture.played ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary-tint/10 text-primary">
             Played
           </span>
         ) : (
@@ -93,7 +106,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
       {(fixture.scorers.length > 0 || fixture.cards.length > 0) && (
         <div className="mt-2.5 pt-2.5 border-t border-border space-y-1">
           {fixture.scorers.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-foreground">
               <span className="font-medium text-foreground">Scorers</span>{' '}
               {fixture.scorers
                 .map((s) => (s.goals && s.goals > 1 ? `${s.name} (${s.goals})` : s.name))
@@ -101,7 +114,7 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
             </p>
           )}
           {fixture.cards.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-foreground">
               <span className="font-medium text-foreground">Cards</span>{' '}
               {fixture.cards.map((c) => `${c.name} (${(c.cards ?? []).join(', ')})`).join(', ')}
             </p>

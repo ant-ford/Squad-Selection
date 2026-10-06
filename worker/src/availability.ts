@@ -1,4 +1,3 @@
-import { AirtableError } from "./airtable";
 import { linkId } from "../../shared/airtableValueUtils";
 import { people } from "./data/people";
 import { matches } from "./data/matches";
@@ -15,7 +14,6 @@ import {
 import { getScheduledMatches } from "./fixtures";
 import { getRulesForPlayer, needsExplicitAvailable } from "./availabilityRules";
 import { HttpError } from "./http";
-import { PEOPLE_FIELDS } from "../../shared/schema/fieldMaps";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import type { AvailabilityException, Player } from "../../shared/schema/domainTypes";
@@ -408,22 +406,7 @@ export async function setPlayerOptInOnly(
   const player = await people(env).getById(input.playerId);
   if (!player) throw new HttpError("Player not found", 404);
 
-  try {
-    await people(env).update(input.playerId, { optInOnly: input.optInOnly });
-  } catch (err) {
-    // The field is added by hand in Airtable (see README). Until it exists
-    // every write here fails, and "422" tells a coach nothing - so say what
-    // is actually missing.
-    if (err instanceof AirtableError && (err.status === 422 || err.status === 404)) {
-      console.error(`People."${PEOPLE_FIELDS.optInOnly}" missing or not a checkbox:`, err.message);
-      throw new HttpError(
-        `This needs the "${PEOPLE_FIELDS.optInOnly}" checkbox on the People table in Airtable.`,
-        501,
-        "OPT_IN_ONLY_NOT_CONFIGURED",
-      );
-    }
-    throw err;
-  }
+  await people(env).update(input.playerId, { optInOnly: input.optInOnly });
 
   console.log(
     `[Availability Audit] optInOnly=${input.optInOnly} player=${input.playerId} coach=${input.coachEmail}`,

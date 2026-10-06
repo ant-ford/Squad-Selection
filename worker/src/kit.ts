@@ -1,5 +1,5 @@
 /**
- * Kit in Eddy (Supabase backend): the orders, where every set is, handing
+ * Kit in Eddy: the orders, where every set is, handing
  * kit out (a captain may collect a whole team's at once, and several people
  * may be handing out at the same time), and the spares for new joiners.
  * The rules live in the database functions (migration 20260930210000_kit);
@@ -9,10 +9,9 @@
 import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidatePeople } from "./invalidation";
+import { toCsv } from "../../shared/csv";
 import {
   KIT_ITEMS,
   SWAPPABLE,
@@ -90,13 +89,7 @@ const ITEM_COLUMN: Record<keyof KitSizes, string> = {
 
 const EMPTY_SIZES: KitSizes = { shirt: null, shorts: null, socks: null, goalieSmock: null, goalieSmockStyle: null };
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Kit moves into Eddy at the switch-over.", 409, "NOT_YET");
-  }
-}
-
-export const isKitOfficer = (env: Env, user: AuthorizedUser) => sectionsFor(user, env).includes("kit");
+export const isKitOfficer = (user: AuthorizedUser) => sectionsFor(user).includes("kit");
 
 const personName = (p: Pick<PersonRow, "preferred_name" | "given_names" | "surname">) =>
   [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
@@ -152,7 +145,6 @@ const toOrder = (o: OrderRow): KitOrder => ({
 });
 
 export async function getKitBoard(env: Env, orderId: string | null): Promise<KitBoard> {
-  requireSupabase(env);
   const d = db(env);
   const [orderRows, peopleRows, numbers] = await Promise.all([
     d.select<OrderRow>("kit_orders", "select=id,supplier,name,ordered_on,received_on,expected_on&order=ordered_on.desc.nullslast"),
@@ -217,9 +209,6 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
 }
 
 export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
-  // Shown on everyone's dashboard, so the Airtable backend answers "nothing"
-  // rather than an error.
-  if (backendFor(env, "people") !== "supabase") return { personId: user.personId, mine: null, holding: [], incoming: [], convenors: [] };
   const d = db(env);
   const me = encodeURIComponent(user.personId);
   const rows = await d.select<SetRow>(
@@ -293,7 +282,6 @@ const ids = (v: unknown, max = 200): string[] =>
   Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x)))].slice(0, max) : [];
 
 export async function moveKit(env: Env, user: AuthorizedUser, body: Record<string, unknown>): Promise<KitMoveResult> {
-  requireSupabase(env);
   const setIds = ids(body.setIds);
   if (setIds.length === 0) throw new HttpError("Choose at least one kit set.", 400, "INVALID_INPUT");
   const to = body.to === null ? null : typeof body.to === "string" && body.to ? body.to : undefined;
@@ -307,7 +295,7 @@ export async function moveKit(env: Env, user: AuthorizedUser, body: Record<strin
   try {
     return await db(env).rpc<KitMoveResult>("kit_move", {
       p_actor: user.personId,
-      p_officer: isKitOfficer(env, user),
+      p_officer: isKitOfficer(user),
       p_sets: setIds,
       p_to: to,
       p_expected: expected,
@@ -319,7 +307,6 @@ export async function moveKit(env: Env, user: AuthorizedUser, body: Record<strin
 
 /** The receiver of an offered set says whether they've got it. */
 export async function confirmKit(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (typeof body.accept !== "boolean") throw new HttpError("Say whether you've got it.", 400, "INVALID_INPUT");
   try {
     await db(env).rpc("kit_confirm", { p_actor: user.personId, p_set: oneId(body.setId), p_accept: body.accept });
@@ -340,10 +327,9 @@ const personId = (v: unknown) => {
 };
 
 /** Changing whose number is whose is a People change: drop the People caches. */
-const peopleChanged = (env: Env) => invalidateForTables(env, [TABLES.player]);
+const peopleChanged = (env: Env) => invalidatePeople(env);
 
 export async function allocateSpare(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   try {
     await db(env).rpc("kit_allocate", { p_actor: user.personId, p_set: oneId(body.setId), p_person: personId(body.personId) });
   } catch (err) {
@@ -354,7 +340,6 @@ export async function allocateSpare(env: Env, user: AuthorizedUser, body: Record
 }
 
 export async function releaseSet(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   try {
     await db(env).rpc("kit_release", { p_actor: user.personId, p_set: oneId(body.setId) });
   } catch (err) {
@@ -365,7 +350,6 @@ export async function releaseSet(env: Env, user: AuthorizedUser, body: Record<st
 }
 
 export async function giveNewNumber(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const id = personId(body.personId);
   const person = await db(env).one<PersonRow>(
     "people",
@@ -385,7 +369,6 @@ export async function giveNewNumber(env: Env, user: AuthorizedUser, body: Record
 }
 
 export async function editSizes(env: Env, user: AuthorizedUser, setId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const s = (body.sizes ?? {}) as Record<string, unknown>;
   const sizes = Object.fromEntries(
     KIT_ITEMS.map(({ key }) => [key, typeof s[key] === "string" ? (s[key] as string).trim().slice(0, 20) : ""]),
@@ -400,7 +383,6 @@ export async function editSizes(env: Env, user: AuthorizedUser, setId: string, b
 
 /** Swaps one item (shorts, socks, smock) between two sets of the same order. */
 export async function swapItem(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const item = SWAPPABLE.find((s) => s.key === body.item)?.key;
   if (!item) throw new HttpError("Only shorts, socks and smocks can be swapped.", 400, "INVALID_INPUT");
   try {
@@ -412,7 +394,6 @@ export async function swapItem(env: Env, user: AuthorizedUser, body: Record<stri
 }
 
 export async function setOrderReceived(env: Env, orderId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const on = body.receivedOn;
   if (on !== null && !(typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on))) {
     throw new HttpError("Give the date the kit arrived.", 400, "INVALID_INPUT");
@@ -424,7 +405,6 @@ export async function setOrderReceived(env: Env, orderId: string, body: Record<s
 
 /** The delivery date the supplier gives, or null when none is known. */
 export async function setOrderExpected(env: Env, orderId: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const on = body.expectedOn;
   if (on !== null && !(typeof on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(on))) {
     throw new HttpError("Give the date the kit is expected.", 400, "INVALID_INPUT");
@@ -435,7 +415,6 @@ export async function setOrderExpected(env: Env, orderId: string, body: Record<s
 }
 
 export async function getSetHistory(env: Env, setId: string): Promise<KitMove[]> {
-  requireSupabase(env);
   const d = db(env);
   const moves = await d.select<{ kind: KitMove["kind"]; from_id: string | null; to_id: string | null; by_id: string | null; note: string | null; at: string }>(
     "kit_moves_v",
@@ -452,12 +431,6 @@ export async function getSetHistory(env: Env, setId: string): Promise<KitMove[]>
   return moves.map((m) => ({ kind: m.kind, from: name(m.from_id), to: name(m.to_id), by: name(m.by_id), note: m.note, at: m.at }));
 }
 
-/** CSV cells, quoted where needed. */
-const cell = (v: string | number | null | undefined) => {
-  const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
 /**
  * Who needs kit from this order's supplier: Active players with a number
  * but no set in the order, in the order file's layout, for the next
@@ -468,15 +441,18 @@ export async function topUpCsv(env: Env, orderId: string | null): Promise<{ file
   const board = await getKitBoard(env, orderId);
   if (!board.order) throw new HttpError("There is no kit order yet.", 404, "NOT_FOUND");
   const need = board.people.filter((p) => p.active && p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
-  const header = ["Name", "Status", "Shirt No.", "Socks Size", "Shirt Size", "Shorts Size", "Goalie Smock Style", "Goalie Smock Size", "Team"];
-  const lines = need.map((p) =>
-    [p.name, p.status, p.shirtNo, p.sizes.socks, p.sizes.shirt, p.sizes.shorts, p.sizes.goalieSmockStyle, p.sizes.goalieSmock, p.team]
-      .map(cell)
-      .join(","),
-  );
   return {
     filename: `${board.order.supplier} top-up (${new Date().toISOString().slice(0, 10)}).csv`,
-    csv: [header.join(","), ...lines].join("\r\n") + "\r\n",
+    csv: topUpCsvText(need),
     count: need.length,
   };
+}
+
+/** The order file's layout: one line per person. */
+export function topUpCsvText(need: Pick<KitPerson, "name" | "status" | "shirtNo" | "sizes" | "team">[]): string {
+  const header = ["Name", "Status", "Shirt No.", "Socks Size", "Shirt Size", "Shorts Size", "Goalie Smock Style", "Goalie Smock Size", "Team"];
+  const lines = need.map((p) =>
+    [p.name, p.status, p.shirtNo, p.sizes.socks, p.sizes.shirt, p.sizes.shorts, p.sizes.goalieSmockStyle, p.sizes.goalieSmock, p.team].map((v) => (v == null ? "" : String(v))),
+  );
+  return toCsv([header, ...lines]);
 }

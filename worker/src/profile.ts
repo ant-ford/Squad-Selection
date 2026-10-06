@@ -6,7 +6,6 @@ import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
-import { backendFor } from "./data/backend";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 
 /**
@@ -49,6 +48,13 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     .filter((t) => (t.teamCaptain || []).includes(user.id))
     .map((t) => t.teamName || "");
 
+  // Separate reads, asked together rather than one after another.
+  const [volunteers, events, umpiring] = await Promise.all([
+    canSeeVolunteers(env, authUser),
+    canManageEvents(env, authUser),
+    umpiringAccess(env, authUser),
+  ]);
+
   return {
     preferredName:
       user.preferredName ||
@@ -67,10 +73,10 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Which officers' sections to offer. Derived from the same rule the
     // Worker enforces, so the app never keeps its own copy of it.
-    sections: sectionsFor(authUser, env),
+    sections: sectionsFor(authUser),
 
     // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
-    quizzes: backendFor(env, "people") === "supabase",
+    quizzes: true,
 
     // Applicants (and people registering to join) with an application still
     // to fill in belong on it, not the player page.
@@ -79,21 +85,21 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Their own link for inviting someone to register to join (trials.ts):
     // members only, once the app is on Supabase.
     inviteLink:
-      backendFor(env, "people") === "supabase" && user.status === "Member"
+      user.status === "Member"
         ? `${(env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "")}/join?ref=${encodeURIComponent(user.id)}`
         : null,
 
     // Whether the Season plans screen has anything for them.
-    seasonPlans: canSeeSeasonPlans(env, authUser),
+    seasonPlans: canSeeSeasonPlans(authUser),
 
     // Whether the Volunteers screen is theirs: officers, coaches, captains.
-    volunteers: await canSeeVolunteers(env, authUser),
+    volunteers,
 
     // Whether the Events screen is theirs: social secretaries and Section Captains.
-    events: await canManageEvents(env, authUser),
+    events,
 
     // The umpiring duties: the club's umpires, and the Umpire Coordinator.
-    umpiring: await umpiringAccess(env, authUser),
+    umpiring,
 
     captainTeams,
 

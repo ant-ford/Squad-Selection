@@ -1,25 +1,20 @@
 /**
- * Waivers & declarations in Eddy (Supabase backend), replacing Fillout form
+ * Waivers & declarations in Eddy, replacing Fillout form
  * 10. Everyone agrees to the HKFC Hockey Code of Conduct & Disclaimers each
  * season; under-18s add their parent or guardian's consent and signature.
  * Each signing is a dated record (declarations), and people.waivers_signed_at
  * is set, which is what clears the My Tasks line.
- *
- * Until the switch-over the Fillout form is used against Airtable, so these
- * routes answer 409 on the Airtable backend.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { storeSignature, signatureBytes } from "./signatures";
 import { waiversDoneThisSeason } from "./myTasks";
 import { inBackground } from "./requestContext";
 import { makeU18Registration } from "./pdf/u18Registration";
 import { pdfsEnabled } from "./pdf/render";
-import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import {
@@ -43,12 +38,6 @@ interface PersonRow {
   guardian_email: string | null;
 }
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Waivers move into Eddy at the switch-over. Until then, use the Waivers & Declarations form link.", 409, "NOT_YET");
-  }
-}
-
 // Lives in shared/declarations.ts now (the registration screen uses it too).
 import { isUnderEighteen } from "../../shared/declarations";
 export { isUnderEighteen };
@@ -63,7 +52,6 @@ async function loadPerson(env: Env, personApiId: string): Promise<PersonRow> {
 }
 
 export async function getMyDeclarations(env: Env, user: AuthorizedUser): Promise<DeclarationsView> {
-  requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const today = hkDateKey(new Date().toISOString());
   const start = seasonStartYear(today);
@@ -85,7 +73,6 @@ export async function getMyDeclarations(env: Env, user: AuthorizedUser): Promise
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 export async function submitDeclarations(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (body.version !== DECLARATIONS_VERSION) {
     throw new HttpError("The wording has changed since this page was opened. Reload to read the current version.", 409, "WORDING_CHANGED");
   }
@@ -125,7 +112,7 @@ export async function submitDeclarations(env: Env, user: AuthorizedUser, body: R
     throw err;
   }
   // My Tasks reads waivers_signed_at through the People caches.
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   // HockeyHK's under-18 form, to the Hockey Convenor: after the response.
   if (minor && pdfsEnabled(env)) void inBackground(() => makeU18Registration(env, p.id));
   return { ok: true, underEighteen: minor };

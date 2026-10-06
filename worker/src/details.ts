@@ -1,5 +1,5 @@
 /**
- * The personal-details sections (Supabase backend), shared by the member
+ * The personal-details sections, shared by the member
  * details update and the new joiner form: read them, save one section at a
  * time, upload a photo or HKID copy, kit sizes, and "confirm" at the end of
  * the start-of-season check. The questions are shared/profile.ts.
@@ -7,14 +7,11 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { invalidateCache } from "./cache";
 import { isUnderEighteen } from "./declarations";
-import { deleteQueuedFiles } from "./retention";
-import { TABLES } from "../../shared/schema/tableNames";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { KIT_SIZE_OPTIONS, type KitSizes } from "../../shared/kit";
@@ -56,12 +53,6 @@ type PersonRow = Record<string, unknown> & {
 
 /** The ID questions a member with hkid_hidden is neither shown nor asked (owner, 2026-10-02). */
 const HIDDEN_ID_COLUMNS = new Set(["hkid_no", "passport_no"]);
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Your details move into Eddy at the switch-over. Until then, use the member details form link.", 409, "NOT_YET");
-  }
-}
 
 const today = () => hkDateKey(new Date().toISOString());
 const isApplicant = (p: PersonRow) => p.status === "Applicant";
@@ -116,7 +107,6 @@ async function loadKit(env: Env, p: PersonRow): Promise<MyDetails["kit"]> {
 }
 
 export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDetails> {
-  requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const d = db(env);
   const [season, files, kit] = await Promise.all([
@@ -203,7 +193,6 @@ export function parseSection(
 
 /** Saves one section of the signed-in person's details. */
 export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKey | string, body: Record<string, unknown>) {
-  requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const section = PROFILE_SECTIONS.find((s) => s.key === key);
   if (section?.underEighteenOnly && !isUnderEighteen(p.date_of_birth, today())) {
@@ -211,13 +200,12 @@ export async function saveSection(env: Env, user: AuthorizedUser, key: SectionKe
   }
   const patch = parseSection(key, body, audience(p), { trialist: isTrialist(p), idHidden: p.hkid_hidden });
   await db(env).update("people", `id=${eq(p.id)}`, patch);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
 /** Saves kit sizes for the current supplier. A printed shirt keeps its size. */
 export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   const kit = await loadKit(env, p);
   if (!kit) throw new HttpError("There's no kit order to give sizes for yet.", 409, "NOT_YET");
@@ -251,33 +239,27 @@ export async function saveKitSizes(env: Env, user: AuthorizedUser, body: Record<
  * "Delete my profile": removes the signed-in person's personal details,
  * files and sign-in at once, the same removal as the 13-month retention job
  * (delete_own_profile, migration 20261002160000). Their name and playing
- * record stay. The app asks them to type DELETE first; so does this.
+ * record stay. The app asks them to type DELETE first; so does this. Their
+ * files are queued and leave R2 35 days later with the nightly run, like
+ * every removal's (migration 20261007000102), so a restored backup never
+ * points at a missing file.
  */
 export async function deleteMyProfile(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (body.confirm !== "DELETE") throw new HttpError("Type DELETE to confirm.", 400, "INVALID_INPUT");
   const p = await loadPerson(env, user.personId);
   await db(env).rpc("delete_own_profile", { p_person: p.id });
-  // Their files go now rather than at the next nightly run; a failure is
-  // left queued for that run.
-  try {
-    await deleteQueuedFiles(env);
-  } catch (err) {
-    console.error("Delete my profile: files left queued:", err instanceof Error ? err.message : err);
-  }
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
 /** The end of the start-of-season check: their details are confirmed for this season. */
 export async function confirmDetails(env: Env, user: AuthorizedUser) {
-  requireSupabase(env);
   const p = await loadPerson(env, user.personId);
   await db(env).update("people", `id=${eq(p.id)}`, { profile_updated_at: new Date().toISOString() });
   // The My Tasks line goes at once, not when its minute's cache runs out.
   invalidateCache(`my-details-check:${user.personId}`);
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -308,7 +290,6 @@ export function uploadBytes(kind: keyof typeof UPLOAD_KINDS, dataUrl: unknown): 
  * removed, as re-uploading on the Fillout form did.
  */
 export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (kind !== "photo" && kind !== "hkid" && kind !== "passport") throw new HttpError("Unknown upload.", 404, "NOT_FOUND");
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const { bytes, type } = uploadBytes(kind, body.dataUrl);
@@ -327,6 +308,6 @@ export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, b
     await d.remove("files", `id=in.(${old.map((o) => o.id).join(",")})`);
     await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
   }
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true, url: kind === "photo" ? await fileLink(env, file.id) : null };
 }

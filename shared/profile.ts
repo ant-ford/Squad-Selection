@@ -20,7 +20,7 @@
  */
 
 import { hkDateKey } from "./hkDateKey";
-import { seasonStartYear } from "./membershipInsights";
+import { seasonStartYear } from "./season";
 import { joinPhone, normaliseHkid, phoneProblem, splitPhone } from "./phone";
 
 export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno" | "hkid" | "branch" | "account";
@@ -138,6 +138,11 @@ const address = (prefix: "home" | "business", label: string, flatTypes: readonly
   { key: `${prefix}Region`, column: `${prefix}_region`, label: "Region", type: "select", options: REGIONS, required },
 ];
 
+/** Member Type choices; also what the Membership Officer may set (worker/src/admin/membership.ts). */
+export const MEMBER_TYPES = ["Main", "Spouse", "Child", "Partner"] as const;
+/** Membership category choices; also what the Membership Officer may set. */
+export const CATEGORY_TYPES = ["Sports Preferred", "Junior (21-27)", "Junior (under 21)", "Sports Debenture", "Sports Subscriber"] as const;
+
 export const PROFILE_SECTIONS: SectionSpec[] = [
   {
     key: "application",
@@ -159,7 +164,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
         column: "member_type",
         label: "Member type",
         type: "select",
-        options: ["Main", "Spouse", "Child", "Partner"],
+        options: MEMBER_TYPES,
         required: true,
         audiences: ["existing"],
         hint: "Main only if you're the primary member.",
@@ -169,7 +174,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
         column: "category_type",
         label: "Membership category",
         type: "select",
-        options: ["Sports Preferred", "Junior (21-27)", "Junior (under 21)", "Sports Debenture", "Sports Subscriber"],
+        options: CATEGORY_TYPES,
         required: true,
       },
       { key: "playerCoach", column: "player_coach", label: "Joining as", type: "multi", options: ["Player", "Coach"], required: true, audiences: ["new"] },

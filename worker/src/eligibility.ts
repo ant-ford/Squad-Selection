@@ -1,8 +1,9 @@
-import { linkId } from "./airtable";
-import { isFriendly, isQualifyingPlayUpCard, playUpAllowance } from "./playUp";
+import { linkId } from "../../shared/airtableValueUtils";
+import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
+import { playUpAllowance } from "../../shared/playUpAllowance";
 import { hkfcSides } from "./match";
 import { UNRANKED_TEAM_RANK } from "./reference";
-import type { CardSuspensionState } from "./suspension";
+import type { CardSuspensionState, ManualSuspensionState } from "./suspension";
 import type { Match, MatchCard, Player, Team } from "../../shared/schema/domainTypes";
 
 // ── Public types ────────────────────────────────────────────────────────
@@ -60,14 +61,6 @@ export interface VirtualSelection {
 type TeamMap = Map<string, Team>;
 type RankMap = Record<string, number>;
 type SameDayTeamFixture = { matchId: string; teamName: string };
-
-function buildRankMap(teamMap: TeamMap): RankMap {
-  const rm: RankMap = {};
-  for (const [name, t] of teamMap.entries()) {
-    rm[name] = t.teamRank ?? UNRANKED_TEAM_RANK;
-  }
-  return rm;
-}
 
 function selectionKey(matchId: string, teamName: string): string {
   return `${matchId}:${teamName}`;
@@ -148,10 +141,12 @@ function checkAdminData(player: Player): RuleBlock | null {
 function checkSuspension(player: Player, ctx: EvaluationContext): RuleBlock | null {
   // Manual disciplinary suspension and the automatically calculated card
   // suspension are independent - either blocks the player, neither clears
-  // the other.
+  // the other. Manual means the Men's Convenor's suspensions or, until
+  // they are gone, the old hand-set People flags.
   const block = { ruleId: RULE_IDS.SUSPENSION, reason: "Suspended" };
   if (player.isSuspended === true) return block;
   if ((player.matchesToServe ?? 0) > 0) return block;
+  if (ctx.manualSuspensionByPlayer?.get(player.id)?.active) return block;
   const automatic = ctx.suspensionByPlayer?.get(player.id);
   if (automatic?.active) return block;
   return null;
@@ -540,6 +535,8 @@ export interface EvaluationContext {
   playersById: Map<string, Player>;
   completedLeagueMatchesByTeam: Map<string, number>;
   suspensionByPlayer?: Map<string, CardSuspensionState>;
+  /** The Men's Convenor's suspensions (suspension.ts manualSuspensionStates). */
+  manualSuspensionByPlayer?: Map<string, ManualSuspensionState>;
 }
 
 // ── Main evaluation entry point ─────────────────────────────────────────

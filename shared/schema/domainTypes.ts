@@ -83,6 +83,11 @@ export interface Match {
   /** Umpires as the HKHA match card records them (free text; see shared/umpires.ts). */
   ump1?: string;
   ump2?: string;
+  /** Each side's squad version: bumped by every change to that side's
+   *  selection, so a save can tell whether someone else changed it since
+   *  the page loaded. Supabase only; 0 before the first change. */
+  selectionVersionHome?: number;
+  selectionVersionAway?: number;
 }
 
 /** Shirt colour options on Matches.Home Kit / Away Kit. "" = not yet set. */
@@ -151,13 +156,6 @@ export interface RankingList {
   version: number;
 }
 
-export interface RecentChange {
-  id: string;
-  kind: string;
-  playerName: string;
-  text: string;
-  at: string;
-}
 /** Which fixtures a standing availability rule applies to. */
 export type AvailabilityRuleType =
   | "Play-ups"

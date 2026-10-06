@@ -3,24 +3,16 @@ import { toast } from 'sonner';
 import { Download } from 'lucide-react';
 import { errorText, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
+import { saveCsv } from '@/lib/saveCsv';
 import { confirmPayment, getCharges, markChargesSent } from '@/api/events';
 import { READ_STATUS_LABEL, chargesCsv, priceText, type ManagedEvent, type ReadStatus } from '@shared/events';
 
 const READ_CHIP: Record<ReadStatus, string> = {
-  matched: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-  amount_differs: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+  matched: 'bg-emerald-500/15 text-emerald-700',
+  amount_differs: 'bg-amber-500/15 text-amber-700',
   duplicate: 'bg-destructive/10 text-destructive',
   unreadable: 'bg-muted text-muted-foreground',
 };
-
-export function downloadCsv(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /**
  * Who owes what for a paid event: one line per payer (their own place,
@@ -63,7 +55,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
         <button
           className="text-xs text-primary inline-flex items-center gap-1 disabled:opacity-50"
           disabled={!owing.length}
-          onClick={() => downloadCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
+          onClick={() => saveCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
         >
           <Download className="h-3.5 w-3.5" /> Download list
         </button>
@@ -80,7 +72,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
             <p className="text-xs text-foreground">Download the list, send it to the treasurer, then mark it sent.</p>
           )}
           {list.changedSince.length > 0 && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">Changed since it was sent: {list.changedSince.join(', ')}. Send the treasurer a correction.</p>
+            <p className="text-xs text-amber-700">Changed since it was sent: {list.changedSince.join(', ')}. Send the treasurer a correction.</p>
           )}
           <button className={`${secondary} h-8 text-xs`} disabled={sent.isPending} onClick={() => sent.mutate()}>
             {list.sentAt ? 'Mark as sent again' : 'Mark as sent to the treasurer'}
@@ -111,7 +103,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
-                  {p.payment.amountDue != null && p.payment.amountDue !== p.total && <span className="text-amber-700 dark:text-amber-400">Bill changed since: was {priceText(p.payment.amountDue)}</span>}
+                  {p.payment.amountDue != null && p.payment.amountDue !== p.total && <span className="text-amber-700">Bill changed since: was {priceText(p.payment.amountDue)}</span>}
                   {p.payment.proofUrl && (
                     <a href={p.payment.proofUrl} target="_blank" rel="noreferrer" className="text-primary underline">
                       Screenshot

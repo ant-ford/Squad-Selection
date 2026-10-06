@@ -9,7 +9,7 @@ import { availableLabel } from "../../shared/availableLabel";
 import { currentSeason, previousSeason } from "./seasonContext";
 import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 import { calendarEventsFor, type CalendarEvent } from "./events";
-import { EVENT_TYPE_LABEL, PAYMENT_LABEL, priceText } from "../../shared/events";
+import { EVENT_TYPE_LABEL, PAYMENT_LABEL, billed, priceText } from "../../shared/events";
 
 const MATCH_DURATION_MINUTES = 90;
 
@@ -74,28 +74,38 @@ export function formatSquadLines(squad: SquadEntry[]): string[] {
   });
 }
 
+// Built once per isolate: making a formatter costs far more than using one.
+const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Hong_Kong",
+  weekday: "long", day: "numeric", month: "long",
+  hour: "2-digit", minute: "2-digit", hour12: false,
+});
+const DAY_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Hong_Kong",
+  day: "numeric", month: "long", year: "numeric",
+});
+const ICS_LOCAL_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Hong_Kong",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+  hour12: false,
+});
+
 /**
  * "Saturday 4 October, 15:00 HKT". Match times are Hong Kong times, and the
  * event itself is what a travelling player's calendar will shift into their
  * local zone - so the body spells out the time everyone else is working to.
  */
-function formatWhen(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Hong_Kong",
-    weekday: "long", day: "numeric", month: "long",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(date);
+export function formatWhen(date: Date): string {
+  const parts = WHEN_FORMAT.formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
   return `${get("weekday")} ${get("day")} ${get("month")}, ${get("hour")}:${get("minute")} HKT`;
 }
 
 /** "20 November 2026" in Hong Kong time. */
-function formatDay(iso: string): string {
+export function formatDay(iso: string): string {
   if (!iso) return "";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Hong_Kong",
-    day: "numeric", month: "long", year: "numeric",
-  }).format(new Date(iso));
+  return DAY_FORMAT.format(new Date(iso));
 }
 
 const OUTCOME_WORD: Record<Outcome, string> = { win: "Won", draw: "Drew", loss: "Lost" };
@@ -184,14 +194,8 @@ export function foldLine(line: string): string {
   return out.join("\r\n");
 }
 
-function formatIcsLocalTime(date: Date): string {
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: "Asia/Hong_Kong",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false,
-  };
-  const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(date);
+export function formatIcsLocalTime(date: Date): string {
+  const parts = ICS_LOCAL_FORMAT.formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || "00";
   return `${get("year")}${get("month")}${get("day")}T${get("hour")}${get("minute")}${get("second")}`;
 }
@@ -401,7 +405,9 @@ export function formatEventVEvent(e: CalendarEvent, appOrigin: string, now = new
     {
       lines: [
         `Your answer: ${e.answer === "going" ? "Going" : "Maybe"}${guests}`,
-        ...(e.paymentMode !== "free" && price ? [`${price} · ${PAYMENT_LABEL[e.paymentMode]}`] : []),
+        ...(billed(e.paymentMode) && price ? [`${price} · ${PAYMENT_LABEL[e.paymentMode]}`] : []),
+        ...(e.paymentMode === "self_funded" ? [`Self-funded${price ? `, about ${price} each` : ""}`] : []),
+        ...(e.linkUrl ? [e.linkUrl] : []),
         `Change it in Eddy: ${appOrigin}/?event=${e.id}`,
       ],
     },

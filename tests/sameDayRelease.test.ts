@@ -10,11 +10,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { syncSquad } from "../worker/src/squad";
 import { invalidateAll } from "../worker/src/cache";
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import type { Match } from "../shared/schema/domainTypes";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { match, person, recId, team } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
@@ -22,97 +24,105 @@ const ENV = {
 
 const DAY = "2026-09-26";
 
-function person(id: string, name: string, team: string, extra: Record<string, unknown> = {}) {
-  return {
-    id,
-    fields: {
-      "Preferred Name": name, Surname: "S", Email: `${id}@hkfc.com`, Active: true, Status: "Active",
-      "Registered Team": team, "Playing Position": "Midfielder", "Playing Ability": "C", ...extra,
-    },
-  };
+// Already full-length row ids, so isRowId() on the save path accepts them.
+const UMA = "recU21PlayerAAAAA";
+const SAM = "recSamPlayerAAAAA";
+const KIM = "recKimPlayerAAAAA";
+const LOW = recId("Low");
+const HIGH = recId("High");
+
+function player(id: string, name: string, registeredTeam: string, extra: Parameters<typeof person>[0] = {}) {
+  return person({
+    id, preferredName: name, surname: "S", email: `${id}@hkfc.com`, active: true, status: "Active",
+    registeredTeam, playingPosition: "Midfielder", playingAbility: "C", ...extra,
+  });
 }
 
-function fixture(id: string, home: string, selected: string[], extra: Record<string, unknown> = {}) {
-  return {
-    id,
-    fields: {
-      Date: `${DAY}T02:00:00.000Z`, Season: "2026-27", Division: "Div 3", "Home Team": home, "Away Team": `Opp ${id}`,
-      Venue: "P1", "Match Status": "Scheduled", "Selected Players Home": selected, "Selected Players Away": [], ...extra,
-    },
-  };
+function fixture(id: string, homeTeam: string, selected: string[], extra: Partial<Match> = {}) {
+  return match({
+    id, matchDate: `${DAY}T02:00:00.000Z`, season: "2026-27", division: "Div 3", homeTeam, awayTeam: `Opp ${id}`,
+    venue: "P1", matchStatus: "Scheduled", selectedPlayersHome: selected, selectedPlayersAway: [], ...extra,
+  });
 }
 
-let tables: FakeTables;
+const db = useFakeRepos();
 
-function install(matches: ReturnType<typeof fixture>[]) {
-  tables = {
-    Teams: ["HKFC A", "HKFC B", "HKFC C", "HKFC D", "HKFC E"].map((n, i) => ({
-      id: `recT${i}`, fields: { "Team Name": n, "Team Rank": i + 1, Active: true, "Target Squad Size": 14 },
-    })),
-    People: [
-      person("recU21PlayerAAAAA", "Uma", "HKFC D", { "U21 Eligible": true }),
-      person("recSamPlayerAAAAA", "Sam", "HKFC D"),
-      person("recKimPlayerAAAAA", "Kim", "HKFC D"),
+function install(matches: Match[]) {
+  db.reset({
+    teams: ["HKFC A", "HKFC B", "HKFC C", "HKFC D", "HKFC E"].map((n, i) =>
+      team({ id: recId(`T${i}`), teamName: n, teamRank: i + 1, active: true, targetSquadSize: 14 }),
+    ),
+    people: [
+      player(UMA, "Uma", "HKFC D", { u21Eligible: true }),
+      player(SAM, "Sam", "HKFC D"),
+      player(KIM, "Kim", "HKFC D"),
     ],
-    Matches: matches,
-  };
-  fakeAirtable(tables);
+    matches,
+  });
 }
 
-const selected = (matchId: string) =>
-  tables.Matches.find((r) => r.id === matchId)?.fields["Selected Players Home"];
+const selected = (matchId: string) => db.state.matches.find((m) => m.id === matchId)?.selectedPlayersHome;
 
-beforeEach(() => invalidateAll());
+beforeEach(() => {
+  invalidateAll();
+  // Nothing here should reach Supabase directly; any request fails the test.
+  fakePostgrest({ tables: {} });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("syncSquad: higher team priority", () => {
   it("takes a U21 out of their own team's squad when a higher team picks them", async () => {
-    install([fixture("recLow", "HKFC D", ["recU21PlayerAAAAA", "recKimPlayerAAAAA"]), fixture("recHigh", "HKFC B", [])]);
+    install([fixture(LOW, "HKFC D", [UMA, KIM]), fixture(HIGH, "HKFC B", [])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recU21PlayerAAAAA"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, HIGH, [UMA], "coach@hkfc.com", "home");
 
-    expect(selected("recHigh")).toEqual(["recU21PlayerAAAAA"]);
-    expect(selected("recLow")).toEqual(["recKimPlayerAAAAA"]);
-    expect(displaced).toEqual([{ playerId: "recU21PlayerAAAAA", playerName: "Uma S", team: "HKFC D", matchId: "recLow" }]);
+    expect(selected(HIGH)).toEqual([UMA]);
+    expect(selected(LOW)).toEqual([KIM]);
+    expect(displaced).toEqual([{ playerId: UMA, playerName: "Uma S", team: "HKFC D", matchId: LOW }]);
+    // Applied to the lower squad as it is now (apply_squad_changes), with no version check.
+    expect(db.callsTo("matches", "applySelectionChanges").map((c) => c.args)).toEqual([[
+      LOW, { side: "home", add: [], remove: [UMA], version: null, actorId: null, source: "release" },
+    ]]);
   });
 
   it("does the same for any player, not only U21s", async () => {
-    install([fixture("recLow", "HKFC D", ["recSamPlayerAAAAA"]), fixture("recHigh", "HKFC B", [])]);
+    install([fixture(LOW, "HKFC D", [SAM]), fixture(HIGH, "HKFC B", [])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, HIGH, [SAM], "coach@hkfc.com", "home");
 
-    expect(selected("recLow")).toEqual([]);
-    expect(displaced.map((d) => d.playerId)).toEqual(["recSamPlayerAAAAA"]);
+    expect(selected(LOW)).toEqual([]);
+    expect(displaced.map((d) => d.playerId)).toEqual([SAM]);
   });
 
   it("leaves players already in the squad where they are (only new picks move)", async () => {
     // Re-saving a squad must not keep reaching into other squads.
-    install([fixture("recLow", "HKFC D", ["recKimPlayerAAAAA"]), fixture("recHigh", "HKFC B", ["recSamPlayerAAAAA"])]);
+    install([fixture(LOW, "HKFC D", [KIM]), fixture(HIGH, "HKFC B", [SAM])]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, HIGH, [SAM], "coach@hkfc.com", "home");
 
     expect(displaced).toEqual([]);
-    expect(selected("recLow")).toEqual(["recKimPlayerAAAAA"]);
+    expect(selected(LOW)).toEqual([KIM]);
   });
 
   it("does not rewrite a lower squad whose match has been played", async () => {
     install([
-      fixture("recLow", "HKFC D", ["recSamPlayerAAAAA"], { "Match Status": "Played" }),
-      fixture("recHigh", "HKFC B", []),
+      fixture(LOW, "HKFC D", [SAM], { matchStatus: "Played" }),
+      fixture(HIGH, "HKFC B", []),
     ]);
 
-    const { displaced } = await syncSquad(ENV, "recHigh", ["recSamPlayerAAAAA"], "coach@hkfc.com", "home");
+    const { displaced } = await syncSquad(ENV, HIGH, [SAM], "coach@hkfc.com", "home");
 
     expect(displaced).toEqual([]);
-    expect(selected("recLow")).toEqual(["recSamPlayerAAAAA"]);
+    expect(selected(LOW)).toEqual([SAM]);
+    expect(db.callsTo("matches", "applySelectionChanges")).toEqual([]);
   });
 
   it("still rejects the reverse: a lower team cannot take a player a higher team has", async () => {
-    install([fixture("recLow", "HKFC D", []), fixture("recHigh", "HKFC B", ["recU21PlayerAAAAA"])]);
+    install([fixture(LOW, "HKFC D", []), fixture(HIGH, "HKFC B", [UMA])]);
 
-    await expect(syncSquad(ENV, "recLow", ["recU21PlayerAAAAA"], "coach@hkfc.com", "home")).rejects.toThrow(
+    await expect(syncSquad(ENV, LOW, [UMA], "coach@hkfc.com", "home")).rejects.toThrow(
       /Selected for HKFC B on same day/,
     );
-    expect(selected("recHigh")).toEqual(["recU21PlayerAAAAA"]);
+    expect(selected(HIGH)).toEqual([UMA]);
   });
 });
