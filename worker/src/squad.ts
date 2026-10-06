@@ -4,7 +4,8 @@ import { teams as teamsRepo } from "./data/teams";
 import { isRowId } from "./data/ids";
 import type { Env } from "./env";
 import { getVersioned } from "./cache";
-import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
+import { availabilityExceptions } from "./data/availabilityExceptions";
 import { evaluatePlayerEligibility, type EvaluationContext } from "./eligibility";
 import { HttpError } from "./http";
 import type { KitColour, Match, Player, Team } from "../../shared/schema/domainTypes";
@@ -71,17 +72,21 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   // index's tables and the availability rules): a squad saved on one isolate
   // shows on every other on its next request.
   const cacheKey = `players-for-match:${matchId}:${side ?? "auto"}`;
-  const heavyData = await getVersioned(env, cacheKey, [...SEASON_INDEX_DEPS, "availability_rules"], async () => {
-    const { ctx, exceptionsRaw } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
-    return { ctx, allPlayers: ref.players, allExceptions: exceptionsRaw };
-  });
-  const { ctx, allPlayers, allExceptions } = heavyData;
+  // This match's own answers and notes come from the poll's read (one match,
+  // narrow columns, the same versioned entry the 30 s poll uses), alongside
+  // the context; the context itself no longer carries them.
+  const [heavyData, forMatch] = await Promise.all([
+    getVersioned(env, cacheKey, [...SEASON_INDEX_DEPS, "availability_rules"], async () => {
+      const { ctx } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
+      return { ctx, allPlayers: ref.players };
+    }),
+    getAvailabilityForMatch(env, matchId),
+  ]);
+  const { ctx, allPlayers } = heavyData;
 
-  const matchExceptions = allExceptions.filter((e) => linkId(e.match) === matchId);
-  const exceptionMap = new Map<string, any>();
-  for (const exc of matchExceptions) {
-    const pId = linkId(exc.player);
-    if (pId) exceptionMap.set(pId, exc);
+  const exceptionMap = new Map<string, { availabilityStatus: string; note: string; playerNotes?: string }>();
+  for (const exc of forMatch.exceptions) {
+    if (exc.playerId) exceptionMap.set(exc.playerId, { availabilityStatus: exc.status, note: exc.notes });
   }
 
   const selectedPlayerIds = new Set(getSelectedPlayerIds(match, teamRankMap, side));
@@ -558,23 +563,24 @@ export async function setTeamAutoSelectPlayers(env: Env, teamName: string, playe
 /**
  * Availability exceptions for one match, for the 30s squad-page poll.
  *
- * It resolves the match's season, reuses the season-scoped exceptions read
- * and keeps the result per match, all under the availability_exceptions
- * and matches cache versions: steady-state polling makes no database call
- * until someone answers, and then every isolate sees the answer.
+ * One read of that match's answers only (match=in.(id), narrow columns: at
+ * most a few KB), kept under the availability_exceptions cache version:
+ * steady-state polling makes no database call until someone answers, and
+ * then every isolate sees the answer. It used to read the match, then the
+ * whole season's answers (~177 KB on preview) and filter them here; with
+ * no season involved, the matches version is no longer a dependency. Not
+ * "changed since": an Available answer is usually a deleted row, which a
+ * since-filter cannot see.
  */
 export async function getAvailabilityForMatch(env: Env, matchId: string) {
   return getVersioned<{ exceptions: { playerId: string; status: string; notes: string }[] }>(
     env,
     `availability:${matchId}`,
-    ["availability_exceptions", "matches"],
+    ["availability_exceptions"],
     async () => {
-      const match = await matches(env).getById(matchId);
-      const season = match?.season || "";
-      if (!season) return { exceptions: [] };
-      const allExceptions = await getExceptionsForSeasons(env, [season]);
+      const forMatch = await availabilityExceptions(env).listForMatches([matchId]);
       return {
-        exceptions: allExceptions
+        exceptions: forMatch
           .filter((e) => linkId(e.match) === matchId)
           .map((e) => ({
             playerId: linkId(e.player) || "",

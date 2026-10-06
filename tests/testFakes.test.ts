@@ -188,15 +188,21 @@ describe("fake repositories", () => {
     expect(await officers(env).listAllMembers(["sponsor"])).toHaveLength(2);
 
     fake.state.availabilityExceptions.push(exception({ id: recId("X1"), player: [ALICE], match: [M1], season: "2026-2027" }));
-    const { createdIds } = await availabilityExceptions(env).apply({
-      deleteIds: [recId("X1")],
-      updates: [],
-      creates: [{ matchId: M1, playerId: ALICE, status: "Maybe", updatedById: ALICE }],
-    });
+    // set_availability: Available with nothing to override deletes the row.
+    const cleared = await availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1], status: "Available" });
+    expect(cleared).toMatchObject({ updated: 1, results: [{ matchId: M1, exceptionId: null }], seasons: ["2026-2027"] });
+    expect(cleared.before).toEqual([{ matchId: M1, exceptionId: recId("X1"), status: "Unavailable" }]);
+    expect(fake.state.availabilityExceptions).toEqual([]);
+    const { results } = await availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1], status: "Maybe", updatedById: ALICE });
     expect(fake.state.availabilityExceptions).toMatchObject([
-      { id: createdIds[0], player: [ALICE], match: [M1], availabilityStatus: "Maybe", season: "2026-2027", updatedBy: ALICE },
+      { id: results[0].exceptionId, player: [ALICE], match: [M1], availabilityStatus: "Maybe", season: "2026-2027", updatedBy: ALICE },
     ]);
-    expect(fake.callsTo("availabilityExceptions").map((c) => c.method)).toEqual(["apply"]);
+    // All or nothing, with set_availability's P0002 for a match that does not exist.
+    await expect(
+      availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1, recId("Nowhere")], status: "Unavailable" }),
+    ).rejects.toMatchObject({ code: "P0002" });
+    expect(fake.state.availabilityExceptions[0].availabilityStatus).toBe("Maybe");
+    expect(fake.callsTo("availabilityExceptions").map((c) => c.method)).toEqual(["set", "set", "set"]);
     expect(fake.callsTo("people", "listContactsByIds")[0].args).toEqual([[ALICE, "nonsense"]]);
     fake.restore();
   });

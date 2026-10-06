@@ -139,6 +139,8 @@ export function rankingDb(seed: {
   const pg = fakePostgrest({
     tables: {
       api_players: people as unknown as PgRow[],
+      // The Active list for reference data (api_players_lite): the same rows.
+      api_players_lite: people as unknown as PgRow[],
       people: people as unknown as PgRow[],
       api_teams: teams,
       api_ranking_events: events,

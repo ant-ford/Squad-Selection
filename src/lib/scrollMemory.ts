@@ -56,6 +56,25 @@ export function useScrollMemory(key: string, ready: boolean) {
   }, [storageKey]);
 }
 
+const TEAM_AVAILABILITY_OPEN = 'team-availability-open';
+
+/**
+ * The teams opened on Team availability. A fresh visit starts with every
+ * team closed; coming back in the same tab keeps the ones left open.
+ */
+export function openTeamAvailability(): string[] {
+  try {
+    const teams: unknown = JSON.parse(read(TEAM_AVAILABILITY_OPEN) ?? '[]');
+    return Array.isArray(teams) ? teams.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberOpenTeamAvailability(teams: Iterable<string>) {
+  write(TEAM_AVAILABILITY_OPEN, JSON.stringify([...teams]));
+}
+
 const COACH_DASHBOARD_SEARCH = 'coach-dashboard-search';
 
 /** Called by the fixture list whenever its team tab or past toggle changes. */
