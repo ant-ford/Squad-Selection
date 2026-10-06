@@ -13,6 +13,7 @@ import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { invalidateForTables } from "./airtableWebhook";
 import { TABLES } from "../../shared/schema/tableNames";
+import { toCsv } from "../../shared/csv";
 import {
   KIT_ITEMS,
   SWAPPABLE,
@@ -452,12 +453,6 @@ export async function getSetHistory(env: Env, setId: string): Promise<KitMove[]>
   return moves.map((m) => ({ kind: m.kind, from: name(m.from_id), to: name(m.to_id), by: name(m.by_id), note: m.note, at: m.at }));
 }
 
-/** CSV cells, quoted where needed. */
-const cell = (v: string | number | null | undefined) => {
-  const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
 /**
  * Who needs kit from this order's supplier: Active players with a number
  * but no set in the order, in the order file's layout, for the next
@@ -468,15 +463,18 @@ export async function topUpCsv(env: Env, orderId: string | null): Promise<{ file
   const board = await getKitBoard(env, orderId);
   if (!board.order) throw new HttpError("There is no kit order yet.", 404, "NOT_FOUND");
   const need = board.people.filter((p) => p.active && p.shirtNo !== null && !p.hasSet).sort((a, b) => a.shirtNo! - b.shirtNo!);
-  const header = ["Name", "Status", "Shirt No.", "Socks Size", "Shirt Size", "Shorts Size", "Goalie Smock Style", "Goalie Smock Size", "Team"];
-  const lines = need.map((p) =>
-    [p.name, p.status, p.shirtNo, p.sizes.socks, p.sizes.shirt, p.sizes.shorts, p.sizes.goalieSmockStyle, p.sizes.goalieSmock, p.team]
-      .map(cell)
-      .join(","),
-  );
   return {
     filename: `${board.order.supplier} top-up (${new Date().toISOString().slice(0, 10)}).csv`,
-    csv: [header.join(","), ...lines].join("\r\n") + "\r\n",
+    csv: topUpCsvText(need),
     count: need.length,
   };
+}
+
+/** The order file's layout: one line per person. */
+export function topUpCsvText(need: Pick<KitPerson, "name" | "status" | "shirtNo" | "sizes" | "team">[]): string {
+  const header = ["Name", "Status", "Shirt No.", "Socks Size", "Shirt Size", "Shorts Size", "Goalie Smock Style", "Goalie Smock Size", "Team"];
+  const lines = need.map((p) =>
+    [p.name, p.status, p.shirtNo, p.sizes.socks, p.sizes.shirt, p.sizes.shorts, p.sizes.goalieSmockStyle, p.sizes.goalieSmock, p.team].map((v) => (v == null ? "" : String(v))),
+  );
+  return toCsv([header, ...lines]);
 }
