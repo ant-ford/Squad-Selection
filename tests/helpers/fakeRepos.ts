@@ -351,6 +351,32 @@ function buildRepos(s: FakeState): FakeRepos {
         if (value !== undefined) (m as unknown as Record<string, unknown>)[key] = clone(value);
       }
     },
+    // apply_squad_changes: adds and removes applied to the squad as it is
+    // now, the version bumped per real change, and a derby add taken off the
+    // other side. No change history is kept, so it never reports a conflict;
+    // spy on it to return one.
+    async applySelectionChanges(id, change) {
+      const m = s.matches.find((x) => x.id === id);
+      if (!m) throw new HttpError(`No match ${id}`, 404, "NOT_FOUND");
+      const [listKey, otherKey, versionKey, otherVersionKey] = change.side === "home"
+        ? (["selectedPlayersHome", "selectedPlayersAway", "selectionVersionHome", "selectionVersionAway"] as const)
+        : (["selectedPlayersAway", "selectedPlayersHome", "selectionVersionAway", "selectionVersionHome"] as const);
+      const before = m[listKey] ?? [];
+      const removed = before.filter((pid) => change.remove.includes(pid));
+      const added = [...new Set(change.add)].filter((pid) => !before.includes(pid));
+      if (added.length === 0 && removed.length === 0) {
+        return { status: "unchanged", version: m[versionKey] ?? 0, selected: [...before] };
+      }
+      m[listKey] = [...before.filter((pid) => !removed.includes(pid)), ...added];
+      m[versionKey] = (m[versionKey] ?? 0) + 1;
+      let otherVersion: number | null = null;
+      const other = m[otherKey] ?? [];
+      if (other.some((pid) => added.includes(pid))) {
+        m[otherKey] = other.filter((pid) => !added.includes(pid));
+        otherVersion = m[otherVersionKey] = (m[otherVersionKey] ?? 0) + 1;
+      }
+      return { status: "ok", version: m[versionKey], otherVersion, added, removed, selected: [...m[listKey]] };
+    },
     async listForSeason(season) {
       return s.matches.filter((m) => !season || m.season === season).map(clone);
     },

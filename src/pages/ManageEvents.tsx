@@ -28,7 +28,8 @@ import {
   uploadPoster,
   waiveCharge,
 } from '@/api/events';
-import PaymentsSection, { downloadCsv } from '@/components/events/PaymentsSection';
+import PaymentsSection from '@/components/events/PaymentsSection';
+import { saveCsv } from '@/lib/saveCsv';
 import PosterImage from '@/components/events/PosterImage';
 import RegisterSection from '@/components/events/RegisterSection';
 import CheckInQrSheet from '@/components/events/CheckInQrSheet';
@@ -560,7 +561,7 @@ function EventDetailSheet({ id, onClose, onEdit }: { id: string; onClose: () => 
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">Answers ({data.responses.length})</h3>
                   {data.responses.some((r) => r.status !== 'not_going') && (
-                    <button className="text-xs text-primary inline-flex items-center gap-1" onClick={() => downloadCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}>
+                    <button className="text-xs text-primary inline-flex items-center gap-1" onClick={() => saveCsv(`${e.title.replace(/[^\w ]+/g, '').trim() || 'event'} answers.csv`, answersCsv(e, data.responses))}>
                       <Download className="h-3.5 w-3.5" /> Download answers
                     </button>
                   )}
