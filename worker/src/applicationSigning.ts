@@ -327,7 +327,8 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
   // Officer to check and send. After the response; a slow render never holds it up.
   if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, apiId));
   const next = TURN_BY_STAGE[stage];
-  if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
+  // The next signer's email, after the response: the signature is saved, and a slow or failed email never holds it up.
+  if (next) await inBackground(() => notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err)));
   return { stage };
 }
 
