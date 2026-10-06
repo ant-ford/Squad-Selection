@@ -65,7 +65,7 @@ export const APPLICANT_TASK_FIELDS = ["stage"] as const;
 export type ApplicantTaskRow = Row<typeof APPLICANT_TASK_FIELDS>;
 
 export interface PeopleRepo {
-  /** Every person with Active ticked. */
+  /** Every person with Active ticked, with the squad screens' fields only (no photo, CV, coach notes, Player/Coach or rank date). */
   listActive(): Promise<Player[]>;
   /**
    * The person whose Email matches, case-insensitively on both sides. Where

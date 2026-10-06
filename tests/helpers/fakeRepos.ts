@@ -263,7 +263,11 @@ function buildRepos(s: FakeState): FakeRepos {
 
   const people: PeopleRepo = {
     async listActive() {
-      return s.people.filter((p) => p.active === true).map(toPlayer);
+      // api_players_lite: no photo, CV, coach notes, Player/Coach or rank date.
+      return s.people.filter((p) => p.active === true).map((p) => {
+        const { photo: _photo, sportsBackground: _cv, selectionComments: _notes, playerCoach: _pc, rankUpdatedAt: _rank, ...lite } = toPlayer(p);
+        return lite;
+      });
     },
     async findByEmail(email) {
       const want = normalizeEmail(email);
