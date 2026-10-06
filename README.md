@@ -354,6 +354,8 @@ Coaches open **Notify** on the squad-selection screen to tell the selected squad
 
 Both messages end with a fixture link, `/?fixture=<match id>`, built on whichever address the coach has open. It stands in for a WhatsApp poll, which no link or official API can create: a player taps it, their page opens with that fixture's availability sheet up, and they answer against their own name. A game that isn't on their page (already played, or not their team) shows a short notice instead. Players who sign in with the emailed code land on the fixture. Signing in through the magic link returns them to the home page instead, the same as `?event=` links.
 
+**Notify** shows before anyone is selected too. With nobody picked, the sheet becomes **Ask for availability**: a single team-group message with the fixture and its link, and no squad list or per-player messages. The intended flow is ask for availability, select from those who say yes, then Notify again to send the squad.
+
 Numbers come from `People.Mobile No.` on the coach-only match payload (the player-facing squad list never includes them). `toWhatsAppNumber()` in [`src/lib/whatsapp.ts`](src/lib/whatsapp.ts) normalises them and **returns null rather than guessing** — bare 8-digit numbers are assumed Hong Kong, `+`/`00` prefixes are treated as international, and anything else is refused. That strictness is deliberate: `wa.me` opens happily with an unusable recipient, so a bad number would look to the coach exactly like a message that sent. Players whose number cannot be normalised are listed as unreachable with a pointer to fix the Airtable field.
 
 ### Kit Colour

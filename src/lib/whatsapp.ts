@@ -119,6 +119,18 @@ export function buildSquadAnnouncement(f: FixtureBrief, players: AnnouncedPlayer
   return `Squad for ${fixtureLine(f)}.${kit}${squadBlock(players)}${linkLine(f)}`;
 }
 
+/**
+ * Availability request for the team group, for before anyone is selected:
+ * the fixture and its link, no squad. Players answer in Eddy, and the coach
+ * then picks from those who said yes.
+ */
+export function buildAvailabilityRequest(f: FixtureBrief): string {
+  const ask = f.link
+    ? `Please mark whether you can play in Eddy: ${f.link}`
+    : 'Please mark whether you can play in Eddy.';
+  return `Availability for ${fixtureLine(f)}.\n\n${ask}`;
+}
+
 export interface AnnouncedPlayer {
   name: string;
   shirtNo?: string;
