@@ -244,7 +244,7 @@ export interface PlayerFixtureView {
 export async function buildPlayerFixtureView(
   env: Env,
   user: Player,
-  opts: { freshAvailability?: boolean } = {},
+  opts: { freshAvailability?: boolean; withSquad?: boolean } = {},
 ): Promise<PlayerFixtureView> {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
@@ -415,13 +415,16 @@ export async function buildPlayerFixtureView(
   const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
   const playerRules = await getRulesForPlayer(env, playerId);
-  // Everyone's answer, per match, so a card can say who else is in the squad
-  // and which of them are only a Maybe.
+  // Everyone's answer, per match, so a calendar event can say who else is in
+  // the squad and which of them are only a Maybe. The dashboard never shows
+  // the squad, so only the calendar feed builds it.
   const squadStatus = new Map<string, string>();
-  for (const e of allExceptions) {
-    const mId = linkId(e.match);
-    const pId = linkId(e.player);
-    if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
+  if (opts.withSquad) {
+    for (const e of allExceptions) {
+      const mId = linkId(e.match);
+      const pId = linkId(e.player);
+      if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
+    }
   }
   const squadPlayerById = new Map(ref.players.map((p) => [p.id, p]));
   const buildCard = (x: { side: Side; category: FixtureCategory }) => {
@@ -444,12 +447,16 @@ export async function buildPlayerFixtureView(
       playerNotes: exc?.note || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
-      squad: s.selectedIds.map((id) => ({
-        name: squadPlayerById.get(id)?.preferredName || squadPlayerById.get(id)?.givenNames || "Player",
-        shirtNo: squadPlayerById.get(id)?.shirtNoValue || "",
-        playingPosition: squadPlayerById.get(id)?.playingPosition || "",
-        availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
-      })),
+      ...(opts.withSquad
+        ? {
+            squad: s.selectedIds.map((id) => ({
+              name: squadPlayerById.get(id)?.preferredName || squadPlayerById.get(id)?.givenNames || "Player",
+              shirtNo: squadPlayerById.get(id)?.shirtNoValue || "",
+              playingPosition: squadPlayerById.get(id)?.playingPosition || "",
+              availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
+            })),
+          }
+        : {}),
       // Kit follows the side being shown, so each half of a derby keeps its
       // own colour.
       kit: ((s.isHome ? s.match.homeKit : s.match.awayKit) || "") as KitColour,
@@ -477,7 +484,7 @@ export async function buildPlayerFixtureView(
 export async function getPlayerFixtures(env: Env, playerId: string) {
   const player = await people(env).getById(playerId);
   if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
-  const view = await buildPlayerFixtureView(env, player, { freshAvailability: false });
+  const view = await buildPlayerFixtureView(env, player, { freshAvailability: false, withSquad: true });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
     playerName: player.preferredName || player.givenNames || "Player",
