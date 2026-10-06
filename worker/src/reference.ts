@@ -174,24 +174,4 @@ export async function getExceptionsForMatches(
   );
 }
 
-/**
- * One player's own answers for these matches (player=eq & match=in.(...)):
- * a player's dashboard, at about a kilobyte. Versioned as above, so the
- * player sees the tap they just made: the tap moves the version.
- */
-export async function getPlayerExceptions(
-  env: Env,
-  playerId: string,
-  matchIds: string[],
-  opts?: { fresh?: boolean },
-): Promise<AvailabilityException[]> {
-  const ids = [...new Set(matchIds.filter(Boolean))].sort();
-  if (!playerId || ids.length === 0) return [];
-  const load = () => availabilityExceptions(env).listForPlayer(playerId, ids);
-  if (opts?.fresh) return load();
-  return getVersioned<AvailabilityException[]>(
-    env, `exceptions:player:${playerId}:${ids.join(",")}`, ["availability_exceptions"], load, EXCEPTIONS_TTL_MS,
-  );
-}
-
 export { invalidateCache };
