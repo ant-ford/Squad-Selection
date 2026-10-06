@@ -1,6 +1,8 @@
 // Shared response/CORS/error helpers so every route returns JSON
 // consistently instead of ad-hoc Response objects.
 
+import { FRESH_HEADER } from "../../shared/freshHeader";
+
 export class HttpError extends Error {
   status: number;
   code: string;
@@ -45,7 +47,7 @@ export function corsHeaders(origin: string): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": `Content-Type, Authorization, ${FRESH_HEADER}`,
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };

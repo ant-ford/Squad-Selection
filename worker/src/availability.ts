@@ -1,22 +1,9 @@
-import { linkId } from "../../shared/airtableValueUtils";
 import { people } from "./data/people";
-import { matches } from "./data/matches";
-import { availabilityExceptions, type ExceptionWrite } from "./data/availabilityExceptions";
+import { availabilityExceptions, type AvailabilityOutcome } from "./data/availabilityExceptions";
+import { SupabaseError } from "./data/supabase";
 import type { Env } from "./env";
-import {
-  getPlayerByEmail,
-  getReferenceData,
-  getExceptionsForSeasons,
-  invalidatePlayerByEmail,
-  invalidateReferenceData,
-  UNRANKED_TEAM_RANK,
-} from "./reference";
-import { getScheduledMatches } from "./fixtures";
-import { getRulesForPlayer, needsExplicitAvailable } from "./availabilityRules";
+import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
-import { hkDateKey } from "../../shared/hkDateKey";
-import { invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
-import type { AvailabilityException, Player } from "../../shared/schema/domainTypes";
 
 type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
 type AvailabilityStatus = ExceptionStatus;
@@ -31,133 +18,40 @@ function validateStatus(status: AvailabilityStatus): void {
 }
 
 /**
- * Find existing exceptions for a player across a set of matches.
- * Returns both the exceptions map AND the seasons involved for targeted cache invalidation.
- *
- * Resolves each match's season from the cached Scheduled-matches list (10min
- * TTL) rather than one airtableFindById per match, and reads exceptions
- * through the cached per-season index (5min TTL) rather than a fresh scan -
- * a caller polling the same matches repeatedly costs zero Airtable calls
- * once both caches are warm.
+ * set_availability's "not found" errors (P0002) as the 404s the screens
+ * show. Anything else is a database error and goes up as one.
  */
-async function findPlayerExceptions(
-  env: Env,
-  playerId: string,
-  matchIds: string[],
-): Promise<{ exceptions: Map<string, AvailabilityException>; seasons: string[] }> {
-  const scheduledById = new Map((await getScheduledMatches(env)).map((m) => [m.id, m]));
-  const matchSeasons = new Set<string>();
-  const unresolvedIds: string[] = [];
-  for (const matchId of matchIds) {
-    const season = scheduledById.get(matchId)?.season;
-    if (season) matchSeasons.add(season);
-    else unresolvedIds.push(matchId);
-  }
-  // A match not in the Scheduled cache (e.g. its status just changed) still
-  // needs its season resolved fresh, so its exceptions are never silently skipped.
-  for (const matchId of unresolvedIds) {
-    const match = await matches(env).getById(matchId);
-    const season = match?.season || "";
-    if (season) matchSeasons.add(season);
-  }
-
-  const seasons = [...matchSeasons];
-  if (seasons.length === 0) return { exceptions: new Map(), seasons: [] };
-
-  // Never cached. This is a read-modify-write: what comes back decides
-  // whether an exception is updated, created, or deleted.
-  //
-  // Setting yourself Available deletes the exception, and the delete only
-  // happens if this read can see it. The cache is per-isolate, so an
-  // exception written a moment ago on another isolate is simply absent here:
-  // nothing gets deleted, the call still reports success, and the player
-  // stays Unavailable no matter how many times they tap. The same gap
-  // creates a duplicate row when the answer changes from Maybe to
-  // Unavailable, because the existing record is invisible and a second one
-  // is written instead.
-  //
-  // Selection sync already reads fresh on its write path for exactly this
-  // reason; availability was the one write that did not.
-  const allExceptions = await getExceptionsForSeasons(env, seasons, { fresh: true });
-  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId);
-
-  return {
-    exceptions: new Map(playerExceptions.map((e) => [linkId(e.match) || "", e])),
-    seasons,
-  };
+function notFound(err: unknown): unknown {
+  if (!(err instanceof SupabaseError) || err.code !== "P0002") return err;
+  if (/No match/.test(err.message)) return new HttpError("Match not found", 404);
+  if (/No person/.test(err.message)) return new HttpError("Person not found", 404);
+  return new HttpError("Player not found or inactive", 404);
 }
 
-/**
- * Of these fixtures, which ones would read as something other than Available
- * if the player gave no answer at all?
- *
- * Available is normally expressed by DELETING the exception, which works
- * only while "no record" and "Available" mean the same thing. They stop
- * meaning the same thing the moment something supplies a different default:
- * a coach setting the player Opt-In Only, or one of the player's own
- * standing rules. Deleting the record there would hand the fixture straight
- * back to that default, so the player taps Available, the screen does not
- * change, and nothing explains why. For those fixtures the answer has to be
- * written down.
- */
-async function fixturesNeedingExplicitAvailable(
-  env: Env,
-  player: Player,
-  matchIds: string[],
-): Promise<Set<string>> {
-  const rules = await getRulesForPlayer(env, player.id);
-  if (!player.optInOnly && rules.length === 0) return new Set();
-
-  const ref = await getReferenceData(env);
-  const matchesById = new Map((await getScheduledMatches(env)).map((m) => [m.id, m]));
-  const playerRank = ref.teamRankMap[player.registeredTeam || ""] ?? UNRANKED_TEAM_RANK;
-  const needed = new Set<string>();
-  for (const matchId of matchIds) {
-    const match = matchesById.get(matchId);
-    if (!match) continue;
-    // Which HKFC side this fixture is for the player decides whether it
-    // counts as a play-up or a support game, exactly as the coach screens
-    // resolve it.
-    const sides = [match.homeTeam, match.awayTeam].filter(
-      (t): t is string => Boolean(t) && ref.teamRankMap[t] !== undefined,
-    );
-    const fixtureRank = sides.length
-      ? Math.min(...sides.map((t) => ref.teamRankMap[t] ?? UNRANKED_TEAM_RANK))
-      : UNRANKED_TEAM_RANK;
-    if (
-      needsExplicitAvailable(
-        rules,
-        {
-          date: hkDateKey(match.matchDate),
-          isPlayUp: fixtureRank < playerRank,
-          isSupport: fixtureRank > playerRank,
-        },
-        { optInOnly: player.optInOnly },
-      )
-    ) {
-      needed.add(matchId);
-    }
-  }
-  return needed;
-}
+// Nothing is cleared after a write. Every read built on availability is
+// kept under the cache versions (cache.ts getVersioned), and the database
+// moves the availability_exceptions version in the same transaction as the
+// answer, so every isolate's next request reads afresh; this request forgets
+// its versions on the write (requestContext.ts noteRequestWrite).
 
 /**
- * Invalidation fan-out for availability writes.
- * Now correctly scoped to only invalidate the specific seasons involved.
+ * Says what this write actually saw and did. Setting yourself Available is
+ * usually a delete, and a delete that finds nothing still reports success,
+ * so from the outside a no-op and a real change are identical. Three
+ * separate causes have hidden behind that, and each one cost a deploy to
+ * guess at. One line here settles the next one.
  */
-async function invalidateAvailabilityCaches(env: Env, matchIds: string[], seasons: string[]) {
-  for (const matchId of matchIds) {
-    invalidateCachePrefix(`players-for-match:${matchId}:`);
-    invalidateCache(`availability:${matchId}`);
-  }
-  for (const season of new Set(seasons)) {
-    invalidateCache(`season-index:${season}`);
-  }
-  invalidateCachePrefix("calendar:player:");
-
-  // Shared, so it has to be dropped everywhere: a coach on another isolate
-  // was otherwise shown the answer this write replaced.
-  await invalidateShared(env, [], ["exceptions:"]);
+function logWrite(input: { playerId: string; matchIds: string[]; status: string }, outcome: AvailabilityOutcome) {
+  console.log(
+    "Availability write: " +
+      JSON.stringify({
+        player: input.playerId,
+        matches: input.matchIds,
+        status: input.status,
+        exceptionsFoundForPlayer: outcome.before,
+        results: outcome.results,
+      }),
+  );
 }
 
 // ── Bulk set (admin / coach) ────────────────────────────────────────────
@@ -174,6 +68,22 @@ export interface SetAvailabilityInput {
   updatedById?: string;
 }
 
+/**
+ * One answer for some matches, as ONE database call (set_availability).
+ *
+ * The read-modify-write happens inside the database, in one transaction,
+ * under a per-player lock. It used to be about six round trips from here -
+ * the player, the Scheduled matches, every answer of the season read fresh
+ * (~177 KB), the rules and the reference data (~150 KB), then the write -
+ * and two taps on different isolates could each act on the same old state:
+ * deletes that never happened, and duplicate rows.
+ *
+ * The rules are the model's (availabilityRules.ts, memory note
+ * availability-model-limits): Maybe/Unavailable are stored; Available is
+ * stored only where it overrides something - the coach's Opt-In Only or one
+ * of the player's own standing rules, on a Scheduled match - and otherwise
+ * the player's row is deleted, because no row already means Available.
+ */
 export async function setAvailability(env: Env, input: SetAvailabilityInput) {
   if (!input.playerId || !Array.isArray(input.matchIds)) {
     throw new HttpError("playerId and matchIds[] are required", 400);
@@ -182,83 +92,21 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     throw new HttpError("matchIds[] must be record ids", 400);
   }
   validateStatus(input.status);
-  const player = await people(env).getById(input.playerId);
-  if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
 
-  const { exceptions: exceptionByMatch, seasons } = await findPlayerExceptions(env, input.playerId, input.matchIds);
-
-  // Says what this write actually saw and did. Setting yourself Available is
-  // a delete, and a delete that finds nothing still reports success, so from
-  // the outside a no-op and a real change are identical. Three separate
-  // causes have now hidden behind that, and each one cost a deploy to guess
-  // at. One line here settles the next one.
-  console.log(
-    "Availability write: " +
-      JSON.stringify({
-        player: input.playerId,
-        matches: input.matchIds,
-        status: input.status,
-        seasonsResolved: seasons,
-        exceptionsFoundForPlayer: [...exceptionByMatch.entries()].map(([matchId, e]) => ({
-          matchId,
-          exceptionId: e.id,
-          status: e.availabilityStatus,
-        })),
-      }),
-  );
-
-  const toDelete: string[] = [];
-  const toUpdate: { id: string; write: ExceptionWrite }[] = [];
-  const toCreate: ExceptionWrite[] = [];
-  const results: { matchId: string; exceptionId: string | null }[] = [];
-
-  // Which of these fixtures would NOT be Available if this player said
-  // nothing - because a coach set them Opt-In Only, or because one of their
-  // own standing rules covers it. Only those need an Available answer to be
-  // written down; everywhere else the absence of a record still says it.
-  const overrideNeeded =
-    input.status === "Available"
-      ? await fixturesNeedingExplicitAvailable(env, player, input.matchIds)
-      : new Set<string>();
-
-  for (const matchId of input.matchIds) {
-    const existing = exceptionByMatch.get(matchId);
-    if (input.status === "Available" && !overrideNeeded.has(matchId)) {
-      // Nothing would contradict it, so absence still means Available and
-      // the table stays sparse - the model the whole app is built on.
-      if (existing) toDelete.push(existing.id);
-      results.push({ matchId, exceptionId: null });
-      continue;
-    }
-    const write: ExceptionWrite = {
-      matchId,
+  let outcome: AvailabilityOutcome;
+  try {
+    outcome = await availabilityExceptions(env).set({
       playerId: input.playerId,
+      matchIds: input.matchIds,
       status: input.status,
       notes: input.notes,
       updatedById: input.updatedById || input.playerId,
-    };
-    if (existing) {
-      toUpdate.push({ id: existing.id, write });
-      results.push({ matchId, exceptionId: existing.id });
-    } else {
-      toCreate.push(write);
-    }
+    });
+  } catch (err) {
+    throw notFound(err);
   }
-
-  console.log(
-    "Availability write outcome: " +
-      JSON.stringify({ deleting: toDelete, updating: toUpdate.map((u) => u.id), creating: toCreate.length }),
-  );
-
-  const { createdIds } = await availabilityExceptions(env).apply({
-    deleteIds: toDelete,
-    updates: toUpdate,
-    creates: toCreate,
-  });
-  createdIds.forEach((id, idx) => results.push({ matchId: toCreate[idx]?.matchId, exceptionId: id }));
-
-  await invalidateAvailabilityCaches(env, input.matchIds, seasons);
-  return { success: true, updated: results.length, results };
+  logWrite(input, outcome);
+  return { success: true, updated: outcome.updated, results: outcome.results };
 }
 
 // ── Player self-service ─────────────────────────────────────────────────
@@ -300,10 +148,6 @@ export interface SetPlayerAvailabilityInput {
  * player's own tap, so every downstream view (the coach's list, the tiles,
  * the calendar) moves together; the only difference is that Updated By
  * records the coach.
- *
- * Note the exception model's one blind spot, which this inherits: Available
- * is a deletion, so it cannot override a standing rule of the player's that
- * says otherwise. That needs an Available choice on the Airtable field.
  */
 export async function setPlayerAvailability(env: Env, input: SetPlayerAvailabilityInput) {
   if (!input.coachPersonId) throw new HttpError("Coach identity is required", 400);
@@ -343,9 +187,10 @@ export interface SetMyAvailabilityForDateInput {
  * day, not just the player's own team - marking yourself out should also
  * take you out of the play-up and support pools without further taps.
  *
- * Underneath it performs the existing match-level updates (exceptions
- * upserted, "Available" deletes exceptions - no Available records are ever
- * created). Individual fixtures remain independently overridable afterwards.
+ * One database call (set_availability_for_date): it picks the Scheduled
+ * matches on that Hong Kong day with an Active HKFC side and answers them
+ * with set_availability's rules. Individual fixtures remain independently
+ * overridable afterwards.
  */
 export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilityForDateInput) {
   if (!input.email || !input.date || !input.status) {
@@ -357,22 +202,21 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
   validateStatus(input.status);
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
-  const ref = await getReferenceData(env);
-  const teamNames = new Set(ref.teams.map((t) => t.teamName));
-  const matchIds = (await getScheduledMatches(env))
-    .filter((m) => hkDateKey(m.matchDate) === input.date)
-    .filter((m) => teamNames.has(m.homeTeam || "") || teamNames.has(m.awayTeam || ""))
-    .map((m) => m.id);
-  if (matchIds.length === 0) {
-    return { success: true, updated: 0, results: [] as { matchId: string; exceptionId: string | null }[] };
+
+  let outcome: AvailabilityOutcome;
+  try {
+    outcome = await availabilityExceptions(env).setForDate({
+      playerId: user.id,
+      date: input.date,
+      status: input.status,
+      notes: input.notes,
+    });
+  } catch (err) {
+    throw notFound(err);
   }
-  const { results } = await setAvailability(env, {
-    playerId: user.id,
-    matchIds,
-    status: input.status,
-    notes: input.notes,
-  });
-  return { success: true, updated: results.length, results };
+  const matchIds = outcome.results.map((r) => r.matchId);
+  if (matchIds.length > 0) logWrite({ playerId: user.id, matchIds, status: input.status }, outcome);
+  return { success: true, updated: outcome.results.length, results: outcome.results };
 }
 // ---------------------------------------------------------------------
 // Opt-In Only (coach-controlled default inversion)
@@ -412,14 +256,10 @@ export async function setPlayerOptInOnly(
     `[Availability Audit] optInOnly=${input.optInOnly} player=${input.playerId} coach=${input.coachEmail}`,
   );
 
-  // The flag changes the default answer on every unanswered fixture, so
-  // every derived view of this player has to be rebuilt: the roster it is
-  // read from, the coach sheets, the season index and the calendar feeds.
-  if (typeof player.email === "string") invalidatePlayerByEmail(player.email, env);
-  invalidateCachePrefix("players-for-match:");
-  invalidateCachePrefix("season-index:");
-  invalidateCachePrefix("calendar:");
-  await invalidateReferenceData(env);
+  // The flag changes the default answer on every unanswered fixture. Every
+  // view built on it (the roster, the coach sheets, the season index, the
+  // calendar feeds) is kept under the people version, which this update
+  // moves: nothing to clear.
 
   return { success: true, playerId: input.playerId, optInOnly: input.optInOnly };
 }

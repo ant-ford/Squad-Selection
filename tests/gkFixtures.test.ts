@@ -207,9 +207,11 @@ describe("getMyFixtures - special goalkeeper view", () => {
     expect(m4.availabilityExceptionId).toBe(E1);
   });
 
-  it("fetches exceptions in bulk by season - never once per fixture", async () => {
+  it("fetches the player's own answers in one read - never once per fixture, never the season's", async () => {
     await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    expect(exceptionFetches()).toBe(1);
+    expect(db.callsTo("availabilityExceptions", "listForPlayer")).toHaveLength(1);
+    expect(db.callsTo("availabilityExceptions", "listForPlayer")[0].args[0]).toBe(P2);
+    expect(exceptionFetches()).toBe(0);
   });
 
   it("does not change the normal player experience", async () => {

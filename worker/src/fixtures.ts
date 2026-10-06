@@ -2,7 +2,7 @@ import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { people } from "./data/people";
 import type { Env } from "./env";
-import { getReferenceData, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
+import { getReferenceData, getExceptionsForMatches, getPlayerExceptions, UNRANKED_TEAM_RANK } from "./reference";
 import { personAsPlayer } from "./authContext";
 import { getVersioned } from "./cache";
 import { HttpError } from "./http";
@@ -403,22 +403,30 @@ export async function buildPlayerFixtureView(
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // Their own answers and the selected players' (the squad on a card), from
-  // the player's own season context (season_context's player mode), which
-  // the eligibility gating above has already built: no whole-season answers
-  // read. Kept under the availability_exceptions version, so a tap shows at
-  // once.
-  const seasons = [...new Set(relevantCategorized.map((x) => x.side.match.season || "").filter(Boolean))];
-  const allExceptions = (await Promise.all(seasons.map((s) => getSeasonContext(env, s, playerId)))).flatMap((c) => c.exceptionsRaw);
-  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
+  // The player looking at their own answer must see the tap they just made.
+  // This read used to skip the cache for that (a per-isolate copy put the
+  // old status straight back). Both reads below are kept under the
+  // availability_exceptions version, which the tap moves, so the cached
+  // copy is the current one in every isolate.
+  //
+  // And only these matches are read, never the whole season (~177 KB on
+  // preview): the player's own answers (player=eq & match=in), about a
+  // kilobyte, or - for the calendar, which also names the squad - every
+  // answer for these matches.
+  const [matchExceptions, playerRules] = await Promise.all([
+    opts.withSquad
+      ? getExceptionsForMatches(env, relevantMatchIds)
+      : getPlayerExceptions(env, playerId, relevantMatchIds),
+    getRulesForPlayer(env, playerId),
+  ]);
+  const playerExceptions = matchExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
-  const playerRules = await getRulesForPlayer(env, playerId);
   // Everyone's answer, per match, so a calendar event can say who else is in
   // the squad and which of them are only a Maybe. The dashboard never shows
   // the squad, so only the calendar feed builds it.
   const squadStatus = new Map<string, string>();
   if (opts.withSquad) {
-    for (const e of allExceptions) {
+    for (const e of matchExceptions) {
       const mId = linkId(e.match);
       const pId = linkId(e.player);
       if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
@@ -544,9 +552,12 @@ export async function getUpcomingFixtures(
   });
   if (relevant.length === 0) return { fixtures: [] };
   const matchIds = relevant.map((m) => m.id);
-  const allExceptions = await getExceptionsForSeasons(env, relevant.map((m) => m.season || ""));
+  // The answers for these fixtures only (match=in, narrow columns), not the
+  // whole season's: ~5 KB a team on preview against ~177 KB. Kept under the
+  // availability_exceptions version (reference.ts getExceptionsForMatches).
+  const listedExceptions = await getExceptionsForMatches(env, matchIds);
   const exceptionsByMatch = new Map<string, any[]>();
-  for (const exc of allExceptions) {
+  for (const exc of listedExceptions) {
     const mId = linkId(exc.match);
     if (!mId || !matchIds.includes(mId)) continue;
     exceptionsByMatch.set(mId, [...(exceptionsByMatch.get(mId) || []), exc]);
