@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -7,8 +7,16 @@ import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { DateHeading } from '@/components/shared';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActionButton } from '@/components/ui/action-button';
+import { StatusChip } from '@/components/ui/status-chip';
+import { ErrorState } from '@/components/ui/error-state';
+import { inputClass } from '@/components/ui/input';
+import { Tabs, TabPanel } from '@/components/ui/tabs';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
+import { toneClasses } from '@/lib/statusTone';
+import { createUndoQueue, type UndoQueue } from '@/lib/undoQueue';
+import { hasPending, pendingKey, pendingLabel, withPending, type PendingAction, type PendingKind } from '@/lib/umpiringPending';
 import { hkDateKey } from '@shared/hkDateKey';
 import { toCsv } from '@shared/csv';
 import { saveCsv } from '@/lib/saveCsv';
@@ -37,12 +45,11 @@ import {
   type UmpiringBoard,
 } from '@shared/umpiring';
 
-const input =
-  'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const btn = 'inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium disabled:opacity-50';
-const primaryBtn = `${btn} bg-primary text-primary-foreground`;
-const plainBtn = `${btn} border border-border bg-background text-foreground`;
-const linkBtn = 'text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50';
+/** The WhatsApp link, dressed as the kit's primary ActionButton (sm). */
+const linkButton =
+  'inline-flex items-center justify-center gap-1.5 shrink-0 h-10 px-3 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&_svg]:h-4 [&_svg]:w-4';
+const warningText = toneClasses('warning', 'text');
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 const noon = (day: string) => `${day}T12:00:00+08:00`;
@@ -56,6 +63,76 @@ function useUmpiringAction() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['umpiring'] }),
     onError: (err) => toast.error(errorText(err, "Couldn't save that. Try again.")),
   });
+}
+
+// ── Undo ───────────────────────────────────────────────────────────────
+
+/** How long the Undo toast gives before the request is sent. */
+const UNDO_MS = 5000;
+
+interface Undoable {
+  /** Waiting or being sent: shown as done, with that duty's buttons hidden. */
+  pending: PendingAction[];
+  schedule: (kind: PendingKind, assignmentId: string) => void;
+}
+
+const UndoContext = createContext<Undoable>({ pending: [], schedule: () => {} });
+const useUndo = () => useContext(UndoContext);
+
+const sendPending = (p: PendingAction) => (p.kind === 'noShow' ? setNoShow(p.assignmentId, true) : withdrawAssignment(p.assignmentId));
+
+/**
+ * Pull out, Withdraw, Remove and No-show wait out a toast with Undo, and are
+ * only sent if it isn't tapped (src/lib/umpiringPending.ts says why). A
+ * second one, leaving the page, or hiding the tab sends a waiting one at once.
+ */
+function useUndoable(): Undoable {
+  const queryClient = useQueryClient();
+  const [pending, setPending] = useState<PendingAction[]>([]);
+  const queue = useRef<UndoQueue | null>(null);
+  queue.current ??= createUndoQueue(UNDO_MS);
+  const drop = (p: PendingAction) => setPending((all) => all.filter((x) => x !== p));
+
+  const schedule = useCallback(
+    (kind: PendingKind, assignmentId: string) => {
+      const p: PendingAction = { kind, assignmentId };
+      const key = pendingKey(p);
+      let toastId: string | number = '';
+      setPending((all) => [...all.filter((x) => pendingKey(x) !== key), p]);
+      queue.current!.add(key, () => {
+        toast.dismiss(toastId);
+        // Stays in `pending` until the board has reloaded, so the duty doesn't flicker back.
+        sendPending(p)
+          .catch((err) => toast.error(errorText(err, "Couldn't save that. Try again.")))
+          .then(() => queryClient.invalidateQueries({ queryKey: ['umpiring'] }))
+          .finally(() => drop(p));
+      });
+      toastId = toast(pendingLabel[kind], {
+        duration: UNDO_MS + 500,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            if (queue.current!.undo(key)) drop(p);
+          },
+        },
+      });
+    },
+    [queryClient],
+  );
+
+  useEffect(() => {
+    const q = queue.current!;
+    const hidden = () => document.visibilityState === 'hidden' && q.flush();
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('pagehide', q.flush);
+    return () => {
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('pagehide', q.flush);
+      q.flush();
+    };
+  }, []);
+
+  return useMemo(() => ({ pending, schedule }), [pending, schedule]);
 }
 
 async function copy(text: string) {
@@ -83,12 +160,13 @@ const NEW_NAME = '\u0000new';
 /** For the coordinator: "· playing 10:45" when a club umpire has a game then. */
 function Playing({ duty, personId }: { duty: UmpireDuty; personId: string | null }) {
   const at = personId ? duty.clashes?.[personId] : undefined;
-  return at ? <span className="text-amber-700"> · playing {at}</span> : null;
+  return at ? <span className={warningText}> · playing {at}</span> : null;
 }
 
 /** What an umpire can do with a duty. */
 function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
   const action = useUmpiringAction();
+  const { schedule } = useUndo();
   const [anyway, setAnyway] = useState(false);
   const mine = duty.assignments.find((a) => a.personId === board.me.personId);
   const taken = confirmedOf(duty);
@@ -96,50 +174,50 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
 
   if (mine?.status === 'confirmed') {
     return (
-      <div className="flex items-center gap-3">
-        <span className="text-xs font-medium text-primary">You're umpiring</span>
-        <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(mine.id))}>
+      <div className="flex items-center gap-2">
+        <StatusChip tone="success">You're umpiring</StatusChip>
+        <ActionButton variant="outline" onClick={() => schedule('pullOut', mine.id)}>
           Pull out
-        </button>
+        </ActionButton>
       </div>
     );
   }
   if (taken) return null;
   if (mine?.status === 'offered') {
     return (
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-muted-foreground">Paid offer sent</span>
-        <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusChip tone="info">Paid offer sent</StatusChip>
+        <ActionButton variant="outline" loading={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
           Free instead
-        </button>
-        <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(mine.id))}>
+        </ActionButton>
+        <ActionButton variant="ghost" onClick={() => schedule('withdrawOffer', mine.id)}>
           Withdraw
-        </button>
+        </ActionButton>
       </div>
     );
   }
   if (duty.clash && !anyway) {
     return (
-      <button className={linkBtn} onClick={() => setAnyway(true)}>
+      <ActionButton variant="outline" onClick={() => setAnyway(true)}>
         Take anyway
-      </button>
+      </ActionButton>
     );
   }
   if (board.me.onCommitment) {
     return (
-      <button className={primaryBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
+      <ActionButton loading={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
         I'll take it
-      </button>
+      </ActionButton>
     );
   }
   return (
     <div className="flex flex-wrap gap-2">
-      <button className={primaryBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
+      <ActionButton disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, false))}>
         I'll take it
-      </button>
-      <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, true))}>
+      </ActionButton>
+      <ActionButton variant="outline" disabled={action.isPending} onClick={() => action.mutate(() => takeDuty(duty.id, true))}>
         Paid
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -147,6 +225,7 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
 /** The coordinator's controls: confirm an offer, put someone down, take them off, mark a no-show. */
 function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
   const action = useUmpiringAction();
+  const { schedule } = useUndo();
   const [assigning, setAssigning] = useState(false);
   const [who, setWho] = useState('');
   const [outside, setOutside] = useState('');
@@ -161,9 +240,9 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
 
   if (duty.status === 'cancelled') {
     return taken ? (
-      <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(taken.id))}>
+      <ActionButton variant="outline" onClick={() => schedule('remove', taken.id)}>
         Remove
-      </button>
+      </ActionButton>
     ) : null;
   }
 
@@ -171,35 +250,35 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   // assign form break onto rows of their own.
   return (
     <div className="contents">
-      {taken && (
-        <div className="flex flex-wrap items-center gap-3">
-          {past ? (
-            <button
-              className={linkBtn}
-              disabled={action.isPending}
-              onClick={() => action.mutate(() => setNoShow(taken.id, taken.status !== 'no_show'))}
-            >
-              {taken.status === 'no_show' ? 'Undo no-show' : 'No-show'}
-            </button>
-          ) : taken.personId === board.me.personId ? null : (
-            // Their own game: "Pull out" is beside it already.
-            <button className={linkBtn} disabled={action.isPending} onClick={() => action.mutate(() => withdrawAssignment(taken.id))}>
-              Remove
-            </button>
-          )}
-        </div>
-      )}
+      {taken &&
+        (past ? (
+          taken.status === 'no_show' ? (
+            // Itself the reverse of a no-show, so it is sent straight away.
+            <ActionButton variant="ghost" loading={action.isPending} onClick={() => action.mutate(() => setNoShow(taken.id, false))}>
+              Undo no-show
+            </ActionButton>
+          ) : (
+            <ActionButton variant="outline" onClick={() => schedule('noShow', taken.id)}>
+              No-show
+            </ActionButton>
+          )
+        ) : taken.personId === board.me.personId ? null : (
+          // Their own game: "Pull out" is beside it already.
+          <ActionButton variant="outline" onClick={() => schedule('remove', taken.id)}>
+            Remove
+          </ActionButton>
+        ))}
       {!taken && offers.length > 0 && (
         <ul className="basis-full space-y-1">
           {offers.map((o) => (
-            <li key={o.id} className="flex items-center gap-3 text-xs">
+            <li key={o.id} className="flex items-center gap-3 text-sm">
               <span className="text-foreground">
                 💰{o.name}
                 <Playing duty={duty} personId={o.personId} />
               </span>
-              <button className={plainBtn} disabled={action.isPending} onClick={() => action.mutate(() => confirmAssignment(o.id))}>
+              <ActionButton variant="outline" disabled={action.isPending} onClick={() => action.mutate(() => confirmAssignment(o.id))}>
                 Confirm
-              </button>
+              </ActionButton>
             </li>
           ))}
         </ul>
@@ -211,7 +290,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
               <label className="text-xs text-muted-foreground">
                 Club umpire
                 <select
-                  className={input}
+                  className={inputClass}
                   value={who}
                   onChange={(e) => {
                     setWho(e.target.value);
@@ -231,7 +310,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                 Outside umpire
                 {typing ? (
                   <input
-                    className={input}
+                    className={inputClass}
                     value={outside}
                     maxLength={60}
                     autoFocus={known.length > 0}
@@ -243,7 +322,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                   />
                 ) : (
                   <select
-                    className={input}
+                    className={inputClass}
                     value={outside}
                     onChange={(e) => {
                       if (e.target.value === NEW_NAME) {
@@ -265,15 +344,15 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
               </label>
             </div>
             {who && !chosen?.onCommitment && (
-              <label className="flex items-center gap-2 text-xs text-foreground">
+              <label className="flex items-center gap-2 min-h-10 text-sm text-foreground">
                 <input type="checkbox" className="h-4 w-4 accent-[hsl(var(--primary))]" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
                 Paid
               </label>
             )}
             <div className="flex gap-2">
-              <button
-                className={primaryBtn}
-                disabled={action.isPending || (!who && !outside.trim())}
+              <ActionButton
+                loading={action.isPending}
+                disabled={!who && !outside.trim()}
                 onClick={() =>
                   action.mutate(
                     () => (who ? assignDuty(duty.id, { personId: who, paid: paid && !chosen?.onCommitment }) : assignDuty(duty.id, { externalName: outside })),
@@ -282,22 +361,26 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
                 }
               >
                 Confirm
-              </button>
-              <button className={plainBtn} onClick={() => setAssigning(false)}>
+              </ActionButton>
+              <ActionButton variant="ghost" onClick={() => setAssigning(false)}>
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         ) : (
-          <button className={plainBtn} onClick={() => setAssigning(true)}>
+          <ActionButton variant="outline" onClick={() => setAssigning(true)}>
             Assign
-          </button>
+          </ActionButton>
         ))}
     </div>
   );
 }
 
-function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
+function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
+  const { pending } = useUndo();
+  // While an Undo is open the duty shows as done, without its buttons.
+  const busy = hasPending(loaded, pending);
+  const duty = withPending(loaded, pending);
   const coordinator = board.access === 'coordinator';
   const taken = confirmedOf(duty);
   const cancelled = duty.status === 'cancelled';
@@ -309,18 +392,18 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
             <span className="font-semibold">{duty.timeTbc ? 'TBC' : safeFormat(duty.matchDate, 'HH:mm')}</span> · {duty.venue || 'Venue TBC'}
             {duty.division && <span className="text-muted-foreground"> · Div {duty.division}</span>}
           </p>
-          <p className={`text-xs text-foreground ${cancelled ? 'line-through' : ''}`}>
-            {duty.homeTeam} v {duty.awayTeam}
+          <p className={`text-sm text-foreground ${cancelled ? 'line-through' : ''}`}>
+            {duty.homeTeam} vs {duty.awayTeam}
           </p>
         </div>
-        <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-muted text-foreground">{duty.dutyTeam} duty</span>
+        <StatusChip>{duty.dutyTeam} duty</StatusChip>
       </div>
       {/* Status and the buttons share a row, so more duties fit on a screen;
           the coordinator's assign form and paid offers take a row of their own. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-h-10">
         <p className="text-sm mr-auto">
           {cancelled ? (
-            <span className="text-destructive">
+            <span className={toneClasses('danger', 'text')}>
               Removed by HKHA
               {taken && coordinator ? ` · tell ${taken.name}` : ''}
             </span>
@@ -330,13 +413,13 @@ function DutyCard({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
               {coordinator && <Playing duty={duty} personId={taken.personId} />}
             </>
           ) : (
-            <span className="text-amber-700 font-medium">Open</span>
+            <StatusChip tone="warning">Open</StatusChip>
           )}
           {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
-          {board.me.isUmpire && duty.clash && !cancelled && <span className="text-amber-700"> · ⚠ Your game {duty.clash}</span>}
+          {board.me.isUmpire && duty.clash && !cancelled && <span className={warningText}> · ⚠ Your game {duty.clash}</span>}
         </p>
-        {board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
-        {coordinator && <CoordinatorActions duty={duty} board={board} />}
+        {!busy && board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
+        {!busy && coordinator && <CoordinatorActions duty={duty} board={board} />}
       </div>
     </li>
   );
@@ -350,11 +433,11 @@ function Message({ title, text }: { title: string; text: string }) {
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <pre className="whitespace-pre-wrap rounded-lg bg-muted/60 p-2 text-xs text-foreground font-sans">{text}</pre>
       <div className="flex gap-2">
-        <button className={plainBtn} onClick={() => copy(text)}>
-          <Copy className="h-3.5 w-3.5" /> Copy
-        </button>
-        <a className={primaryBtn} href={whatsappShareUrl(text)} target="_blank" rel="noreferrer">
-          <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+        <ActionButton variant="outline" icon={<Copy />} onClick={() => copy(text)}>
+          Copy
+        </ActionButton>
+        <a className={linkButton} href={whatsappShareUrl(text)} target="_blank" rel="noreferrer">
+          <MessageCircle aria-hidden="true" /> WhatsApp
         </a>
       </div>
     </section>
@@ -362,7 +445,8 @@ function Message({ title, text }: { title: string; text: string }) {
 }
 
 function Messages({ board }: { board: UmpiringBoard }) {
-  const live = board.duties.filter((d) => d.status !== 'cancelled');
+  const { pending } = useUndo();
+  const live = board.duties.filter((d) => d.status !== 'cancelled').map((d) => withPending(d, pending));
   if (live.length === 0) return null;
   return (
     <div className="space-y-3">
@@ -501,14 +585,19 @@ function DayGrid({ report }: { report: UmpiringReport }) {
 function SeasonReport() {
   const { data, isLoading, error } = useQuery({ queryKey: ['umpiring', 'report'], queryFn: () => getUmpiringReport(null), staleTime: 60_000 });
   if (isLoading) return <Skeleton className="h-64 w-full" />;
-  if (error || !data) return <p className="text-sm text-muted-foreground">{errorText(error, 'Could not load the season.')}</p>;
+  if (error || !data) return <ErrorState title={errorText(error, 'Could not load the season.')} />;
   const season = data.season.replace(/^(\d{4})-\d{2}(\d{2})$/, '$1-$2');
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <button className={plainBtn} disabled={data.rows.length === 0} onClick={() => saveCsv(`umpiring-${season}.csv`, toCsv(reportCsvRows(data)))}>
-          <Download className="h-3.5 w-3.5" /> CSV
-        </button>
+        <ActionButton
+          variant="outline"
+          icon={<Download />}
+          disabled={data.rows.length === 0}
+          onClick={() => saveCsv(`umpiring-${season}.csv`, toCsv(reportCsvRows(data)))}
+        >
+          CSV
+        </ActionButton>
       </div>
       {data.byTeam.length > 0 && <TeamTable report={data} />}
       <UmpireTable report={data} />
@@ -519,6 +608,11 @@ function SeasonReport() {
 
 // ── The page ───────────────────────────────────────────────────────────
 
+const TABS = [
+  { value: 'duties', label: 'Duties' },
+  { value: 'season', label: 'Season' },
+] as const;
+
 /**
  * HKFC's umpiring duties, a week at a time. The club's umpires put their
  * names down; the Umpire Coordinator fills the gaps, sends the week's two
@@ -528,6 +622,7 @@ export default function Umpiring() {
   const [params, setParams] = useSearchParams();
   const week = params.get('week');
   const tab = params.get('view') === 'season' ? 'season' : 'duties';
+  const undo = useUndoable();
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['umpiring', 'board', week],
     queryFn: () => getUmpiringBoard(week),
@@ -561,39 +656,42 @@ export default function Umpiring() {
         {isLoading ? (
           <Skeleton className="h-96 w-full" />
         ) : error || !data ? (
-          <div className="text-center py-12 border border-dashed border-border rounded-xl">
-            <p className="text-muted-foreground mb-2">{errorText(error, 'Could not load the umpiring duties.')}</p>
-            <button onClick={() => refetch()} className="text-sm text-primary underline">
-              Try again
-            </button>
-          </div>
+          <ErrorState title={errorText(error, 'Could not load the umpiring duties.')} onRetry={() => refetch()} />
         ) : (
-          <>
+          <UndoContext.Provider value={undo}>
             {coordinator && (
-              <div className="flex gap-1 border-b border-border">
-                {(['duties', 'season'] as const).map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setParam('view', v === 'duties' ? null : v)}
-                    className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === v ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground'}`}
-                  >
-                    {v === 'duties' ? 'Duties' : 'Season'}
-                  </button>
-                ))}
-              </div>
+              <Tabs
+                id="umpiring"
+                label="Umpiring views"
+                items={TABS}
+                value={tab}
+                onChange={(v) => setParam('view', v === 'duties' ? null : v)}
+              />
             )}
             {tab === 'season' && coordinator ? (
-              <SeasonReport />
+              <TabPanel tabsId="umpiring" value="season">
+                <SeasonReport />
+              </TabPanel>
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <button className={plainBtn} disabled={!prev} onClick={() => setParam('week', prev)} aria-label="Previous week">
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
+                  <ActionButton
+                    variant="outline"
+                    iconOnly
+                    icon={<ChevronLeft />}
+                    disabled={!prev}
+                    onClick={() => setParam('week', prev)}
+                    aria-label="Previous week"
+                  />
                   <p className="flex-1 text-center text-sm font-semibold text-foreground">{weekLabel(data.week)}</p>
-                  <button className={plainBtn} disabled={!next} onClick={() => setParam('week', next)} aria-label="Next week">
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <ActionButton
+                    variant="outline"
+                    iconOnly
+                    icon={<ChevronRight />}
+                    disabled={!next}
+                    onClick={() => setParam('week', next)}
+                    aria-label="Next week"
+                  />
                 </div>
                 {byDay.length === 0 ? (
                   <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">No duties this week.</p>
@@ -612,7 +710,7 @@ export default function Umpiring() {
                 {data.messages && <Messages board={data} />}
               </>
             )}
-          </>
+          </UndoContext.Provider>
         )}
       </main>
       <AppFooter />
