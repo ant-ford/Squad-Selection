@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { signedIn } from "./helpers/factories";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
@@ -11,8 +12,9 @@ const env = {
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.example",
 } as Env;
-const player = { email: "p@x.com", personId: "recPLAYER", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
-const convenor = { ...player, personId: "recCONVENOR", officerRoles: [{ office: "hockeyConvenor", designation: "" }] } as AuthorizedUser;
+const player = signedIn({ email: "p@x.com", personId: "recPLAYER" });
+// The convenor's uuid came with sign-in (auth_context).
+const convenor = { ...player, personId: "recCONVENOR", personUuid: "00000000-0000-4000-8000-000000000009", officerRoles: [{ office: "hockeyConvenor", designation: "" }] } as AuthorizedUser;
 const captain = { ...player, officerRoles: [{ office: "sectionCaptain", designation: "" }] } as AuthorizedUser;
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;

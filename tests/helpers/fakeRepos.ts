@@ -665,8 +665,13 @@ export function authContextFrom(s: FakeState, email: string): AuthContext {
   const teamSectionCaptain = teams.some((t) => (t.sectionCaptain ?? []).includes(p.id));
   const { crm: _crm, ...player } = p;
   const extra = p as FakePerson & { uuid?: string; umpire?: boolean };
+  const profileUpdatedAt = (p.crm as Record<string, unknown> | undefined)?.profileUpdatedAt;
   return {
-    person: { ...player, uuid: extra.uuid ?? p.id },
+    person: {
+      ...player,
+      uuid: extra.uuid ?? p.id,
+      ...(typeof profileUpdatedAt === "string" ? { profileUpdatedAt } : {}),
+    },
     isTeamCoach: teams.some((t) => (t.coach ?? []).includes(p.id)),
     coachTeams: teams.filter((t) => (t.coach ?? []).includes(p.id) && t.teamName).map((t) => t.teamName!),
     teamSectionCaptain,

@@ -239,6 +239,8 @@ describe("player portal fixture categories (per-day, max three)", () => {
     expect(out.events).toBe(false);
     expect(out.umpiring).toBeNull();
     for (const table of ["api_offices", "offices", "team_people", "people", "matches", "umpire_assignments"]) expect(pg.reads(table)).toHaveLength(0);
+    // The player themselves came with sign-in too: no lookup by email.
+    expect(db.callsTo("people", "findByEmail")).toHaveLength(0);
     expect(pg.writes()).toHaveLength(0);
   });
 });

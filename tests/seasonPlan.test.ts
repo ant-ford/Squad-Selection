@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { signedIn } from "./helpers/factories";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
@@ -6,7 +7,7 @@ import { canSeeSeasonPlans, getMySeasonPlan, getSeasonPlanBoard, parseSeasonPlan
 import { PLAYING_PREFERENCES, seasonPlanMissing, EMPTY_SEASON_PLAN } from "../shared/seasonPlan";
 
 const env = { ...SUPABASE_TEST_ENV } as Env;
-const player = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
+const player = signedIn({ email: "p@x.com", personId: "recME" });
 const coach = { ...player, role: "coach", coachTeams: ["HKFC C"] } as AuthorizedUser;
 const captain = { ...player, officerRoles: [{ office: "sectionCaptain", designation: "" }] } as AuthorizedUser;
 const HIGHEST = PLAYING_PREFERENCES[0].value;
@@ -54,7 +55,7 @@ describe("season plan", () => {
 
   it("gives the player their own plan for the current season", async () => {
     supabase();
-    expect(await getMySeasonPlan(env, { ...player, personId: "recA" })).toEqual({
+    expect(await getMySeasonPlan(env, { ...player, personId: "recA", personUuid: "u1" })).toEqual({
       season: "2026-2027",
       plan: { availabilityLevel: "most", availabilityHalf: "second", playingPreference: DOWN, captaincyInterest: "Maybe", submittedAt: null },
     });

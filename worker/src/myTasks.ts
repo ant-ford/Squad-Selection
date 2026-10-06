@@ -34,7 +34,6 @@ import { WAITING_ON_KEY } from "./reference";
 import { people, type MyTaskRow } from "./data/people";
 import { commitments } from "./data/commitments";
 import { isRowId } from "./data/ids";
-import { db, eq } from "./data/supabase";
 import { openJoinerTasks } from "./joiners";
 import { systemNeedsLook } from "./systemHealth";
 import { signingTasks } from "./applicationSigning";
