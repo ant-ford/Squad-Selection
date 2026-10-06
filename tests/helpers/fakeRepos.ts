@@ -311,6 +311,10 @@ function buildRepos(s: FakeState): FakeRepos {
     async listDirectory() {
       return s.people.filter((p) => differs(personValue(p, "status"), "Resigned")).map((p) => personRow(p, CHAIRMAN_FIELDS));
     },
+    async getDirectoryRow(id) {
+      const p = findPerson(id);
+      return p ? personRow(p, CHAIRMAN_FIELDS) : null;
+    },
     async listContactsByIds(ids) {
       const wanted = new Set([...ids].filter((id) => API_ID_RE.test(id)));
       return s.people.filter((p) => wanted.has(p.id)).map((p) => personRow(p, CONTACT_FIELDS));

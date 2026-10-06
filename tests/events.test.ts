@@ -4,7 +4,18 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import type { DirectoryPerson } from "../shared/emailLists";
 
 const DIR: DirectoryPerson[] = [];
-vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ people: DIR, generatedAt: "" }) }));
+/** The whole directory (managers' screens) and one person's entry (the viewer's checks). */
+const directoryReads = vi.hoisted(() => ({ whole: 0, one: [] as string[] }));
+vi.mock("../worker/src/chairman", () => ({
+  getChairmanDirectory: async () => {
+    directoryReads.whole++;
+    return { people: DIR, generatedAt: "" };
+  },
+  getDirectoryPerson: async (_env: unknown, id: string) => {
+    directoryReads.one.push(id);
+    return DIR.find((p) => p.id === id) ?? null;
+  },
+}));
 
 import { checkIn, eventTasks, getMyEvents, respondToEvent, saveEvent, setAttendance, uploadPaymentProof } from "../worker/src/events";
 import { attendedEvents } from "../worker/src/eventAttendance";
@@ -122,6 +133,8 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
 afterEach(() => {
   vi.unstubAllGlobals();
   invalidateAll();
+  directoryReads.whole = 0;
+  directoryReads.one = [];
 });
 const upsertOf = (calls: Call[]) => calls.find((c) => c.url.pathname.endsWith("/event_responses") && c.method === "POST");
 
@@ -246,6 +259,16 @@ describe("the player page and My Tasks", () => {
     // Applicants aren't in the default audience.
     fake({ events: [event()] });
     expect(await eventTasks(env, userOf("recAPP"))).toEqual([]);
+  });
+
+  it("reads only the viewer's own directory entry (and a sign-up's), never the whole directory", async () => {
+    fake({ events: [event()] });
+    await getMyEvents(env, userOf("recDAD"));
+    await eventTasks(env, userOf("recDAD"));
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going" });
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { personId: "recSON", status: "going" });
+    expect(directoryReads.whole).toBe(0);
+    expect(directoryReads.one).toEqual(["recDAD", "recDAD", "recDAD", "recDAD", "recSON"]);
   });
 });
 
