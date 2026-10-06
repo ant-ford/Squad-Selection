@@ -91,6 +91,7 @@ export interface MatchRow {
   match_status: string | null; venue: string | null; fixture_id: string | null;
   selected_players_home: string[]; selected_players_away: string[]; auto_select_enabled: boolean;
   home_kit: string | null; away_kit: string | null; ump_1: string | null; ump_2: string | null;
+  selection_version_home?: number | null; selection_version_away?: number | null;
 }
 
 export function toMatch(r: MatchRow): Match {
@@ -114,6 +115,8 @@ export function toMatch(r: MatchRow): Match {
     awayKit: (r.away_kit || "") as KitColour,
     ump1: r.ump_1 || "",
     ump2: r.ump_2 || "",
+    selectionVersionHome: r.selection_version_home ?? 0,
+    selectionVersionAway: r.selection_version_away ?? 0,
   };
 }
 

@@ -13,7 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
-import { requireAuthorizedUser, requireCoach, requireSection, requireVerifiedEmail } from "./auth";
+import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
@@ -90,6 +90,8 @@ import {
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { clearSuspension, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
+import { adminRoute, isAdminPath } from "./admin/routes";
+import { getDataChecks } from "./dataChecks";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -99,11 +101,13 @@ import {
   getPlayersForMatch,
   getAvailabilityForMatch,
   syncSquad,
+  applySquadChanges,
   setMatchKit,
   toggleAutoSelect,
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
+import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
@@ -578,6 +582,30 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json({ success: true, displaced }, 200, origin);
     }
 
+    // A squad save as changes: only who was added and removed, merged with
+    // anyone else's changes unless both touched the same player.
+    if (method === "POST" && pathname === "/api/squad/changes") {
+      const user = await requireCoach(request, env);
+      const body = (await readJsonBody(request)) as SquadChangesBody;
+      const result = await applySquadChanges(env, body, { email: user.email, personId: user.personId });
+      if (result.status === "conflict") {
+        const names = result.players.map((p) => p.name);
+        const message = names.length > 0
+          ? `Someone else changed ${names.join(", ")} in this squad. Check and save again.`
+          : "Someone else changed this squad. Check and save again.";
+        return json(
+          { error: "SQUAD_CONFLICT", message, players: result.players, version: result.version, selectedIds: result.selectedIds },
+          409,
+          origin,
+        );
+      }
+      return json(
+        { success: true, version: result.version, selectedIds: result.selectedIds, displaced: result.displaced },
+        200,
+        origin,
+      );
+    }
+
     // ── Ranking ────────────────────────────────────────────────────────────
     // Ranking reads are coach-only: they expose every player's ability
     // ranking, and the ranking screen lives under /coach. The matching
@@ -608,13 +636,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         origin,
       );
     }
+    // Making a player active or inactive: Section Captains only (owner
+    // decision, 2026-10-06), not every coach.
     if (method === "POST" && pathname === "/api/ranking/activate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await activatePlayer(env, body.playerId, user.email), 200, origin);
     }
     if (method === "POST" && pathname === "/api/ranking/deactivate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await deactivatePlayer(env, body.playerId, user.email), 200, origin);
     }
@@ -849,6 +879,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
     }
 
+    // ── Officers' admin screens (src/admin/) ──────────────────────────────
+    // Each route checks its own section (admin/routes.ts).
+    if (isAdminPath(pathname)) {
+      const result = await adminRoute(request, env, url);
+      if (result !== undefined) return json(result, 200, origin);
+    }
+
     // ── HKHA registration (src/registration.ts) ───────────────────────────
     // HKID and passport numbers: the Hockey Convenor only.
     if (pathname.startsWith("/api/registration/")) {
@@ -878,6 +915,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2]) return json(await clearSuspension(env, user, one[1], body), 200, origin);
         if (one) return json(await updateSuspension(env, user, one[1], body), 200, origin);
       }
+    }
+
+    // ── Data checks (src/dataChecks.ts) ───────────────────────────────────
+    // The Men's Convenor and the Section Captains.
+    if (method === "GET" && pathname === "/api/admin/data-checks") {
+      await requireSection(request, env, "dataChecks");
+      return json(await getDataChecks(env), 200, origin);
     }
 
     // ── Volunteering (src/volunteering.ts) ────────────────────────────────
