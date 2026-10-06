@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { VitePWA } from "vite-plugin-pwa";
@@ -26,6 +26,7 @@ import path from "path";
 export default defineConfig(({ command }) => ({
   plugins: [
     react(),
+    preloadFont(),
     ...(command === "build" ? [cloudflare()] : []),
     VitePWA({
       registerType: "autoUpdate",
@@ -66,6 +67,8 @@ export default defineConfig(({ command }) => ({
             },
           },
         ],
+        // The default plus the self-hosted font.
+        globPatterns: ["**/*.{js,css,html,woff2}"],
       },
       manifest: {
         name: "HKFC Squad Selection",
@@ -118,3 +121,29 @@ export default defineConfig(({ command }) => ({
     },
   },
 }));
+
+/**
+ * Preloads the self-hosted font from index.html. Its file name is hashed, so it
+ * is only known once the bundle is written. Fails the build if the font goes
+ * missing rather than quietly dropping the preload.
+ */
+function preloadFont(): Plugin {
+  return {
+    name: "preload-font",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, ctx) {
+        const font = Object.keys(ctx.bundle ?? {}).find((file) => /open-sans.*\.woff2$/.test(file));
+        if (!font) throw new Error("preload-font: no open-sans .woff2 in the bundle");
+        return [
+          {
+            tag: "link",
+            attrs: { rel: "preload", href: `/${font}`, as: "font", type: "font/woff2", crossorigin: true },
+            injectTo: "head",
+          },
+        ];
+      },
+    },
+  };
+}
