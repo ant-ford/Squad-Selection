@@ -174,6 +174,9 @@ describe("fake repositories", () => {
       { id: ALICE, membershipNo: "M1", preferredName: "Test", status: "Member" },
     ]);
     expect((await people(env).listContactsByIds(new Set([ALICE, "nonsense"])))[0].photo).toEqual([{ url: "u", filename: "f" }]);
+    // Names by id or by email (any case); ids that aren't row ids are ignored.
+    expect((await people(env).listNamesFor(["nonsense"], [" ALICE@x.com "])).map((n) => n.id).sort()).toEqual([ALICE, recId("Old")].sort());
+    expect((await people(env).listNamesFor([recId("Gone")], []))).toEqual([{ id: recId("Gone"), preferredName: "Test", givenNames: null, email: null }]);
     // One directory row by id (resigned or not: the caller decides), null when there's no such person.
     expect(await people(env).getDirectoryRow(ALICE)).toMatchObject({ id: ALICE, status: "Member", membershipNo: "M1" });
     expect((await people(env).getDirectoryRow(recId("Gone")))?.status).toBe("Resigned");
