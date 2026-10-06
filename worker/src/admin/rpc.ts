@@ -13,7 +13,6 @@
  */
 import type { Env } from "../env";
 import { HttpError } from "../http";
-import { backendFor } from "../data/backend";
 import { db, SupabaseError } from "../data/supabase";
 
 const RAISED: Record<string, { status: number; code: string; message: string }> = {
@@ -43,13 +42,6 @@ export interface AdminRpcOptions {
   messages?: Record<string, string>;
   /** The 409 code for a conflict that names a field rather than a code. Default CHANGED. */
   conflictCode?: string;
-}
-
-/** The admin screens are Supabase-only; the Airtable backend answers 409 NOT_YET. */
-export function requireSupabaseAdmin(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("This is on the Supabase backend only.", 409, "NOT_YET");
-  }
 }
 
 export async function adminRpc<T>(env: Env, fn: string, args: object, opts: AdminRpcOptions = {}): Promise<T> {

@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // All domain modules are mocked. Sign-in is REAL: worker/src/auth.ts verifies
 // the bearer token against Supabase (/auth/v1/user, faked below), then looks
 // the email up in People and reads the Teams coach / section-captain links
-// and the Active office rows, all through the in-memory repositories on the
-// Supabase path (DATA_BACKEND "supabase"). Who a request is therefore comes
+// and the Active office rows, all through the in-memory repositories. Who a
+// request is therefore comes
 // from seeded data, as in production. These tests prove the router derives
 // identity from the session (never from query/body params) and applies the
 // right gates and error codes.
@@ -93,7 +93,6 @@ vi.mock("../worker/src/chairman", () => ({
 import worker from "../worker/src/index";
 import * as auth from "../worker/src/auth";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { AirtableError } from "../worker/src/airtable";
 import { SupabaseError } from "../worker/src/data/supabase";
 import { invalidateAll } from "../worker/src/cache";
 import { useFakeRepos } from "./helpers/fakeRepos";
@@ -102,10 +101,6 @@ import { office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
   ...SUPABASE_TEST_ENV,
-  // Read only by the GET /health?deep=1 Airtable probe at the end of this
-  // file, which PR #172 replaces with the Supabase probe.
-  AIRTABLE_TOKEN: "test-token",
-  AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
@@ -312,26 +307,7 @@ describe("error codes", () => {
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
 
-  // Airtable-only: removed with the Airtable code (AirtableError goes with it;
-  // the Supabase counterpart is the next test).
-  it("maps an AirtableError to a generic 502 without leaking the Airtable URL or response body", async () => {
-    mocks.getMyProfile.mockRejectedValue(
-      new AirtableError(
-        "Airtable GET https://api.airtable.com/v0/appSecretBase123/People?filterByFormula=... failed (500): {\"error\":{\"message\":\"internal\"}}",
-        500,
-      ),
-    );
-
-    const res = await call("/api/my-profile");
-    const body = await res.json();
-    expect(res.status).toBe(502);
-    expect(body).toMatchObject({ error: "UPSTREAM_ERROR" });
-    const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain("api.airtable.com");
-    expect(serialized).not.toContain("appSecretBase123");
-  });
-
-  // The Supabase path's counterpart: a database failure is a 502 naming the
+  // A database failure is a 502 naming the
   // table and status, never the database's own message (it can quote a value).
   it("maps a SupabaseError to a 502 without leaking the database message, URL or key", async () => {
     mocks.getMyProfile.mockRejectedValue(

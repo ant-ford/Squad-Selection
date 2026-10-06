@@ -19,7 +19,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
@@ -70,10 +69,6 @@ import {
   type ResponseStatus,
   type SocialFunction,
 } from "../../shared/events";
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") throw new HttpError("Events are only on Eddy's own data.", 409, "NOT_YET");
-}
 
 const text = (v: unknown, max = 200) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
 const validId = (id: string) => {
@@ -262,7 +257,6 @@ async function posterLinks(env: Env, eventIds: string[]): Promise<Record<string,
 // ── Who keeps them (eventAccess.ts) ─────────────────────────────────────
 
 async function requireManager(env: Env, user: AuthorizedUser): Promise<EventRights> {
-  requireSupabase(env);
   const r = await eventRights(env, user);
   if (!r.club && !r.teams.length) throw new HttpError("Events are kept by the social secretaries and Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
   return r;
@@ -279,7 +273,6 @@ async function requireManages(env: Env, user: AuthorizedUser, id: string): Promi
 
 /** Published (or cancelled) events they're invited to or answered, until the day after each ends. */
 export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ events: MyEvent[] }> {
-  requireSupabase(env);
   const [rights, dir] = await Promise.all([eventRights(env, user), directory(env)]);
   const me = rights.personUuid;
   if (!me) return { events: [] };
@@ -332,7 +325,6 @@ const STATUSES: readonly ResponseStatus[] = ["going", "maybe", "not_going"];
  * (asManager) does it on the person's behalf: nobody else pays.
  */
 export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: string, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireSupabase(env);
   const d = db(env);
   const [rights, ev, dir] = await Promise.all([eventRights(env, user), loadEvent(env, eventId), directory(env)]);
   if (!rights.personUuid) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
@@ -414,7 +406,6 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
 
 /** Invited people matching a name, with their answer so far: for signing others up. */
 export async function searchEventPeople(env: Env, user: AuthorizedUser, eventId: string, q: string): Promise<{ people: EventPerson[] }> {
-  requireSupabase(env);
   const [rights, ev, dir] = await Promise.all([eventRights(env, user), loadEvent(env, eventId), directory(env)]);
   if (ev.status !== "published") return { people: [] };
   const manager = managesEvent(rights, ev);
@@ -459,7 +450,6 @@ const TASKS_TTL_MS = 60 * 1000;
 
 /** Open events they're invited to and haven't answered (myTasks.ts). */
 export async function eventTasks(env: Env, user: AuthorizedUser): Promise<EventTask[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const { data } = await getCached(
     `event-tasks:${user.personId}`,
     async (): Promise<EventTask[]> => {
@@ -503,7 +493,6 @@ export interface CalendarEvent extends EventDetails {
 
 /** Events they're Going or Maybe to (calendar.ts adds them to their feed). */
 export async function calendarEventsFor(env: Env, personApiId: string): Promise<CalendarEvent[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const d = db(env);
   const p = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
   if (!p) return [];
@@ -791,7 +780,6 @@ export async function setSocialSecretaries(env: Env, user: AuthorizedUser, body:
  * another payment is flagged. The social secretary still confirms it.
  */
 export async function uploadPaymentProof(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<PaymentInfo> {
-  requireSupabase(env);
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const [rights, ev] = await Promise.all([eventRights(env, user), loadEvent(env, id)]);
   if (ev.payment_mode !== "payme_fps" || ev.status !== "published") throw new HttpError("This event isn't paid by PayMe or FPS.", 409, "NOT_PAYME");
@@ -997,7 +985,6 @@ async function loadForCheckIn(env: Env, id: string, code: unknown): Promise<Even
 
 /** What someone sees when they scan the QR code: themselves, and anyone they signed up. */
 export async function getCheckIn(env: Env, user: AuthorizedUser, id: string, code: string): Promise<CheckInView> {
-  requireSupabase(env);
   const [rights, event] = await Promise.all([eventRights(env, user), loadForCheckIn(env, id, code)]);
   const me = rights.personUuid;
   if (!me) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
@@ -1023,7 +1010,6 @@ export async function getCheckIn(env: Env, user: AuthorizedUser, id: string, cod
  * Turning up counts as Going, even without an answer: they came.
  */
 export async function checkIn(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; checkedIn: number }> {
-  requireSupabase(env);
   const [rights, event] = await Promise.all([eventRights(env, user), loadForCheckIn(env, id, body.code)]);
   if (!checkInOpen(toDetails(event, null))) throw new HttpError("Check-in opens an hour before the start and closes an hour after the end.", 409, "CHECKIN_CLOSED");
   const me = rights.personUuid;
@@ -1053,7 +1039,6 @@ const REGISTER_TASKS_TTL_MS = 5 * 60 * 1000;
 
 /** Events over in the last month whose register isn't marked taken, for their creator and team social secretaries (myTasks.ts). */
 export async function registerTasks(env: Env, user: AuthorizedUser): Promise<EventTask[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
   const { data } = await getCached(
     `register-tasks:${user.personId}`,
     async (): Promise<EventTask[]> => {

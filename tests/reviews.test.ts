@@ -15,7 +15,6 @@ import {
 import { belowAttendance } from "../shared/commitmentReview";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   CALENDAR_SECRET: "test",
@@ -138,11 +137,6 @@ describe("who sees and does what", () => {
     await expect(getReview(env, user("recMEMBER00000000"), "not-an-id")).rejects.toMatchObject({ status: 400 });
     fake(null);
     await expect(getReview(env, user("recMEMBER00000000"), "0b9c5b53-9c1a-4b6e-8f53-9a3c2b1d0e4f")).rejects.toMatchObject({ status: 404 });
-  });
-
-  it("stays on the Fillout forms until the switch-over", async () => {
-    fake(row());
-    await expect(getReview({ ...env, DATA_BACKEND: "airtable" }, user("recMEMBER00000000"), REVIEW)).rejects.toMatchObject({ status: 409, code: "NOT_YET" });
   });
 });
 

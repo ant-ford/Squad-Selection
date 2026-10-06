@@ -4,18 +4,18 @@
  * these went with Airtable, and hkha-sync writes Postgres directly (the
  * Stats summary keys itself on the data instead, clubStats.ts).
  *
- * Shared entries are dropped in KV as well; in-isolate-only derived
- * structures (season index, per-match player lists, calendar feeds, the
- * 25 s poll cache) are dropped here and rebuilt from fresh reads.
+ * Everything named is dropped in this isolate (and a Stats summary in KV
+ * too): the cached reads and the structures derived from them (season
+ * index, per-match player lists, calendar feeds, the 25 s poll cache), which
+ * are rebuilt from fresh reads.
  */
-import { invalidateCachePrefix, invalidateShared, type SharedPrefix } from "./cache";
+import { invalidateShared } from "./cache";
 import type { Env } from "./env";
 import { CHAIRMAN_DIRECTORY_KEY, MEMBERSHIP_RECORDS_KEY, OFFICER_LINKS_KEY, STATEMENT_RECORDS_KEY, WAITING_ON_KEY } from "./reference";
 
 interface Rule {
   keys?: string[];
-  sharedPrefixes?: SharedPrefix[];
-  localPrefixes?: string[];
+  prefixes?: string[];
 }
 
 const INVALIDATION = {
@@ -29,9 +29,8 @@ const INVALIDATION = {
       STATEMENT_RECORDS_KEY,
       WAITING_ON_KEY,
     ],
-    sharedPrefixes: ["player-by-email:"],
     // my-tasks: a member's player-page banner, gone once their form is in.
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
+    prefixes: ["player-by-email:", "players-for-match:", "season-index:", "calendar:", "ranking-events:", "my-tasks:"],
   },
   // The Statements board. People edits drop it too: names, teams and
   // resignations reach it through lookups and the resigned-id read.
@@ -41,8 +40,7 @@ const INVALIDATION = {
   // Appearances feed eligibility and play-up counts. The current Stats
   // summary needs nothing here: it is keyed on match_cards.updated_at.
   matchCards: {
-    sharedPrefixes: ["match-cards:"],
-    localPrefixes: ["players-for-match:", "season-index:", "calendar:"],
+    prefixes: ["match-cards:", "players-for-match:", "season-index:", "calendar:"],
   },
   // Coaches, captains and squad sizes: the roster, coach access and every
   // per-match list built on them.
@@ -61,8 +59,7 @@ const INVALIDATION = {
 /** Drop every cache a change to this kind of data can have made stale. */
 async function invalidate(env: Env, domain: keyof typeof INVALIDATION): Promise<void> {
   const rule: Rule = INVALIDATION[domain];
-  for (const p of rule.localPrefixes ?? []) invalidateCachePrefix(p);
-  await invalidateShared(env, rule.keys ?? [], rule.sharedPrefixes ?? []);
+  await invalidateShared(env, rule.keys ?? [], rule.prefixes ?? []);
 }
 
 /** After a write to People. */

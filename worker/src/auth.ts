@@ -3,7 +3,6 @@ import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
 import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type OfficerRole } from "./reference";
 import { getCached } from "./cache";
-import { backendFor } from "./data/backend";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
 import { noteRequestPerson } from "./requestContext";
 
@@ -107,10 +106,8 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
     : links.coachTeamNamesByPersonId[player.id] ?? [];
   const isCoach = isTeamCoach || coachesAllTeams;
 
-  // Applicants in the New Joiner process sign in to fill in their application
-  // (Supabase backend: the form is Eddy's own screen there).
+  // Applicants in the New Joiner process sign in to fill in their application.
   const isApplicant =
-    backendFor(env, "people") === "supabase" &&
     player.status === "Applicant" &&
     (APPLICANT_SIGN_IN_STAGES as readonly string[]).includes(player.applicantStage ?? "");
 
@@ -157,27 +154,23 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *   membership - the membership board: Membership Officers, Section Captains
  *   chairman   - the chairman's email lists: Section Chairs, Section Captains
  *   kit        - kit orders, handing out and spares: the Kit Convenor and
- *                Section Captains (owner decision, 2026-09-30). Supabase
- *                backend only.
+ *                Section Captains (owner decision, 2026-09-30).
  *   planning   - every team's season plans: Section Captains (coaches see
- *                their own teams' through the coach screens). Supabase
- *                backend only.
+ *                their own teams' through the coach screens).
  *   trials     - the trial sessions people registering to join choose
  *                from: Section Captains and the Assistant Director of
  *                Hockey (owner decision, 2026-10-04). Deciding on a
- *                registration stays with the Section Captains. Supabase
- *                backend only.
+ *                registration stays with the Section Captains.
  *   registration - every Active player's HKHA registration details, HKID
  *                and passport numbers included: the Hockey Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
- *                Supabase backend only.
  *   people     - finding a person and their admin page and change history:
  *                the Membership Officer, the Men's Convenor and Section
  *                Captains (each sees only the blocks their own sections
- *                open). Supabase backend only.
+ *                open).
  *   club       - offices (sponsors included) and teams' coaches, captains
  *                and squad sizes: Section Captains (owner decision,
- *                2026-10-06). Supabase backend only.
+ *                2026-10-06).
  */
 export const SECTION_OFFICES = {
   membership: ["membershipOfficer", "sectionCaptain"],
@@ -190,19 +183,12 @@ export const SECTION_OFFICES = {
   club: ["sectionCaptain"],
 } as const satisfies Record<string, readonly Office[]>;
 
-/** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration", "people", "club"];
-
 export type Section = keyof typeof SECTION_OFFICES;
 
-/**
- * The sections this person can open, in a fixed order. The kit and planning
- * sections need `env` and the Supabase backend: they don't exist on Airtable.
- */
-export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">, env?: Pick<Env, "DATA_BACKEND" | "DATA_BACKEND_OVERRIDES">): Section[] {
+/** The sections this person can open, in a fixed order. */
+export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">): Section[] {
   return (Object.keys(SECTION_OFFICES) as Section[]).filter(
     (section) =>
-      (!SUPABASE_ONLY.includes(section) || (!!env && backendFor(env, "people") === "supabase")) &&
       user.officerRoles.some((r) => (SECTION_OFFICES[section] as readonly Office[]).includes(r.office)),
   );
 }
@@ -213,7 +199,7 @@ export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">, env?: Pi
  */
 export async function requireSection(request: Request, env: Env, section: Section): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);
-  if (!sectionsFor(user, env).includes(section)) {
+  if (!sectionsFor(user).includes(section)) {
     throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }
   return user;
@@ -222,7 +208,7 @@ export async function requireSection(request: Request, env: Env, section: Sectio
 /** Gate for routes any one of several sections opens; the same 403 otherwise. */
 export async function requireAnySection(request: Request, env: Env, sections: readonly Section[]): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);
-  const mine = sectionsFor(user, env);
+  const mine = sectionsFor(user);
   if (!sections.some((s) => mine.includes(s))) {
     throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }

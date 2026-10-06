@@ -5,7 +5,6 @@ import { sectionsFor } from "../worker/src/auth";
 import { buildHistory, canFor, getPersonAdmin, getPersonHistory, isJuniorMember, searchPeople } from "../worker/src/admin/people";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
 } as Env;
@@ -43,45 +42,44 @@ function fake(tables: Record<string, unknown[] | ((url: URL) => unknown[])>) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the people section", () => {
-  it("opens to the Membership Officer, the Men's Convenor and Section Captains, on Supabase only", () => {
-    expect(sectionsFor(officer, env)).toContain("people");
-    expect(sectionsFor(convenor, env)).toContain("people");
-    expect(sectionsFor(captain, env)).toContain("people");
-    expect(sectionsFor(adh, env)).not.toContain("people");
-    expect(sectionsFor(teamLinkedCaptain, env)).not.toContain("people");
-    expect(sectionsFor(captain, { ...env, DATA_BACKEND: "airtable" })).not.toContain("people");
+  it("opens to the Membership Officer, the Men's Convenor and Section Captains", () => {
+    expect(sectionsFor(officer)).toContain("people");
+    expect(sectionsFor(convenor)).toContain("people");
+    expect(sectionsFor(captain)).toContain("people");
+    expect(sectionsFor(adh)).not.toContain("people");
+    expect(sectionsFor(teamLinkedCaptain)).not.toContain("people");
   });
 
   it("opens the club section to Section Captains only", () => {
-    expect(sectionsFor(captain, env)).toContain("club");
-    for (const u of [officer, convenor, adh, teamLinkedCaptain]) expect(sectionsFor(u, env)).not.toContain("club");
+    expect(sectionsFor(captain)).toContain("club");
+    for (const u of [officer, convenor, adh, teamLinkedCaptain]) expect(sectionsFor(u)).not.toContain("club");
   });
 });
 
 describe("what each officer may do to a person", () => {
   const p = personRow() as any;
   it("the Membership Officer: membership, stage; not squad, suspensions or active", () => {
-    expect(canFor(env, officer, p)).toEqual({
+    expect(canFor(officer, p)).toEqual({
       membership: true, stage: true, squad: false, registeredTeam: false, suspend: false, activate: false, juniorRoute: false,
     });
   });
   it("the Men's Convenor: the registered team and suspensions; not membership or active", () => {
-    expect(canFor(env, convenor, p)).toEqual({
+    expect(canFor(convenor, p)).toEqual({
       membership: false, stage: false, squad: true, registeredTeam: true, suspend: true, activate: false, juniorRoute: false,
     });
   });
   it("a Section Captain: membership, stage, selected teams and active; not the registered team or suspensions", () => {
-    expect(canFor(env, captain, p)).toEqual({
+    expect(canFor(captain, p)).toEqual({
       membership: true, stage: true, squad: true, registeredTeam: false, suspend: false, activate: true, juniorRoute: false,
     });
   });
   it("a Teams-linked Section Captain may make people active or inactive", () => {
-    expect(canFor(env, teamLinkedCaptain, p).activate).toBe(true);
+    expect(canFor(teamLinkedCaptain, p).activate).toBe(true);
   });
   it("offers the junior route for a junior member only", () => {
-    expect(canFor(env, officer, personRow({ member_type: "Child" }) as any).juniorRoute).toBe(true);
-    expect(canFor(env, captain, personRow({ category_type: "Junior (under 21)" }) as any).juniorRoute).toBe(true);
-    expect(canFor(env, convenor, personRow({ member_type: "Child" }) as any).juniorRoute).toBe(false);
+    expect(canFor(officer, personRow({ member_type: "Child" }) as any).juniorRoute).toBe(true);
+    expect(canFor(captain, personRow({ category_type: "Junior (under 21)" }) as any).juniorRoute).toBe(true);
+    expect(canFor(convenor, personRow({ member_type: "Child" }) as any).juniorRoute).toBe(false);
     expect(isJuniorMember({ status: "Applicant", applicant_stage: "2. Section Captain Invitation", member_type: "Child", category_type: null })).toBe(false);
     expect(isJuniorMember({ status: "Member", applicant_stage: "3. Club Application (Signed)", member_type: "Child", category_type: null })).toBe(false);
     expect(isJuniorMember({ status: "Member", applicant_stage: "Accepted", member_type: "Child", category_type: null })).toBe(true);
@@ -114,9 +112,6 @@ describe("GET /api/admin/people/:id", () => {
     await expect(getPersonAdmin(env, officer, "recNOPE")).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
   });
 
-  it("is 409 NOT_YET on the Airtable backend", async () => {
-    await expect(getPersonAdmin({ ...env, DATA_BACKEND: "airtable" } as Env, officer, "recP1")).rejects.toMatchObject({ status: 409, code: "NOT_YET" });
-  });
 });
 
 describe("GET /api/admin/people?q=", () => {
