@@ -1,5 +1,5 @@
 import type { CacheKv, Env } from "./env";
-import { readCacheVersions, type CacheVersionKey, type CacheVersions } from "./cacheVersions";
+import { raiseVersionFloor, readCacheVersions, resetVersionFloor, type CacheVersionKey, type CacheVersions } from "./cacheVersions";
 import { currentRequestContext, recordCacheHit, recordCacheMiss, recordKvHit } from "./requestContext";
 
 // In-memory cache for Cloudflare Worker isolate.
@@ -128,6 +128,7 @@ export function invalidateAll() {
   store.clear();
   pending.clear();
   latestByBase.clear();
+  resetVersionFloor();
 }
 
 // ── Versioned keys ──────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ export async function requestVersions(env: Env): Promise<CacheVersions | null> {
   if (context.versions) return context.versions;
   context.versionsRead ??= readCacheVersions(env).then(
     (versions) => {
+      raiseVersionFloor(versions);
       context.versions = versions;
       return versions;
     },
