@@ -61,12 +61,9 @@ async function currentSeason(env: Env): Promise<string> {
 
 export async function getMySeasonPlan(env: Env, user: AuthorizedUser): Promise<MySeasonPlan> {
   const d = db(env);
-  const [season, person] = await Promise.all([
-    currentSeason(env),
-    d.one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`),
-  ]);
-  if (!person) throw new HttpError("Your People record was not found.", 404, "NOT_FOUND");
-  const row = await d.one<PlanRow>("season_plans_v", `select=${PLAN_COLUMNS}&person_id=${eq(person.id)}&season=${eq(season)}`);
+  if (!user.personUuid) throw new HttpError("Your People record was not found.", 404, "NOT_FOUND");
+  const season = await currentSeason(env);
+  const row = await d.one<PlanRow>("season_plans_v", `select=${PLAN_COLUMNS}&person_id=${eq(user.personUuid)}&season=${eq(season)}`);
   return { season, plan: row ? { ...toAnswers(row), submittedAt: row.submitted_at } : null };
 }
 

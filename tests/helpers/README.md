@@ -2,7 +2,7 @@
 
 | File | What it fakes |
 | --- | --- |
-| `fakeRepos.ts` | Every repository in `worker/src/data/*.ts` (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments), in memory, and sign-in's `auth_context` call (`authContexts` in `worker/src/authContext.ts`), answered from the same people, teams and officers. A seeded person may carry `uuid` and `umpire`. |
+| `fakeRepos.ts` | Every repository in `worker/src/data/*.ts` (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments), in memory, and sign-in's `auth_context` call (`authContexts` in `worker/src/authContext.ts`), answered from the same people, teams and officers. A seeded person may carry `uuid`, `umpire` and `crm.profileUpdatedAt`; `db.signedIn(email)` builds the user auth.ts would for them. |
 | `postgrest.ts` | Supabase's PostgREST API (`/rest/v1/...`) behind `global.fetch`, for code that calls `db(env)` from `worker/src/data/supabase.ts` directly. |
 | `rankingDb.ts` | The real ranking repositories against `postgrest.ts`, seeded for the ranking tests. |
 | `factories.ts` | Domain objects: `person`, `team`, `match`, `matchCard`, `exception`, `rule`, `abilityGroup`, `office`, `commitment`, `signedIn({ email, ... })` for a signed-in user as auth.ts builds it, and `recId(label)` for valid ids. `p`/`t`/`m`/`mc` are the eligibility tests' builders. Leave them as they are. |

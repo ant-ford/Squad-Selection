@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { signedIn } from "./helpers/factories";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sendApplication } from "../worker/src/pdf/application";
@@ -15,8 +16,13 @@ const env = {
 } as Env;
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const officer = { email: "mo@x.com", personId: "recMO", officerRoles: [{ office: "membershipOfficer" }] } as unknown as AuthorizedUser;
-const member = { email: "m@x.com", personId: "recSOMEONE", officerRoles: [] } as unknown as AuthorizedUser;
+/** The Membership Officer as sign-in reads them (auth_context): no People read needed to send. */
+const officer = signedIn({
+  email: "mo@x.com", personId: "recMO", personUuid: U(13),
+  person: { id: "recMO", uuid: U(13), preferredName: "Daniel", surname: "X", email: "daniel@x.com" },
+  officerRoles: [{ office: "membershipOfficer", designation: "" }],
+}) as AuthorizedUser;
+const member = signedIn({ email: "m@x.com", personId: "recSOMEONE" });
 
 const applicant = {
   id: U(1), preferred_name: "Sam", given_names: "Samuel", surname: "Lee", applicant_stage: "6. Membership Officer (Signed)",

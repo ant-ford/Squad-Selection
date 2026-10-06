@@ -47,13 +47,11 @@ export async function storeSignature(
 }
 
 /** The signer's saved signature (files, kind 'signature', on their People row), newest first. */
-export async function savedSignature(env: Env, personApiId: string): Promise<string | null> {
-  const d = db(env);
-  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
-  if (!person) return null;
+export async function savedSignature(env: Env, personUuid: string): Promise<string | null> {
+  if (!personUuid) return null;
   // Their own: a spouse's or child's signature is filed on the applicant's
   // People row too, with family_member_id set.
-  const rows = await d.select<{ id: string }>("files", `select=id&person_id=${eq(person.id)}&family_member_id=is.null&kind=eq.signature&order=created_at.desc`);
+  const rows = await db(env).select<{ id: string }>("files", `select=id&person_id=${eq(personUuid)}&family_member_id=is.null&kind=eq.signature&order=created_at.desc`);
   return rows[0]?.id ?? null;
 }
 
@@ -63,12 +61,11 @@ export async function savedSignature(env: Env, personApiId: string): Promise<str
  */
 export async function signatureFor(env: Env, user: AuthorizedUser, drawn: string | undefined, missing: string): Promise<string> {
   if (!drawn) {
-    const saved = await savedSignature(env, user.personId);
+    const saved = await savedSignature(env, user.personUuid);
     if (!saved) throw new HttpError(missing, 400, "INVALID_INPUT");
     return saved;
   }
   signatureBytes(drawn); // a bad image is a 400 before anything is looked up
-  const person = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
-  if (!person) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
-  return storeSignature(env, person.id, drawn, "signature");
+  if (!user.personUuid) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  return storeSignature(env, user.personUuid, drawn, "signature");
 }

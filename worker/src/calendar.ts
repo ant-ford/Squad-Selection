@@ -1,5 +1,5 @@
 import type { Env } from "./env";
-import { getPlayerByEmail, getReferenceData } from "./reference";
+import { getReferenceData } from "./reference";
 import { getPlayerFixtures, getUpcomingFixtures, getPlayedMatchesForSeasons } from "./fixtures";
 import { getCached } from "./cache";
 import { HttpError } from "./http";
@@ -443,13 +443,12 @@ export function calendarWorthy<T extends { fixtureCategory?: string; selectionSt
 
 // --- Route Handlers ---
 
-export async function handleGetCalendarLink(env: Env, email: string, apiOrigin: string) {
-  const player = await getPlayerByEmail(env, email);
-  if (!player) throw new HttpError("Player not found", 404);
-
-  const payload = `player:${player.id}`;
+/** The signed-in player's own feed link; their id came with sign-in, so no read. */
+export async function handleGetCalendarLink(env: Env, personId: string, apiOrigin: string) {
+  if (!personId) throw new HttpError("Player not found", 404);
+  const payload = `player:${personId}`;
   const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  return { url: `${apiOrigin}/api/calendar/feed.ics?id=${player.id}&sig=${sig}` };
+  return { url: `${apiOrigin}/api/calendar/feed.ics?id=${personId}&sig=${sig}` };
 }
 
 export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig: string | null) {

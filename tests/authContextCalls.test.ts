@@ -73,7 +73,7 @@ const get = (path: string) =>
   worker.fetch(new Request(`https://api.test${path}`, { headers: { Authorization: `Bearer ${jwt("ada@hkfc.com")}` } }), ENV, CTX);
 
 describe("database calls behind a signed-in request", () => {
-  it("my profile: auth_context, the person and the teams; no reads for the header flags", async () => {
+  it("my profile: auth_context and the teams; no reads for the person or the header flags", async () => {
     const res = await get("/api/my-profile");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
@@ -86,7 +86,8 @@ describe("database calls behind a signed-in request", () => {
     for (const table of ["api_offices", "offices", "people", "team_people", "matches", "umpire_assignments"]) {
       expect(pg.reads(table), table).toHaveLength(0);
     }
-    expect(dbCalls(res)).toBe(3);
+    expect(pg.reads("api_players"), "api_players").toHaveLength(0);
+    expect(dbCalls(res)).toBe(2);
     expect(verified).toBe(1);
   });
 

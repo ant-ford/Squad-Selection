@@ -23,8 +23,9 @@ export interface ActivityEntry {
   fields: string[];
 }
 
-/** The signed-in person's People uuid (AuthorizedUser carries the api id). */
-export async function actorUuid(env: Env, actor: Pick<AuthorizedUser, "personId">): Promise<string | null> {
+/** The signed-in person's People uuid: from sign-in (auth_context) when it has it, else looked up by api id. */
+export async function actorUuid(env: Env, actor: Pick<AuthorizedUser, "personId"> & { personUuid?: string }): Promise<string | null> {
+  if (actor.personUuid) return actor.personUuid;
   return (await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(actor.personId)}`))?.id ?? null;
 }
 

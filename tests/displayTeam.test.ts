@@ -13,12 +13,12 @@ import type { Player } from "../shared/schema/domainTypes";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest } from "./helpers/postgrest";
-import { match, person, recId, team, signedIn } from "./helpers/factories";
+import { match, person, recId, team } from "./helpers/factories";
 
 const ENV = { ...SUPABASE_TEST_ENV } as Env;
 
 function authUser(email: string): AuthorizedUser {
-  return signedIn({ email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] });
+  return db.signedIn(email);
 }
 
 const db = useFakeRepos();
@@ -239,6 +239,8 @@ describe("player portal fixture categories (per-day, max three)", () => {
     expect(out.events).toBe(false);
     expect(out.umpiring).toBeNull();
     for (const table of ["api_offices", "offices", "team_people", "people", "matches", "umpire_assignments"]) expect(pg.reads(table)).toHaveLength(0);
+    // The player themselves came with sign-in too: no lookup by email.
+    expect(db.callsTo("people", "findByEmail")).toHaveLength(0);
     expect(pg.writes()).toHaveLength(0);
   });
 });

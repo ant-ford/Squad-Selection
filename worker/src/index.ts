@@ -1071,7 +1071,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Calendar (Link generation uses email param, Feeds are public signed URLs) ──
     if (method === "GET" && pathname === "/api/calendar/link") {
       const user = await requireAuthorizedUser(request, env);
-      return json(await handleGetCalendarLink(env, user.email, url.origin), 200, origin);
+      return json(await handleGetCalendarLink(env, user.personId, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/feed.ics") {
       return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));

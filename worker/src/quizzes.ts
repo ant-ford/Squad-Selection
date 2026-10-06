@@ -28,10 +28,10 @@ interface QuizRow {
 
 const points = (qs: Question[]) => qs.reduce((n, q) => n + (q.points ?? 1), 0);
 
-async function me(env: Env, user: AuthorizedUser): Promise<string> {
-  const p = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
-  if (!p) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
-  return p.id;
+/** Their People uuid: sign-in resolved it (auth_context), so no read. */
+async function me(_env: Env, user: AuthorizedUser): Promise<string> {
+  if (!user.personUuid) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  return user.personUuid;
 }
 
 export async function listQuizzes(env: Env, user: AuthorizedUser): Promise<{ quizzes: QuizSummary[]; canSeeScores: boolean }> {
