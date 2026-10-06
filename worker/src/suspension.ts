@@ -1,5 +1,5 @@
 import type { Match, MatchCard } from "../../shared/schema/domainTypes";
-import { linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
 
 /**
  * Automatic card-based suspension calculation.
