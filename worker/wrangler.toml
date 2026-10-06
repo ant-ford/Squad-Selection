@@ -148,8 +148,7 @@ SUPABASE_URL = "https://biipqddulsbjpbmxuoss.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_nwMTI17uq3Uk2u5tnm9g2w_0AZ_Vvod"
 # Preview reads and writes eddy-preview, as production will after the
 # switch-over. eddy-preview holds an imported copy of the club's data, so
-# preview saves change that copy, never Airtable. Setting this back to
-# "airtable" (with DATA_SHADOW_READ = "on") returns to shadow reads.
+# preview saves change that copy, never Airtable.
 DATA_BACKEND = "supabase"
 DATA_BACKEND_OVERRIDES = ""
 # Sign-in stays on eddy-production (SUPABASE_URL above); the data comes from

@@ -2,7 +2,6 @@ import { AirtableError, airtableList } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest, serveClubDoc } from "./files";
 import { db, SupabaseError } from "./data/supabase";
-import { shadowSummary } from "./data/shadow";
 import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
 import { RETENTION_CRON, runRetention } from "./retention";
@@ -275,9 +274,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               )
             ).data
           : undefined;
-        // Preview only: this isolate's shadow-read comparison counts (no values, no ids).
-        const shadow = env.DATA_SHADOW_READ === "on" ? shadowSummary() : undefined;
-        return json({ status: "ok", airtable, ...(supabase ? { supabase } : {}), ...(shadow ? { shadow } : {}), timestamp: new Date().toISOString() }, 200, origin);
+        return json({ status: "ok", airtable, ...(supabase ? { supabase } : {}), timestamp: new Date().toISOString() }, 200, origin);
       }
       return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
     }

@@ -59,8 +59,6 @@ export interface Env {
   DATA_SUPABASE_URL?: string;
   /** That project's secret key (sb_secret_...), as a Worker secret. Sent only in the apikey header. */
   DATA_SUPABASE_SECRET_KEY?: string;
-  /** "on" (preview only): serve Airtable, and compare each read with Supabase in the background (data/shadow.ts). */
-  DATA_SHADOW_READ?: string;
   /** This Worker's public origin, for links it hands out (signed file links). */
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
