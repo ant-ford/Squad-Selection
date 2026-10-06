@@ -98,8 +98,8 @@ function RouteError() {
   const error = useRouteError();
   console.error(error);
   // A lazy route whose chunk 404s (or comes back as the SPA fallback HTML)
-  // means this client is running a previous deploy. Clear the service worker
-  // and reload once rather than leaving the skeleton up indefinitely.
+  // means this client is running a previous deploy. Recover (reload, then
+  // clear the service worker) rather than leaving the skeleton up.
   useEffect(() => {
     if (isChunkLoadError(error)) void recoverFromStaleDeploy();
   }, [error]);
