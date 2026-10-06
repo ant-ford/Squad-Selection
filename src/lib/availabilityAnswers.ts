@@ -26,6 +26,18 @@ export function answerOptions(current: string | null | undefined, isSelected = f
   }));
 }
 
+/** The whole-day buttons' words, in the same order as the per-fixture control. */
+export const DAY_ANSWER_LABEL: Record<AvailabilityAnswer, string> = {
+  Available: 'All available',
+  Maybe: 'All maybe',
+  Unavailable: 'All no',
+};
+
+/** The whole-day buttons; one is pressed when every fixture that day already has that answer. */
+export function dayAnswerOptions(common: string | null | undefined): AnswerOption[] {
+  return ANSWERS.map((value) => ({ value, label: DAY_ANSWER_LABEL[value], pressed: common === value }));
+}
+
 /** What the "pref." tag next to the control means, for screen readers and hover. */
 export function preferenceTagLabel(whose: 'your' | 'their'): string {
   return whose === 'your'
