@@ -95,12 +95,10 @@ export default function Suspensions() {
 
     return (
       <>
-        <div className="flex items-end gap-2">
-          <Tabs id="susp" label="Suspensions" items={tabs} value={shown} onChange={setTab} className="flex-1 min-w-0" />
-          <ActionButton icon={<Plus />} onClick={() => setSheet({})}>
-            Add
-          </ActionButton>
-        </div>
+        <ActionButton icon={<Plus />} onClick={() => setSheet({})}>
+          Add a suspension
+        </ActionButton>
+        <Tabs id="susp" label="Suspensions" items={tabs} value={shown} onChange={setTab} />
         <TabPanel tabsId="susp" value={shown}>
           {shown === 'open' &&
             (data.open.length === 0 ? (
