@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
+import { availabilityClasses } from '@/lib/availabilityTone';
 
 // Same wording and tones as the player's own past-fixture card, so a result
 // reads identically whichever side of the app you are on.
@@ -185,7 +186,7 @@ export default function FixtureCard({
               {(shortfall > 0 || fixture.maybeCount > 0) && (
                 <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
                   {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
-                  {fixture.maybeCount > 0 && <span className="text-amber-700">{fixture.maybeCount} maybe</span>}
+                  {fixture.maybeCount > 0 && <span className={availabilityClasses('Maybe', 'text')}>{fixture.maybeCount} maybe</span>}
                 </p>
               )}
             </>

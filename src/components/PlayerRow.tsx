@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, Ban, AlertCircle, BarChart3 } from 'lucide-react'
 import type { MatchPlayer } from '@/api/getPlayersForMatch';
 import { POS_SHORT, shortTeam } from '@/lib/format';
 import { playUpAllowance } from '@shared/playUpAllowance';
+import { availabilityClasses } from '@/lib/availabilityTone';
 
 /** Engine strings are written with the club prefix; on this screen it goes without saying. */
 export function displayWarning(warning: string): string {
@@ -89,9 +90,7 @@ const PlayerRow = React.memo(function PlayerRow({
   // A tint alone was not carrying outdoors on a phone, so each state also
   // gets a solid edge. The bar is on every row, transparent when there is
   // nothing to say, so names stay on one vertical line down the list.
-  let bgClass = 'border-l-transparent';
-  if (isMaybe) bgClass = 'bg-amber-200 border-l-amber-600';
-  else if (isUnavailable) bgClass = 'bg-red-200 border-l-red-600';
+  const bgClass = availabilityClasses(isMaybe || isUnavailable ? player.availabilityStatus : '', 'edge');
 
   // Blocked rows still recede - they are there to be understood, not picked.
   // Unavailable ones no longer do: dimming a pale tint was most of why these
