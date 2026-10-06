@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Download } from 'lucide-react';
 import { errorText, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
+import { saveCsv } from '@/lib/saveCsv';
 import { confirmPayment, getCharges, markChargesSent } from '@/api/events';
 import { READ_STATUS_LABEL, chargesCsv, priceText, type ManagedEvent, type ReadStatus } from '@shared/events';
 
@@ -12,15 +13,6 @@ const READ_CHIP: Record<ReadStatus, string> = {
   duplicate: 'bg-destructive/10 text-destructive',
   unreadable: 'bg-muted text-muted-foreground',
 };
-
-export function downloadCsv(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /**
  * Who owes what for a paid event: one line per payer (their own place,
@@ -63,7 +55,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
         <button
           className="text-xs text-primary inline-flex items-center gap-1 disabled:opacity-50"
           disabled={!owing.length}
-          onClick={() => downloadCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
+          onClick={() => saveCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
         >
           <Download className="h-3.5 w-3.5" /> Download list
         </button>

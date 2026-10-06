@@ -111,6 +111,9 @@ vi.mock("../worker/src/data/matches", () => ({
 vi.mock("../worker/src/data/matchCards", () => ({
   matchCards: () => ({ listForSeason: async (s: string) => (s === SEASON ? data.matchCards : []) }),
 }));
+vi.mock("../worker/src/data/suspensions", () => ({
+  suspensions: () => ({ listOpen: async () => [] }),
+}));
 vi.mock("../worker/src/reference", async (orig) => {
   const real: any = await orig();
   return {
