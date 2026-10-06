@@ -27,9 +27,14 @@ export default function DayAnswerControl({
 }) {
   const day = safeFormat(fixtures[0]?.date ?? date, FIXTURE_DATE);
   return (
-    <div role="group" aria-label={`Whole day, ${day}`} className="flex flex-wrap items-center justify-end gap-1.5">
-      <span className="mr-auto text-xs font-medium text-muted-foreground">
-        {day} · {fixtures.length} games
+    <div
+      role="group"
+      aria-label={`Whole day, ${day}, ${fixtures.length} games`}
+      className="flex flex-wrap items-center justify-end gap-1.5"
+    >
+      {/* Just the date: with the count as well the row wrapped on a phone. */}
+      <span className="mr-auto text-xs font-medium text-muted-foreground" aria-hidden="true">
+        {day}
       </span>
       {dayAnswerOptions(commonDayAnswer(fixtures)).map(({ value, label, pressed }) => (
         <button
