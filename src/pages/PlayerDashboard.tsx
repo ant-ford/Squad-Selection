@@ -1,12 +1,11 @@
 import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '@/lib/auth';
 import type { MyFixture } from '@/api/getMyFixtures';
-import { useMyFixtures, useMyProfile, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
+import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BarChart3, CalendarDays, ChevronDown, IdCard, Info, Settings, Shield } from 'lucide-react';
+import { BarChart3, CalendarDays, ChevronDown, Info, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
@@ -15,16 +14,14 @@ import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameD
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import AppFooter from '@/components/AppFooter';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import PastFixtureCard from '@/components/PastFixtureCard';
 import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import EventsSection from '@/components/events/EventsSection';
-import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
-import UmpireViewButton from '@/components/UmpireViewButton';
-import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
+import { useScrollMemory } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
 // Opened from the profile menu: loaded then, not with the page.
@@ -120,7 +117,6 @@ function DayAvailabilityControl({
 }
 
 export default function PlayerDashboard() {
-  const { logout } = useAuth();
   const navigate = useNavigate();
   // Open by default (owner request, 2026-09-23) - players want to see how the
   // last games went. Results are always fetched (a few recent fixtures, read
@@ -135,9 +131,6 @@ export default function PlayerDashboard() {
   // Maybe / No just tapped on a card: offer the optional note.
   const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showCalendarSync, setShowCalendarSync] = useState(false);
-  // The burger's quizzes, umpiring duties and invite link (my-profile). Can
-  // still be on its way: the menu fills in when it lands.
-  const myProfile = useMyProfile().data;
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -302,25 +295,15 @@ export default function PlayerDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader menu={<MainMenu officer={officerItems(data)} profile={myProfile} />}>
-        {(data.isCoach || data.isSectionCaptain) && (
-          <button onClick={() => navigate(coachDashboardPath())} className={headerNavClass()}>
-            <Shield className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Coach View</span>
-          </button>
-        )}
-        {data.umpiring && <UmpireViewButton />}
-        <ProfileMenu
-          guide="player"
-          onLogout={() => logout()}
-          entries={[
-            { to: '/my-details', label: 'My details', icon: IdCard },
-            ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
-            { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
-            { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
-          ]}
-        />
-      </AppHeader>
+      <AppHeader
+        title="Player view"
+        guide="player"
+        profileItems={[
+          ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
+          { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
+          { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
+        ]}
+      />
 
       {/* Player identity card (compact - stat boxes removed) */}
       <div className="container mx-auto px-4 py-4">
@@ -526,10 +509,7 @@ export default function PlayerDashboard() {
 function DashboardSkeleton() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card px-4 py-4">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-4 w-24 mt-1" />
-      </div>
+      <AppHeader title="Player view" guide="player" />
       <div className="container mx-auto px-4 py-4 space-y-4">
         <Skeleton className="h-20 w-full rounded-xl" />
         <Skeleton className="h-4 w-40" />

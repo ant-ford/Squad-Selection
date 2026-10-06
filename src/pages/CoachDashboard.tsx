@@ -20,7 +20,6 @@ export default function CoachDashboard() {
     <div className="pb-8">
       {/* ── Welcome header ── */}
       <div className="container mx-auto px-4 pt-4 pb-2">
-        <h1 className="text-xl font-semibold text-foreground">Coach Dashboard</h1>
         <p className="text-sm text-muted-foreground">
           Welcome back, {profile?.preferredName}.
         </p>

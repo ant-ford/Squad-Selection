@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Copy, Search, User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Copy, Search } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
@@ -137,7 +137,6 @@ function ByPerson({ people }: { people: Volunteer[] }) {
  * umpiring levels. For officers, coaches and captains.
  */
 export default function Volunteers() {
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data, isLoading, error, refetch } = useQuery({ queryKey: ['volunteersBoard'], queryFn: getVolunteersBoard, staleTime: 60_000 });
   const setParam = (key: string, value: string | null) => {
@@ -165,12 +164,7 @@ export default function Volunteers() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Volunteers">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Volunteers" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">
         {isLoading ? (
           <Skeleton className="h-96 w-full" />

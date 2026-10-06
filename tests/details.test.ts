@@ -5,7 +5,7 @@ import { deleteMyProfile, getMyDetails, parseSection, saveKitSizes, saveSection,
 import { checkedThisSeason, checkValue, formatHkAddress, PROFILE_SECTIONS, regionOfDistrict } from "../shared/profile";
 import { joinPhone, normaliseHkid, splitPhone } from "../shared/phone";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test", FILE_LINK_SECRET: "x" } as unknown as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test", FILE_LINK_SECRET: "x" } as unknown as Env;
 const user = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 
 type Call = { url: URL; method: string; body: any };
@@ -159,7 +159,6 @@ describe("my details", () => {
     expect(d).toMatchObject({ season: "2026-2027", applicant: false, underEighteen: true, email: "p@x.com", photoUrl: null, hasHkidCopy: true, kit: null });
     expect(d.values).toMatchObject({ surname: "Lee", academicQualifications: ["Secondary"], chineseName: null });
     expect(d.membership).toMatchObject({ membershipNo: "123", playerCoach: ["Player"] });
-    await expect(getMyDetails({ ...env, DATA_BACKEND: "airtable" } as Env, user)).rejects.toMatchObject({ status: 409 });
   });
 });
 

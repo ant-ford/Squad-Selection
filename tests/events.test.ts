@@ -12,10 +12,10 @@ import { recordedSocialFunctions } from "../shared/commitmentReview";
 import { toPaymentRead } from "../worker/src/paymentRead";
 import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
+import { billed, cleanLink, linkLabel, checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) =>
   ({ email: `${personId}@x.com`, personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [], ...extra }) as AuthorizedUser;
 
@@ -267,6 +267,7 @@ describe("events in the calendar feed", () => {
     guestChildPrice: null,
     paymentMode: "on_the_night" as const,
     paymentDetails: null,
+    linkUrl: null,
     guestsAllowed: true,
     maxGuests: 2,
     helpNeeded: null,
@@ -514,5 +515,39 @@ describe("the register and check-in", () => {
     const calls = fake({ events: [live()], responses: [] });
     await checkIn(env, userOf("recDAD"), EVENT_ID, { code: "secret123", people: [{ personId: "recDAD" }] });
     expect(insertOf(calls)!.body[0]).toMatchObject({ person_id: "uuid-dad", status: "going", attended: true });
+  });
+});
+
+describe("self-funded events and the event link", () => {
+  it("bills only the paid modes, and checks the link", () => {
+    expect(["free", "on_the_night", "payme_fps", "account", "self_funded"].map((m) => billed(m as never))).toEqual([false, true, true, true, false]);
+    expect(cleanLink("")).toBeNull();
+    expect(cleanLink(" https://chat.whatsapp.com/AbC123 ")).toBe("https://chat.whatsapp.com/AbC123");
+    expect(cleanLink("http://example.com")).toMatchObject({ error: expect.stringMatching(/https/) });
+    expect(cleanLink("chat.whatsapp.com/x")).toMatchObject({ error: expect.stringMatching(/wasn't understood/) });
+    expect(linkLabel("https://chat.whatsapp.com/AbC123")).toBe("Join the WhatsApp group");
+    expect(linkLabel("https://example.com/tour")).toBe("Open the event link");
+  });
+
+  it("keeps a self-funded event's estimated cost and link, with no guest prices", async () => {
+    const calls = fake({ offices: { "uuid-sec": [{ id: "office" }] } });
+    await saveEvent(env, userOf("recSEC"), {
+      type: "tour", title: "Bangkok 11s", startsAt: new Date(Date.now() + 30 * day).toISOString(),
+      paymentMode: "self_funded", memberPrice: 4500, guestsAllowed: true, maxGuests: 1, guestAdultPrice: 4000,
+      linkUrl: "https://chat.whatsapp.com/AbC123",
+    });
+    const insert = calls.find((c) => c.url.pathname.endsWith("/events") && c.method === "POST")!;
+    expect(insert.body[0]).toMatchObject({ payment_mode: "self_funded", member_price: 4500, guest_adult_price: null, link_url: "https://chat.whatsapp.com/AbC123" });
+    invalidateAll();
+    fake({ offices: { "uuid-sec": [{ id: "office" }] } });
+    await expect(saveEvent(env, userOf("recSEC"), { type: "tour", title: "x", startsAt: new Date(Date.now() + day).toISOString(), linkUrl: "http://x.com" })).rejects.toThrow(/https/);
+  });
+
+  it("gives nobody a bill for a self-funded event", async () => {
+    const tour = event({ payment_mode: "self_funded", member_price: 4500 });
+    const mine = { event_id: EVENT_ID, person_id: "uuid-dad", status: "going", guests: [], signed_up_by_id: null, charge_waived: false, attended: false, person: { api_id: "recDAD", preferred_name: "Dave", given_names: null, surname: "Smith", membership_no: "M1" }, signer: null };
+    fake({ events: [tour], responses: [mine] });
+    const { events } = await getMyEvents(env, userOf("recDAD"));
+    expect(events[0].bill).toBeNull();
   });
 });

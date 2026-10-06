@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // All domain modules are mocked. Sign-in is REAL: worker/src/auth.ts verifies
 // the bearer token against Supabase (/auth/v1/user, faked below), then looks
 // the email up in People and reads the Teams coach / section-captain links
-// and the Active office rows, all through the in-memory repositories on the
-// Supabase path (DATA_BACKEND "supabase"). Who a request is therefore comes
+// and the Active office rows, all through the in-memory repositories. Who a
+// request is therefore comes
 // from seeded data, as in production. These tests prove the router derives
 // identity from the session (never from query/body params) and applies the
 // right gates and error codes.
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     getPlayersForMatch: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
+    applySquadChanges: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
     setMatchKit: vi.fn(),
     toggleAutoSelect: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
+  applySquadChanges: mocks.applySquadChanges,
   setMatchKit: mocks.setMatchKit,
   toggleAutoSelect: mocks.toggleAutoSelect,
   getTeamAutoSelectPlayers: mocks.getTeamAutoSelectPlayers,
@@ -93,7 +95,6 @@ vi.mock("../worker/src/chairman", () => ({
 import worker from "../worker/src/index";
 import * as auth from "../worker/src/auth";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { AirtableError } from "../worker/src/airtable";
 import { SupabaseError } from "../worker/src/data/supabase";
 import { invalidateAll } from "../worker/src/cache";
 import { useFakeRepos } from "./helpers/fakeRepos";
@@ -102,10 +103,6 @@ import { office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
   ...SUPABASE_TEST_ENV,
-  // Read only by the GET /health?deep=1 Airtable probe at the end of this
-  // file, which PR #172 replaces with the Supabase probe.
-  AIRTABLE_TOKEN: "test-token",
-  AIRTABLE_BASE_ID: "test-base",
   CALENDAR_SECRET: "test-secret",
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
@@ -126,6 +123,12 @@ const GK_A = recId("GKA");
 const CHAIR = recId("Chair");
 /** The Assistant Director of Hockey: an office row, no Teams link. */
 const ADH = recId("Adh");
+/** Linked as Section Captain on a team (Teams link). */
+const CAPTAIN = recId("Captain");
+/** Holds the Section Captain office, with no Teams link. */
+const VICE = recId("Vice");
+/** Holds the Hockey Convenor office (the Men's Convenor). */
+const CONVENOR = recId("Convenor");
 
 const TOKENS = {
   player: "player.jwt",
@@ -133,6 +136,9 @@ const TOKENS = {
   gkA: "gk-a.jwt",
   chair: "chair.jwt",
   adh: "adh.jwt",
+  captain: "captain.jwt",
+  vice: "vice.jwt",
+  convenor: "convenor.jwt",
   /** A verified email with no People record. */
   stranger: "stranger.jwt",
   /** Supabase rejects this one. */
@@ -145,6 +151,9 @@ const SESSION_EMAILS: Record<string, string> = {
   [TOKENS.gkA]: "gk-a@example.com",
   [TOKENS.chair]: "chair@hkfc.com",
   [TOKENS.adh]: "adh@hkfc.com",
+  [TOKENS.captain]: "captain@hkfc.com",
+  [TOKENS.vice]: "vice@hkfc.com",
+  [TOKENS.convenor]: "convenor@hkfc.com",
   [TOKENS.stranger]: "stranger@hkfc.com",
 };
 
@@ -164,14 +173,19 @@ const db = useFakeRepos(() => ({
     person({ id: GK_A, preferredName: "Keeper A", email: "gk-a@example.com", registeredTeam: "Men's 3s", playingPosition: "Goalkeeper" }),
     person({ id: CHAIR, preferredName: "Test Chair", email: "chair@hkfc.com", active: false }),
     person({ id: ADH, preferredName: "Test ADH", email: "adh@hkfc.com", registeredTeam: "Men's 3s" }),
+    person({ id: CAPTAIN, preferredName: "Test Captain", email: "captain@hkfc.com", registeredTeam: "Men's 1s" }),
+    person({ id: VICE, preferredName: "Test Vice", email: "vice@hkfc.com", active: false }),
+    person({ id: CONVENOR, preferredName: "Test Convenor", email: "convenor@hkfc.com", registeredTeam: "Men's 3s" }),
   ],
   teams: [
     team({ teamName: "Men's 1s", teamRank: 1, coach: [COACH] }),
-    team({ teamName: "Men's 3s", teamRank: 3 }),
+    team({ teamName: "Men's 3s", teamRank: 3, sectionCaptain: [CAPTAIN] }),
   ],
   officers: [
     office("sectionChair", CHAIR, { designation: "Chairman" }),
     office("assistantDirector", ADH),
+    office("sectionCaptain", VICE, { designation: "Men's Vice Captain" }),
+    office("hockeyConvenor", CONVENOR),
   ],
 }));
 
@@ -312,26 +326,7 @@ describe("error codes", () => {
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
 
-  // Airtable-only: removed with the Airtable code (AirtableError goes with it;
-  // the Supabase counterpart is the next test).
-  it("maps an AirtableError to a generic 502 without leaking the Airtable URL or response body", async () => {
-    mocks.getMyProfile.mockRejectedValue(
-      new AirtableError(
-        "Airtable GET https://api.airtable.com/v0/appSecretBase123/People?filterByFormula=... failed (500): {\"error\":{\"message\":\"internal\"}}",
-        500,
-      ),
-    );
-
-    const res = await call("/api/my-profile");
-    const body = await res.json();
-    expect(res.status).toBe(502);
-    expect(body).toMatchObject({ error: "UPSTREAM_ERROR" });
-    const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain("api.airtable.com");
-    expect(serialized).not.toContain("appSecretBase123");
-  });
-
-  // The Supabase path's counterpart: a database failure is a 502 naming the
+  // A database failure is a 502 naming the
   // table and status, never the database's own message (it can quote a value).
   it("maps a SupabaseError to a 502 without leaking the database message, URL or key", async () => {
     mocks.getMyProfile.mockRejectedValue(
@@ -437,6 +432,48 @@ describe("session-derived identity (IDOR prevention)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Making players active / inactive: Section Captains only (owner, 2026-10-06).
+// A Teams link as Section Captain or the Section Captain office; not coaches,
+// the Men's Convenor or the ADH.
+// ---------------------------------------------------------------------------
+
+describe("activate / deactivate: Section Captains only", () => {
+  const routes = [
+    { path: "/api/ranking/activate", fn: () => mocks.activatePlayer },
+    { path: "/api/ranking/deactivate", fn: () => mocks.deactivatePlayer },
+  ];
+  const refused = [
+    ["a player", TOKENS.player],
+    ["a coach", TOKENS.coach],
+    ["the Men's Convenor", TOKENS.convenor],
+    ["the Assistant Director of Hockey", TOKENS.adh],
+    ["a Section Chair", TOKENS.chair],
+  ] as const;
+  const allowed = [
+    ["a Teams-linked Section Captain", TOKENS.captain, "captain@hkfc.com"],
+    ["a Section Captain office holder", TOKENS.vice, "vice@hkfc.com"],
+  ] as const;
+
+  for (const { path, fn } of routes) {
+    it.each(refused)(`refuses %s on ${path} with SECTION_CAPTAIN_REQUIRED, writing nothing`, async (_who, token) => {
+      signInAs(token);
+      const res = await call(path, jsonInit({ playerId: "recP9" }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: "SECTION_CAPTAIN_REQUIRED" });
+      expect(fn()).not.toHaveBeenCalled();
+    });
+
+    it.each(allowed)(`lets %s through on ${path}, auditing as the session`, async (_who, token, email) => {
+      signInAs(token);
+      fn().mockResolvedValue({ players: [], activeCount: 0, config: {} });
+      const res = await call(path, jsonInit({ playerId: "recP9", actingEmail: "attacker@evil.com" }));
+      expect(res.status).toBe(200);
+      expect(fn()).toHaveBeenCalledWith(ENV, "recP9", email);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Coach-only routes
 // ---------------------------------------------------------------------------
 
@@ -444,9 +481,8 @@ describe("coach-only routes", () => {
   const coachOnlyCalls: { path: string; init: RequestInit }[] = [
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
-    { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
-    { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
+    { path: "/api/squad/changes", init: jsonInit({ matchId: "recM1", add: ["a"], remove: [], version: 0 }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
     { path: "/api/match/recM1/auto-select", init: jsonInit({ enabled: true }) },
   ];
@@ -502,6 +538,36 @@ describe("coach-only routes", () => {
     );
     expect(res.status).toBe(200);
     expect(mocks.syncSquad).toHaveBeenCalledWith(ENV, "recM1", ["a", "b"], "coach@hkfc.com", "home");
+  });
+
+  it("allows a coach on POST /api/squad/changes, acting as the session's person", async () => {
+    signInAs(TOKENS.coach);
+    mocks.applySquadChanges.mockResolvedValue({ status: "ok", version: 4, selectedIds: ["a"], displaced: [] });
+    const body = { matchId: "recM1", side: "home", add: ["a"], remove: ["b"], version: 3, actingEmail: "attacker@evil.com" };
+
+    const res = await call("/api/squad/changes", jsonInit(body));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, version: 4, selectedIds: ["a"], displaced: [] });
+    expect(mocks.applySquadChanges).toHaveBeenCalledWith(ENV, body, { email: "coach@hkfc.com", personId: COACH });
+  });
+
+  it("answers a squad conflict with 409 SQUAD_CONFLICT naming the players", async () => {
+    signInAs(TOKENS.coach);
+    mocks.applySquadChanges.mockResolvedValue({
+      status: "conflict", version: 6, selectedIds: ["a"], players: [{ id: "b", name: "Kim Lee" }, { id: "c", name: "Sam Ho" }],
+    });
+
+    const res = await call("/api/squad/changes", jsonInit({ matchId: "recM1", add: ["b"], remove: ["c"], version: 3 }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "SQUAD_CONFLICT",
+      message: "Someone else changed Kim Lee, Sam Ho in this squad. Check and save again.",
+      players: [{ id: "b", name: "Kim Lee" }, { id: "c", name: "Sam Ho" }],
+      version: 6,
+      selectedIds: ["a"],
+    });
   });
 
   it("allows a coach on POST /api/team/auto-select-players and uses the session email", async () => {
