@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { User } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
+import { StepProgress } from '@/components/ui/step-progress';
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { getMyDetails } from '@/api/details';
@@ -84,12 +85,11 @@ export default function MyDetailsPage() {
     if (loading) return <Skeleton className="h-96 w-full" />;
     if (failed || !details.data || !volunteering.data) {
       return (
-        <div className="text-center py-12 border border-dashed border-border rounded-xl">
-          <p className="text-muted-foreground mb-2">{failed instanceof ApiError && failed.status < 500 ? failed.message : 'Could not load your details.'}</p>
-          <button onClick={() => void details.refetch()} className="text-sm text-primary underline">
-            Try again
-          </button>
-        </div>
+        <ErrorState
+          title="Could not load your details"
+          message={failed instanceof ApiError && failed.status < 500 ? failed.message : undefined}
+          onRetry={() => void details.refetch()}
+        />
       );
     }
     const step = steps[index];
@@ -106,18 +106,7 @@ export default function MyDetailsPage() {
         {details.data.checkedAt && (
           <p className="text-xs text-muted-foreground">Last confirmed {safeFormat(details.data.checkedAt, 'd MMM yyyy')}.</p>
         )}
-        <ol className="flex flex-wrap gap-1" aria-label="Steps">
-          {steps.map((s, i) => (
-            <li key={s.key}>
-              <button
-                onClick={() => go(i)}
-                className={`text-[11px] px-2 py-0.5 rounded-full border ${i === index ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}
-              >
-                {s.title}
-              </button>
-            </li>
-          ))}
-        </ol>
+        <StepProgress step={index + 1} total={steps.length} title={step.title} />
         {step.key === 'membership' && <MembershipStep {...props} />}
         {section && <SectionStep key={section.key} section={section} {...props} />}
         {step.key === 'kit' && <KitStep {...props} />}
@@ -131,12 +120,7 @@ export default function MyDetailsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="My details">
-        <button onClick={() => navigate('/')} className={headerNavClass()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Player View</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="My details" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

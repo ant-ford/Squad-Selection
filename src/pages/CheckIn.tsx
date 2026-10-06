@@ -60,7 +60,7 @@ export default function CheckInPage() {
             <CheckCircle2 className="h-10 w-10 text-emerald-600 mx-auto" />
             <p className="text-base font-semibold text-foreground">You're checked in. Enjoy!</p>
             <button className={secondary} onClick={() => navigate('/')}>
-              My page
+              Player view
             </button>
           </div>
         ) : !open ? (
@@ -112,7 +112,7 @@ export default function CheckInPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Check in" />
+      <AppHeader title="Check in" />
       <main className="flex-1 container mx-auto max-w-md px-4 py-4">{body()}</main>
       <AppFooter />
     </div>

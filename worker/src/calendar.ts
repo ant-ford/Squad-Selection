@@ -9,7 +9,7 @@ import { availableLabel } from "../../shared/availableLabel";
 import { currentSeason, previousSeason } from "./seasonContext";
 import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 import { calendarEventsFor, type CalendarEvent } from "./events";
-import { EVENT_TYPE_LABEL, PAYMENT_LABEL, priceText } from "../../shared/events";
+import { EVENT_TYPE_LABEL, PAYMENT_LABEL, billed, priceText } from "../../shared/events";
 
 const MATCH_DURATION_MINUTES = 90;
 
@@ -405,7 +405,9 @@ export function formatEventVEvent(e: CalendarEvent, appOrigin: string, now = new
     {
       lines: [
         `Your answer: ${e.answer === "going" ? "Going" : "Maybe"}${guests}`,
-        ...(e.paymentMode !== "free" && price ? [`${price} · ${PAYMENT_LABEL[e.paymentMode]}`] : []),
+        ...(billed(e.paymentMode) && price ? [`${price} · ${PAYMENT_LABEL[e.paymentMode]}`] : []),
+        ...(e.paymentMode === "self_funded" ? [`Self-funded${price ? `, about ${price} each` : ""}`] : []),
+        ...(e.linkUrl ? [e.linkUrl] : []),
         `Change it in Eddy: ${appOrigin}/?event=${e.id}`,
       ],
     },

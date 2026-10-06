@@ -36,6 +36,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "trial_availability.person_id": "erased",
   "event_responses.person_id": "erased",
   "event_payments.payer_id": "erased",
+  "suspensions.person_id": "erased",
 
   // ── The playing record ──
   "match_selections.person_id": { kept: "playing record: who was picked for which match" },
@@ -50,6 +51,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   // ── Someone acting on another person's record: no personal data about them ──
   "availability_exceptions.updated_by_id": { kept: "who changed another player's availability" },
   "ranking_events.actor_id": { kept: "who ranked another player" },
+  "match_selection_changes.actor_person_id": { kept: "which coach changed a squad; the added/removed ids are playing record like match_selections" },
   "activity_log.actor_person_id": { kept: "audit trail of field names only, never values" },
   "email_log.to_person_id": { kept: "delivery log by record id: no address or content" },
   "steps.waiting_on_person_id": { kept: "an officer's step on someone else's process (open ones keep them off the due list)" },
@@ -64,7 +66,10 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "event_responses.signed_up_by_id": { kept: "who signed someone else up, and so pays for them" },
   "event_payments.confirmed_by": { kept: "the social secretary who confirmed a payment" },
   "hkha_registrations.registered_by_person_id": { kept: "the Convenor who ticked off a registration" },
+  "registration_events.resolved_by": { kept: "the officer who moved or kept a player after play-ups" },
   "umpire_assignments.created_by": { kept: "who put an umpire down for a duty" },
+  "suspensions.created_by": { kept: "the Convenor who recorded someone else's suspension" },
+  "suspensions.cleared_by": { kept: "the Convenor who cleared someone else's suspension" },
 
   // ── Club kit inventory ──
   "kit_sets.ordered_for_id": { kept: "club kit inventory: who a set was ordered for" },
