@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
@@ -124,6 +124,9 @@ export function useUpcomingFixtures(teamFilter?: string, includePast = false) {
         // only while the coach is actually looking at past fixtures.
         past: includePast ? '1' : undefined,
       }),
+    // Flipping the past toggle keeps the current list on screen while the
+    // other variant loads, instead of dropping back to the skeleton.
+    placeholderData: keepPreviousData,
     staleTime: 300_000,
   });
 }
