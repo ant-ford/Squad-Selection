@@ -12,11 +12,31 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # Full history, so the migration check below can find where a pull
+      # request branched from its base and what it added since.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+
+      # scripts/check-migrations.mjs: no two migrations share a version
+      # (`supabase db push` silently skips the second), and a pull request
+      # only adds migrations newer than the newest on its base branch (db
+      # push will not apply an older version after a newer one). Before
+      # `npm ci` because it needs nothing installed and fails fast.
+      - name: Check migrations
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            node scripts/check-migrations.mjs --base "origin/$BASE_REF"
+          else
+            node scripts/check-migrations.mjs
+          fi
+
       - name: Install dependencies
         run: npm ci
       - name: Verify
@@ -51,10 +71,59 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
+
+      # The deploy gate: production must already have every migration in
+      # the repo, or the new API would query tables and columns that are not
+      # there. The owner applies migrations to production by hand before a
+      # merge; this catches the one that was forgotten. It runs before
+      # anything deploys, so a failure leaves both Workers as they were.
+      #
+      # One read-only SELECT on supabase_migrations.schema_migrations, with
+      # PROD_DB_URL (the same production-environment secret the nightly
+      # backup uses). A step here rather than its own job: this job already
+      # has the production environment and its secrets, and a second job
+      # would open a second production deployment for the same commit.
+      #
+      # psql's own error text is never printed: a libpq error can quote part
+      # of the connection string, and GitHub masks only the whole secret.
+      - name: Check production has every migration
+        id: migrations
+        env:
+          PGURL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          if [ -z "$PGURL" ]; then
+            echo "::error::PROD_DB_URL is not in the production environment, so the deploy cannot check production's migrations. Add it under Settings > Environments > production > Environment secrets, then re-run this job."
+            exit 1
+          fi
+          command -v psql >/dev/null || { sudo apt-get -qq update >/dev/null && sudo apt-get -qq install -y postgresql-client >/dev/null; }
+
+          applied="$RUNNER_TEMP/applied-migrations.txt"
+          err="$RUNNER_TEMP/psql-error.txt"
+          if ! PGCONNECT_TIMEOUT=20 psql "$PGURL" -X -A -t -q -v ON_ERROR_STOP=1 \
+               -c "select version from supabase_migrations.schema_migrations order by version" \
+               >"$applied" 2>"$err"; then
+            reason="psql failed"
+            if grep -q "does not exist" "$err"; then reason="supabase_migrations.schema_migrations does not exist"
+            elif grep -q "password authentication failed" "$err"; then reason="the password in PROD_DB_URL was refused"
+            elif grep -q "could not translate host name" "$err"; then reason="the host in PROD_DB_URL was not found"
+            elif grep -qi "timeout" "$err"; then reason="the connection timed out"
+            elif grep -q "permission denied" "$err"; then reason="the user in PROD_DB_URL cannot read the migration history"
+            fi
+            rm -f "$err"
+            echo "::error::Not deployed: could not read production's migration history ($reason). psql's message is withheld because it can quote the connection string. Check PROD_DB_URL in the production environment, then re-run this job."
+            exit 1
+          fi
+          rm -f "$err"
+
+          if ! node scripts/check-migrations.mjs --applied "$applied"; then
+            echo "::error::Not deployed: production is missing the migration(s) above. Apply each to eddy-production (SQL editor or supabase db push) so it is recorded in supabase_migrations.schema_migrations, then re-run this job. If the SQL already ran but was not recorded, record it instead (supabase migration repair --status applied <version>)."
+            exit 1
+          fi
+          echo "Production has recorded every migration in the repo ($(grep -c . "$applied") versions in its history)."
 
       # `npm run deploy` would build and deploy in one step, but the build
       # has to be its own step here so a bundling failure is reported as a
@@ -81,8 +150,10 @@ jobs:
       # from a conflicting DNS record. This asks the API the three
       # questions that tell those apart, and prints only parsed fields:
       # no request headers, so the token cannot reach a log that is public.
+      # Not when the migration gate stopped the run: nothing reached
+      # Cloudflare, so there is nothing to explain.
       - name: Explain a failed deploy
-        if: failure()
+        if: failure() && steps.migrations.outcome == 'success'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |

@@ -67,9 +67,6 @@ export const VOLUNTEER_GROUPS: VolunteerGroup[] = [
   },
 ];
 
-/** The Airtable form's "no" answer in every group; not a role. */
-export const NOT_INTERESTED = "Not Interested";
-
 export const COACH_LEVELS = ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] as const;
 export const UMPIRE_LEVELS = ["Level 1", "Level 2", "Level 3", "FIH International Panel"] as const;
 /** Stored for "no qualification", as the Airtable form did. */

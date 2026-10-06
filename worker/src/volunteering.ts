@@ -1,5 +1,5 @@
 /**
- * Volunteering (Supabase backend): each person's roles and coaching and
+ * Volunteering: each person's roles and coaching and
  * umpiring levels, which they can change any time, and the Volunteers view
  * for every officer (sponsors and the Hockey Convenor included), coach and
  * team captain. See shared/volunteering.ts.
@@ -7,11 +7,9 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { canSeeVolunteers } from "./volunteerAccess";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidatePeople } from "./invalidation";
 import {
   COACH_LEVELS,
   EMPTY_ROLES,
@@ -48,12 +46,6 @@ const COLUMNS = [
   ...VOLUNTEER_GROUPS.map((g) => g.column),
 ].join(",");
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Volunteering moves into Eddy at the switch-over.", 409, "NOT_YET");
-  }
-}
-
 /** The roles in a person's row that the form offers ("Not Interested" and retired choices left out). */
 export function rolesOf(row: Record<string, unknown>): VolunteerRoles {
   const roles = { ...EMPTY_ROLES };
@@ -78,7 +70,6 @@ function nothingForNow(row: PersonRow, roles: VolunteerRoles): boolean {
 }
 
 export async function getMyVolunteering(env: Env, user: AuthorizedUser): Promise<MyVolunteering> {
-  requireSupabase(env);
   const row = await db(env).one<PersonRow>("people", `select=${COLUMNS}&api_id=${eq(user.personId)}`);
   if (!row) throw new HttpError("Your People record was not found.", 404, "NOT_FOUND");
   const roles = rolesOf(row);
@@ -121,7 +112,6 @@ export function parseVolunteering(body: Record<string, unknown>): VolunteeringAn
 
 /** Saves the person's own volunteering; answers the form no longer offers are kept. */
 export async function saveVolunteering(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const a = parseVolunteering(body);
   try {
     await db(env).rpc("save_volunteering", {
@@ -138,7 +128,7 @@ export async function saveVolunteering(env: Env, user: AuthorizedUser, body: Rec
     throw err;
   }
   // The chairman's email lists group people by these answers.
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   return { ok: true };
 }
 
@@ -147,7 +137,6 @@ const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos 
 
 /** Everyone who offered a role, or holds a coaching or umpiring level. */
 export async function getVolunteersBoard(env: Env, user: AuthorizedUser): Promise<VolunteersBoard> {
-  requireSupabase(env);
   if (!(await canSeeVolunteers(env, user))) {
     throw new HttpError("The volunteers list is for officers, coaches and captains.", 403, "OFFICER_ACCESS_REQUIRED");
   }

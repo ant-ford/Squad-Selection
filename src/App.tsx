@@ -5,6 +5,7 @@ import { myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
+import { reportClientError } from '@/lib/clientErrors';
 import Login from './pages/Login';
 import AccessNotActive from '@/components/AccessNotActive';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
@@ -47,6 +48,7 @@ const CheckIn = lazy(() => import('./pages/CheckIn'));
 const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
 const Volunteers = lazy(() => import('./pages/Volunteers'));
 const Umpiring = lazy(() => import('./pages/Umpiring'));
+const System = lazy(() => import('./pages/System'));
 
 /** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
 function pendingJoin(): boolean {
@@ -105,10 +107,11 @@ function RouteError() {
   const error = useRouteError();
   console.error(error);
   // A lazy route whose chunk 404s (or comes back as the SPA fallback HTML)
-  // means this client is running a previous deploy. Clear the service worker
-  // and reload once rather than leaving the skeleton up indefinitely.
+  // means this client is running a previous deploy. Recover (reload, then
+  // clear the service worker) rather than leaving the skeleton up.
   useEffect(() => {
     if (isChunkLoadError(error)) void recoverFromStaleDeploy();
+    else reportClientError('route', error);
   }, [error]);
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background px-6 text-center">
@@ -275,6 +278,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <Volunteers />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/system',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <System />
           </Suspense>
         ),
       },

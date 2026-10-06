@@ -7,8 +7,9 @@ export interface CacheKv {
   get(key: string, options: { type: "json" }): Promise<unknown>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
   delete(key: string): Promise<void>;
-  // No list(): the cache never lists keys (see SHARED_PREFIXES in cache.ts).
-  // Leaving it out of this slice means a new list() call does not compile.
+  // No list(): the cache never lists keys (the free plan allows 1,000 lists
+  // a day per account). Leaving it out of this slice means a new list() call
+  // does not compile.
 }
 
 // Compile-time proof that the real binding satisfies the slice above. If
@@ -19,37 +20,18 @@ export const realBindingFits: RealBindingFits = true;
 
 /** Cloudflare Worker environment bindings (wrangler.toml vars + secrets). */
 export interface Env {
-  AIRTABLE_TOKEN: string;
-  AIRTABLE_BASE_ID: string;
   CALENDAR_SECRET: string;
   ALLOWED_ORIGIN: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   /**
-   * Shared cache for raw Airtable reads, across isolates.
+   * Shared cache for the Stats summaries, across isolates (cache.ts).
    *
-   * Optional on purpose: with no binding every read falls back to the
-   * in-isolate cache, which is exactly how this worked before. That keeps
-   * the tests, local dev, and a deploy made before the namespace exists all
-   * working rather than failing at the first cache read.
+   * Optional on purpose: with no binding they fall back to the in-isolate
+   * cache. That keeps the tests, local dev, and a deploy made before the
+   * namespace exists all working rather than failing at the first cache read.
    */
   CACHE?: CacheKv;
-  /**
-   * Airtable webhook credentials (worker/src/airtableWebhook.ts). Both are
-   * optional: without them the webhook route answers 404, and the raw-table
-   * caches fall back to the short TTLs that Airtable-side edits relied on
-   * before there was a webhook to announce them.
-   */
-  AIRTABLE_WEBHOOK_ID?: string;
-  /** The webhook's macSecretBase64, as a Worker secret. */
-  AIRTABLE_WEBHOOK_SECRET?: string;
-  /**
-   * Which store the data modules use: "airtable" (the default when unset)
-   * or "supabase". See worker/src/data/backend.ts.
-   */
-  DATA_BACKEND?: string;
-  /** Per-module exceptions to DATA_BACKEND, e.g. "people=supabase,matches=airtable". */
-  DATA_BACKEND_OVERRIDES?: string;
   /**
    * The Supabase project holding Eddy's DATA (eddy-production, or
    * eddy-preview for the preview Worker). Separate from SUPABASE_URL, which
@@ -59,8 +41,6 @@ export interface Env {
   DATA_SUPABASE_URL?: string;
   /** That project's secret key (sb_secret_...), as a Worker secret. Sent only in the apikey header. */
   DATA_SUPABASE_SECRET_KEY?: string;
-  /** "on" (preview only): serve Airtable, and compare each read with Supabase in the background (data/shadow.ts). */
-  DATA_SHADOW_READ?: string;
   /** This Worker's public origin, for links it hands out (signed file links). */
   API_ORIGIN?: string;
   /** The private R2 bucket holding members' files (eddy-files / eddy-files-preview). */
@@ -84,7 +64,6 @@ export interface Env {
   MAIL_FROM?: string;
   /** Preview only: every email goes here instead, subject prefixed [PREVIEW]. */
   MAIL_REDIRECT_TO?: string;
-  /** Comma-separated copies of the commitment review request (e.g. the membership inbox). */
   /** Who the review request comes from, e.g. "Anthony Ford <menscaptain@hkfchockey.com>" (blind-copied). */
   REVIEW_EMAIL_FROM?: string;
   /** The Assistant Director of Hockey, "Name <email>": told about practice trials (trials.ts). */
@@ -95,4 +74,11 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   /** OpenRouter model for the review drafts, e.g. "qwen/qwen3.8-27b". */
   AI_DRAFT_MODEL?: string;
+  /**
+   * The app's owner (src/systemHealth.ts): People api_ids, comma-separated.
+   * Opens /system and gets the System line in My Tasks.
+   */
+  SYSTEM_OWNER_IDS?: string;
+  /** Where the system health alert goes (src/systemHealth.ts). */
+  SYSTEM_ALERT_EMAIL?: string;
 }

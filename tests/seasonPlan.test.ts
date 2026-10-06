@@ -1,37 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { canSeeSeasonPlans, getMySeasonPlan, getSeasonPlanBoard, parseSeasonPlan, planTeamsFor, submitSeasonPlan } from "../worker/src/seasonPlan";
 import { PLAYING_PREFERENCES, seasonPlanMissing, EMPTY_SEASON_PLAN } from "../shared/seasonPlan";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+const env = { ...SUPABASE_TEST_ENV } as Env;
 const player = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 const coach = { ...player, role: "coach", coachTeams: ["HKFC C"] } as AuthorizedUser;
 const captain = { ...player, officerRoles: [{ office: "sectionCaptain", designation: "" }] } as AuthorizedUser;
 const HIGHEST = PLAYING_PREFERENCES[0].value;
 const DOWN = PLAYING_PREFERENCES[1].value;
 
-type Call = { url: URL; method: string; body: any };
-function fake(tables: Record<string, unknown>) {
-  const calls: Call[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
-    const url = new URL(input);
-    calls.push({ url, method: init.method ?? "GET", body: init.body ? JSON.parse(String(init.body)) : undefined });
-    const name = url.pathname.split("/").pop()!;
-    return new Response(JSON.stringify(tables[name] ?? []), { status: 200 });
-  }));
-  return calls;
-}
+/** Supabase as the season plan reads it: People, this season's plans, and the two SQL functions. */
+const supabase = () =>
+  fakePostgrest({
+    tables: { people: structuredClone(people), season_plans_v: structuredClone(plans) },
+    rpc: { current_season: () => "2026-2027", submit_season_plan: () => ({}) },
+  });
 afterEach(() => vi.unstubAllGlobals());
 
 const people = [
-  { id: "u1", api_id: "recA", given_names: "Al", surname: "One", status: "Member", playing_position: "Defender", selected_team_sos: "HKFC C" },
-  { id: "u2", api_id: "recB", given_names: "Bo", surname: "Two", status: "Applicant", selected_team_sos: "HKFC D" },
-  { id: "u3", api_id: "recC", given_names: "Cy", surname: "Three", status: "Member" },
+  { id: "u1", api_id: "recA", active: true, given_names: "Al", surname: "One", status: "Member", playing_position: "Defender", selected_team_sos: "HKFC C" },
+  { id: "u2", api_id: "recB", active: true, given_names: "Bo", surname: "Two", status: "Applicant", selected_team_sos: "HKFC D" },
+  { id: "u3", api_id: "recC", active: true, given_names: "Cy", surname: "Three", status: "Member" },
+  // Not active: never on the board.
+  { id: "u4", api_id: "recD", active: false, given_names: "Di", surname: "Gone", status: "Member", selected_team_sos: "HKFC C" },
 ];
 const plans = [
-  { person_id: "u1", season: "2026-2027", availability_level: "most", availability_half: "second", playing_preference: DOWN, captaincy_interest: "Maybe", submitted_at: null },
-  { person_id: "u2", season: "2026-2027", availability_level: "all", availability_half: null, playing_preference: HIGHEST, captaincy_interest: "No", submitted_at: "2026-10-01T00:00:00Z" },
+  { id: "s1", person_id: "u1", season: "2026-2027", availability_level: "most", availability_half: "second", playing_preference: DOWN, captaincy_interest: "Maybe", submitted_at: null },
+  { id: "s2", person_id: "u2", season: "2026-2027", availability_level: "all", availability_half: null, playing_preference: HIGHEST, captaincy_interest: "No", submitted_at: "2026-10-01T00:00:00Z" },
 ];
 
 describe("season plan", () => {
@@ -48,14 +46,14 @@ describe("season plan", () => {
   });
 
   it("saves this season's plan through the database function", async () => {
-    const calls = fake({ submit_season_plan: {} });
+    const pg = supabase();
     await submitSeasonPlan(env, player, { availabilityLevel: "all", playingPreference: HIGHEST, captaincyInterest: "No" });
-    expect(calls[0].url.pathname).toMatch(/rpc\/submit_season_plan$/);
-    expect(calls[0].body).toEqual({ p_actor: "recME", p: { availabilityLevel: "all", availabilityHalf: null, playingPreference: HIGHEST, captaincyInterest: "No" } });
+    expect(pg.calls[0].url.pathname).toMatch(/rpc\/submit_season_plan$/);
+    expect(pg.rpcCalls("submit_season_plan")[0]).toEqual({ p_actor: "recME", p: { availabilityLevel: "all", availabilityHalf: null, playingPreference: HIGHEST, captaincyInterest: "No" } });
   });
 
   it("gives the player their own plan for the current season", async () => {
-    fake({ current_season: "2026-2027", people: [{ id: "u1" }], season_plans_v: [plans[0]] });
+    supabase();
     expect(await getMySeasonPlan(env, { ...player, personId: "recA" })).toEqual({
       season: "2026-2027",
       plan: { availabilityLevel: "most", availabilityHalf: "second", playingPreference: DOWN, captaincyInterest: "Maybe", submittedAt: null },
@@ -63,17 +61,16 @@ describe("season plan", () => {
   });
 
   it("shows Section Captains every team and coaches their own; others none", async () => {
-    expect(planTeamsFor(env, captain)).toBe("all");
-    expect(planTeamsFor(env, coach)).toEqual(["HKFC C"]);
-    expect(planTeamsFor(env, player)).toEqual([]);
+    expect(planTeamsFor(captain)).toBe("all");
+    expect(planTeamsFor(coach)).toEqual(["HKFC C"]);
+    expect(planTeamsFor(player)).toEqual([]);
 
     // The Officers menu item, in both the profile and the fixtures payloads.
-    expect(canSeeSeasonPlans(env, captain)).toBe(true);
-    expect(canSeeSeasonPlans(env, coach)).toBe(true);
-    expect(canSeeSeasonPlans(env, player)).toBe(false);
-    expect(canSeeSeasonPlans({ ...env, DATA_BACKEND: "airtable" } as Env, coach)).toBe(false);
+    expect(canSeeSeasonPlans(captain)).toBe(true);
+    expect(canSeeSeasonPlans(coach)).toBe(true);
+    expect(canSeeSeasonPlans(player)).toBe(false);
 
-    fake({ current_season: "2026-2027", people, season_plans_v: plans });
+    supabase();
     const all = await getSeasonPlanBoard(env, captain);
     expect(all.teams.map((t) => [t.team, t.players.map((p) => p.name)])).toEqual([
       ["HKFC C", ["Al One"]], ["HKFC D", ["Bo Two"]], ["No team yet", ["Cy Three"]],
@@ -84,6 +81,5 @@ describe("season plan", () => {
     const own = await getSeasonPlanBoard(env, coach);
     expect(own.teams.map((t) => t.team)).toEqual(["HKFC C"]);
     await expect(getSeasonPlanBoard(env, player)).rejects.toMatchObject({ status: 403 });
-    await expect(getSeasonPlanBoard({ ...env, DATA_BACKEND: "airtable" }, captain)).rejects.toMatchObject({ status: 409 });
   });
 });

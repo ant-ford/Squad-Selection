@@ -15,7 +15,7 @@ import {
   invalidateRankingEventsCache,
   recordRankingEvents,
 } from "./rankingEvents";
-import { getShared, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateShared } from "./cache";
 import type {
   AbilityGroupConfigMap,
   InactiveRankingEntry,
@@ -56,21 +56,19 @@ function rankingCacheKey(active: boolean): string {
 const RANKING_CONFIG_KEY = "ranking:config";
 
 /**
- * Drop the ranking lists and config everywhere. They are shared through KV
- * now (every coach on the ranking screen used to cost each isolate its own
- * People read every thirty seconds), so a write has to reach the other
- * isolates too, not just this one.
+ * Drop the ranking lists and config in this isolate. Other isolates hold
+ * their copies for 30 s at most (cache.ts getShared).
  */
 async function invalidateRankingCaches(env: Env): Promise<void> {
   await invalidateShared(env, [rankingCacheKey(true), rankingCacheKey(false), RANKING_CONFIG_KEY]);
 }
 
-async function fetchActiveRankingFromAirtable(env: Env): Promise<Player[]> {
+async function fetchActiveRanking(env: Env): Promise<Player[]> {
   const players = await people(env).listRankingPool();
   return players.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
 }
 
-async function fetchInactiveRankingFromAirtable(
+async function fetchInactiveRanking(
   env: Env,
 ): Promise<InactiveRankingEntry[]> {
   const players = await people(env).listInactiveRankable();
@@ -114,7 +112,7 @@ export async function getAbilityGroupConfig(
       }
       return map;
     },
-    rawReadTtl(env, CONFIG_CACHE_TTL_MS),
+    CONFIG_CACHE_TTL_MS,
   );
 }
 
@@ -147,7 +145,7 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
     env,
     rankingCacheKey(true),
     async () => {
-      const raw = await fetchActiveRankingFromAirtable(env);
+      const raw = await fetchActiveRanking(env);
       const players = annotateWithDerivedRanks(raw);
       return {
         players,
@@ -157,7 +155,7 @@ export async function getActiveRanking(env: Env): Promise<RankingList> {
         version: Date.now(),
       };
     },
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    RANKING_CACHE_TTL_MS,
   );
   return forClients(data);
 }
@@ -176,94 +174,12 @@ export async function getInactiveRanking(env: Env): Promise<InactiveRankingEntry
   return getShared<InactiveRankingEntry[]>(
     env,
     rankingCacheKey(false),
-    async () => fetchInactiveRankingFromAirtable(env),
-    rawReadTtl(env, RANKING_CACHE_TTL_MS),
+    async () => fetchInactiveRanking(env),
+    RANKING_CACHE_TTL_MS,
   );
 }
 
 // ── Public writes ────────────────────────────────────────────────────────
-async function executeRankMove(
-  env: Env,
-  players: Player[],
-  playerId: string,
-  newRank: number,
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  const idx = players.findIndex((p) => p.id === playerId);
-  if (idx === -1) throw new HttpError("Player not found in active ranking", 404);
-  const oldRank = players[idx].sectionRank ?? 0;
-  if (oldRank === newRank) return recomputeDerivedFieldsFromList(env, players);
-
-  const sectionRankUpdates: { id: string; rank: number; oldRank: number }[] = [];
-  for (const p of players) {
-    const r = p.sectionRank ?? 0;
-    if (p.id === playerId) {
-      sectionRankUpdates.push({ id: p.id, rank: newRank, oldRank: r });
-    } else if (newRank < oldRank && r >= newRank && r < oldRank) {
-      sectionRankUpdates.push({ id: p.id, rank: r + 1, oldRank: r });
-    } else if (newRank > oldRank && r > oldRank && r <= newRank) {
-      sectionRankUpdates.push({ id: p.id, rank: r - 1, oldRank: r });
-    }
-  }
-  
-  await applySectionRankUpdates(env, sectionRankUpdates, actingEmail, "move", justification);
-  const rankById = new Map(sectionRankUpdates.map((u) => [u.id, u.rank]));
-  const updatedPlayers = players.map((p) => ({
-    ...p,
-    sectionRank: rankById.get(p.id) ?? p.sectionRank,
-  }));
-  updatedPlayers.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
-  return recomputeDerivedFieldsFromList(env, updatedPlayers);
-}
-
-export async function movePlayerToRank(
-  env: Env,
-  playerId: string,
-  newRank: number,
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  if (!Number.isInteger(newRank) || newRank < 1) {
-    throw new HttpError("newRank must be a positive integer", 400);
-  }
-  const note = validateJustification(justification);
-  await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
-  if (newRank > players.length) {
-    throw new HttpError(`newRank ${newRank} exceeds active player count ${players.length}`, 400);
-  }
-  return executeRankMove(env, players, playerId, newRank, actingEmail, note);
-}
-
-export async function movePlayerRelative(
-  env: Env,
-  sourceId: string,
-  targetId: string,
-  position: "above" | "below",
-  actingEmail?: string,
-  justification?: string,
-): Promise<RankingList> {
-  if (sourceId === targetId) {
-    throw new HttpError("Cannot move a player relative to themselves", 400);
-  }
-  await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
-  const src = players.find((p) => p.id === sourceId);
-  const tgt = players.find((p) => p.id === targetId);
-  if (!src) throw new HttpError("Source player not found in active ranking", 404);
-  if (!tgt) throw new HttpError("Target player not found in active ranking", 404);
-
-  const oldSrcRank = src.sectionRank ?? 0;
-  const tgtRank = tgt.sectionRank ?? 0;
-  let newRank = position === "above" ? tgtRank : tgtRank + 1;
-  if (oldSrcRank < newRank) newRank -= 1;
-  newRank = Math.max(1, Math.min(newRank, players.length));
-
-  const note = validateJustification(justification);
-  return executeRankMove(env, players, sourceId, newRank, actingEmail, note);
-}
-
 export async function reorderRanking(
   env: Env,
   playerIds: string[],
@@ -275,7 +191,7 @@ export async function reorderRanking(
     throw new HttpError("playerIds must be a non-empty array", 400);
   }
   await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
+  const players = await fetchActiveRanking(env);
   const n = players.length;
   if (playerIds.length !== n) {
     throw new HttpError(
@@ -314,9 +230,9 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
   if (!player) throw new HttpError("Player not found", 404);
 
   if (player.active !== true) {
-    const activePlayers = await fetchActiveRankingFromAirtable(env);
+    const activePlayers = await fetchActiveRanking(env);
     // An Applicant can already appear in this pool with a Section Rank of
-    // their own (fetchActiveRankingFromAirtable includes non-rejected
+    // their own (fetchActiveRanking includes non-rejected
     // Applicants alongside Active players). Keep that rank - appending at
     // length+1 would leave a hole at their old rank and push them past the
     // end of the list.
@@ -341,7 +257,7 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
     // batch-update machinery reorderRanking uses. A no-op when already
     // contiguous (the common case after the fix above).
     await invalidateRankingCaches(env);
-    const afterActivation = await fetchActiveRankingFromAirtable(env);
+    const afterActivation = await fetchActiveRanking(env);
     const contiguousUpdates: { id: string; rank: number; oldRank: number }[] = [];
     afterActivation.forEach((p, i) => {
       const wantRank = i + 1;
@@ -364,7 +280,7 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
   if (player.active === false) return getActiveRanking(env);
 
   await invalidateRankingCaches(env);
-  const players = await fetchActiveRankingFromAirtable(env);
+  const players = await fetchActiveRanking(env);
   const idx = players.findIndex((p) => p.id === playerId);
   
   if (idx === -1) {
@@ -455,7 +371,7 @@ async function recomputeDerivedFieldsFromList(
 }
 
 export async function recomputeDerivedFields(env: Env): Promise<RankingList> {
-  const players = await fetchActiveRankingFromAirtable(env);
+  const players = await fetchActiveRanking(env);
   return recomputeDerivedFieldsFromList(env, players);
 }
 

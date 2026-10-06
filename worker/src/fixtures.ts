@@ -3,7 +3,7 @@ import { matches } from "./data/matches";
 import { people } from "./data/people";
 import type { Env } from "./env";
 import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
-import { getCached, getShared, rawReadTtl } from "./cache";
+import { getCached, getShared } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
@@ -18,7 +18,6 @@ import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
 import { canSeeSeasonPlans } from "./seasonPlan";
-import { backendFor } from "./data/backend";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
 
@@ -29,19 +28,16 @@ const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Mid
  * records (Selected Players Home/Away), so syncSquad invalidates this cache
  * after every write.
  *
- * Always 10 minutes, even with the Airtable webhook set up (rawReadTtl would
- * stretch it to six hours). Selections change constantly, and when an
- * invalidation fails - on 2026-09-23 the account ran out of KV operations -
- * a six-hour copy left the coach dashboard showing 0/14 for a squad that had
- * been saved hours earlier. Ten minutes bounds that failure, at the cost of
- * one shared Airtable read per ten minutes.
+ * Never stretched to hours: selections change constantly, and on
+ * 2026-09-23, when a failed invalidation left a six-hour copy, the coach
+ * dashboard showed 0/14 for a squad saved hours earlier. (Each isolate now
+ * holds any such read for 30 s at most; cache.ts getShared.)
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
 /**
- * Versioned so a deploy can retire a bad KV copy: the "scheduled-matches"
- * entry written on 2026-09-23 was stale and, with KV deletes failing, could
- * not be cleared. Bump the suffix again only for the same reason.
+ * Versioned so a deploy could retire a bad KV copy (2026-09-23), when this
+ * read was still shared through KV.
  */
 export const SCHEDULED_MATCHES_KEY = "scheduled-matches:v2";
 
@@ -89,7 +85,7 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   const key = `played-matches:${unique.join(",")}`;
   return getShared<Match[]>(env, key, async () => {
     return matches(env).listPlayedForSeasons(unique);
-  }, rawReadTtl(env, SCHEDULED_MATCHES_TTL_MS));
+  }, SCHEDULED_MATCHES_TTL_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,13 +176,13 @@ export async function getMyFixtures(
     captainTeams,
     isSectionCaptain: authUser.isSectionCaptain,
     // Officers' sections, for the dashboard's header buttons.
-    sections: sectionsFor(authUser, env),
-    seasonPlans: canSeeSeasonPlans(env, authUser),
+    sections: sectionsFor(authUser),
+    seasonPlans: canSeeSeasonPlans(authUser),
     volunteers: await canSeeVolunteers(env, authUser),
     events: await canManageEvents(env, authUser),
     umpiring: await umpiringAccess(env, authUser),
     // Their details are Eddy's own screens on Supabase ("My details").
-    eddyProfile: backendFor(env, "people") === "supabase",
+    eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
     // itself never reaches the browser.
     isBirthday: isBirthdayOn(user.birthday, today),

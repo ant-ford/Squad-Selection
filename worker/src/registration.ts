@@ -1,5 +1,5 @@
 /**
- * The Hockey Convenor's HKHA registration screen (Supabase backend): every
+ * The Hockey Convenor's HKHA registration screen: every
  * Active player's registration details grouped by registered team, who
  * still needs registering with HockeyHK this season and why, and a CSV of
  * the details. See shared/registration.ts for the rules.
@@ -12,14 +12,12 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { currentSeason } from "./seasonContext";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidateMatchCards, invalidatePeople } from "./invalidation";
 import {
   REGISTRATION_CSV_HEADER,
   registrationCsvRow,
@@ -28,12 +26,6 @@ import {
   type RegistrationPlayer,
   type RegistrationReason,
 } from "../../shared/registration";
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("HKHA registration is on the Supabase backend only.", 409, "NOT_YET");
-  }
-}
 
 interface PersonRow {
   id: string;
@@ -98,7 +90,6 @@ export function reasonFor(
 const teamOrder = (a: string | null, b: string | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a.localeCompare(b));
 
 export async function getRegistrationBoard(env: Env): Promise<RegistrationBoard> {
-  requireSupabase(env);
   const d = db(env);
   const season = currentSeason();
   const [people, registrations, events, files] = await Promise.all([
@@ -225,7 +216,6 @@ const apiIds = (v: unknown): string[] =>
 
 /** Ticks players off as registered for this season (one, or a whole team at once). */
 export async function markRegistered(env: Env, actor: AuthorizedUser, body: Record<string, unknown>): Promise<{ ok: true; count: number }> {
-  requireSupabase(env);
   const ids = apiIds(body.ids);
   if (ids.length === 0) throw new HttpError("Choose who's been registered.", 400, "INVALID_INPUT");
   const d = db(env);
@@ -288,7 +278,6 @@ export async function saveRegistrationDetails(
   actor: AuthorizedUser,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; linked: number }> {
-  requireSupabase(env);
   const change = parseDetailsChange(body);
   const d = db(env);
   const p = await d.one<{ id: string; registered_name: string | null; is_visiting_player: boolean }>(
@@ -320,13 +309,13 @@ export async function saveRegistrationDetails(
   const linked = patch.registered_name ? await d.rpc<number>("link_match_cards_by_name", { p_name: patch.registered_name }) : 0;
   await log(env, await actorUuid(env, actor), "registration-details", [p.id], Object.keys(patch));
   // Eligibility reads both (and a linked card can re-register a player).
-  await invalidateForTables(env, linked > 0 ? [TABLES.player, TABLES.matchCard] : [TABLES.player]);
+  await invalidatePeople(env);
+  if (linked > 0) await invalidateMatchCards(env);
   return { ok: true, linked };
 }
 
 /** Takes a tick back off (ticked by mistake): they need registering again. */
 export async function unmarkRegistered(env: Env, actor: AuthorizedUser, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireSupabase(env);
   const [id] = apiIds([body.id]);
   if (!id) throw new HttpError("Choose a player.", 400, "INVALID_INPUT");
   const d = db(env);

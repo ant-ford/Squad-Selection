@@ -1,13 +1,12 @@
 /**
- * The officer sections' reads on Supabase: rows keyed by field-map KEYS,
- * selected from api_people_crm / api_commitments_crm, whose columns carry
- * those names. Attachments come back from the views as {fileId, filename}
+ * The officer sections' reads: rows keyed by a field list's names, selected
+ * from api_people_crm / api_commitments_crm, whose columns carry those names. Attachments come back from the views as {fileId, filename}
  * and leave here as {url, filename}, a signed link, as Airtable's did.
  */
 import type { Env } from "../../env";
 import { HttpError } from "../../http";
 import { db, eq, inList } from "../supabase";
-import type { FieldMap, Row } from "../rows";
+import type { FieldList, Row } from "../rows";
 import type { CommitmentsRepo } from "../commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../commitments";
 import {
@@ -25,8 +24,8 @@ const ATTACHMENTS = new Set(["photo", "applicationForm", "playerStatement"]);
 /** Keys whose view column has another name. */
 const ALIASES: Record<string, string> = { stage: "applicantStage" };
 
-const selectFor = (map: FieldMap) =>
-  ["id", ...Object.keys(map).map((k) => (ALIASES[k] ? `${k}:${ALIASES[k]}` : k))].join(",");
+const selectFor = (fields: FieldList) =>
+  ["id", ...fields.map((k) => (ALIASES[k] ? `${k}:${ALIASES[k]}` : k))].join(",");
 
 async function signAttachments(env: Env, row: Record<string, unknown>) {
   for (const key of ATTACHMENTS) {
@@ -39,13 +38,13 @@ async function signAttachments(env: Env, row: Record<string, unknown>) {
   return row;
 }
 
-export async function selectRows<M extends FieldMap>(env: Env, view: string, map: M, query = ""): Promise<Row<M>[]> {
-  const rows = await db(env).select<Record<string, unknown>>(view, `select=${selectFor(map)}${query ? `&${query}` : ""}`);
-  return Promise.all(rows.map((r) => signAttachments(env, r))) as Promise<Row<M>[]>;
+export async function selectRows<L extends FieldList>(env: Env, view: string, fields: L, query = ""): Promise<Row<L>[]> {
+  const rows = await db(env).select<Record<string, unknown>>(view, `select=${selectFor(fields)}${query ? `&${query}` : ""}`);
+  return Promise.all(rows.map((r) => signAttachments(env, r))) as Promise<Row<L>[]>;
 }
 
-async function selectOne<M extends FieldMap>(env: Env, view: string, map: M, id: string): Promise<Row<M> | null> {
-  const [row] = await selectRows(env, view, map, `id=${eq(id)}&limit=1`);
+async function selectOne<L extends FieldList>(env: Env, view: string, fields: L, id: string): Promise<Row<L> | null> {
+  const [row] = await selectRows(env, view, fields, `id=${eq(id)}&limit=1`);
   return row ?? null;
 }
 
@@ -103,8 +102,8 @@ export function supabaseCommitments(env: Env): CommitmentsRepo {
     },
     getNotifyState: (id) => selectOne(env, "api_commitments_crm", NOTIFY_FIELDS, id),
     async setNotifyNow(id) {
-      // On Supabase "Notify Now" is Eddy sending the review email itself - the
-      // job the Airtable automation did when the box was ticked.
+      // "Notify Now" is Eddy sending the review email itself - the job the
+      // Airtable automation did when the box was ticked.
       if (!(await startReview(env, id))) {
         throw new HttpError("This review has already been started.", 409, "ALREADY_STARTED");
       }

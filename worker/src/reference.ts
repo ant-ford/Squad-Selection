@@ -1,11 +1,10 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared, rawReadTtl } from "./cache";
+import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
 import { officers, type Office } from "./data/officers";
-import { backendFor } from "./data/backend";
 import { availabilityExceptions } from "./data/availabilityExceptions";
 import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
@@ -39,7 +38,7 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
       teamRankMap,
       teamNames: teams.map((t) => t.teamName || ""),
     };
-  }, rawReadTtl(env, REFERENCE_TTL_MS));
+  }, REFERENCE_TTL_MS);
 }
 
 const REFERENCE_TTL_MS = 10 * 60 * 1000;
@@ -55,18 +54,15 @@ export interface TeamCoachLinks {
   sectionCaptainIds: string[];
   /**
    * Team names each person coaches (Teams.Coach link), keyed by People
-   * record id. A plain object rather than a Map so it survives the KV
-   * round trip (JSON turns a Map into {} without complaint).
+   * record id. A plain object rather than a Map, as it was when this went
+   * through KV's JSON round trip (which turns a Map into {}).
    */
   coachTeamNamesByPersonId: Record<string, string[]>;
   /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
   allTeamNames: string[];
 }
 
-/**
- * Shared across isolates: every authenticated request needs this, and on a
- * cold isolate it was one more Teams read before any route could start.
- */
+/** Cached: every authenticated request needs this. */
 export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
   return getShared<TeamCoachLinks>(
     env,
@@ -96,7 +92,7 @@ export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
         allTeamNames,
       };
     },
-    rawReadTtl(env, REFERENCE_TTL_MS),
+    REFERENCE_TTL_MS,
   );
 }
 
@@ -135,9 +131,9 @@ export const OFFICER_LINKS_KEY = "officer-links";
 
 /**
  * The applicant records behind the membership board and Insights
- * (membership.ts). Declared here rather than there so airtableWebhook.ts can
- * name it without a circular import. v2: holds rows keyed by the field map's
- * keys (data/rows.ts), not raw Airtable records.
+ * (membership.ts). Declared here rather than there so invalidation.ts can
+ * name it without a circular import. v2: holds rows keyed by column name
+ * (data/rows.ts), not raw Airtable records.
  */
 export const MEMBERSHIP_RECORDS_KEY = "membership-records:v2";
 
@@ -153,9 +149,6 @@ export const STATEMENT_RECORDS_KEY = "statement-records:v2";
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";
 
-/** The current season's Stats summary (clubStats.ts); past seasons keep their own keys. */
-export const STATS_CURRENT_KEY = "stats-summary:current";
-
 export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
   return getShared<OfficerLinks>(
     env,
@@ -163,10 +156,11 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
     async () => {
       // The Kit Convenor opens the kit screens, the Hockey Convenor league
       // registration requests, the Assistant Director of Hockey every
-      // team's coach screens and the Umpire Coordinator the umpiring
-      // duties, which exist only on Supabase.
-      const offices: Office[] = ["membershipOfficer", "sectionChair", "sectionCaptain"];
-      if (backendFor(env, "officers") === "supabase") offices.push("kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator");
+      // team's coach screens and the Umpire Coordinator the umpiring duties.
+      const offices: Office[] = [
+        "membershipOfficer", "sectionChair", "sectionCaptain",
+        "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator",
+      ];
       const rows = await officers(env).listActive(offices);
       const rolesByPersonId: Record<string, OfficerRole[]> = {};
       for (const { office, designation, memberIds } of rows) {
@@ -174,29 +168,20 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
       }
       return { rolesByPersonId };
     },
-    rawReadTtl(env, REFERENCE_TTL_MS),
+    REFERENCE_TTL_MS,
   );
 }
 
-export async function getActivePlayers(env: Env): Promise<Player[]> {
-  return people(env).listActive();
-}
-
-/**
- * Without a webhook an access decision follows an Airtable correction
- * within a minute; with one, a People edit drops these entries as it
- * happens, and the TTL is capped at five minutes as a backstop.
- */
+/** An access decision follows a correction made outside the Worker within a minute. */
 const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
-const PLAYER_BY_EMAIL_MAX_TTL_MS = 5 * 60 * 1000;
 
 function playerByEmailKey(email: string): string {
   return `player-by-email:${normalizeEmail(email)}`;
 }
 
 /**
- * Drops the lookup in this isolate at once and, given `env`, in KV after
- * the response - a rank change is already several Airtable writes long.
+ * Drops the lookup in this isolate at once, and the rest of the clearing
+ * after the response when `env` has a cache binding.
  */
 export function invalidatePlayerByEmail(email: string, env?: Env): void {
   const key = playerByEmailKey(email);
@@ -209,9 +194,6 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
  * coach links, ability/rank fields) - every read built on top of
  * getReferenceData/getTeamCoachLinks or a per-match player list would
  * otherwise keep serving the pre-write snapshot.
- *
- * The reference reads are shared, so the KV copies go too - otherwise every
- * other isolate kept serving the pre-write roster for the rest of the TTL.
  */
 export async function invalidateReferenceData(env: Env): Promise<void> {
   invalidateCachePrefix("players-for-match:");
@@ -219,10 +201,8 @@ export async function invalidateReferenceData(env: Env): Promise<void> {
 }
 
 /**
- * People-record lookup by email, shared across isolates. Every caller,
- * including the authorization path in worker/src/auth.ts, reuses the entry;
- * on a cold isolate this used to be a formula scan of the whole People
- * table (every field of it) before any route could begin. Pass
+ * People-record lookup by email, cached. Every caller, including the
+ * authorization path in worker/src/auth.ts, reuses the entry. Pass
  * { fresh: true } to bypass the cache for a live read.
  */
 export async function getPlayerByEmail(
@@ -237,7 +217,7 @@ export async function getPlayerByEmail(
     env,
     playerByEmailKey(email),
     () => lookupPlayerByEmail(env, email),
-    Math.min(rawReadTtl(env, PLAYER_BY_EMAIL_TTL_MS), PLAYER_BY_EMAIL_MAX_TTL_MS),
+    PLAYER_BY_EMAIL_TTL_MS,
   );
 }
 
@@ -271,7 +251,7 @@ export async function getExceptionsForSeasons(
     return availabilityExceptions(env).listForSeasons(uniqueSeasons);
   };
   if (opts?.fresh) return load();
-  return getShared<AvailabilityException[]>(env, cacheKey, load, rawReadTtl(env, EXCEPTIONS_TTL_MS));
+  return getShared<AvailabilityException[]>(env, cacheKey, load, EXCEPTIONS_TTL_MS);
 }
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;

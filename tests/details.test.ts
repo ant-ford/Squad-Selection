@@ -5,7 +5,7 @@ import { deleteMyProfile, getMyDetails, parseSection, saveKitSizes, saveSection,
 import { checkedThisSeason, checkValue, formatHkAddress, PROFILE_SECTIONS, regionOfDistrict } from "../shared/profile";
 import { joinPhone, normaliseHkid, splitPhone } from "../shared/phone";
 
-const env = { DATA_BACKEND: "supabase", DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test", FILE_LINK_SECRET: "x" } as unknown as Env;
+const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test", FILE_LINK_SECRET: "x" } as unknown as Env;
 const user = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
 
 type Call = { url: URL; method: string; body: any };
@@ -159,7 +159,6 @@ describe("my details", () => {
     expect(d).toMatchObject({ season: "2026-2027", applicant: false, underEighteen: true, email: "p@x.com", photoUrl: null, hasHkidCopy: true, kit: null });
     expect(d.values).toMatchObject({ surname: "Lee", academicQualifications: ["Secondary"], chineseName: null });
     expect(d.membership).toMatchObject({ membershipNo: "123", playerCoach: ["Player"] });
-    await expect(getMyDetails({ ...env, DATA_BACKEND: "airtable" } as Env, user)).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -205,22 +204,16 @@ describe("ID hidden (people.hkid_hidden)", () => {
 });
 
 describe("delete my profile", () => {
-  it("needs DELETE typed, then removes their data and deletes the queued files at once", async () => {
-    const deleted: string[][] = [];
-    const files = { delete: vi.fn(async (keys: string[]) => void deleted.push(keys)) };
+  it("needs DELETE typed, then removes their data and leaves the queued files for the nightly run", async () => {
+    const files = { delete: vi.fn(async () => {}) };
     const calls = fake({ people: [{ id: "u1", api_id: "recME" }], r2_deletions: [{ r2_key: "people/u1/photo/a.jpg" }] });
     const e = { ...env, FILES: files } as unknown as Env;
     await expect(deleteMyProfile(e, user, {})).rejects.toMatchObject({ status: 400 });
     expect(calls.some((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))).toBe(false);
-    await deleteMyProfile(e, user, { confirm: "DELETE" });
+    await expect(deleteMyProfile(e, user, { confirm: "DELETE" })).resolves.toEqual({ ok: true });
     expect(calls.find((c) => c.url.pathname.endsWith("/rpc/delete_own_profile"))?.body).toEqual({ p_person: "u1" });
-    expect(deleted).toEqual([["people/u1/photo/a.jpg"]]);
-  });
-
-  it("still succeeds when the file delete fails: the files stay queued for the nightly run", async () => {
-    const files = { delete: vi.fn(async () => { throw new Error("R2 down"); }) };
-    const calls = fake({ people: [{ id: "u1", api_id: "recME" }], r2_deletions: [{ r2_key: "k" }] });
-    await expect(deleteMyProfile({ ...env, FILES: files } as unknown as Env, user, { confirm: "DELETE" })).resolves.toEqual({ ok: true });
-    expect(calls.some((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "DELETE")).toBe(false);
+    // R2 objects wait 35 days, for the backups (migration 20261007000102).
+    expect(files.delete).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url.pathname.endsWith("/r2_deletions"))).toBe(false);
   });
 });

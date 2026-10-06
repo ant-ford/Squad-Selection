@@ -3,7 +3,7 @@ import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { parseReply, readIdDocument, toSuggestions } from "../worker/src/idRead";
 
-const env = { DATA_BACKEND: "supabase", OPENROUTER_API_KEY: "or_test", APP_ORIGIN: "https://app.eddy.global" } as Env;
+const env = { OPENROUTER_API_KEY: "or_test", APP_ORIGIN: "https://app.eddy.global" } as Env;
 const user = { email: "a@x.com", personId: "recA", officerRoles: [] } as unknown as AuthorizedUser;
 afterEach(() => vi.unstubAllGlobals());
 
