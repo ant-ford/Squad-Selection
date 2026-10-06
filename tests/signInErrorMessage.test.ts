@@ -55,6 +55,14 @@ describe("network failures", () => {
     expect(sendEmailErrorMessage(new Error("Email rate limit exceeded"))).toBe("Email rate limit exceeded");
   });
 
+  // Supabase Auth with CAPTCHA protection on refuses a missing, expired or
+  // spent Turnstile token; the player can only wait for a fresh check.
+  it("turns a refused security check into something the player can act on", () => {
+    const out = sendEmailErrorMessage(new Error("captcha verification process failed"));
+    expect(out).toContain("try again");
+    expect(out).not.toMatch(/captcha/i);
+  });
+
   it("falls back when a send error has no message", () => {
     expect(sendEmailErrorMessage({})).toBe("Could not send the email. Please try again.");
   });

@@ -6,7 +6,6 @@
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
-import { backendFor } from "./data/backend";
 import { db } from "./data/supabase";
 import { getCached } from "./cache";
 import { getReferenceData } from "./reference";
@@ -24,9 +23,8 @@ async function officeHolders(env: Env): Promise<Set<string>> {
   return new Set(data);
 }
 
-/** Every officer, coach and team captain (owner decision, 2026-10-01). Supabase backend only. */
+/** Every officer, coach and team captain (owner decision, 2026-10-01). */
 export async function canSeeVolunteers(env: Env, user: AuthorizedUser): Promise<boolean> {
-  if (backendFor(env, "people") !== "supabase") return false;
   if (user.role === "coach" || user.officerRoles.length > 0) return true;
   const ref = await getReferenceData(env);
   if (ref.teams.some((t) => (t.teamCaptain || []).includes(user.personId))) return true;

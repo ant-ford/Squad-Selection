@@ -43,7 +43,7 @@ A small difference on one busy table in a production backup can be real: row cou
 
 For when eddy-production has lost data or is gone. **Decide first what the restore will overwrite:** anything written after the backup was made is lost.
 
-1. **Stop writes.** Before 20 Oct, while Airtable is still current, flipping `DATA_BACKEND` back to `airtable` does this. After that there is no read-only switch yet, so tell coaches and officers to stop saving. Anything saved during the restore may be overwritten.
+1. **Stop writes.** There is no read-only switch yet, so tell coaches and officers to stop saving. Anything saved during the restore may be overwritten.
 2. **Pick the backup:** the newest `daily/eddy-production/...` before the problem, or a `monthly/` one.
 3. **Restore.** The script the drill uses restores into whatever database it is pointed at. On a machine with the PostgreSQL client tools matching the server's major version, `age` and the AWS CLI:
 

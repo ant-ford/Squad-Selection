@@ -1,5 +1,5 @@
 /**
- * The Section Captain's part of the New Joiner process (Supabase backend),
+ * The Section Captain's part of the New Joiner process,
  * replacing Fillout forms 1 and 2 and the Make scenario's Section Captain
  * routes. See shared/joiners.ts for the flow, joinerEmails.ts for the
  * wording.
@@ -12,7 +12,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
@@ -41,16 +40,9 @@ const INVITED_STAGE = "2. Section Captain Invitation";
 /** Stages an invitation can be sent (or sent again) from. */
 const INVITABLE = [null, "1. Trial Application", INVITED_STAGE];
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Proposing new joiners moves into Eddy at the switch-over. Until then, use the Fillout form.", 409, "NOT_YET");
-  }
-}
-
 const isCaptain = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "sectionCaptain");
 
-function requireCaptain(env: Env, user: AuthorizedUser): void {
-  requireSupabase(env);
+function requireCaptain(user: AuthorizedUser): void {
   if (!isCaptain(user)) throw new HttpError("Only Section Captains propose new joiners.", 403, "OFFICER_ACCESS_REQUIRED");
 }
 
@@ -77,7 +69,7 @@ async function activeOffices(env: Env): Promise<OfficeRow[]> {
 }
 
 export async function getJoinerOptions(env: Env, user: AuthorizedUser): Promise<JoinerOptions> {
-  requireCaptain(env, user);
+  requireCaptain(user);
   const rows = await activeOffices(env);
   const of = (role: string): OfficeChoice[] =>
     rows
@@ -222,7 +214,7 @@ async function personUuid(env: Env, apiId: string): Promise<string | null> {
  * `invite`, the invitation goes straight away, as the Fillout form did.
  */
 export async function createJoiner(env: Env, actor: AuthorizedUser, body: Record<string, unknown>): Promise<{ id: string; invited: boolean }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const form = parseJoinerForm(body);
   const bad = joinerProblem(form);
   if (bad) throw new HttpError(bad, 400, "INVALID_INPUT");
@@ -252,7 +244,7 @@ export async function createJoiner(env: Env, actor: AuthorizedUser, body: Record
 
 /** Changes a proposed joiner's details (Fillout form 2's fields). */
 export async function updateJoiner(env: Env, actor: AuthorizedUser, apiId: string, body: Record<string, unknown>): Promise<{ ok: true }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const p = await loadJoiner(env, apiId);
   const form = parseJoinerForm(body);
   const bad = joinerProblem(form);
@@ -287,7 +279,7 @@ async function senderFor(env: Env, actor: AuthorizedUser, offices: OfficeRow[]):
 
 /** Stage 2 and the invitation email (Make: "1. New Joiner Process"). Sending again is allowed. */
 export async function inviteJoiner(env: Env, actor: AuthorizedUser, apiId: string): Promise<{ ok: true }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const p = await loadJoiner(env, apiId);
   refuseIfUnderway(p);
   if (!p.email) throw new HttpError("Give their email address first.", 400, "INVALID_INPUT");
@@ -348,7 +340,7 @@ async function request(
   key: JoinerStepKey,
   body: Record<string, unknown>,
 ): Promise<{ ok: true }> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const p = await loadJoiner(env, apiId);
   const convenorId = text(body.convenorId);
   const role = key === "kit" ? "kit_convenor" : "hockey_convenor";
@@ -440,7 +432,7 @@ const toStepState = (s: StepRow | undefined): JoinerStepState | null =>
 
 /** A joiner's details and where each action stands, for the captain's screen. */
 export async function getJoiner(env: Env, actor: AuthorizedUser, apiId: string): Promise<JoinerView> {
-  requireCaptain(env, actor);
+  requireCaptain(actor);
   const p = await loadJoiner(env, apiId);
   const d = db(env);
   const [steps, invites] = await Promise.all([
@@ -477,7 +469,6 @@ export interface JoinerTask {
 }
 
 async function loadStep(env: Env, user: AuthorizedUser, stepId: string): Promise<{ step: StepRow; me: string | null }> {
-  requireSupabase(env);
   if (!/^[0-9a-f-]{36}$/.test(stepId)) throw new HttpError("Task not found.", 404, "NOT_FOUND");
   const d = db(env);
   const [step, me] = await Promise.all([

@@ -1,7 +1,7 @@
 /**
- * api_* view rows -> the domain objects the Worker already uses. Each follows
- * its Airtable mapper in shared/mappers (the same defaults and fallbacks), so
- * a module cannot tell which backend a value came from.
+ * api_* view rows -> the domain objects the Worker uses. The defaults and
+ * fallbacks are the ones the Airtable mappers had, so imported and new rows
+ * read the same way.
  */
 import type { Env } from "../../env";
 import { birthdayKey } from "../../../../shared/birthday";
@@ -91,6 +91,7 @@ export interface MatchRow {
   match_status: string | null; venue: string | null; fixture_id: string | null;
   selected_players_home: string[]; selected_players_away: string[]; auto_select_enabled: boolean;
   home_kit: string | null; away_kit: string | null; ump_1: string | null; ump_2: string | null;
+  selection_version_home?: number | null; selection_version_away?: number | null;
 }
 
 export function toMatch(r: MatchRow): Match {
@@ -114,6 +115,8 @@ export function toMatch(r: MatchRow): Match {
     awayKit: (r.away_kit || "") as KitColour,
     ump1: r.ump_1 || "",
     ump2: r.ump_2 || "",
+    selectionVersionHome: r.selection_version_home ?? 0,
+    selectionVersionAway: r.selection_version_away ?? 0,
   };
 }
 
@@ -123,7 +126,7 @@ export interface MatchCardRow {
   u21: boolean; vp: boolean; captain: boolean; season: string | null; fixture_id: string | null; raw_player_name: string | null;
 }
 
-/** Airtable leaves out unticked boxes and empty fields; so does this, so the two backends read identically. */
+/** Unticked boxes and empty fields are left out, as they always were. */
 export function toMatchCard(r: MatchCardRow): MatchCard {
   return {
     id: r.id,
