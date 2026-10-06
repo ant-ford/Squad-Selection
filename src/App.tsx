@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
 import { usePrefetchQuery, useQuery } from '@tanstack/react-query';
-import { SHOW_PAST_BY_DEFAULT, myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
+import { myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
@@ -75,9 +75,9 @@ function Home() {
   // The player page's own reads go out with the profile, not after it. The
   // dashboard's fixtures observer is the one that stays enabled: this one only
   // watches for the data, so it never refetches a variant that's off screen.
-  usePrefetchQuery(myFixturesQuery(SHOW_PAST_BY_DEFAULT));
+  usePrefetchQuery(myFixturesQuery(true));
   usePrefetchQuery(myTasksQuery);
-  const fixturesIn = useQuery({ ...myFixturesQuery(SHOW_PAST_BY_DEFAULT), enabled: false }).data !== undefined;
+  const fixturesIn = useQuery({ ...myFixturesQuery(true), enabled: false }).data !== undefined;
   const { data, isLoading } = useMyProfile();
   if (data?.applicant) return <Navigate to="/apply" replace />;
   if (isLoading && !fixturesIn) return <AppLoading />;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { queryOptions, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetUpcomingFixturesOutput } from '@/api/getUpcomingFixtures';
@@ -126,6 +126,9 @@ export function useUpcomingFixtures(teamFilter?: string, includePast = false) {
         // only while the coach is actually looking at past fixtures.
         past: includePast ? '1' : undefined,
       }),
+    // Flipping the past toggle keeps the current list on screen while the
+    // other variant loads, instead of dropping back to the skeleton.
+    placeholderData: keepPreviousData,
     staleTime: 300_000,
   });
 }
@@ -193,9 +196,6 @@ export function useAvailabilityPoll(matchId: string, isEnabled: boolean) {
 }
 
 // ── Player dashboard ─────────────────────────────────────────────────────
-
-/** Recent results start open on the player page (owner request, 2026-09-23). */
-export const SHOW_PAST_BY_DEFAULT = true;
 
 export const myFixturesQuery = (includePast = false) =>
   queryOptions({
