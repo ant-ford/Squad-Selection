@@ -177,10 +177,12 @@ export const SECTION_OFFICES = {
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
   registration: ["hockeyConvenor"],
+  // Suspensions: the Men's Convenor only (owner, 6 Oct 2026). Supabase only.
+  discipline: ["hockeyConvenor"],
 } as const satisfies Record<string, readonly Office[]>;
 
 /** Sections whose screens exist only on the Supabase backend. */
-const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration"];
+const SUPABASE_ONLY: readonly Section[] = ["kit", "planning", "trials", "registration", "discipline"];
 
 export type Section = keyof typeof SECTION_OFFICES;
 

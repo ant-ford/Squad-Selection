@@ -11,7 +11,8 @@
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
  * reads underneath it are shared through KV and live much longer).
  * Invalidated by: syncSquad (selections changed), setAvailability and
- * setMyAvailability (exceptions changed), and the Airtable webhook.
+ * setMyAvailability (exceptions changed), the Men's Convenor's suspension
+ * writes (discipline.ts), and the Airtable webhook.
  */
 
 import { linkId } from "../../shared/airtableValueUtils";
@@ -22,7 +23,15 @@ import { getCached, getShared, rawReadTtl } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
-import { computeSuspensionStates, type CardSuspensionState } from "./suspension";
+import {
+  computeSuspensionStates,
+  manualSuspensionStates,
+  type CardSuspensionState,
+  type ManualSuspension,
+  type ManualSuspensionState,
+} from "./suspension";
+import { backendFor } from "./data/backend";
+import { db } from "./data/supabase";
 import {
   computeCompletedLeagueMatchCounts,
   type EvaluationContext,
@@ -102,6 +111,34 @@ export function getSameDayMatches(allMatches: readonly Match[], targetDate: stri
   return bucket ? bucket.slice() : [];
 }
 
+/** Cache key of the open manual suspensions; discipline.ts drops it on every write. */
+export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
+
+/**
+ * The Men's Convenor's open suspensions (public.suspensions, cleared_at
+ * null): a handful of rows at most. Supabase backend only - on Airtable
+ * the table does not exist and the old People flags are all there is.
+ */
+export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspension[]> {
+  if (backendFor(env, "people") !== "supabase") return [];
+  return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, async () => {
+    const rows = await db(env).select<{
+      id: string;
+      player: string;
+      matches: number | null;
+      from_date: string;
+      serving_team: string;
+    }>("api_suspensions", "select=id,player,matches,from_date,serving_team&cleared_at=is.null");
+    return rows.map((r) => ({
+      id: r.id,
+      player: r.player,
+      matches: r.matches,
+      fromDate: r.from_date,
+      servingTeam: r.serving_team,
+    }));
+  }, SEASON_READ_TTL_MS);
+}
+
 export function previousSeason(season: string): string | null {
   const m = season.match(/^(\d{4})-(\d{4})$/);
   if (!m) return null;
@@ -138,6 +175,8 @@ export interface SeasonContext {
   previousMatches: Match[];
   /** Automatic card-suspension state, keyed by player id. */
   suspensionByPlayer: Map<string, CardSuspensionState>;
+  /** The Men's Convenor's open suspensions, served or not, keyed by player id. */
+  manualSuspensionByPlayer: Map<string, ManualSuspensionState>;
 }
 
 /**
@@ -152,13 +191,14 @@ const SEASON_INDEX_TTL_MS = 60 * 1000;
 export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
   const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
     const prevSeason = previousSeason(season);
-    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches, ref] = await Promise.all([
+    const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches, ref, openManual] = await Promise.all([
       getExceptionsForSeasons(env, [season]),
       getMatchCardsForSeason(env, season),
       getAllMatches(env, season),
       prevSeason ? getMatchCardsForSeason(env, prevSeason, { cardedOnly: true }) : Promise.resolve([] as MatchCard[]),
       prevSeason ? getAllMatches(env, prevSeason) : Promise.resolve([] as Match[]),
       getReferenceData(env),
+      getOpenManualSuspensions(env),
     ]);
     const matchesById = new Map<string, Match>(allMatches.map((m) => [m.id, m]));
     const matchCardsByPlayer = new Map<string, MatchCard[]>();
@@ -222,6 +262,8 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       previousSeason: prevSeason,
       registeredTeamByPlayer,
     });
+    // The Men's Convenor's suspensions, counted against both seasons' fixtures.
+    const manualSuspensionByPlayer = manualSuspensionStates(openManual, combinedMatchesById.values());
 
     return {
       exceptionsRaw,
@@ -240,6 +282,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       previousCards: prevMatchCards,
       previousMatches: prevMatches,
       suspensionByPlayer,
+      manualSuspensionByPlayer,
     };
   }, SEASON_INDEX_TTL_MS);
   return data;
@@ -340,6 +383,7 @@ export async function buildEvaluationContext(
     playersById,
     completedLeagueMatchesByTeam: season.completedLeagueMatchesByTeam,
     suspensionByPlayer: season.suspensionByPlayer,
+    manualSuspensionByPlayer: season.manualSuspensionByPlayer,
   };
   return { ctx, exceptionsRaw: season.exceptionsRaw };
 }

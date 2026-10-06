@@ -1,5 +1,7 @@
 import type { Match, MatchCard } from "../../shared/schema/domainTypes";
+import { hkDateKey } from "../../shared/hkDateKey";
 import { linkId } from "./airtable";
+import { isFriendly } from "./playUp";
 
 /**
  * Automatic card-based suspension calculation.
@@ -38,8 +40,10 @@ import { linkId } from "./airtable";
  * Red cards (R1-R7) are DETECTED but deliberately NOT converted into automatic
  * suspensions: their serving team can differ between Club and HockeyHK
  * representative teams (Bye-Law 16.10) and their length can be modified by a
- * Disciplinary Committee investigation (Bye-Law 16.7). They remain handled via
- * the manual People."Is Suspended" / "Matches To Serve" mechanism.
+ * Disciplinary Committee investigation (Bye-Law 16.7). They remain manual:
+ * the Men's Convenor records them as suspensions (public.suspensions; see
+ * manualSuspensionProgress below). The old People."Is Suspended" / "Matches
+ * To Serve" flags are still honoured by eligibility, but nothing sets them.
  *
  * Match Cards are the source of truth. This module is pure and derived; it
  * never mutates People."Is Suspended" / "Matches To Serve" during reads.
@@ -398,4 +402,109 @@ export function computeSuspensionStates(opts: {
     );
   }
   return map;
+}
+
+// ── Manual suspensions (the Men's Convenor's) ───────────────────────────
+
+/** One open row of public.suspensions, as api_suspensions gives it. */
+export interface ManualSuspension {
+  id: string;
+  /** People api_id. */
+  player: string;
+  /** Matches to serve; null = until cleared. */
+  matches: number | null;
+  /** Hong Kong date, YYYY-MM-DD. Fixtures on this date do not count. */
+  fromDate: string;
+  servingTeam: string;
+}
+
+export interface ManualSuspensionProgress {
+  /** Fixtures served so far (capped at `matches`). */
+  served: number;
+  /** Matches still to serve; null = until cleared. */
+  remaining: number | null;
+  active: boolean;
+}
+
+/** One player's manual suspensions taken together: blocked while any is active. */
+export interface ManualSuspensionState {
+  active: boolean;
+}
+
+/**
+ * A fixture that serves a manual suspension (owner, 6 Oct 2026): Played,
+ * and a league or cup match. Friendlies and warm-ups never count, and
+ * neither does a fixture whose competition type is blank or unknown - not
+ * counting keeps the player suspended, which is the safe way to be wrong.
+ */
+function servesManualSuspension(match: Match): boolean {
+  if ((match.matchStatus || "").toLowerCase() !== "played") return false;
+  if (isFriendly(match)) return false;
+  const type = (match.competitionType || "").trim().toUpperCase();
+  return type === "LEAGUE" || type === "KNOCKOUT";
+}
+
+/**
+ * Hong Kong dates of every fixture that serves a manual suspension, by
+ * team: one pass over the matches, shared by every suspension counted.
+ */
+export function servingFixtureDatesByTeam(matches: Iterable<Match>): Map<string, string[]> {
+  const byTeam = new Map<string, string[]>();
+  for (const m of matches) {
+    if (!servesManualSuspension(m)) continue;
+    const day = hkDateKey(m.matchDate);
+    if (!day) continue;
+    for (const team of new Set([m.homeTeam, m.awayTeam])) {
+      if (!team) continue;
+      const days = byTeam.get(team);
+      if (days) days.push(day);
+      else byTeam.set(team, [day]);
+    }
+  }
+  return byTeam;
+}
+
+/**
+ * How much of a manual suspension has been served: the serving team's
+ * Played league and cup fixtures whose Hong Kong date is STRICTLY AFTER
+ * the from date (a fixture on the from date itself does not count). Only
+ * the serving team's fixtures count, never the team the player turned out
+ * for.
+ *
+ * Fails closed. The count is a lower bound - it sees only the fixtures it
+ * is given (the current and previous season) - so a suspension older than
+ * that, or one whose serving team has no fixtures, stays active until it
+ * is cleared rather than being let off early. So does a malformed date.
+ */
+export function manualSuspensionProgress(
+  s: Pick<ManualSuspension, "matches" | "fromDate" | "servingTeam">,
+  datesByTeam: Map<string, string[]>,
+): ManualSuspensionProgress {
+  if (s.matches === null) return { served: 0, remaining: null, active: true };
+  let served = 0;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s.fromDate)) {
+    for (const day of datesByTeam.get(s.servingTeam) ?? []) if (day > s.fromDate) served++;
+  }
+  served = Math.min(served, s.matches);
+  const remaining = s.matches - served;
+  return { served, remaining, active: remaining > 0 };
+}
+
+/**
+ * Manual-suspension state per player id, for eligibility Step 2. Each
+ * suspension is counted on its own: two open ones overlap rather than
+ * queue, and the player is blocked while either has matches left.
+ */
+export function manualSuspensionStates(
+  suspensions: readonly ManualSuspension[],
+  matches: Iterable<Match>,
+): Map<string, ManualSuspensionState> {
+  const out = new Map<string, ManualSuspensionState>();
+  if (suspensions.length === 0) return out;
+  const datesByTeam = servingFixtureDatesByTeam(matches);
+  for (const s of suspensions) {
+    const { active } = manualSuspensionProgress(s, datesByTeam);
+    out.set(s.player, { active: active || out.get(s.player)?.active === true });
+  }
+  return out;
 }

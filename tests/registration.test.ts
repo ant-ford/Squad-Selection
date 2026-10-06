@@ -52,7 +52,7 @@ const blank: RegistrationPlayer = {
 
 describe("HKHA registration", () => {
   it("opens to the Hockey Convenor only, on Supabase only", () => {
-    expect(sectionsFor(convenor, env)).toEqual(["registration"]);
+    expect(sectionsFor(convenor, env)).toContain("registration");
     expect(sectionsFor(captain, env)).not.toContain("registration");
     expect(sectionsFor(convenor, { ...env, DATA_BACKEND: "airtable" })).toEqual([]);
   });
