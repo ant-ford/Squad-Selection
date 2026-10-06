@@ -40,7 +40,7 @@ describe("adminRpc", () => {
     ["42501", 403, "FORBIDDEN"],
   ])("maps Postgres %s to %i %s, without the database's message", async (pgCode, status, code) => {
     answer(400, { code: pgCode, message: "No person recSECRETVALUE" });
-    const err = await adminRpc(env, "admin_update_person", {}).catch((e) => e);
+    const err = (await adminRpc(env, "admin_update_person", {}).catch((e: unknown) => e)) as Error;
     expect(err).toMatchObject({ status, code });
     expect(err.message).not.toContain("SECRETVALUE");
   });
