@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     authorizedCoach,
     requireAuthorizedUser: vi.fn(),
     requireCoach: vi.fn(),
+    requireSectionCaptain: vi.fn(),
     getMyProfile: vi.fn(),
     getMyFixtures: vi.fn(),
     getUpcomingFixtures: vi.fn(),
@@ -47,6 +48,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("../worker/src/auth", () => ({
   requireAuthorizedUser: mocks.requireAuthorizedUser,
   requireCoach: mocks.requireCoach,
+  requireSectionCaptain: mocks.requireSectionCaptain,
 }));
 
 vi.mock("../worker/src/profile", () => ({ getMyProfile: mocks.getMyProfile }));
@@ -122,6 +124,8 @@ function jsonInit(body: unknown, token = "valid.jwt.token"): RequestInit {
 
 const coachDenied = () =>
   new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
+const sectionCaptainDenied = () =>
+  new HttpError("Only Section Captains can do this.", 403, "SECTION_CAPTAIN_REQUIRED");
 
 // ---------------------------------------------------------------------------
 // Availability identity boundary - the browser never controls the identity of
@@ -176,6 +180,7 @@ beforeEach(() => {
   // Defaults: an authorized ordinary player; coach-only routes reject.
   mocks.requireAuthorizedUser.mockResolvedValue(mocks.authorizedPlayer);
   mocks.requireCoach.mockRejectedValue(coachDenied());
+  mocks.requireSectionCaptain.mockRejectedValue(sectionCaptainDenied());
 
   mocks.getMyProfile.mockResolvedValue({
     preferredName: "Test Player", roles: [], isCoach: false, isSectionCaptain: false, captainTeams: [], coachTeams: [],
@@ -325,6 +330,35 @@ describe("session-derived identity (IDOR prevention)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Making players active / inactive: Section Captains only (owner, 2026-10-06)
+// ---------------------------------------------------------------------------
+
+describe("activate / deactivate: Section Captains only", () => {
+  const calls = [
+    { path: "/api/ranking/activate", fn: () => mocks.activatePlayer },
+    { path: "/api/ranking/deactivate", fn: () => mocks.deactivatePlayer },
+  ];
+
+  it.each(calls)("refuses anyone the Section Captain gate refuses on $path, a coach included", async ({ path, fn }) => {
+    // A coach passes requireCoach, but that is no longer the gate.
+    mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
+    const res = await call(path, jsonInit({ playerId: "recP9" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "SECTION_CAPTAIN_REQUIRED" });
+    expect(mocks.requireSectionCaptain).toHaveBeenCalledTimes(1);
+    expect(fn()).not.toHaveBeenCalled();
+  });
+
+  it.each(calls)("lets a Section Captain through on $path, auditing as the session", async ({ path, fn }) => {
+    mocks.requireSectionCaptain.mockResolvedValue({ ...mocks.authorizedCoach, email: "captain@hkfc.com", isSectionCaptain: true });
+    fn().mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    const res = await call(path, jsonInit({ playerId: "recP9", actingEmail: "attacker@evil.com" }));
+    expect(res.status).toBe(200);
+    expect(fn()).toHaveBeenCalledWith(ENV, "recP9", "captain@hkfc.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Coach-only routes
 // ---------------------------------------------------------------------------
 
@@ -332,8 +366,6 @@ describe("coach-only routes", () => {
   const coachOnlyCalls: { path: string; init: RequestInit }[] = [
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
-    { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
-    { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/squad/sync", init: jsonInit({ matchId: "recM1", selectedIds: ["a"] }) },
     { path: "/api/team/auto-select-players", init: jsonInit({ teamName: "Men's 1s", playerIds: [] }) },
     { path: "/api/match/recM1/auto-select", init: jsonInit({ enabled: true }) },
