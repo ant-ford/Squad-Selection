@@ -27,7 +27,7 @@ export function suspensions(env: Env): SuspensionsRepo {
           // view) reads as "none": with no table there are none. Anything
           // else fails the read, as the other season reads do - never "none".
           if (err instanceof SupabaseError && err.code === "PGRST205") {
-            console.error("api_suspensions missing: apply 20261007010203_suspensions.sql");
+            console.error("api_suspensions missing: apply 20261007130203_suspensions.sql");
             return [];
           }
           throw err;
