@@ -6,7 +6,6 @@ import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
-import { backendFor } from "./data/backend";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 
 /**
@@ -74,10 +73,10 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // Which officers' sections to offer. Derived from the same rule the
     // Worker enforces, so the app never keeps its own copy of it.
-    sections: sectionsFor(authUser, env),
+    sections: sectionsFor(authUser),
 
     // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
-    quizzes: backendFor(env, "people") === "supabase",
+    quizzes: true,
 
     // Applicants (and people registering to join) with an application still
     // to fill in belong on it, not the player page.
@@ -86,12 +85,12 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Their own link for inviting someone to register to join (trials.ts):
     // members only, once the app is on Supabase.
     inviteLink:
-      backendFor(env, "people") === "supabase" && user.status === "Member"
+      user.status === "Member"
         ? `${(env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "")}/join?ref=${encodeURIComponent(user.id)}`
         : null,
 
     // Whether the Season plans screen has anything for them.
-    seasonPlans: canSeeSeasonPlans(env, authUser),
+    seasonPlans: canSeeSeasonPlans(authUser),
 
     // Whether the Volunteers screen is theirs: officers, coaches, captains.
     volunteers,

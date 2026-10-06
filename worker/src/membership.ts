@@ -374,28 +374,8 @@ export async function getActiveMembersCsv(
 
 // ── Membership Events ───────────────────────────────────────────────────
 
-/**
- * Audit table for the section's actions, created in Airtable by the owner:
- *
- *   Id                    autonumber     primary field
- *   Event Type            single select  Approved | Exported | Notified
- *   Person                link (People)  the applicant approved (blank for an export)
- *   Actor                 link (People)  the officer who did it
- *   Actor Email           text           verified session email
- *   Previous Stage        text
- *   New Stage             text
- *   Membership No.        text
- *   Join Date             date
- *   Commitment End Date   date
- *   Shared Membership No. checkbox       approved with a number someone else has
- *   Notes                 long text
- *   Timestamp             date and time  stamped by the Worker
- *
- * The names live in shared/schema now; re-exported here for anything that
- * imported them from this module. data/membershipEvents.ts writes the rows.
- */
-export { MEMBERSHIP_EVENTS_TABLE } from "../../shared/schema/tableNames";
-export { MEMBERSHIP_EVENTS_FIELDS } from "../../shared/schema/fieldMaps";
+// Each Approved, Exported or Notified action is written to the activity log
+// (data/membershipEvents.ts): who did it, when, and which fields it changed.
 
 /** What a caller says about the action; who did it and when are added here. */
 export type MembershipEventInput = Omit<NewMembershipEvent, "actorId" | "actorEmail" | "timestamp">;
@@ -487,7 +467,7 @@ function isIsoDate(value: unknown): value is string {
 export async function approveApplicant(env: Env, actor: AuthorizedUser, input: ApproveInput) {
   const personId = typeof input.personId === "string" ? input.personId.trim() : "";
   const membershipNo = typeof input.membershipNo === "string" ? input.membershipNo.trim() : "";
-  if (!isRowId(env, "people", personId)) throw new HttpError("Unknown applicant.", 400, "INVALID_INPUT");
+  if (!isRowId(personId)) throw new HttpError("Unknown applicant.", 400, "INVALID_INPUT");
   if (!isIsoDate(input.joinDate)) throw new HttpError("Join Date must be a date.", 400, "INVALID_INPUT");
   if (!isIsoDate(input.commitmentEndDate)) {
     throw new HttpError("Commitment End Date must be a date.", 400, "INVALID_INPUT");

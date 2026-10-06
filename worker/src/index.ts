@@ -1,8 +1,6 @@
-import { AirtableError } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest, serveClubDoc } from "./files";
 import { db, SupabaseError } from "./data/supabase";
-import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
 import { RETENTION_CRON, runRetention } from "./retention";
 import type { Env } from "./env";
@@ -15,7 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
-import { requireAuthorizedUser, requireCoach, requireSection, requireVerifiedEmail } from "./auth";
+import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
@@ -91,6 +89,11 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { resolveRegistrationEvent } from "./reRegistrations";
+import { clearSuspension, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
+import { adminRoute, isAdminPath } from "./admin/routes";
+import { getDataChecks } from "./dataChecks";
+import { linkMatchCard } from "./matchCardLink";
 import { getMyTasks } from "./myTasks";
 import { getSeasonStats } from "./clubStats";
 import { getChairmanDirectory, logEmailExport, type EmailExportInput } from "./chairman";
@@ -100,11 +103,13 @@ import {
   getPlayersForMatch,
   getAvailabilityForMatch,
   syncSquad,
+  applySquadChanges,
   setMatchKit,
   toggleAutoSelect,
   getTeamAutoSelectPlayers,
   setTeamAutoSelectPlayers,
 } from "./squad";
+import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
 import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
@@ -150,11 +155,11 @@ export default {
     }
 
     // Every request runs inside its own context (requestContext.ts): the
-    // Airtable client and the caches count what they do into it, and cache
+    // database client and the caches count what they do into it, and cache
     // invalidation can hand slow KV housekeeping to ctx.waitUntil. The
     // numbers go out as a Server-Timing header, readable in the browser's
     // Timing tab, and as one structured log line per request in Workers
-    // Logs - the "is it Airtable or is it us" question, answered per call.
+    // Logs - the "is it the database or is it us" question, answered per call.
     const stats = newRequestStats();
     const startedAt = Date.now();
     const waitUntil = ctx?.waitUntil ? (p: Promise<unknown>) => ctx.waitUntil(p) : undefined;
@@ -184,10 +189,6 @@ export default {
               path: pathname,
               status: response.status,
               ms: totalMs,
-              airtableCalls: stats.airtableCalls,
-              airtableMs: Math.round(stats.airtableMs),
-              airtableBytes: stats.airtableBytes,
-              airtable429s: stats.airtableRateLimited,
               ...(stats.dbCalls > 0 ? { dbCalls: stats.dbCalls, dbMs: Math.round(stats.dbMs), dbBytes: stats.dbBytes } : {}),
               cacheHits: stats.cacheHits,
               cacheMisses: stats.cacheMisses,
@@ -204,8 +205,8 @@ export default {
   },
 
   /**
-   * Daily: on the Supabase backend, send the commitment review emails that
-   * are due (reviewEmails.ts) - the job the Airtable 60-day automation did.
+   * Daily: send the commitment review emails that are due (reviewEmails.ts)
+   * - the job the Airtable 60-day automation did.
    * RETENTION_CRON, half an hour later, is the data retention job
    * (retention.ts), on its own so it has a run's outside calls to itself.
    */
@@ -213,14 +214,14 @@ export default {
     // HEALTH_CRON: the daily system health check (systemHealth.ts). Each job
     // records a heartbeat, which is what that check reads.
     if (event.cron === HEALTH_CRON) {
-      if (backendFor(env, "people") === "supabase") await runHealthCron(env);
+      await runHealthCron(env);
       return;
     }
     if (event.cron === RETENTION_CRON) {
-      if (backendFor(env, "people") === "supabase") await withHeartbeat(env, "retention", () => runRetention(env));
+      await withHeartbeat(env, "retention", () => runRetention(env));
       return;
     }
-    if (backendFor(env, "commitments") === "supabase") await withHeartbeat(env, "review-emails", () => sendDueReviewEmails(env));
+    await withHeartbeat(env, "review-emails", () => sendDueReviewEmails(env));
   },
 };
 
@@ -583,6 +584,30 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json({ success: true, displaced }, 200, origin);
     }
 
+    // A squad save as changes: only who was added and removed, merged with
+    // anyone else's changes unless both touched the same player.
+    if (method === "POST" && pathname === "/api/squad/changes") {
+      const user = await requireCoach(request, env);
+      const body = (await readJsonBody(request)) as SquadChangesBody;
+      const result = await applySquadChanges(env, body, { email: user.email, personId: user.personId });
+      if (result.status === "conflict") {
+        const names = result.players.map((p) => p.name);
+        const message = names.length > 0
+          ? `Someone else changed ${names.join(", ")} in this squad. Check and save again.`
+          : "Someone else changed this squad. Check and save again.";
+        return json(
+          { error: "SQUAD_CONFLICT", message, players: result.players, version: result.version, selectedIds: result.selectedIds },
+          409,
+          origin,
+        );
+      }
+      return json(
+        { success: true, version: result.version, selectedIds: result.selectedIds, displaced: result.displaced },
+        200,
+        origin,
+      );
+    }
+
     // ── Ranking ────────────────────────────────────────────────────────────
     // Ranking reads are coach-only: they expose every player's ability
     // ranking, and the ranking screen lives under /coach. The matching
@@ -613,13 +638,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         origin,
       );
     }
+    // Making a player active or inactive: Section Captains only (owner
+    // decision, 2026-10-06), not every coach.
     if (method === "POST" && pathname === "/api/ranking/activate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await activatePlayer(env, body.playerId, user.email), 200, origin);
     }
     if (method === "POST" && pathname === "/api/ranking/deactivate") {
-      const user = await requireCoach(request, env);
+      const user = await requireSectionCaptain(request, env);
       const body = (await readJsonBody(request)) as { playerId: string };
       return json(await deactivatePlayer(env, body.playerId, user.email), 200, origin);
     }
@@ -673,7 +700,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await requestReviewEmail(env, user, String(body.commitmentId ?? "")), 200, origin);
     }
 
-    // ── Waivers & declarations (Supabase backend; src/declarations.ts) ────
+    // ── Waivers & declarations (src/declarations.ts) ──────────────────────
     if (method === "GET" && pathname === "/api/declarations/me") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getMyDeclarations(env, user), 200, origin);
@@ -684,7 +711,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await submitDeclarations(env, user, body ?? {}), 200, origin);
     }
 
-    // ── Season plan (Supabase backend; src/seasonPlan.ts) ─────────────────
+    // ── Season plan (src/seasonPlan.ts) ───────────────────────────────────
     // The player's own plan; the board decides per person which teams they see.
     if (method === "GET" && pathname === "/api/season-plan/me") {
       const user = await requireAuthorizedUser(request, env);
@@ -700,7 +727,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await getSeasonPlanBoard(env, user), 200, origin);
     }
 
-    // ── Personal details (Supabase backend; src/details.ts) ───────────────
+    // ── Personal details (src/details.ts) ─────────────────────────────────
     // The signed-in person's own details only.
     if (pathname.startsWith("/api/details/")) {
       const user = await requireAuthorizedUser(request, env);
@@ -718,7 +745,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── The new joiner form (Supabase backend; src/apply.ts) ───────────────
+    // ── The new joiner form (src/apply.ts) ────────────────────────────────
     // The signed-in applicant's own application only.
     if (pathname.startsWith("/api/apply/")) {
       const user = await requireAuthorizedUser(request, env);
@@ -738,7 +765,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     // ── New joiners: the Section Captain's screens and the convenors' tasks
-    // (Supabase backend; worker/src/joiners.ts checks who may do what).
+    // (worker/src/joiners.ts checks who may do what).
     if (pathname.startsWith("/api/joiners")) {
       const user = await requireAuthorizedUser(request, env);
       if (method === "GET" && pathname === "/api/joiners/options") return json(await getJoinerOptions(env, user), 200, origin);
@@ -755,7 +782,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (one?.[2] === "decline") return json(await declineRegistration(env, user, one[1]), 200, origin);
       }
     }
-    // ── Hockey Rules quizzes (Supabase; quizzes.ts) ───────────────────────
+    // ── Hockey Rules quizzes (quizzes.ts) ─────────────────────────────────
     if (pathname === "/api/quizzes" || pathname.startsWith("/api/quizzes/")) {
       const user = await requireAuthorizedUser(request, env);
       if (method === "GET" && pathname === "/api/quizzes") return json(await listQuizzes(env, user), 200, origin);
@@ -771,7 +798,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Registering to join (Supabase; trials.ts) ─────────────────────────
+    // ── Registering to join (trials.ts) ───────────────────────────────────
     // Signing up works off the confirmed email alone: there's no People record yet.
     if (method === "POST" && pathname === "/api/join/register") {
       const email = await requireVerifiedEmail(request, env);
@@ -792,7 +819,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Special events (Supabase; events.ts) ──────────────────────────────
+    // ── Special events (events.ts) ────────────────────────────────────────
     if (pathname.startsWith("/api/events")) {
       const user = await requireAuthorizedUser(request, env);
       const q = url.searchParams.get("q") ?? "";
@@ -825,7 +852,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Signing new members' applications (Supabase; applicationSigning.ts) ──
+    // ── Signing new members' applications (applicationSigning.ts) ─────────
     const signing = pathname.match(/^\/api\/applications\/([A-Za-z0-9-]{3,40})\/(sign|drafts|pdf|send)$/);
     if (signing) {
       const user = await requireAuthorizedUser(request, env);
@@ -854,7 +881,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
     }
 
-    // ── HKHA registration (Supabase backend; src/registration.ts) ─────────
+    // ── Officers' admin screens (src/admin/) ──────────────────────────────
+    // Each route checks its own section (admin/routes.ts).
+    if (isAdminPath(pathname)) {
+      const result = await adminRoute(request, env, url);
+      if (result !== undefined) return json(result, 200, origin);
+    }
+
+    // ── HKHA registration (src/registration.ts) ───────────────────────────
     // HKID and passport numbers: the Hockey Convenor only.
     if (pathname.startsWith("/api/registration/")) {
       const user = await requireSection(request, env, "registration");
@@ -871,7 +905,45 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Volunteering (Supabase backend; src/volunteering.ts) ──────────────
+    // ── Re-registrations to review (src/reRegistrations.ts) ───────────────
+    // Data checks: the Men's Convenor and the Section Captains.
+    if (method === "POST" && pathname.startsWith("/api/admin/registration-events/")) {
+      const resolve = pathname.match(/^\/api\/admin\/registration-events\/([^/]+)\/resolve$/);
+      if (resolve) {
+        const user = await requireSection(request, env, "dataChecks");
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(await resolveRegistrationEvent(env, user, resolve[1], body), 200, origin);
+      }
+    }
+
+    // ── Suspensions (src/discipline.ts) ────────────────────────────────────
+    // The Men's Convenor only.
+    if (pathname.startsWith("/api/discipline/")) {
+      const user = await requireSection(request, env, "discipline");
+      if (method === "GET" && pathname === "/api/discipline/suspensions") return json(await getSuspensionsBoard(env), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/discipline/suspensions") return json(await createSuspension(env, user, body), 200, origin);
+        const one = pathname.match(/^\/api\/discipline\/suspensions\/([^/]{1,64})(\/clear)?$/);
+        if (one?.[2]) return json(await clearSuspension(env, user, one[1], body), 200, origin);
+        if (one) return json(await updateSuspension(env, user, one[1], body), 200, origin);
+      }
+    }
+
+    // ── Data checks (src/dataChecks.ts) ───────────────────────────────────
+    // The Men's Convenor and the Section Captains.
+    if (method === "GET" && pathname === "/api/admin/data-checks") {
+      await requireSection(request, env, "dataChecks");
+      return json(await getDataChecks(env), 200, origin);
+    }
+    const cardLink = pathname.match(/^\/api\/admin\/match-cards\/([^/]{1,64})\/link$/);
+    if (method === "POST" && cardLink) {
+      const user = await requireSection(request, env, "dataChecks");
+      const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+      return json(await linkMatchCard(env, user, cardLink[1], body), 200, origin);
+    }
+
+    // ── Volunteering (src/volunteering.ts) ────────────────────────────────
     if (method === "GET" && pathname === "/api/volunteering/me") {
       const user = await requireAuthorizedUser(request, env);
       return json(await getMyVolunteering(env, user), 200, origin);
@@ -886,7 +958,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await getVolunteersBoard(env, user), 200, origin);
     }
 
-    // ── Umpiring duties (Supabase backend; src/umpiring.ts) ───────────────
+    // ── Umpiring duties (src/umpiring.ts) ─────────────────────────────────
     // The club's umpires take duties; the Umpire Coordinator (and the
     // Section Captains) confirms, assigns, marks no-shows and reports.
     if (pathname.startsWith("/api/umpiring")) {
@@ -911,7 +983,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Kit (Supabase backend; src/kit.ts) ────────────────────────────────
+    // ── Kit (src/kit.ts) ──────────────────────────────────────────────────
     // Anyone signed in sees their own kit and hands on what they hold; the
     // board, spares and orders are the kit section's (Kit Convenor, Section
     // Captains).
@@ -952,7 +1024,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // ── Commitment reviews (Supabase backend; src/reviews.ts) ─────────────
+    // ── Commitment reviews (src/reviews.ts) ───────────────────────────────
     // Signed-in only: who may see or submit each review is decided per
     // review (the member, their sponsor, Membership Officers).
     const reviewMatch = pathname.match(/^\/api\/reviews\/([^/]+)(?:\/(member|sponsor|officer))?$/);
@@ -1010,12 +1082,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   } catch (err) {
     if (err instanceof HttpError) return errorJson(err.message, err.status, origin, err.code);
     noteRequestError(err); // for error_log: every branch below is a 5xx
-    if (err instanceof AirtableError) {
-      // Never return the Airtable URL, base id or response body to the
-      // client - only the detail goes to Workers Logs.
-      console.error("Airtable error:", err.message);
-      return errorJson("Upstream data service error", 502, origin, "UPSTREAM_ERROR");
-    }
     if (err instanceof SupabaseError) {
       // Which table, status and code - enough to diagnose from the screen,
       // never the database's message, which can quote a value.

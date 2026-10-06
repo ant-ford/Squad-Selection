@@ -2,7 +2,7 @@ import type { Env } from "../../env";
 import { db, eq, inList } from "../supabase";
 import type { TeamsRepo } from "../teams";
 import type { OfficersRepo, Office } from "../officers";
-import type { MatchesRepo, MatchPatch } from "../matches";
+import type { MatchesRepo, MatchPatch, SelectionChangeResult } from "../matches";
 import type { MatchCardsRepo } from "../matchCards";
 import type { AvailabilityExceptionsRepo } from "../availabilityExceptions";
 import type { AvailabilityRulesRepo } from "../availabilityRules";
@@ -37,7 +37,7 @@ export function supabaseOfficers(env: Env): OfficersRepo {
       "api_offices",
       `select=*&office=${inList(offices)}${activeOnly ? "&status=eq.Active" : ""}&order=id`,
     );
-    // In the order the offices were asked for, as the Airtable repository returns them.
+    // In the order the offices were asked for.
     return offices.flatMap((office) => rows.filter((r) => r.office === office));
   };
   return {
@@ -79,6 +79,19 @@ export function supabaseMatches(env: Env): MatchesRepo {
       }
       if (patch.selectedPlayersHome) await d.rpc("set_match_selection", { p_match: id, p_side: "home", p_people: patch.selectedPlayersHome });
       if (patch.selectedPlayersAway) await d.rpc("set_match_selection", { p_match: id, p_side: "away", p_people: patch.selectedPlayersAway });
+    },
+
+    async applySelectionChanges(id, change) {
+      const r = await d.rpc<SelectionChangeResult & { otherVersion?: number | null }>("apply_squad_changes", {
+        p_match: id,
+        p_side: change.side,
+        p_add: change.add,
+        p_remove: change.remove,
+        p_version: change.version,
+        p_actor: change.actorId ?? null,
+        p_source: change.source,
+      });
+      return r.status === "ok" ? { ...r, otherVersion: r.otherVersion ?? null } : r;
     },
 
     listForSeason: (season) => list(season ? `season=${eq(season)}` : "order=id"),
