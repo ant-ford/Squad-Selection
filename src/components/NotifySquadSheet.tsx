@@ -95,7 +95,7 @@ export default function NotifySquadSheet({
             </h2>
             <p className="text-xs text-muted-foreground">
               {askingAvailability
-                ? 'Nobody selected yet · players answer in Eddy'
+                ? 'Nobody selected yet'
                 : `${players.length} selected · opens WhatsApp, you press send`}
             </p>
           </div>
