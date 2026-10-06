@@ -118,7 +118,16 @@ export async function personAsPlayer(env: Env, person: AuthPerson): Promise<Play
   return { ...person, photo: person.photoFileId ? await fileLink(env, person.photoFileId) : undefined };
 }
 
-/** One call: everything auth.ts decides on for this (normalized) email. */
-export async function loadAuthContext(env: Env, email: string): Promise<AuthContext> {
-  return parseAuthContext(await db(env).rpcRead<unknown>("auth_context", { p_email: email }));
+export interface AuthContextRepo {
+  /** One call: everything auth.ts decides on for this (normalized) email. */
+  load(email: string): Promise<AuthContext>;
+}
+
+/** The accessor tests replace (tests/helpers/fakeRepos.ts), like the data modules' ones. */
+export function authContexts(env: Env): AuthContextRepo {
+  return {
+    async load(email) {
+      return parseAuthContext(await db(env).rpcRead<unknown>("auth_context", { p_email: email }));
+    },
+  };
 }

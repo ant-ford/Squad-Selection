@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { invalidateAll } from "../worker/src/cache";
-import { getOfficerLinks } from "../worker/src/reference";
 import { getSeasonContext } from "../worker/src/seasonContext";
 import worker from "../worker/src/index";
 import type { Env } from "../worker/src/env";
@@ -55,20 +54,6 @@ const db = useFakeRepos(() => ({
 
 beforeEach(() => invalidateAll());
 afterEach(() => vi.unstubAllGlobals());
-
-describe("officer links", () => {
-  it("keeps Active rows only, keyed by the linked People record", async () => {
-    const links = await getOfficerLinks(ENV);
-    expect(links.rolesByPersonId).toEqual({
-      [ANN]: [{ office: "membershipOfficer", designation: "Men's Membership Officer" }],
-      // The Retired Membership Officer and Section Captain rows grant nothing.
-      [CY]: [
-        { office: "sectionChair", designation: "Chairman" },
-        { office: "sectionCaptain", designation: "Men's Captain" },
-      ],
-    });
-  });
-});
 
 describe("season scans", () => {
   it("reads only carded appearances from the previous season", async () => {

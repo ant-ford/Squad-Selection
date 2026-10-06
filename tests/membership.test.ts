@@ -273,11 +273,11 @@ describe("the board", () => {
   it("asks People for the membership fields only, never the CRM", async () => {
     const res = await board();
     // The board's own read is the membership view, and no wider People read
-    // (the squad list, the chairman's directory) goes into it: only sign-in
-    // and the contact lookup besides.
+    // (the squad list, the chairman's directory) goes into it: only the contact lookup
+    // besides (sign-in reads through auth_context).
     expect(db.callsTo("people", "listMembershipBoard").length).toBeGreaterThan(0);
     expect([...new Set(db.callsTo("people").map((c) => c.method))].sort()).toEqual(
-      ["findByEmail", "listContactsByIds", "listMembershipBoard"],
+      ["listContactsByIds", "listMembershipBoard"],
     );
     expect(JSON.stringify(res)).not.toMatch(/HKID|A123456|Bank|000-111/);
   });

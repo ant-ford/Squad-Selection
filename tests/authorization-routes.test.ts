@@ -142,15 +142,15 @@ const SESSION_EMAILS: Record<string, string> = {
   [TOKENS.adh]: "adh@hkfc.com",
   [TOKENS.stranger]: "stranger@hkfc.com",
 };
-
+/** What requireAuthorizedUser resolves for the ordinary player (the access fields): Active, no coach link, no office. */
 /** What requireAuthorizedUser resolves for the ordinary player: Active, no coach link, no office. */
-const PLAYER_USER: AuthorizedUser = {
+const PLAYER_USER: AuthorizedUser = expect.objectContaining({
   email: "player@hkfc.com", personId: PLAYER, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-};
+});
 /** ...and for the coach: linked as Teams.Coach on Men's 1s. */
-const COACH_USER: AuthorizedUser = {
+const COACH_USER: AuthorizedUser = expect.objectContaining({
   email: "coach@hkfc.com", personId: COACH, role: "coach", coachTeams: ["Men's 1s"], isSectionCaptain: false, officerRoles: [],
-};
+});
 
 const db = useFakeRepos(() => ({
   people: [
@@ -739,14 +739,14 @@ describe("office holders", () => {
     signInAs(TOKENS.chair);
     const res = await call("/api/my-profile");
     expect(res.status).toBe(200);
-    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, {
+    expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, expect.objectContaining({
       email: "chair@hkfc.com",
       personId: CHAIR,
       role: "player",
       coachTeams: [],
       isSectionCaptain: false,
       officerRoles: [{ office: "sectionChair", designation: "Chairman" }],
-    });
+    }));
   });
 
   it("opens the chairman's section to the Section Chair", async () => {

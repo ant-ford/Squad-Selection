@@ -113,7 +113,7 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
 /**
  * Fan-out for a write that changes club reference data (team rosters,
  * coach links, ability/rank fields) - every read built on top of
- * getReferenceData/getTeamCoachLinks or a per-match player list would
+ * getReferenceData/getActiveTeams or a per-match player list would
  * otherwise keep serving the pre-write snapshot.
  */
 export async function invalidateReferenceData(env: Env): Promise<void> {

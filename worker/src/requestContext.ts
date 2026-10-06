@@ -11,7 +11,6 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { CacheVersions } from "./cacheVersions";
-import type { CacheVersions } from "./cacheVersions";
 
 export interface RequestStats {
   /** Supabase (PostgREST) calls made for this request. */

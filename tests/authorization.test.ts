@@ -7,13 +7,38 @@ const mocks = vi.hoisted(() => ({
   getOfficerLinks: vi.fn(),
 }));
 
-vi.mock("../worker/src/reference", () => ({
-  getPlayerByEmail: mocks.getPlayerByEmail,
-  getTeamCoachLinks: mocks.getTeamCoachLinks,
-  getOfficerLinks: mocks.getOfficerLinks,
-}));
+// auth_context gathers these three in one call; the tests keep describing
+// them separately (the person, the Teams links, the Active offices) and
+// this assembles the call's answer from them.
+vi.mock("../worker/src/authContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../worker/src/authContext")>();
+  return {
+    ...actual,
+    authContexts: (env: unknown) => ({
+      load: async (email: string) => {
+        const [player, links, officers] = await Promise.all([
+          mocks.getPlayerByEmail(env, email),
+          mocks.getTeamCoachLinks(env),
+          mocks.getOfficerLinks(env),
+        ]);
+        if (!player) return actual.parseAuthContext({ person: null });
+        const roles = (officers.rolesByPersonId[player.id] ?? []) as { office: string; designation: string }[];
+        const sectionCaptain = links.sectionCaptainIds.includes(player.id);
+        return actual.parseAuthContext({
+          person: { ...player, uuid: `uuid-${player.id}` },
+          isTeamCoach: links.coachIds.includes(player.id),
+          coachTeams: links.coachTeamNamesByPersonId[player.id] ?? [],
+          teamSectionCaptain: sectionCaptain,
+          allTeamNames: sectionCaptain || roles.some((r) => r.office === "assistantDirector") ? links.allTeamNames : [],
+          offices: roles.map((r) => ({ role: r.office, office: r.office, designation: r.designation })),
+          versions: { matches: 3 },
+        });
+      },
+    }),
+  };
+});
 
-import { requireAuthorizedUser, requireCoach, requireSection, sectionsFor, normalizeEmail } from "../worker/src/auth";
+import { claimedEmail, requireAuthorizedUser, requireCoach, requireSection, sectionsFor, normalizeEmail } from "../worker/src/auth";
 import { HttpError } from "../worker/src/http";
 import { invalidateAll } from "../worker/src/cache";
 
@@ -42,7 +67,7 @@ const teamLinks = {
   allTeamNames: ["Men's 1s", "Men's 2s", "Men's 3s"],
 };
 
-// Active officer rows only - getOfficerLinks drops Retired ones before this.
+// Active officer rows only - auth_context reads status = Active rows alone.
 const officerLinks = {
   rolesByPersonId: {
     recOfficer: [{ office: "membershipOfficer", designation: "Men's Membership Officer" }],
@@ -536,5 +561,75 @@ describe("the Assistant Director of Hockey", () => {
     const user = await requireAuthorizedUser(authedRequest(), ENV);
 
     expect(sectionsFor(user)).toEqual(["membership", "chairman", "kit", "planning", "trials"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// auth_context alongside Supabase's check (owner decision, 2026-10-06:
+// Supabase still verifies every request; the person is read in parallel)
+// ---------------------------------------------------------------------------
+
+/** An access token as Supabase issues it: only the payload matters here. */
+function jwt(claims: Record<string, unknown>): string {
+  const b64 = btoa(JSON.stringify(claims)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `header.${b64}.signature`;
+}
+const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
+
+describe("auth_context alongside the session check", () => {
+  it("reads the person for the token's email while Supabase is still checking it", async () => {
+    let answer!: (r: Response) => void;
+    vi.mocked(fetch).mockImplementation(() => new Promise<Response>((res) => { answer = res; }));
+    mocks.getPlayerByEmail.mockResolvedValue(people.activePlayer);
+
+    const pending = requireAuthorizedUser(authedRequest(jwt({ email: "Player@HKFC.com", exp: inAnHour() })), ENV);
+    await new Promise((r) => setTimeout(r, 0));
+    // Asked before Supabase answered, for the normalized claimed email.
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledWith(ENV, "player@hkfc.com");
+
+    answer(new Response(JSON.stringify({ email: "player@hkfc.com" }), { status: 200 }));
+    const user = await pending;
+    expect(user.personId).toBe("recP1");
+    // The early answer was used: one read, not a second one after verifying.
+    expect(mocks.getPlayerByEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads again for the verified email when the token claimed another", async () => {
+    supabaseReturns("coach@hkfc.com");
+    mocks.getPlayerByEmail.mockImplementation(async (_env: unknown, email: string) =>
+      email === "coach@hkfc.com" ? people.activeCoach : people.activePlayer,
+    );
+
+    const user = await requireAuthorizedUser(authedRequest(jwt({ email: "player@hkfc.com", exp: inAnHour() })), ENV);
+
+    expect(user.personId).toBe("recCoach");
+    expect(mocks.getPlayerByEmail.mock.calls.map((c) => c[1])).toEqual(["player@hkfc.com", "coach@hkfc.com"]);
+  });
+
+  it("answers 401 for a rejected token, whatever the early read did", async () => {
+    supabaseRejects();
+    mocks.getPlayerByEmail.mockRejectedValue(new Error("database down"));
+
+    await expectError(requireAuthorizedUser(authedRequest(jwt({ email: "player@hkfc.com", exp: inAnHour() })), ENV), 401, "UNAUTHORIZED");
+  });
+
+  it("doesn't read early for an expired token or one without an email", () => {
+    const req = (claims: Record<string, unknown>) => authedRequest(jwt(claims));
+    expect(claimedEmail(req({ email: "a@x.com", exp: Math.floor(Date.now() / 1000) - 5 }))).toBeNull();
+    expect(claimedEmail(req({ sub: "x", exp: inAnHour() }))).toBeNull();
+    expect(claimedEmail(authedRequest("not-a-jwt"))).toBeNull();
+    expect(claimedEmail(req({ email: " A@X.com ", exp: inAnHour() }))).toBe("a@x.com");
+  });
+
+  it("carries the person, their uuid and the cache versions on the user", async () => {
+    supabaseReturns("player@hkfc.com");
+    mocks.getPlayerByEmail.mockResolvedValue(people.activePlayer);
+
+    const user = await requireAuthorizedUser(authedRequest(), ENV);
+
+    expect(user.personUuid).toBe("uuid-recP1");
+    expect(user.person).toMatchObject({ id: "recP1", uuid: "uuid-recP1", active: true });
+    expect(user.versions.matches).toBe(3);
+    expect(user.versions.people).toBe(0);
   });
 });

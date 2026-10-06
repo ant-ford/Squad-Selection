@@ -26,10 +26,10 @@ import type { Env } from "../worker/src/env";
 import type { ExceptionChanges } from "../worker/src/data/availabilityExceptions";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { exception, match, person, recId, team } from "./helpers/factories";
+import { exception, match, person, recId, team, signedIn } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return signedIn({ email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] });
 }
 
 const ENV = {

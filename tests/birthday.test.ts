@@ -7,7 +7,7 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import type { Env } from "../worker/src/env";
 import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { person as personRow, recId, team } from "./helpers/factories";
+import { person as personRow, recId, team, signedIn } from "./helpers/factories";
 
 // The dashboard runs on the Supabase backend: the repositories in memory,
 // and the fake PostgREST (empty) for what getMyFixtures asks Supabase
@@ -99,9 +99,9 @@ describe("the player dashboard's birthday flag", () => {
       teams: [team({ id: recId("TA"), teamName: "A", teamRank: 1, active: true })],
     });
   };
-  const ann: AuthorizedUser = {
+  const ann: AuthorizedUser = signedIn({
     email: "ann@hkfc.com", personId: ANN, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-  };
+  });
 
   beforeEach(() => {
     invalidateAll();
@@ -135,9 +135,9 @@ describe("teammates' birthdays on the dashboard", () => {
       id: recId(label), preferredName: name, surname: "X", email: `${label.toLowerCase()}@hkfc.com`, active: true,
       birthday: dob.slice(5), crm: { dateOfBirth: dob }, ...overrides,
     });
-  const ann: AuthorizedUser = {
+  const ann: AuthorizedUser = signedIn({
     email: "ann@hkfc.com", personId: recId("Ann"), role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-  };
+  });
 
   beforeEach(() => {
     invalidateAll();

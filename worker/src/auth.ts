@@ -5,7 +5,7 @@ import type { Office, OfficerRole } from "./reference";
 import { getCached } from "./cache";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
 import { noteRequestPerson, noteRequestVersions } from "./requestContext";
-import { loadAuthContext, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
+import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
 import type { CacheVersions } from "./cacheVersions";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
@@ -85,11 +85,11 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // readable claim, or a different verified email) it is asked again for
   // the verified one. One database call, with no re-lookups behind it.
   const claimed = claimedEmail(request);
-  const early = claimed ? loadAuthContext(env, claimed) : null;
+  const early = claimed ? authContexts(env).load(claimed) : null;
   // A rejected token must answer 401, whatever the early read did.
   early?.catch(() => undefined);
   const normalizedEmail = normalizeEmail(await verifySupabaseSession(request, env));
-  const context = early && claimed === normalizedEmail ? await early : await loadAuthContext(env, normalizedEmail);
+  const context = early && claimed === normalizedEmail ? await early : await authContexts(env).load(normalizedEmail);
   return authorize(normalizedEmail, context);
 }
 
