@@ -26,7 +26,7 @@ export default function AvailabilityNoteSheet({
   const [notes, setNotes] = useState(fixture.playerNotes);
 
   return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
+    <Sheet open dirty={!busy && notes.trim() !== fixture.playerNotes.trim()} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
         <div className="px-4 py-6">
           <SheetHeader onClose={onClose}>

@@ -14,6 +14,7 @@ import { useMyProfile } from '@/lib/queries';
 import { downloadRegistration, getRegistrationBoard, markRegistered, saveRegistrationDetails, unmarkRegistered } from '@/api/registration';
 import { hkDateKey } from '@shared/hkDateKey';
 import { REASON_LABEL, isVisiting, missingDetails, suggestRegisteredName, tidyRegisteredName, type RegistrationPlayer } from '@shared/registration';
+import { errorMessage } from '@/lib/errorMessages';
 
 type View = 'todo' | 'all' | 'missing';
 const VIEWS: { key: View; label: string }[] = [
@@ -25,7 +26,7 @@ const NO_TEAM = 'No registered team';
 const selectClass = inputClass.replace('w-full', 'w-auto');
 
 const chip = 'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full';
-const failed = (err: unknown) => toast.error(err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Try again.');
+const failed = (err: unknown) => toast.error(errorMessage(err, 'save'));
 
 async function copy(label: string, value: string) {
   try {

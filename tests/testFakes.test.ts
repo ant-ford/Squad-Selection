@@ -165,7 +165,7 @@ describe("fake repositories", () => {
       matches: [match({ id: M1, season: "2026-2027" })],
       officers: [office("sponsor", ALICE), office("sponsor", null, { status: "Retired" })],
     });
-    const env = { DATA_BACKEND: "supabase" } as Env;
+    const env = {} as Env;
     // Case-insensitive email, active row preferred.
     expect((await people(env).findByEmail(" alice@x.COM "))?.id).toBe(ALICE);
     // Row views read crm first, then the Player field of that name.

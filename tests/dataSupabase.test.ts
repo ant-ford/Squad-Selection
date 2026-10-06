@@ -138,7 +138,7 @@ describe("Supabase data client", () => {
     expect(inList(["Played", "A,B"])).toBe('in.("Played","A%2CB")');
   });
 
-  it("counts calls in Server-Timing only when Supabase was used", async () => {
+  it("counts calls in Server-Timing only when the database was used", async () => {
     const quiet = newRequestStats();
     expect(serverTimingHeader(quiet, 5)).not.toContain("db;");
     stubFetch(() => ({ body: [] }));
