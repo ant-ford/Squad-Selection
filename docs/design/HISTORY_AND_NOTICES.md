@@ -1,8 +1,8 @@
 # Design notes: change history (Track C) and notices (Track D)
 
 From the 6 Oct 2026 review. The build waits for session 3's admin and API
-work, which changes the same Worker modules. **Questions for the owner are in
-bold.** Eddy sends no new emails for any of this.
+work, which changes the same Worker modules. The owner's decisions (6 Oct 2026)
+are under each track. Eddy sends no new emails for any of this.
 
 ## Track C: change history
 
@@ -78,14 +78,12 @@ bold.** Eddy sends no new emails for any of this.
     whichever overlay component exists at the time; Track B migrates it later.
 - README: one line saying squad selections and officer changes are audited.
 
-### Questions
+### Decisions (owner, 6 Oct 2026)
 
-1. **Store old and new values for non-personal fields? This changes the
-   "names only" rule.** Recommended: yes. Personal and billing fields stay
-   names-only.
-2. **Log coaches' availability answers (not players' own)?** Recommended: yes.
-3. **How long to keep history?** Recommended: two seasons, removed by the
-   existing nightly retention job.
+1. Old and new values are stored for non-personal fields. Personal and billing
+   fields stay names-only.
+2. Coaches' availability answers are logged; players' own answers are not.
+3. History is kept for two seasons, then removed by the nightly retention job.
 
 ### Cost
 
@@ -152,8 +150,8 @@ indexed read per changed row.
 
 - **"WhatsApp the coach"**: after a No or Maybe on a fixture you're selected
   for, a link to your team's coach with the fixture filled in.
-  - **This shows coaches' mobile numbers to their own players. Today no screen
-    does that. Owner's call.**
+  - This shows coaches' mobile numbers to their own players, which no screen
+    does today. Allowed, but built last (owner: probably not needed).
 - **"Changes since you notified"** in NotifySquadSheet:
   - New table `squad_notices (match_id, side, notified_at, notified_by,
     squad uuid[])`, written when the coach copies the announcement or opens a
@@ -204,7 +202,7 @@ indexed read per changed row.
 - NotifySquadSheet offers a ready message: "Change: HKFC C v Pak A is now
   Sun 10:30 at King's Park".
 
-### D7 Web Push (after D1-D6, only with the owner's go-ahead)
+### D7 Web Push (after D1-D6; owner approved)
 
 - **Personal alerts only:**
   - a selected player turns Unavailable → the coach;
@@ -224,21 +222,22 @@ indexed read per changed row.
 
 ### D8 Training check-in (optional)
 
-A weekly "Training" event using the existing events and QR attendance. Its
-check-ins would pre-fill the practice % in commitment reviews.
-**Owner decision: build it or not.**
+Not built (owner, 6 Oct 2026). The idea was a weekly "Training" event using
+the existing events and QR attendance, pre-filling the practice % in
+commitment reviews.
 
-### Questions for the owner
+### Decisions (owner, 6 Oct 2026)
 
-1. D4: show coaches' mobile numbers to their own players ("WhatsApp the
-   coach")?
-2. D2: should every Active Section Captain get the reactivation task, with
-   the first answer closing it for all? Recommended: yes.
-3. D6: "Postponed" and "Moved from" shown for 7 days. OK?
-4. D7: go-ahead for push once D1-D6 are live?
-5. D8: training check-in, yes or no?
+- D2: every Active Section Captain gets the reactivation task; the first answer
+  closes it for all.
+- D4: "WhatsApp the coach" is allowed (coaches' mobiles to their own players),
+  but the owner thinks it probably isn't needed. Build it last, only if time
+  allows.
+- D6: "Postponed" and "Moved from" show for 7 days.
+- D7: go ahead with push once D1-D6 are live.
+- D8: no training check-in.
 
 ### Order
 
-D5 (smallest, and it feeds D3) → D6 → D1 → D2 → D3 → D4, then D7 if
-approved.
+D5 (smallest, and it feeds D3) → D6 → D1 → D2 → D3 → D4's squad
+changes → D7. "WhatsApp the coach" last, if time allows.
