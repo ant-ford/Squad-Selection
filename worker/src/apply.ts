@@ -28,7 +28,6 @@ import {
   MAX_CLUBS,
   MAX_RELATIVES,
   MAX_TRIALS,
-  PRIVATE_CLUBS,
   childNeedsHkid,
   childProblem,
   childSigns,

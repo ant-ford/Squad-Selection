@@ -1,5 +1,6 @@
 import { linkId } from "./airtable";
-import { isFriendly, isQualifyingPlayUpCard, playUpAllowance } from "./playUp";
+import { isFriendly, isQualifyingPlayUpCard } from "./playUp";
+import { playUpAllowance } from "../../shared/playUpAllowance";
 import { hkfcSides } from "./match";
 import { UNRANKED_TEAM_RANK } from "./reference";
 import type { CardSuspensionState } from "./suspension";
@@ -60,14 +61,6 @@ export interface VirtualSelection {
 type TeamMap = Map<string, Team>;
 type RankMap = Record<string, number>;
 type SameDayTeamFixture = { matchId: string; teamName: string };
-
-function buildRankMap(teamMap: TeamMap): RankMap {
-  const rm: RankMap = {};
-  for (const [name, t] of teamMap.entries()) {
-    rm[name] = t.teamRank ?? UNRANKED_TEAM_RANK;
-  }
-  return rm;
-}
 
 function selectionKey(matchId: string, teamName: string): string {
   return `${matchId}:${teamName}`;

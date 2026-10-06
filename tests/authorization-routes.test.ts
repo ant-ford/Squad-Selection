@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => {
     getMyFixtures: vi.fn(),
     getUpcomingFixtures: vi.fn(),
     getPlayersForMatch: vi.fn(),
-    getSquadForMatch: vi.fn(),
     getAvailabilityForMatch: vi.fn(),
     syncSquad: vi.fn(),
     getPlayerSeasonStats: vi.fn(),
@@ -38,8 +37,6 @@ const mocks = vi.hoisted(() => {
     getActiveRanking: vi.fn(),
     getInactiveRanking: vi.fn(),
     setAbilityGroupConfig: vi.fn(),
-    movePlayerToRank: vi.fn(),
-    movePlayerRelative: vi.fn(),
     reorderRanking: vi.fn(),
     activatePlayer: vi.fn(),
     deactivatePlayer: vi.fn(),
@@ -60,7 +57,6 @@ vi.mock("../worker/src/fixtures", () => ({
 }));
 vi.mock("../worker/src/squad", () => ({
   getPlayersForMatch: mocks.getPlayersForMatch,
-  getSquadForMatch: mocks.getSquadForMatch,
   getAvailabilityForMatch: mocks.getAvailabilityForMatch,
   syncSquad: mocks.syncSquad,
   setMatchKit: mocks.setMatchKit,
@@ -87,8 +83,6 @@ vi.mock("../worker/src/ranking", () => ({
   getActiveRanking: mocks.getActiveRanking,
   getInactiveRanking: mocks.getInactiveRanking,
   setAbilityGroupConfig: mocks.setAbilityGroupConfig,
-  movePlayerToRank: mocks.movePlayerToRank,
-  movePlayerRelative: mocks.movePlayerRelative,
   reorderRanking: mocks.reorderRanking,
   activatePlayer: mocks.activatePlayer,
   deactivatePlayer: mocks.deactivatePlayer,
@@ -197,7 +191,7 @@ beforeEach(() => {
   mocks.syncSquad.mockResolvedValue({ success: true });
   mocks.setTeamAutoSelectPlayers.mockResolvedValue({ success: true });
   mocks.getTeamAutoSelectPlayers.mockResolvedValue({ players: [] });
-  mocks.movePlayerToRank.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+  mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
 });
 
 // ---------------------------------------------------------------------------
@@ -226,7 +220,7 @@ describe("error codes", () => {
   });
 
   it("returns 403 COACH_ACCESS_REQUIRED when a player hits a coach-only route", async () => {
-    const res = await call("/api/ranking/move", jsonInit({ playerId: "recP9", newRank: 1 }));
+    const res = await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }));
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
@@ -337,8 +331,6 @@ describe("session-derived identity (IDOR prevention)", () => {
 describe("coach-only routes", () => {
   const coachOnlyCalls: { path: string; init: RequestInit }[] = [
     { path: "/api/ranking/config", init: jsonInit({ config: { A: 1, B: 1, C: 1, D: 1, E: 1, F: 1, G: 1 } }) },
-    { path: "/api/ranking/move", init: jsonInit({ playerId: "recP9", newRank: 1 }) },
-    { path: "/api/ranking/move-relative", init: jsonInit({ sourceId: "a", targetId: "b", position: "above" }) },
     { path: "/api/ranking/reorder", init: jsonInit({ playerIds: ["a", "b"] }) },
     { path: "/api/ranking/activate", init: jsonInit({ playerId: "recP9" }) },
     { path: "/api/ranking/deactivate", init: jsonInit({ playerId: "recP9" }) },
@@ -353,47 +345,19 @@ describe("coach-only routes", () => {
     expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
   });
 
-  it("allows a coach on POST /api/ranking/move and uses the session email for audit", async () => {
+  it("allows a coach on POST /api/ranking/reorder and uses the session email for audit", async () => {
     mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
 
     const res = await call(
-      "/api/ranking/move",
-      jsonInit({ playerId: "recP9", newRank: 1, actingEmail: "attacker@evil.com" }),
+      "/api/ranking/reorder",
+      jsonInit({ playerIds: ["recP9", "recP8"], actingEmail: "attacker@evil.com" }),
     );
     expect(res.status).toBe(200);
-    expect(mocks.movePlayerToRank).toHaveBeenCalledWith(ENV, "recP9", 1, "coach@hkfc.com", undefined);
+    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined);
   });
 
   it("passes the optional justification note through on ranking writes", async () => {
     mocks.requireCoach.mockResolvedValue(mocks.authorizedCoach);
-    mocks.movePlayerToRank.mockResolvedValue({ players: [], activeCount: 0, config: {} });
-    mocks.movePlayerRelative.mockResolvedValue({ players: [], activeCount: 0, config: {} });
-    mocks.reorderRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
-
-    await call(
-      "/api/ranking/move",
-      jsonInit({ playerId: "recP9", newRank: 4, justification: "needs more game time" }),
-    );
-    expect(mocks.movePlayerToRank).toHaveBeenLastCalledWith(
-      ENV,
-      "recP9",
-      4,
-      "coach@hkfc.com",
-      "needs more game time",
-    );
-
-    await call(
-      "/api/ranking/move-relative",
-      jsonInit({ sourceId: "recP9", targetId: "recP8", position: "above", justification: "form" }),
-    );
-    expect(mocks.movePlayerRelative).toHaveBeenLastCalledWith(
-      ENV,
-      "recP9",
-      "recP8",
-      "above",
-      "coach@hkfc.com",
-      "form",
-    );
 
     await call(
       "/api/ranking/reorder",
@@ -516,19 +480,6 @@ describe("misc routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("read routes require authentication", () => {
-  it("lets an authorized player read a match squad", async () => {
-    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
-    const res = await call("/api/match/recM1/squad");
-    expect(res.status).toBe(200);
-    expect(mocks.requireAuthorizedUser).toHaveBeenCalled();
-  });
-
-  it("forwards ?side= on a derby squad read (regression: the route used to ignore it)", async () => {
-    mocks.getSquadForMatch.mockResolvedValue({ players: [] });
-    await call("/api/match/recM1/squad?side=away");
-    expect(mocks.getSquadForMatch).toHaveBeenCalledWith(ENV, "recM1", "away");
-  });
-
   it("lets an authorized player read a fixture's team availability, forwarding ?side=", async () => {
     mocks.getTeamAvailabilityForMatch.mockResolvedValue({ selected: [], restOfTeam: [], suggestions: [] });
     const res = await call("/api/match/recM1/team-availability?side=away");
@@ -544,15 +495,6 @@ describe("read routes require authentication", () => {
     const res = await call("/api/match/recM1/team-availability");
     expect(res.status).toBe(401);
     expect(mocks.getTeamAvailabilityForMatch).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unauthenticated match squad read", async () => {
-    mocks.requireAuthorizedUser.mockRejectedValue(
-      new HttpError("Missing Authorization header", 401, "UNAUTHORIZED"),
-    );
-    const res = await call("/api/match/recM1/squad");
-    expect(res.status).toBe(401);
-    expect(mocks.getSquadForMatch).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -253,10 +253,6 @@ export function confirmedOf(duty: Pick<UmpireDuty, "assignments">): DutyAssignme
   return duty.assignments.find((a) => a.status === "confirmed" || a.status === "no_show");
 }
 
-export function isOpen(duty: Pick<UmpireDuty, "assignments" | "status">): boolean {
-  return duty.status !== "cancelled" && !confirmedOf(duty);
-}
-
 /** Monday of the HK week a date falls in, yyyy-mm-dd. */
 export function weekOf(iso: string): string {
   const day = hkDateKey(iso);

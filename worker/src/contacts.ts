@@ -22,8 +22,6 @@ export interface Contact {
 
 const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
-export { ID_RE } from "./data/people";
-
 /** People by record id, reading only what a WhatsApp shortcut needs. */
 export async function getPeopleByIds(env: Env, ids: Iterable<string>): Promise<Record<string, Contact>> {
   const rows = await people(env).listContactsByIds(ids);
