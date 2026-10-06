@@ -7,6 +7,7 @@ import {
   Flag,
   HeartHandshake,
   IdCard,
+  Landmark,
   ListChecks,
   Mail,
   PartyPopper,
@@ -43,6 +44,7 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
     s.includes('registration') && { to: '/registration', label: 'HKHA registration', icon: IdCard },
     s.includes('discipline') && { to: '/suspensions', label: 'Suspensions', icon: Ban },
     s.includes('people') && { to: '/people', label: 'People', icon: Contact },
+    s.includes('club') && { to: '/club', label: 'Offices and teams', icon: Landmark },
   ];
   return all.filter((i): i is MenuEntry => !!i);
 }
