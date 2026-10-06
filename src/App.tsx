@@ -381,7 +381,7 @@ function AppLoading() {
       <div
         aria-hidden
         className="absolute -top-48 left-1/2 -translate-x-1/2 h-[520px] w-[820px] rounded-full blur-3xl"
-        style={{ background: 'radial-gradient(closest-side, hsl(var(--primary) / 0.12), transparent 70%)' }}
+        style={{ background: 'radial-gradient(closest-side, hsl(var(--primary-tint) / 0.12), transparent 70%)' }}
       />
       <svg
         aria-hidden
@@ -411,7 +411,7 @@ function AppLoading() {
             boxShadow: 'inset -4px -5px 8px hsl(var(--foreground) / 0.14)',
           }}
         />
-        <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
+        <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary-tint/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
         <div className="relative mt-10 text-center">
           <p className={`font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground ${textIn}`}>HKFC</p>
           <p className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>Squad Selection</p>

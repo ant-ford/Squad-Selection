@@ -144,7 +144,7 @@ function PlayerItem({
               </span>
             )}
             {p.visiting ? (
-              <span className={`${chip} bg-primary/15 text-primary`}>Visiting player</span>
+              <span className={`${chip} bg-primary-tint/10 text-primary`}>Visiting player</span>
             ) : (
               isVisiting(p) && <span className={`${chip} bg-amber-500/15 text-amber-700`}>No HKID: visiting?</span>
             )}

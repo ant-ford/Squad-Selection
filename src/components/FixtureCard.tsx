@@ -185,7 +185,7 @@ export default function FixtureCard({
               {(shortfall > 0 || fixture.maybeCount > 0) && (
                 <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
                   {shortfall > 0 && <span className="text-destructive">{shortfall} short</span>}
-                  {fixture.maybeCount > 0 && <span className="text-amber-600">{fixture.maybeCount} maybe</span>}
+                  {fixture.maybeCount > 0 && <span className="text-amber-700">{fixture.maybeCount} maybe</span>}
                 </p>
               )}
             </>
