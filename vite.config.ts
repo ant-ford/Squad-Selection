@@ -30,7 +30,12 @@ export default defineConfig(({ command }) => ({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
-      includeAssets: ["assets/favicon.svg", "assets/apple-touch-icon.png"],
+      includeAssets: [
+        "assets/favicon.svg",
+        "assets/apple-touch-icon.png",
+        "assets/logo-plain.svg",
+        "assets/logo-animated.svg",
+      ],
       workbox: {
         // Drop precaches from previous deploys instead of leaving them to be
         // served alongside the current one.
