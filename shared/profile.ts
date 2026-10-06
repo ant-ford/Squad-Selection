@@ -20,7 +20,7 @@
  */
 
 import { hkDateKey } from "./hkDateKey";
-import { seasonStartYear } from "./membershipInsights";
+import { seasonStartYear } from "./season";
 import { joinPhone, normaliseHkid, phoneProblem, splitPhone } from "./phone";
 
 export type FieldType = "text" | "email" | "phone" | "date" | "select" | "multi" | "suggest" | "textarea" | "number" | "yesno" | "hkid" | "branch" | "account";

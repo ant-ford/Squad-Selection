@@ -775,42 +775,43 @@ describe("CORS origin allow-list", () => {
 // ---------------------------------------------------------------------------
 // Deep health check. Plain /health only proves the Worker is running. A
 // rejected Airtable token once looked exactly like a frontend fault: sign-in
-// worked, /health was green, and every screen behind the login failed, with
-// no unauthenticated route that touched Airtable to prove otherwise.
+// worked, /health was green, and every screen behind the login failed. The
+// deep check now asks the Supabase data project, and never Airtable.
 // ---------------------------------------------------------------------------
 
 describe("GET /health?deep=1", () => {
-  const withAirtable = async (responder: () => Response, path = "/health?deep=1") => {
+  const DATA_ENV = { ...ENV, DATA_SUPABASE_URL: "https://data.supabase.test", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" };
+  const withSupabase = async (responder: () => Response) => {
     invalidateAll();
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).includes("api.airtable.com")) return responder();
+      if (String(input).startsWith("https://data.supabase.test/rest/v1/api_teams")) return responder();
       throw new Error("unexpected fetch: " + String(input));
     }) as typeof fetch;
     try {
-      return await call(path);
+      return await worker.fetch(new Request("https://hkfc-api.test/health?deep=1"), DATA_ENV, CTX);
     } finally {
       globalThis.fetch = realFetch;
       invalidateAll();
     }
   };
 
-  it("reports airtable ok when the token works", async () => {
-    const res = await withAirtable(() => new Response(JSON.stringify({ records: [] }), { status: 200 }));
+  it("reports supabase ok when the data project answers, and asks nothing of Airtable", async () => {
+    const res = await withSupabase(() => new Response("[]", { status: 200 }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ status: "ok", airtable: "ok" });
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ status: "ok", supabase: "ok" });
+    expect(body).not.toHaveProperty("airtable");
   });
 
-  it("reports airtable error when the token is rejected, without leaking why", async () => {
-    const res = await withAirtable(
-      () => new Response('{"error":{"type":"AUTHENTICATION_REQUIRED"}}', { status: 401 }),
-    );
+  it("reports supabase error when the key is rejected, without leaking why", async () => {
+    const res = await withSupabase(() => new Response('{"message":"Invalid API key"}', { status: 401 }));
     // Still 200: the Worker itself is up. Only the dependency is broken.
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ status: "ok", airtable: "error" });
+    expect(body).toMatchObject({ status: "ok", supabase: "error" });
     // No message, no record, no configuration - detail belongs in the logs.
-    expect(JSON.stringify(body)).not.toMatch(/AUTHENTICATION_REQUIRED|test-token|test-base|airtable\.com/i);
+    expect(JSON.stringify(body)).not.toMatch(/Invalid API key|sb_secret|supabase\.test/i);
   });
 
   it("leaves plain /health untouched, and free of any Airtable call", async () => {

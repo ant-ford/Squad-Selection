@@ -7,15 +7,46 @@
     <title>HKFC Squad Selection</title>
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preconnect" href="%VITE_API_URL%" crossorigin />
+    <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
+    <style>
+      /* Shown until React mounts and replaces #root. Mirrors AppLoading in src/App.tsx. */
+      body{margin:0}
+      .boot{min-height:100vh;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;overflow:hidden;color:hsl(210 25% 7.8%);font-family:'Open Sans',sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+      .boot-glow{position:absolute;top:-12rem;left:50%;transform:translateX(-50%);height:520px;width:820px;border-radius:50%;filter:blur(64px);background:radial-gradient(closest-side,hsl(204 88% 53%/.12),transparent 70%)}
+      .boot-pitch{position:absolute;inset:0;width:100%;height:100%;color:hsl(204 88% 53%);opacity:.05}
+      .boot-col{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center}
+      .boot-ball{height:44px;width:44px;border-radius:50%;background:radial-gradient(hsl(210 25% 7.8%/.08) 1.2px,transparent 1.7px) 0 0/9px 9px,radial-gradient(circle at 32% 28%,#fff 0%,#f4f4f5 48%,#cfcfd4 100%);box-shadow:inset -4px -5px 8px hsl(210 25% 7.8%/.14);animation:boot-hop .9s cubic-bezier(.35,0,.65,1) infinite}
+      .boot-shadow{margin-top:16px;height:8px;width:44px;border-radius:100%;background:hsl(204 88% 53%/.25);filter:blur(1px);animation:boot-shadow .9s cubic-bezier(.35,0,.65,1) infinite}
+      .boot p{margin:0;animation:boot-up .6s ease-out both}
+      .boot-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+      @keyframes boot-hop{0%,100%{transform:translateY(0) scale(1.08,.9)}35%{transform:translateY(-34px) scale(.97,1.05)}50%{transform:translateY(-40px) scale(1,1)}65%{transform:translateY(-34px) scale(.97,1.05)}}
+      @keyframes boot-shadow{0%,100%{transform:scaleX(1);opacity:.9}50%{transform:scaleX(.45);opacity:.35}}
+      @keyframes boot-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+      @media (prefers-reduced-motion:reduce){.boot-ball,.boot-shadow{animation:none}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" id="boot-loader">
+        <div class="boot-glow"></div>
+        <svg class="boot-pitch" viewBox="0 0 914 550" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+          <rect x="4" y="4" width="906" height="542" />
+          <path d="M457 4v542M229 4v542M685 4v542M4 129a146 146 0 0 1 0 292M910 129a146 146 0 0 0 0 292" />
+          <circle cx="150" cy="275" r="4" fill="currentColor" stroke="none" />
+          <circle cx="764" cy="275" r="4" fill="currentColor" stroke="none" />
+        </svg>
+        <div class="boot-col">
+          <div class="boot-ball"></div>
+          <div class="boot-shadow"></div>
+          <div style="margin-top:40px">
+            <p class="boot-mono" style="font-size:30px;line-height:36px;font-weight:700;letter-spacing:.4em;padding-left:.4em">HKFC</p>
+            <p style="margin-top:8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.32em;animation-delay:.12s">Squad Selection</p>
+            <p class="boot-mono" style="margin-top:24px;font-size:10px;letter-spacing:.1em;color:hsl(210 25% 7.8%/.7);animation-delay:.24s">warming up…</p>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

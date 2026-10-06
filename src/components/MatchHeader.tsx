@@ -79,7 +79,7 @@ export default function MatchHeader({ match, matchId }: { match: MatchInfo; matc
             <KitToggle matchId={matchId} side={match.side} kit={match.kit ?? ''} />
           )}
           <span
-            className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-muted text-muted-foreground"
+            className="inline-flex items-center px-2 py-1 rounded-md text-sm font-medium bg-muted text-foreground"
             title={`${match.selectedCount} of ${match.targetSquadSize} selected`}
           >
             {match.selectedCount}/{match.targetSquadSize}

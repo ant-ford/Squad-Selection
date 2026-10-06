@@ -42,7 +42,7 @@ export default function FixtureList() {
   // Asking for past fixtures is what makes them exist in the payload at all:
   // a played match leaves the "Scheduled" status the API otherwise reads, so
   // filtering client-side could never have revealed last weekend's games.
-  const { data, isLoading } = useUpcomingFixtures(undefined, showPast);
+  const { data, isLoading, isPlaceholderData } = useUpcomingFixtures(undefined, showPast);
 
   // Coming back from a match keeps the tab and the scroll position, so a
   // coach working down the HKFC B list picks up at the fixture they left.
@@ -124,7 +124,7 @@ export default function FixtureList() {
             className={`text-xs px-2 py-1 rounded-md ${showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
             title={showPast ? 'Hide past fixtures' : 'Show past fixtures'}
           >
-            {showPast ? 'Showing past' : 'Hide past'}
+            {showPast ? 'Hide past' : 'Show past'}
           </button>
           <CoachCalendarExport activeTab={activeTab} />
         </div>
@@ -151,7 +151,7 @@ export default function FixtureList() {
           )}
         </div>
       ) : (
-        <div className="pt-4 space-y-6">
+        <div className={`pt-4 space-y-6 transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
           {sortedDates.map(dateKey => (
             <div key={dateKey}>
               <DateHeading date={dateKey} />
