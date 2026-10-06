@@ -100,15 +100,6 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
 }
 
 /**
- * Was the fan-out after a write to club reference data. The reference
- * data, the teams and the per-match player lists are now kept under the
- * cache versions (cache.ts getVersioned), which the write itself moves, so
- * there is nothing to drop. Kept, empty, for availability.ts until the
- * set_availability work replaces that path.
- */
-export async function invalidateReferenceData(_env: Env): Promise<void> {}
-
-/**
  * People-record lookup by email, cached. Every caller, including the
  * authorization path in worker/src/auth.ts, reuses the entry. Pass
  * { fresh: true } to bypass the cache for a live read.
