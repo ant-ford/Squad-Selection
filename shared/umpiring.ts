@@ -121,6 +121,8 @@ export interface UmpiringBoard {
     onCommitment: boolean;
     commitmentEndDate: string | null;
   };
+  /** The week's WhatsApp messages: the Umpire Coordinator office only (owner, 7 Oct 2026), not the Section Captains. */
+  messages: boolean;
   /** Coordinator only: the umpires' list, for putting someone down. */
   umpires?: UmpireOption[];
   /** Coordinator only: names of outside umpires used before, most recent first. */

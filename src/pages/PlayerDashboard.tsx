@@ -27,6 +27,7 @@ import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import EventsSection from '@/components/events/EventsSection';
 import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
+import UmpireViewButton from '@/components/UmpireViewButton';
 import { coachDashboardPath, useScrollMemory } from '@/lib/scrollMemory';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
 
@@ -307,6 +308,7 @@ export default function PlayerDashboard() {
             <span className="hidden sm:inline">Coach View</span>
           </button>
         )}
+        {data.umpiring && <UmpireViewButton />}
         <ProfileMenu
           guide="player"
           onLogout={() => logout()}

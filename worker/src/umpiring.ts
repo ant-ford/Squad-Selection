@@ -321,6 +321,7 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
       commitmentEndDate: me.commitment_end_date,
     },
     link: `${(env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "")}/umpiring?week=${week}`,
+    messages: user.officerRoles.some((r) => r.office === "umpireCoordinator"),
   };
   if (coordinator) {
     board.umpires = [...pool.values()]

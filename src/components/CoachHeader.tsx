@@ -5,6 +5,7 @@ import type { ProfileData } from '@/api/getMyProfile';
 import AppHeader, { headerNavClass } from '@/components/AppHeader';
 import { MainMenu, ProfileMenu, officerItems } from '@/components/HeaderMenus';
 import { coachDashboardPath } from '@/lib/scrollMemory';
+import UmpireViewButton from '@/components/UmpireViewButton';
 
 export default function CoachHeader({ profile }: { profile: ProfileData }) {
   const navigate = useNavigate();
@@ -33,6 +34,7 @@ export default function CoachHeader({ profile }: { profile: ProfileData }) {
         <ListChecks className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Ranking</span>
       </button>
+      {profile.umpiring && <UmpireViewButton />}
       <button onClick={() => navigate('/')} className={headerNavClass()}>
         <User className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Player View</span>

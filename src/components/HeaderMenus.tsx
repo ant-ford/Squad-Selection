@@ -5,7 +5,6 @@ import {
   CalendarClock,
   CircleUserRound,
   ClipboardList,
-  Flag,
   HeartHandshake,
   HelpCircle,
   IdCard,
@@ -39,7 +38,6 @@ export function officerItems(p: {
   seasonPlans?: boolean;
   volunteers?: boolean;
   events?: boolean;
-  umpiring?: 'umpire' | 'coordinator' | null;
 }): MenuEntry[] {
   const s = p.sections ?? [];
   const all: (MenuEntry | false | undefined)[] = [
@@ -51,17 +49,14 @@ export function officerItems(p: {
     p.events && { to: '/events/manage', label: 'Events', icon: PartyPopper },
     s.includes('kit') && { to: '/kit', label: 'Kit', icon: Shirt },
     s.includes('registration') && { to: '/registration', label: 'HKHA registration', icon: IdCard },
-    p.umpiring === 'coordinator' && { to: '/umpiring', label: 'Umpiring', icon: Flag },
   ];
   return all.filter((i): i is MenuEntry => !!i);
 }
 
-/** Screens that aren't an office: the club stats, umpiring duties for the club's umpires, and the quizzes. */
+/** Screens that aren't an office: the club stats and the quizzes. Umpiring has its own header button (UmpireViewButton). */
 function everyoneItems(p?: ProfileData): MenuEntry[] {
   return [
     { to: '/stats', label: 'Stats', icon: Trophy },
-    // The coordinator has it among the officers' screens.
-    ...(p?.umpiring === 'umpire' ? [{ to: '/umpiring', label: 'Umpiring duties', icon: Flag }] : []),
     ...(p?.quizzes ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []),
   ];
 }
@@ -155,8 +150,8 @@ function DropMenu({ label, icon: Icon, groups, align }: { label: string; icon: L
 }
 
 /**
- * The burger at the top left: the screens for everyone (stats, umpiring
- * duties, the quizzes), then the officers' screens a person may open, then
+ * The burger at the top left: the screens for everyone (stats, the
+ * quizzes), then the officers' screens a person may open, then
  * inviting someone to join.
  */
 export function MainMenu({ officer, profile }: { officer: MenuEntry[]; profile?: ProfileData }) {

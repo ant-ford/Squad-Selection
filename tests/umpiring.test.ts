@@ -311,6 +311,11 @@ describe("clashes with the umpire's own games", () => {
     const [d] = board.duties;
     expect(d.clash).toBeUndefined(); // George's 12:30 game: he's Unavailable for it
     expect(d.clashes).toEqual({ recANN: "14:15", recBOB: "14:15" }); // Ann picked to play up; Bob's own team
+    // The week's WhatsApp messages are the Umpire Coordinator's alone, not a Section Captain's.
+    expect(board.messages).toBe(true);
+    const captain = await getUmpiringBoard(env, user("recGEORGE", [{ office: "sectionCaptain", designation: "" }]), "2026-10-05");
+    expect(captain.access).toBe("coordinator");
+    expect(captain.messages).toBe(false);
   });
 });
 
