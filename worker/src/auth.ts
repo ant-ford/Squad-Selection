@@ -147,6 +147,28 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
 }
 
 /**
+ * A Section Captain: linked as Section Captain on a team (the
+ * isSectionCaptain coach link) or holding the Section Captain office.
+ * Coaches, the Men's Convenor and the Assistant Director of Hockey are not.
+ */
+export function isSectionCaptainUser(user: Pick<AuthorizedUser, "isSectionCaptain" | "officerRoles">): boolean {
+  return user.isSectionCaptain || user.officerRoles.some((r) => r.office === "sectionCaptain");
+}
+
+/**
+ * Section Captains only: making players active or inactive (owner
+ * decision, 2026-10-06). 403 SECTION_CAPTAIN_REQUIRED otherwise, which,
+ * like COACH_ACCESS_REQUIRED, keeps them signed in.
+ */
+export async function requireSectionCaptain(request: Request, env: Env): Promise<AuthorizedUser> {
+  const user = await requireAuthorizedUser(request, env);
+  if (!isSectionCaptainUser(user)) {
+    throw new HttpError("Only Section Captains can do this.", 403, "SECTION_CAPTAIN_REQUIRED");
+  }
+  return user;
+}
+
+/**
  * The officers' sections of the app and the offices that open each one
  * (owner decision, 2026-09-25). Designation plays no part: any Active row in
  * one of the listed tables is enough.
@@ -164,6 +186,13 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
  *   registration - every Active player's HKHA registration details, HKID
  *                and passport numbers included: the Hockey Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
+ *   people     - finding a person and their admin page and change history:
+ *                the Membership Officer, the Men's Convenor and Section
+ *                Captains (each sees only the blocks their own sections
+ *                open).
+ *   club       - offices (sponsors included) and teams' coaches, captains
+ *                and squad sizes: Section Captains (owner decision,
+ *                2026-10-06).
  *   dataChecks - records to put right (unlinked match cards, shared
  *                Registered Names, re-registrations to review, incomplete
  *                players, likely duplicates): the Men's Convenor and the
@@ -176,7 +205,11 @@ export const SECTION_OFFICES = {
   planning: ["sectionCaptain"],
   trials: ["sectionCaptain", "assistantDirector"],
   registration: ["hockeyConvenor"],
+  people: ["membershipOfficer", "hockeyConvenor", "sectionCaptain"],
+  club: ["sectionCaptain"],
   dataChecks: ["hockeyConvenor", "sectionCaptain"],
+  // Suspensions: the Men's Convenor only (owner, 6 Oct 2026).
+  discipline: ["hockeyConvenor"],
 } as const satisfies Record<string, readonly Office[]>;
 
 export type Section = keyof typeof SECTION_OFFICES;
@@ -196,6 +229,16 @@ export function sectionsFor(user: Pick<AuthorizedUser, "officerRoles">): Section
 export async function requireSection(request: Request, env: Env, section: Section): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);
   if (!sectionsFor(user).includes(section)) {
+    throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
+  }
+  return user;
+}
+
+/** Gate for routes any one of several sections opens; the same 403 otherwise. */
+export async function requireAnySection(request: Request, env: Env, sections: readonly Section[]): Promise<AuthorizedUser> {
+  const user = await requireAuthorizedUser(request, env);
+  const mine = sectionsFor(user);
+  if (!sections.some((s) => mine.includes(s))) {
     throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   }
   return user;

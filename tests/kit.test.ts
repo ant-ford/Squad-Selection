@@ -34,7 +34,7 @@ describe("kit", () => {
   it("opens the kit section to the Kit Convenor and Section Captains", () => {
     expect(sectionsFor(convenor)).toEqual(["kit"]);
     const captain = { officerRoles: [{ office: "sectionCaptain" as const, designation: "" }] };
-    expect(sectionsFor(captain)).toEqual(["membership", "chairman", "kit", "planning", "trials", "dataChecks"]);
+    expect(sectionsFor(captain)).toEqual(["membership", "chairman", "kit", "planning", "trials", "people", "club", "dataChecks"]);
     expect(sectionsFor(player)).toEqual([]);
   });
 
