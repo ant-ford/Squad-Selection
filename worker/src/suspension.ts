@@ -416,6 +416,8 @@ export interface ManualSuspension {
   /** Hong Kong date, YYYY-MM-DD. Fixtures on this date do not count. */
   fromDate: string;
   servingTeam: string;
+  /** When it was recorded (ISO): breaks a tie on fromDate in the queue. */
+  createdAt: string;
 }
 
 export interface ManualSuspensionProgress {
@@ -424,6 +426,11 @@ export interface ManualSuspensionProgress {
   /** Matches still to serve; null = until cleared. */
   remaining: number | null;
   active: boolean;
+  /**
+   * Hong Kong date of the fixture that completed it, once served. A served
+   * suspension closes itself: nothing is written, it simply reads as served.
+   */
+  servedOn: string | null;
 }
 
 /** One player's manual suspensions taken together: blocked while any is active. */
@@ -446,7 +453,8 @@ function servesManualSuspension(match: Match): boolean {
 
 /**
  * Hong Kong dates of every fixture that serves a manual suspension, by
- * team: one pass over the matches, shared by every suspension counted.
+ * team, in date order: one pass over the matches, shared by every
+ * suspension counted.
  */
 export function servingFixtureDatesByTeam(matches: Iterable<Match>): Map<string, string[]> {
   const byTeam = new Map<string, string[]>();
@@ -461,15 +469,19 @@ export function servingFixtureDatesByTeam(matches: Iterable<Match>): Map<string,
       else byTeam.set(team, [day]);
     }
   }
+  for (const days of byTeam.values()) days.sort();
   return byTeam;
 }
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * How much of a manual suspension has been served: the serving team's
+ * How much of one manual suspension has been served: the serving team's
  * Played league and cup fixtures whose Hong Kong date is STRICTLY AFTER
- * the from date (a fixture on the from date itself does not count). Only
- * the serving team's fixtures count, never the team the player turned out
- * for.
+ * the from date (a fixture on the from date itself does not count) and
+ * strictly after `after` (the day the suspension before it in the queue
+ * was completed). Only the serving team's fixtures count, never the team
+ * the player turned out for.
  *
  * Fails closed. The count is a lower bound - it sees only the fixtures it
  * is given (the current and previous season) - so a suspension older than
@@ -479,21 +491,71 @@ export function servingFixtureDatesByTeam(matches: Iterable<Match>): Map<string,
 export function manualSuspensionProgress(
   s: Pick<ManualSuspension, "matches" | "fromDate" | "servingTeam">,
   datesByTeam: Map<string, string[]>,
+  after = "",
 ): ManualSuspensionProgress {
-  if (s.matches === null) return { served: 0, remaining: null, active: true };
+  if (s.matches === null) return { served: 0, remaining: null, active: true, servedOn: null };
   let served = 0;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s.fromDate)) {
-    for (const day of datesByTeam.get(s.servingTeam) ?? []) if (day > s.fromDate) served++;
+  let servedOn: string | null = null;
+  if (DATE.test(s.fromDate)) {
+    const start = after > s.fromDate ? after : s.fromDate;
+    for (const day of datesByTeam.get(s.servingTeam) ?? []) {
+      if (day <= start) continue;
+      served++;
+      if (served === s.matches) {
+        servedOn = day;
+        break;
+      }
+    }
   }
-  served = Math.min(served, s.matches);
   const remaining = s.matches - served;
-  return { served, remaining, active: remaining > 0 };
+  return { served, remaining, active: remaining > 0, servedOn };
 }
 
 /**
- * Manual-suspension state per player id, for eligibility Step 2. Each
- * suspension is counted on its own: two open ones overlap rather than
- * queue, and the player is blocked while either has matches left.
+ * One player's open suspensions, served ONE AFTER THE OTHER (owner, 6 Oct
+ * 2026): in order of from date, then when recorded. Each starts counting
+ * only after the fixture that completed the one before it, and never
+ * before its own from date. One still being served - or "until cleared",
+ * or one that cannot be counted - holds everything after it at nothing
+ * served. Keyed by suspension id.
+ */
+export function manualSuspensionQueue(
+  suspensions: readonly ManualSuspension[],
+  datesByTeam: Map<string, string[]>,
+): Map<string, ManualSuspensionProgress> {
+  const ordered = [...suspensions].sort(
+    (a, b) => a.fromDate.localeCompare(b.fromDate) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  );
+  const out = new Map<string, ManualSuspensionProgress>();
+  let after = "";
+  let waiting = false;
+  for (const s of ordered) {
+    if (waiting) {
+      out.set(s.id, { served: 0, remaining: s.matches, active: true, servedOn: null });
+      continue;
+    }
+    const progress = manualSuspensionProgress(s, datesByTeam, after);
+    out.set(s.id, progress);
+    if (progress.active) waiting = true;
+    else after = progress.servedOn ?? after;
+  }
+  return out;
+}
+
+/** Each player's open suspensions, grouped for manualSuspensionQueue. */
+export function groupByPlayer(suspensions: readonly ManualSuspension[]): Map<string, ManualSuspension[]> {
+  const byPlayer = new Map<string, ManualSuspension[]>();
+  for (const s of suspensions) {
+    const list = byPlayer.get(s.player);
+    if (list) list.push(s);
+    else byPlayer.set(s.player, [s]);
+  }
+  return byPlayer;
+}
+
+/**
+ * Manual-suspension state per player id, for eligibility Step 2: blocked
+ * while anything in the player's queue has matches left.
  */
 export function manualSuspensionStates(
   suspensions: readonly ManualSuspension[],
@@ -502,9 +564,9 @@ export function manualSuspensionStates(
   const out = new Map<string, ManualSuspensionState>();
   if (suspensions.length === 0) return out;
   const datesByTeam = servingFixtureDatesByTeam(matches);
-  for (const s of suspensions) {
-    const { active } = manualSuspensionProgress(s, datesByTeam);
-    out.set(s.player, { active: active || out.get(s.player)?.active === true });
+  for (const [player, list] of groupByPlayer(suspensions)) {
+    const queue = manualSuspensionQueue(list, datesByTeam);
+    out.set(player, { active: [...queue.values()].some((p) => p.active) });
   }
   return out;
 }

@@ -15,12 +15,21 @@ export interface SuspensionRow {
   /** Hong Kong date, YYYY-MM-DD. Fixtures on this date don't count. */
   fromDate: string;
   reason: string;
-  /** Fixtures served so far (league and cup, serving team, after fromDate). */
+  /**
+   * Fixtures served so far (league and cup, serving team, after fromDate).
+   * A player's suspensions are served one after the other, so a later one
+   * shows 0 until the one before it is done.
+   */
   served: number;
   /** null = until cleared. 0 once served. */
   remaining: number | null;
   /** Still blocking selection: open and not yet served. */
   active: boolean;
+  /**
+   * Hong Kong date of the fixture that completed it. Set means served: it
+   * closed itself and is listed under cleared, with clearedAt null.
+   */
+  servedOn: string | null;
   createdAt: string;
   createdBy: string | null;
   clearedAt: string | null;
@@ -50,8 +59,12 @@ export interface LegacySuspensionRow {
 }
 
 export interface SuspensionsBoard {
+  /** Still to serve, in the order they will be served. */
   open: SuspensionRow[];
-  /** Cleared in the last CLEARED_DAYS days, newest first. */
+  /**
+   * Cleared by the Convenor (clearedAt) or served (servedOn) in the last
+   * CLEARED_DAYS days, newest first.
+   */
   cleared: SuspensionRow[];
   cards: CardSuspensionRow[];
   legacy: LegacySuspensionRow[];

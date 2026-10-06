@@ -7,7 +7,9 @@
  * Each write is one SQL function (admin_save_suspension,
  * admin_clear_suspension) that also writes its activity_log row, field
  * names only. Serving is counted here and in eligibility by
- * suspension.ts manualSuspensionProgress.
+ * suspension.ts manualSuspensionQueue: a player's suspensions are served
+ * one after the other, and a served one closes itself on read (nothing is
+ * written; the Convenor can still clear one early).
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -17,7 +19,15 @@ import { db, inList, SupabaseError } from "./data/supabase";
 import { invalidateCachePrefix, invalidateShared } from "./cache";
 import { invalidatePeople } from "./invalidation";
 import { currentSeason, getSeasonContext, MANUAL_SUSPENSIONS_KEY } from "./seasonContext";
-import { manualSuspensionProgress, servingFixtureDatesByTeam } from "./suspension";
+import {
+  groupByPlayer,
+  manualSuspensionProgress,
+  manualSuspensionQueue,
+  servingFixtureDatesByTeam,
+  type ManualSuspension,
+  type ManualSuspensionProgress,
+} from "./suspension";
+import { hkDateKey } from "../../shared/hkDateKey";
 import {
   CLEARED_DAYS,
   MAX_SUSPENSION_MATCHES,
@@ -58,6 +68,15 @@ interface PersonRow {
   matches_to_serve: number | null;
 }
 
+const asManual = (r: ApiSuspension): ManualSuspension => ({
+  id: r.id,
+  player: r.player,
+  matches: r.matches,
+  fromDate: r.from_date,
+  servingTeam: r.serving_team,
+  createdAt: r.created_at,
+});
+
 const nameOf = (p: PersonRow | undefined) =>
   (p && [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ")) || "(no name)";
 
@@ -91,11 +110,17 @@ export async function getSuspensionsBoard(env: Env, now = new Date()): Promise<S
   const byId = new Map(people.map((p) => [p.api_id, p]));
 
   const datesByTeam = servingFixtureDatesByTeam([...season.previousMatches, ...season.allMatches]);
+  // Open ones are served one after the other per player (the queue, as
+  // eligibility counts them); one the Convenor cleared is shown on its own.
+  const openRows = rows.filter((r) => !r.cleared_at);
+  const queued = new Map<string, ManualSuspensionProgress>();
+  for (const list of groupByPlayer(openRows.map(asManual)).values()) {
+    for (const [id, progress] of manualSuspensionQueue(list, datesByTeam)) queued.set(id, progress);
+  }
   const toRow = (r: ApiSuspension): SuspensionRow => {
-    const progress = manualSuspensionProgress(
-      { matches: r.matches, fromDate: r.from_date, servingTeam: r.serving_team },
-      datesByTeam,
-    );
+    const progress = r.cleared_at
+      ? { ...manualSuspensionProgress(asManual(r), datesByTeam), servedOn: null }
+      : queued.get(r.id) ?? manualSuspensionProgress(asManual(r), datesByTeam);
     return {
       id: r.id,
       player: r.player,
@@ -107,6 +132,7 @@ export async function getSuspensionsBoard(env: Env, now = new Date()): Promise<S
       served: progress.served,
       remaining: progress.remaining,
       active: !r.cleared_at && progress.active,
+      servedOn: progress.servedOn,
       createdAt: r.created_at,
       createdBy: r.created_by ? nameOf(byId.get(r.created_by)) : null,
       clearedAt: r.cleared_at,
@@ -115,11 +141,17 @@ export async function getSuspensionsBoard(env: Env, now = new Date()): Promise<S
     };
   };
 
-  const open = rows.filter((r) => !r.cleared_at).map(toRow);
-  const cleared = rows
-    .filter((r) => r.cleared_at)
-    .sort((a, b) => (b.cleared_at ?? "").localeCompare(a.cleared_at ?? ""))
-    .map(toRow);
+  // A served one closes itself: listed under cleared (servedOn set,
+  // clearedAt null) for the same 90 days, with nothing written.
+  const sinceDay = hkDateKey(since);
+  const all = rows.map(toRow);
+  const open = all
+    .filter((r) => !r.clearedAt && !r.servedOn)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.fromDate.localeCompare(b.fromDate) || a.createdAt.localeCompare(b.createdAt));
+  const closedOn = (r: SuspensionRow) => r.clearedAt ?? r.servedOn ?? "";
+  const cleared = all
+    .filter((r) => r.clearedAt || (r.servedOn && r.servedOn >= sinceDay))
+    .sort((a, b) => closedOn(b).localeCompare(closedOn(a)));
   const cards: CardSuspensionRow[] = cardStates
     .map(([player, s]) => ({
       player,

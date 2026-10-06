@@ -123,9 +123,9 @@ export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
 export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspension[]> {
   if (backendFor(env, "people") !== "supabase") return [];
   return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, async () => {
-    type Row = { id: string; player: string; matches: number | null; from_date: string; serving_team: string };
+    type Row = { id: string; player: string; matches: number | null; from_date: string; serving_team: string; created_at: string };
     const rows = await db(env)
-      .select<Row>("api_suspensions", "select=id,player,matches,from_date,serving_team&cleared_at=is.null")
+      .select<Row>("api_suspensions", "select=id,player,matches,from_date,serving_team,created_at&cleared_at=is.null")
       .catch((err: unknown): Row[] => {
         // Only a database without the migration yet (PGRST205: no such
         // view) reads as "none": with no table there are none. Anything
@@ -142,6 +142,7 @@ export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspensi
       matches: r.matches,
       fromDate: r.from_date,
       servingTeam: r.serving_team,
+      createdAt: r.created_at,
     }));
   }, SEASON_READ_TTL_MS);
 }

@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   requireSection: vi.fn(),
   rpc: vi.fn(),
   select: vi.fn(),
+  getSeasonContext: vi.fn(),
+}));
+
+vi.mock("../worker/src/seasonContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/seasonContext")>()),
+  getSeasonContext: mocks.getSeasonContext,
 }));
 
 vi.mock("../worker/src/auth", async (importOriginal) => ({
@@ -22,7 +28,8 @@ import worker from "../worker/src/index";
 import { HttpError } from "../worker/src/http";
 import { SupabaseError } from "../worker/src/data/supabase";
 import { sectionsFor } from "../worker/src/auth";
-import { parseNewSuspension, parseSuspensionChange } from "../worker/src/discipline";
+import { getSuspensionsBoard, parseNewSuspension, parseSuspensionChange } from "../worker/src/discipline";
+import { m } from "./helpers/factories";
 import { getOpenManualSuspensions } from "../worker/src/seasonContext";
 import { invalidateAll } from "../worker/src/cache";
 
@@ -63,11 +70,58 @@ beforeEach(() => {
   invalidateAll();
 });
 
+describe("the board", () => {
+  const row = (id: string, more: Record<string, unknown>) => ({
+    id,
+    player: "recP1",
+    matches: 2,
+    from_date: "2026-09-12",
+    serving_team: "HKFC C",
+    reason: "R3",
+    created_at: "2026-09-12T10:00:00.000Z",
+    created_by: "recCONVENOR",
+    cleared_at: null,
+    cleared_by: null,
+    clear_reason: null,
+    ...more,
+  });
+  const league = (id: string, date: string) =>
+    m({ id, matchDate: `${date}T07:00:00.000Z`, matchStatus: "Played", competitionType: "LEAGUE" });
+
+  it("lists a served one under cleared, closed by itself, and queues the next", async () => {
+    mocks.getSeasonContext.mockResolvedValue({
+      suspensionByPlayer: new Map(),
+      previousMatches: [],
+      allMatches: [league("m1", "2026-09-19"), league("m2", "2026-09-26"), league("m3", "2026-10-03")],
+    });
+    mocks.select.mockImplementation(async (table: string) =>
+      table === "api_suspensions"
+        ? [
+            row(ID, {}),
+            row("second", { matches: 3, created_at: "2026-09-13T10:00:00.000Z" }),
+            row("byHand", { cleared_at: "2026-10-01T02:00:00.000Z", cleared_by: "recCONVENOR", clear_reason: "Appeal" }),
+          ]
+        : [{ id: "u1", api_id: "recP1", preferred_name: "Sam", surname: "Lee", registered_team: "HKFC C", is_suspended: false, matches_to_serve: null }],
+    );
+
+    const board = await getSuspensionsBoard(ENV, new Date("2026-10-06T00:00:00Z"));
+
+    expect(board.open.map((r) => [r.id, r.served, r.remaining, r.active])).toEqual([["second", 1, 2, true]]);
+    expect(board.cleared.map((r) => [r.id, r.servedOn, r.clearedAt])).toEqual([
+      ["byHand", null, "2026-10-01T02:00:00.000Z"],
+      [ID, "2026-09-26", null],
+    ]);
+    expect(board.cleared[1]).toMatchObject({ name: "Sam Lee", active: false, served: 2, remaining: 0 });
+  });
+});
+
 describe("reading the open suspensions for eligibility", () => {
   it("maps the view's rows", async () => {
-    mocks.select.mockResolvedValue([{ id: ID, player: "recP1", matches: null, from_date: "2026-09-12", serving_team: "HKFC C" }]);
+    mocks.select.mockResolvedValue([
+      { id: ID, player: "recP1", matches: null, from_date: "2026-09-12", serving_team: "HKFC C", created_at: "2026-09-12T10:00:00.000Z" },
+    ]);
     expect(await getOpenManualSuspensions(ENV)).toEqual([
-      { id: ID, player: "recP1", matches: null, fromDate: "2026-09-12", servingTeam: "HKFC C" },
+      { id: ID, player: "recP1", matches: null, fromDate: "2026-09-12", servingTeam: "HKFC C", createdAt: "2026-09-12T10:00:00.000Z" },
     ]);
     expect(mocks.select.mock.calls[0][1]).toContain("cleared_at=is.null");
   });
