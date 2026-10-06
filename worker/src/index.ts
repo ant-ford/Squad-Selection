@@ -1,11 +1,10 @@
-import { AirtableError, airtableList } from "./airtable";
+import { AirtableError } from "./airtable";
 import { getCached } from "./cache";
 import { handleFileRequest, serveClubDoc } from "./files";
 import { db, SupabaseError } from "./data/supabase";
 import { backendFor } from "./data/backend";
 import { sendDueReviewEmails } from "./reviewEmails";
 import { RETENTION_CRON, runRetention } from "./retention";
-import { TABLES } from "../../shared/schema/tableNames";
 import type { Env } from "./env";
 import {
   json,
@@ -225,30 +224,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Health Check (Public) ──────────────────────────────────────────────
     if (method === "GET" && pathname === "/health") {
       // ?deep=1 additionally reports whether the Worker's own credentials
-      // still work. Plain /health only proves the Worker is running, which is
-      // exactly why a rejected Airtable token once looked like a frontend
-      // fault: sign-in succeeded, /health was green, and every screen behind
-      // the login failed. There is no unauthenticated route that touches
-      // Airtable, so confirming the token previously meant signing in.
+      // still work: the Supabase data project, once one is configured. Plain
+      // /health only proves the Worker is running, which is exactly why a
+      // rejected Airtable token once looked like a frontend fault: sign-in
+      // succeeded, /health was green, and every screen behind the login
+      // failed.
       //
       // Reports "ok" or "error" and nothing else - no message, no record, no
       // configuration. The detail stays in Workers Logs. Cached for 60s so it
-      // cannot be used to hammer Airtable.
+      // cannot be used to hammer the database.
       if (url.searchParams.get("deep") === "1") {
-        const { data: airtable } = await getCached<"ok" | "error">(
-          "health:airtable",
-          async () => {
-            try {
-              await airtableList(env, TABLES.team, { maxRecords: "1" });
-              return "ok";
-            } catch (err) {
-              console.error("Health check: Airtable unreachable:", err instanceof Error ? err.message : err);
-              return "error";
-            }
-          },
-          60 * 1000,
-        );
-        // The Supabase data project, once one is configured - same rules: ok or error, nothing more.
         const supabase = env.DATA_SUPABASE_URL
           ? (
               await getCached<"ok" | "error">(
@@ -266,7 +251,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               )
             ).data
           : undefined;
-        return json({ status: "ok", airtable, ...(supabase ? { supabase } : {}), timestamp: new Date().toISOString() }, 200, origin);
+        return json({ status: "ok", ...(supabase ? { supabase } : {}), timestamp: new Date().toISOString() }, 200, origin);
       }
       return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
     }

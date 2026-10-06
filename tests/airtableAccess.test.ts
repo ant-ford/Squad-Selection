@@ -259,11 +259,14 @@ describe("shared cache lifetimes", () => {
 });
 
 describe("instrumentation", () => {
-  it("reports Airtable and cache work on every response", async () => {
-    const res = await worker.fetch(new Request("https://api.test/health?deep=1"), ENV);
+  it("reports data and cache work on every response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+    const env = { ...ENV, DATA_SUPABASE_URL: "https://data.supabase.test", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" };
+    const res = await worker.fetch(new Request("https://api.test/health?deep=1"), env);
     expect(res.status).toBe(200);
     const timing = res.headers.get("Server-Timing") || "";
-    expect(timing).toMatch(/airtable;dur=\d+;desc="calls=1 bytes=\d+ 429s=0"/);
+    expect(timing).toMatch(/airtable;dur=0;desc="calls=0 bytes=0 429s=0"/);
+    expect(timing).toMatch(/db;dur=\d+;desc="calls=1 bytes=2"/);
     expect(timing).toMatch(/cache;desc="hits=0 misses=1 kv=0"/);
     expect(timing).toMatch(/total;dur=\d+/);
     expect(res.headers.get("Timing-Allow-Origin")).toBe("https://app.test");
