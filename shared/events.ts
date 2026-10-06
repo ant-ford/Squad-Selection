@@ -197,11 +197,6 @@ export function isOpen(e: { status: EventStatus; startsAt: string; respondBy: st
   return e.status === "published" && now < Date.parse(e.respondBy ?? e.startsAt);
 }
 
-/** Shown on the player page until the day after it ends. */
-export function isCurrent(e: { startsAt: string; endsAt: string | null }, now = Date.now()): boolean {
-  return Date.parse(e.endsAt ?? e.startsAt) + 86_400_000 > now;
-}
-
 const HOUR = 3_600_000;
 /** An event without an end time is taken to last three hours. */
 export const eventEnds = (e: { startsAt: string; endsAt: string | null }) => Date.parse(e.endsAt ?? e.startsAt) + (e.endsAt ? 0 : 3 * HOUR);

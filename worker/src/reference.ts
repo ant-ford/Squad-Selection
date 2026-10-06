@@ -1,6 +1,6 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getCached, getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
+import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
@@ -173,10 +173,6 @@ export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
     },
     REFERENCE_TTL_MS,
   );
-}
-
-export async function getActivePlayers(env: Env): Promise<Player[]> {
-  return people(env).listActive();
 }
 
 /** An access decision follows a correction made outside the Worker within a minute. */

@@ -98,7 +98,6 @@ import { getMyProfile } from "./profile";
 import { getMyFixtures, getUpcomingFixtures } from "./fixtures";
 import {
   getPlayersForMatch,
-  getSquadForMatch,
   getAvailabilityForMatch,
   syncSquad,
   setMatchKit,
@@ -119,8 +118,6 @@ import {
   getActiveRanking,
   getInactiveRanking,
   setAbilityGroupConfig,
-  movePlayerToRank,
-  movePlayerRelative,
   reorderRanking,
   activatePlayer,
   deactivatePlayer,
@@ -276,16 +273,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && fileMatch) return await handleFileRequest(env, fileMatch[1], url);
 
     // ── Match / Squad (Read - Authenticated) ───────────────────────────────
-    // The squad list is player-facing: PlayerAvailabilitySheet shows a player
-    // who else is in the squad before they set their own availability.
-    const matchSquadMatch = pathname.match(/^\/api\/match\/([^/]+)\/squad$/);
-    if (method === "GET" && matchSquadMatch) {
-      await requireAuthorizedUser(request, env);
-      const side = url.searchParams.get("side") as "home" | "away" | null;
-      return json(await getSquadForMatch(env, matchSquadMatch[1], side ?? undefined), 200, origin);
-    }
-
-    // Also player-facing: the fixture sheet's selected / rest-of-team /
+    // Player-facing: the fixture sheet's selected / rest-of-team /
     // suggestions lists. Names, positions and statuses only - see
     // getTeamAvailabilityForMatch for what is left out and why.
     const matchTeamAvailMatch = pathname.match(/^\/api\/match\/([^/]+)\/team-availability$/);
@@ -612,40 +600,6 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const body = (await readJsonBody(request)) as { config: AbilityGroupConfigMap };
       const rankingList = await setAbilityGroupConfig(env, body.config, user);
       return json(rankingList, 200, origin);
-    }
-    if (method === "POST" && pathname === "/api/ranking/move") {
-      const user = await requireCoach(request, env);
-      const body = (await readJsonBody(request)) as {
-        playerId: string;
-        newRank: number;
-        justification?: string;
-      };
-      return json(
-        await movePlayerToRank(env, body.playerId, body.newRank, user.email, body.justification),
-        200,
-        origin,
-      );
-    }
-    if (method === "POST" && pathname === "/api/ranking/move-relative") {
-      const user = await requireCoach(request, env);
-      const body = (await readJsonBody(request)) as {
-        sourceId: string;
-        targetId: string;
-        position: "above" | "below";
-        justification?: string;
-      };
-      return json(
-        await movePlayerRelative(
-          env,
-          body.sourceId,
-          body.targetId,
-          body.position,
-          user.email,
-          body.justification,
-        ),
-        200,
-        origin,
-      );
     }
     if (method === "POST" && pathname === "/api/ranking/reorder") {
       const user = await requireCoach(request, env);

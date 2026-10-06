@@ -73,7 +73,6 @@ export interface Env {
   MAIL_FROM?: string;
   /** Preview only: every email goes here instead, subject prefixed [PREVIEW]. */
   MAIL_REDIRECT_TO?: string;
-  /** Comma-separated copies of the commitment review request (e.g. the membership inbox). */
   /** Who the review request comes from, e.g. "Anthony Ford <menscaptain@hkfchockey.com>" (blind-copied). */
   REVIEW_EMAIL_FROM?: string;
   /** The Assistant Director of Hockey, "Name <email>": told about practice trials (trials.ts). */
