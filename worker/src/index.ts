@@ -89,6 +89,7 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { clearSuspension, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
 import { adminRoute, isAdminPath } from "./admin/routes";
 import { getDataChecks } from "./dataChecks";
 import { getMyTasks } from "./myTasks";
@@ -899,6 +900,20 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
+      }
+    }
+
+    // ── Suspensions (src/discipline.ts) ────────────────────────────────────
+    // The Men's Convenor only.
+    if (pathname.startsWith("/api/discipline/")) {
+      const user = await requireSection(request, env, "discipline");
+      if (method === "GET" && pathname === "/api/discipline/suspensions") return json(await getSuspensionsBoard(env), 200, origin);
+      if (method === "POST") {
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        if (pathname === "/api/discipline/suspensions") return json(await createSuspension(env, user, body), 200, origin);
+        const one = pathname.match(/^\/api\/discipline\/suspensions\/([^/]{1,64})(\/clear)?$/);
+        if (one?.[2]) return json(await clearSuspension(env, user, one[1], body), 200, origin);
+        if (one) return json(await updateSuspension(env, user, one[1], body), 200, origin);
       }
     }
 

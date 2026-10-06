@@ -42,6 +42,13 @@ const INVALIDATION = {
   matchCards: {
     prefixes: ["match-cards:", "players-for-match:", "season-index:", "calendar:"],
   },
+  // The Men's Convenor's suspensions (discipline.ts): the open ones
+  // (seasonContext.ts MANUAL_SUSPENSIONS_KEY) and what eligibility built
+  // from them.
+  suspensions: {
+    keys: ["manual-suspensions"],
+    prefixes: ["players-for-match:", "season-index:"],
+  },
 } satisfies Record<string, Rule>;
 
 /** Drop every cache a change to this kind of data can have made stale. */
@@ -58,3 +65,6 @@ export const invalidateCommitments = (env: Env) => invalidate(env, "commitments"
 
 /** After a write to Match Cards (e.g. linking cards to a player). */
 export const invalidateMatchCards = (env: Env) => invalidate(env, "matchCards");
+
+/** After a write to suspensions. */
+export const invalidateSuspensions = (env: Env) => invalidate(env, "suspensions");

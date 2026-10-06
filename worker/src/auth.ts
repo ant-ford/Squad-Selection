@@ -208,6 +208,8 @@ export const SECTION_OFFICES = {
   people: ["membershipOfficer", "hockeyConvenor", "sectionCaptain"],
   club: ["sectionCaptain"],
   dataChecks: ["hockeyConvenor", "sectionCaptain"],
+  // Suspensions: the Men's Convenor only (owner, 6 Oct 2026).
+  discipline: ["hockeyConvenor"],
 } as const satisfies Record<string, readonly Office[]>;
 
 export type Section = keyof typeof SECTION_OFFICES;

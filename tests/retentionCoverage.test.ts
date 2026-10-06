@@ -36,6 +36,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "trial_availability.person_id": "erased",
   "event_responses.person_id": "erased",
   "event_payments.payer_id": "erased",
+  "suspensions.person_id": "erased",
 
   // ── The playing record ──
   "match_selections.person_id": { kept: "playing record: who was picked for which match" },
@@ -65,6 +66,8 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "event_payments.confirmed_by": { kept: "the social secretary who confirmed a payment" },
   "hkha_registrations.registered_by_person_id": { kept: "the Convenor who ticked off a registration" },
   "umpire_assignments.created_by": { kept: "who put an umpire down for a duty" },
+  "suspensions.created_by": { kept: "the Convenor who recorded someone else's suspension" },
+  "suspensions.cleared_by": { kept: "the Convenor who cleared someone else's suspension" },
 
   // ── Club kit inventory ──
   "kit_sets.ordered_for_id": { kept: "club kit inventory: who a set was ordered for" },
