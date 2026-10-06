@@ -1,6 +1,6 @@
 import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 import { hkDateKey } from "../../shared/hkDateKey";
-import { linkId } from "./airtable";
+import { linkId } from "../../shared/airtableValueUtils";
 import { isFriendly } from "./playUp";
 
 /**

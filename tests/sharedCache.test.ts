@@ -4,11 +4,22 @@ import { fakeKv } from "./helpers/kv";
 
 // The in-isolate map is what this replaces, so "a different isolate" is
 // simulated by clearing it while the KV store keeps its contents.
+//
+// On the Supabase backend KV holds only the Stats summaries (`stats-summary:`
+// keys); every other getShared read stays in the isolate. The tests of what
+// survives the Airtable removal therefore use SUPABASE_ENV and a Stats key.
+// The ones marked "Airtable-only" pin how raw Airtable table reads were
+// shared through KV (generation keys, which keys may make the trip) and go
+// with that code.
 
 /** A new isolate: same KV, empty local map. */
 function newIsolate() {
   invalidateAll();
 }
+
+const SUPABASE = "supabase";
+/** A Stats summary: the one kind of entry KV keeps on Supabase. */
+const STATS_KEY = "stats-summary:2025-2026";
 
 beforeEach(() => invalidateAll());
 
@@ -18,13 +29,14 @@ describe("shared cache without a binding", () => {
   it("falls back to the in-isolate cache", async () => {
     let calls = 0;
     const fetcher = async () => { calls++; return ["a"]; };
+    const env = { DATA_BACKEND: SUPABASE };
 
-    expect(await getShared({}, "k", fetcher)).toEqual(["a"]);
-    expect(await getShared({}, "k", fetcher)).toEqual(["a"]);
+    expect(await getShared(env, STATS_KEY, fetcher)).toEqual(["a"]);
+    expect(await getShared(env, STATS_KEY, fetcher)).toEqual(["a"]);
     expect(calls).toBe(1);
 
     newIsolate();
-    await getShared({}, "k", fetcher);
+    await getShared(env, STATS_KEY, fetcher);
     expect(calls).toBe(2); // nothing shared it across the restart
   });
 });
@@ -32,45 +44,48 @@ describe("shared cache without a binding", () => {
 describe("shared cache with KV", () => {
   it("spares a second isolate the upstream read", async () => {
     const kv = fakeKv();
+    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
     let calls = 0;
     const fetcher = async () => { calls++; return [{ id: "rec1" }]; };
 
-    await getShared({ CACHE: kv }, "scheduled-matches", fetcher);
+    await getShared(env, STATS_KEY, fetcher);
     expect(calls).toBe(1);
-    expect(kv.writes).toEqual(["scheduled-matches"]);
+    expect(kv.writes).toEqual([STATS_KEY]);
 
     newIsolate();
-    const second = await getShared({ CACHE: kv }, "scheduled-matches", fetcher);
+    const second = await getShared(env, STATS_KEY, fetcher);
 
     expect(second).toEqual([{ id: "rec1" }]);
-    expect(calls).toBe(1); // served from KV, not Airtable
+    expect(calls).toBe(1); // served from KV, not rebuilt
   });
 
   it("answers a repeat read in one isolate without going to KV", async () => {
     const kv = fakeKv();
+    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
     const fetcher = async () => ["x"];
-    await getShared({ CACHE: kv }, "k", fetcher);
+    await getShared(env, STATS_KEY, fetcher);
     const readsAfterFirst = kv.reads.length;
 
-    await getShared({ CACHE: kv }, "k", fetcher);
+    await getShared(env, STATS_KEY, fetcher);
     expect(kv.reads.length).toBe(readsAfterFirst);
   });
 
   it("never writes a TTL below the minimum KV accepts", async () => {
     const kv = fakeKv();
-    await getShared({ CACHE: kv }, "brief", async () => "v", 5 * 1000);
-    expect(kv.store.get("brief")?.ttl).toBe(60);
+    await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, "stats-summary:brief", async () => "v", 5 * 1000);
+    expect(kv.store.get("stats-summary:brief")?.ttl).toBe(60);
   });
 
   it("shares one upstream read between concurrent callers", async () => {
     const kv = fakeKv();
+    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
     let calls = 0;
     const fetcher = async () => { calls++; return "v"; };
 
     await Promise.all([
-      getShared({ CACHE: kv }, "k", fetcher),
-      getShared({ CACHE: kv }, "k", fetcher),
-      getShared({ CACHE: kv }, "k", fetcher),
+      getShared(env, STATS_KEY, fetcher),
+      getShared(env, STATS_KEY, fetcher),
+      getShared(env, STATS_KEY, fetcher),
     ]);
     expect(calls).toBe(1);
   });
@@ -79,22 +94,25 @@ describe("shared cache with KV", () => {
 describe("invalidation after a write", () => {
   it("drops the key everywhere, so another isolate cannot serve what was replaced", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv };
+    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
     let value = "before";
     const fetcher = async () => value;
 
-    await getShared(env, "scheduled-matches", fetcher);
+    await getShared(env, STATS_KEY, fetcher);
     value = "after";
 
-    await invalidateShared(env, ["scheduled-matches"]);
+    await invalidateShared(env, [STATS_KEY]);
     newIsolate();
 
-    expect(await getShared(env, "scheduled-matches", fetcher)).toBe("after");
+    expect(await getShared(env, STATS_KEY, fetcher)).toBe("after");
   });
 
+  // On Supabase these keys live in the isolate only, so "everywhere" is this
+  // isolate: the clear is checked without simulating a second one, and
+  // nothing reaches KV.
   it("clears every key under a prefix, and nothing outside it", async () => {
     const kv = fakeKv();
-    const env = { CACHE: kv };
+    const env = { CACHE: kv, DATA_BACKEND: SUPABASE };
     let value = "old";
     await getShared(env, "exceptions:2026-2027", async () => [value]);
     await getShared(env, "exceptions:2025-2026", async () => [value]);
@@ -102,11 +120,11 @@ describe("invalidation after a write", () => {
     value = "new";
 
     await invalidateShared(env, [], ["exceptions:"]);
-    newIsolate();
 
     expect(await getShared(env, "exceptions:2026-2027", async () => [value])).toEqual(["new"]);
     expect(await getShared(env, "exceptions:2025-2026", async () => [value])).toEqual(["new"]);
     expect(await getShared(env, "club-reference", async () => [value])).toEqual(["old"]);
+    expect(kv.writes).toEqual([]);
   });
 });
 
@@ -116,6 +134,7 @@ describe("invalidation after a write", () => {
 describe("prefix clears by generation", () => {
   afterEach(() => vi.useRealTimers());
 
+  // Airtable-only: removed with the Airtable code
   it("costs one write: no list, no deletes, however many keys are under it", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };
@@ -130,6 +149,7 @@ describe("prefix clears by generation", () => {
     expect(kv.deletes).toEqual([]);
   });
 
+  // Airtable-only: removed with the Airtable code
   it("reads a prefix's generation at most once a minute in an isolate", async () => {
     vi.useFakeTimers();
     const kv = fakeKv();
@@ -145,6 +165,7 @@ describe("prefix clears by generation", () => {
     expect(genReads()).toBe(2);
   });
 
+  // Airtable-only: removed with the Airtable code
   it("reaches another isolate once its copy of the generation expires", async () => {
     vi.useFakeTimers();
     const kv = fakeKv();
@@ -165,6 +186,7 @@ describe("prefix clears by generation", () => {
   // The bug #48 shipped with: syncSquad clears `all-matches:<season>` by
   // name, but the KV entry is stored as `all-matches:<season>@<gen>`, so a
   // plain delete removed nothing and other isolates kept the old selections.
+  // Airtable-only: removed with the Airtable code
   it("clears a named key under a versioned prefix, for every other isolate", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };
@@ -180,6 +202,7 @@ describe("prefix clears by generation", () => {
     expect(kv.deletes).toEqual([]);
   });
 
+  // Airtable-only: removed with the Airtable code
   it("does the same for a player-by-email lookup", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };
@@ -193,6 +216,7 @@ describe("prefix clears by generation", () => {
     expect(await getShared(env, "player-by-email:cy@hkfc.com", async () => role)).toBe("coach");
   });
 
+  // Airtable-only: removed with the Airtable code
   it("serves the clearing isolate fresh data at once", async () => {
     const kv = fakeKv();
     const env = { CACHE: kv };
@@ -205,6 +229,7 @@ describe("prefix clears by generation", () => {
     expect(await getShared(env, "exceptions:2026-2027", async () => value)).toBe("new");
   });
 
+  // Airtable-only: removed with the Airtable code
   it("skips KV rather than guess when the generation cannot be read", async () => {
     const kv = fakeKv();
     const realGet = kv.get.bind(kv);
@@ -218,6 +243,7 @@ describe("prefix clears by generation", () => {
     expect(kv.writes).toEqual([]);
   });
 
+  // Airtable-only: removed with the Airtable code
   it("leaves keys outside the prefixes without a generation lookup", async () => {
     const kv = fakeKv();
     await getShared({ CACHE: kv }, "club-reference", async () => "v");
@@ -231,6 +257,7 @@ describe("prefix clears by generation", () => {
 // in KV would quietly break eligibility, suspensions and selections. This
 // pins which keys are allowed to make the trip.
 describe("only raw table reads are shared", () => {
+  // Airtable-only: removed with the Airtable code
   it("puts records in KV and leaves the derived indexes in the isolate", async () => {
     const { fakeAirtable } = await import("./helpers/airtable");
     const { handlePlayerCalendarFeed } = await import("../worker/src/calendar");
@@ -288,17 +315,17 @@ describe("when KV itself misbehaves", () => {
   // A cache is an optimisation. Losing it must not lose the request.
   it("still answers when the read throws", async () => {
     const kv = fakeKv({ get: async () => { throw new Error("KV down"); } });
-    expect(await getShared({ CACHE: kv }, "k", async () => "live")).toBe("live");
+    expect(await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, STATS_KEY, async () => "live")).toBe("live");
   });
 
   it("still answers when the write throws", async () => {
     const kv = fakeKv({ put: async () => { throw new Error("over quota"); } });
-    expect(await getShared({ CACHE: kv }, "k", async () => "live")).toBe("live");
+    expect(await getShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, STATS_KEY, async () => "live")).toBe("live");
   });
 
   it("still completes a write when invalidation throws", async () => {
     const kv = fakeKv({ delete: async () => { throw new Error("KV down"); } });
-    await expect(invalidateShared({ CACHE: kv }, ["k"])).resolves.toBeUndefined();
+    await expect(invalidateShared({ CACHE: kv, DATA_BACKEND: SUPABASE }, [STATS_KEY])).resolves.toBeUndefined();
   });
 });
 
@@ -310,6 +337,23 @@ describe("cache clearing on the Supabase backend", () => {
     const env = { CACHE: kv, DATA_BACKEND: "supabase" };
     await invalidateShared(env, ["scheduled-matches", "player-by-email:a@b.c", "stats-summary:current"], ["exceptions:"]);
     expect(kv.deletes).toEqual(["stats-summary:current"]);
+    expect(kv.writes).toEqual([]);
+  });
+
+  // The read side of the same rule: any other key is held in the isolate,
+  // and KV is never asked or written.
+  it("keeps every other read out of KV, and still caches it in the isolate", async () => {
+    const kv = fakeKv();
+    const env = { CACHE: kv, DATA_BACKEND: "supabase" };
+    let calls = 0;
+    const fetcher = async () => { calls++; return [{ id: "rec1" }]; };
+
+    for (const key of ["scheduled-matches:v2", "player-by-email:a@b.c", "exceptions:2026-2027", "club-reference"]) {
+      await getShared(env, key, fetcher);
+      await getShared(env, key, fetcher);
+    }
+    expect(calls).toBe(4);
+    expect(kv.reads).toEqual([]);
     expect(kv.writes).toEqual([]);
   });
 });
