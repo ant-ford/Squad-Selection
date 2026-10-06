@@ -65,6 +65,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "event_responses.signed_up_by_id": { kept: "who signed someone else up, and so pays for them" },
   "event_payments.confirmed_by": { kept: "the social secretary who confirmed a payment" },
   "hkha_registrations.registered_by_person_id": { kept: "the Convenor who ticked off a registration" },
+  "registration_events.resolved_by": { kept: "the officer who moved or kept a player after play-ups" },
   "umpire_assignments.created_by": { kept: "who put an umpire down for a duty" },
   "suspensions.created_by": { kept: "the Convenor who recorded someone else's suspension" },
   "suspensions.cleared_by": { kept: "the Convenor who cleared someone else's suspension" },

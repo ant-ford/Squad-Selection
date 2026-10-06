@@ -89,6 +89,7 @@ import {
   topUpCsv,
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
+import { resolveRegistrationEvent } from "./reRegistrations";
 import { clearSuspension, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
 import { adminRoute, isAdminPath } from "./admin/routes";
 import { getDataChecks } from "./dataChecks";
@@ -900,6 +901,17 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         if (pathname === "/api/registration/registered") return json(await markRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/unregistered") return json(await unmarkRegistered(env, user, body), 200, origin);
         if (pathname === "/api/registration/details") return json(await saveRegistrationDetails(env, user, body), 200, origin);
+      }
+    }
+
+    // ── Re-registrations to review (src/reRegistrations.ts) ───────────────
+    // Data checks: the Men's Convenor and the Section Captains.
+    if (method === "POST" && pathname.startsWith("/api/admin/registration-events/")) {
+      const resolve = pathname.match(/^\/api\/admin\/registration-events\/([^/]+)\/resolve$/);
+      if (resolve) {
+        const user = await requireSection(request, env, "dataChecks");
+        const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+        return json(await resolveRegistrationEvent(env, user, resolve[1], body), 200, origin);
       }
     }
 
