@@ -83,6 +83,39 @@ describe("getRecommendationsForMatch: HKFC-away fixture", () => {
   });
 });
 
+describe("recommendationOrder: the squad screen's ranking, with the players", () => {
+  it("is the recommendations route's order (current squad ranked too, no limit), from the players given", async () => {
+    mocks.getReferenceData.mockResolvedValue({ teamRankMap: { "HKFC C": 3, "HKFC D": 4 } });
+    const data = {
+      match: { hkfcTeam: "HKFC C", homeTeam: "HKFC C", awayTeam: "Valley Hockey Club" },
+      players: [
+        player("down", "HKFC D"),
+        { ...player("picked", "HKFC C"), selectionStatus: "Selected" },
+        { ...player("maybe", "HKFC C"), availabilityStatus: "Maybe" },
+        { ...player("blocked", "HKFC C"), eligibilityStatus: "blocked" },
+        { ...player("out", "HKFC C"), availabilityStatus: "Unavailable" },
+        ...Array.from({ length: 12 }, (_, i) => player(`d${String(i).padStart(2, "0")}`, "HKFC D")),
+      ],
+    };
+    mocks.getPlayersForMatch.mockResolvedValue(data);
+    const { recommendationOrder } = await import("../worker/src/recommendations");
+
+    const order = await recommendationOrder(ENV, data as never);
+    const route = await getRecommendationsForMatch(ENV, "recM1", undefined, undefined, 500, true);
+    expect(order).toEqual(route.recommendations.map((r) => r.id));
+    expect(order[0]).toBe("picked");
+    expect(order).toHaveLength(15); // all but the blocked and the unavailable, past the route's default 10
+    // Worked from what it was handed: no second players-for-match.
+    expect(mocks.getPlayersForMatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("is empty for a team with no rank (the route's 400)", async () => {
+    const { recommendationOrder } = await import("../worker/src/recommendations");
+    const data = { match: { hkfcTeam: "Unlisted Team" }, players: [player("p1", "Unlisted Team")] };
+    expect(await recommendationOrder(ENV, data as never)).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Which team a candidate is RANKED as.
 //

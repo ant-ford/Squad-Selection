@@ -112,7 +112,7 @@ import {
 import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
-import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch, recommendationOrder } from "./recommendations";
 import {
   handleGetCalendarLink,
   handlePlayerCalendarFeed,
@@ -296,11 +296,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && matchPlayersMatch) {
       await requireCoach(request, env);
       const side = url.searchParams.get("side") as "home" | "away" | null;
-      return json(
-        await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined),
-        200,
-        origin,
-      );
+      const data = await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined);
+      // ?recommendations=1: the squad screen's ranking with the players, in
+      // the same request (it used to ask /recommendations, which built the
+      // whole players-for-match again).
+      if (url.searchParams.get("recommendations") === "1") {
+        return json({ ...data, recommendationOrder: await recommendationOrder(env, data) }, 200, origin);
+      }
+      return json(data, 200, origin);
     }
 
     const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
