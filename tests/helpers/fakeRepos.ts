@@ -322,6 +322,13 @@ function buildRepos(s: FakeState): FakeRepos {
     async listNames() {
       return s.people.map((p) => personRow(p, NAME_FIELDS));
     },
+    async listNamesFor(ids, emails) {
+      const wantedIds = new Set([...ids].filter((id) => API_ID_RE.test(id)));
+      const wantedEmails = new Set([...emails].map((e) => e.trim().toLowerCase()).filter(Boolean));
+      return s.people
+        .filter((p) => wantedIds.has(p.id) || (!!p.email && wantedEmails.has(p.email.trim().toLowerCase())))
+        .map((p) => ({ id: p.id, preferredName: p.preferredName || null, givenNames: p.givenNames || null, email: p.email ? p.email.trim().toLowerCase() : null }));
+    },
     async getMyTaskFields(id) {
       const p = findPerson(id);
       return p ? personRow(p, MY_TASK_FIELDS) : null;
@@ -571,9 +578,11 @@ function buildRepos(s: FakeState): FakeRepos {
     async create(events) {
       for (const e of events) s.rankingEvents.push({ id: fakeUuid(), ...clone(e) });
     },
-    async listNewestFirst() {
-      return [...s.rankingEvents]
+    async listRecent(since, limit, upTo) {
+      return s.rankingEvents
+        .filter((e) => e.timestamp !== "" && e.timestamp >= since && (upTo === undefined || e.timestamp <= upTo))
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp) || a.id.localeCompare(b.id))
+        .slice(0, limit)
         .map(clone);
     },
   };

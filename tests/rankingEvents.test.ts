@@ -314,6 +314,61 @@ describe("getRankingEvents read path", () => {
     expect(db.pg.reads("api_ranking_events").some((c) => [...c.params.keys()].some((k) => k.startsWith("sort")))).toBe(false);
   });
 
+  it("reads only the window, newest first with a limit, and names everyone in one lookup", async () => {
+    const now = Date.now();
+    db = rankingDb({
+      events: [
+        rankingEventRow({ id: recId("E1"), player: P1, actor: COACH, kind: "move", old_rank: 4, new_rank: 2, occurred_at: new Date(now - 3_600_000).toISOString() }),
+        // A coach whose email matched nobody when it was written: named by email.
+        rankingEventRow({ id: recId("E2"), player: recId("P2"), actor_email: "Other@HKFC.com", kind: "move", old_rank: 9, new_rank: 7, occurred_at: new Date(now - 7_200_000).toISOString() }),
+      ],
+      people: [
+        personRow("Coach", { email: "coach@hkfc.com", preferred_name: "Cat", active: true }),
+        personRow("P1", { preferred_name: "Bob", active: true }),
+        // Not active: still named (the club reference only had Active players).
+        personRow("P2", { preferred_name: null, given_names: "Pip", active: false }),
+        personRow("Other", { email: "other@hkfc.com", preferred_name: "Olly", active: true }),
+        personRow("Bystander", { preferred_name: "Never read", active: true }),
+      ],
+    });
+    const changes = await getRankingEvents(ENV, 7);
+    expect(changes.map((c) => [c.playerName, c.actorName])).toEqual([["Bob", "Cat"], ["Pip", "Olly"]]);
+
+    const [read] = db.pg.reads("api_ranking_events");
+    expect(db.pg.reads("api_ranking_events")).toHaveLength(1);
+    expect(read.params.get("occurred_at")).toMatch(/^gte\.\d{4}-\d{2}-\d{2}T/);
+    expect(read.params.get("limit")).toBe("250");
+    // One name lookup, for just these people: no club reference, no per-player reads.
+    const names = db.pg.reads("api_players");
+    expect(names).toHaveLength(1);
+    expect(names[0].params.get("select")).toBe("id,preferred_name,given_names,email_lower");
+    expect(db.pg.reads("api_teams")).toHaveLength(0);
+    expect(db.pg.problems).toEqual([]);
+  });
+
+  it("reads further back, in whole saves, until it has 20 moves", async () => {
+    // 25 saves an hour apart, each one player jumping from 25th to 1st and
+    // 24 shifting down one: 625 events, one move each.
+    const now = Date.now();
+    const events: PgRow[] = [];
+    for (let s = 0; s < 25; s++) {
+      const at = new Date(now - (s + 1) * 3_600_000).toISOString();
+      events.push(rankingEventRow({ id: recId(`S${s}M`), kind: "move", old_rank: 25, new_rank: 1, occurred_at: at, actor_email: "c@hkfc.com" }));
+      for (let r = 1; r < 25; r++) {
+        events.push(rankingEventRow({ id: recId(`S${s}R${r}`), kind: "move", old_rank: r, new_rank: r + 1, occurred_at: at, actor_email: "c@hkfc.com" }));
+      }
+    }
+    db = rankingDb({ events });
+    const changes = await getRankingEvents(ENV, 30);
+    // Only the movers, newest first: a save cut by a page is read again whole.
+    expect(changes.map((c) => c.id)).toEqual(Array.from({ length: 20 }, (_, s) => recId(`S${s}M`)));
+    const reads = db.pg.reads("api_ranking_events");
+    // 250 a page: 9 whole saves, then 10 more, then the rest.
+    expect(reads).toHaveLength(3);
+    expect(reads[0].params.getAll("occurred_at")).toHaveLength(1);
+    expect(reads[1].params.getAll("occurred_at").some((f) => f.startsWith("lte."))).toBe(true);
+  });
+
   it("returns [] for an existing but empty table", async () => {
     db = rankingDb();
     const changes = await getRankingEvents(ENV, 7);

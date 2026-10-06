@@ -1,6 +1,7 @@
 import type { Env } from "../../env";
 import { normalizeEmail } from "../../../../shared/normalizeEmail";
-import { db, eq } from "../supabase";
+import { db, eq, inList } from "../supabase";
+import { API_ID_RE } from "../ids";
 import type { PeopleRepo, PersonPatch } from "../people";
 import { toPlayer, type PlayerRow } from "./mappers";
 import { peopleCrmReads } from "./crm";
@@ -58,6 +59,21 @@ export function supabasePeople(env: Env): PeopleRepo {
     async update(id, patch) {
       const rows = await d.update("people", `api_id=${eq(id)}`, toColumns(patch));
       if (rows.length === 0) throw new Error(`No person ${id}`);
+    },
+
+    async listNamesFor(ids, emails) {
+      const wantedIds = [...new Set([...ids].filter((id) => API_ID_RE.test(id)))];
+      const wantedEmails = [...new Set([...emails].map((e) => normalizeEmail(e)).filter(Boolean))];
+      const either = [
+        ...(wantedIds.length ? [`id.${inList(wantedIds)}`] : []),
+        ...(wantedEmails.length ? [`email_lower.${inList(wantedEmails)}`] : []),
+      ];
+      if (either.length === 0) return [];
+      const rows = await d.select<{ id: string; preferred_name: string | null; given_names: string | null; email_lower: string | null }>(
+        "api_players",
+        `select=id,preferred_name,given_names,email_lower&or=(${either.join(",")})`,
+      );
+      return rows.map((r) => ({ id: r.id, preferredName: r.preferred_name, givenNames: r.given_names, email: r.email_lower }));
     },
 
     async updateMany(updates) {
