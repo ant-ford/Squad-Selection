@@ -11,8 +11,7 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidatePeople } from "./invalidation";
 import { toCsv } from "../../shared/csv";
 import {
   KIT_ITEMS,
@@ -341,7 +340,7 @@ const personId = (v: unknown) => {
 };
 
 /** Changing whose number is whose is a People change: drop the People caches. */
-const peopleChanged = (env: Env) => invalidateForTables(env, [TABLES.player]);
+const peopleChanged = (env: Env) => invalidatePeople(env);
 
 export async function allocateSpare(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
   requireSupabase(env);

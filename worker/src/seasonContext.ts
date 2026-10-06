@@ -11,14 +11,14 @@
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
  * reads underneath it are shared through KV and live much longer).
  * Invalidated by: syncSquad (selections changed), setAvailability and
- * setMyAvailability (exceptions changed), and the Airtable webhook.
+ * setMyAvailability (exceptions changed), and People writes (invalidation.ts).
  */
 
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import type { Env } from "./env";
-import { getCached, getShared, rawReadTtl } from "./cache";
+import { getCached, getShared } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -39,7 +39,7 @@ import type {
 // ── Season-scoped fetches ───────────────────────────────────────────────
 const SEASON_READ_TTL_MS = 10 * 60 * 1000;
 
-// Always the short TTL, never the webhook-backed six hours: these records
+// Always the short TTL, never hours: these records
 // carry squad selections, which the eligibility engine's same-day checks
 // read. See SCHEDULED_MATCHES_TTL_MS in fixtures.ts for why.
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
@@ -67,7 +67,7 @@ export async function getMatchCardsForSeason(
   const key = opts.cardedOnly ? `match-cards:${season}:carded` : `match-cards:${season}`;
   return getShared<MatchCard[]>(env, key, async () => {
     return matchCards(env).listForSeason(season, opts);
-  }, rawReadTtl(env, SEASON_READ_TTL_MS));
+  }, SEASON_READ_TTL_MS);
 }
 
 /**

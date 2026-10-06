@@ -18,8 +18,7 @@ import { fileLink } from "./data/supabase/files";
 import { currentSeason } from "./seasonContext";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
-import { invalidateForTables } from "./airtableWebhook";
-import { TABLES } from "../../shared/schema/tableNames";
+import { invalidateMatchCards, invalidatePeople } from "./invalidation";
 import {
   REGISTRATION_CSV_HEADER,
   registrationCsvRow,
@@ -320,7 +319,8 @@ export async function saveRegistrationDetails(
   const linked = patch.registered_name ? await d.rpc<number>("link_match_cards_by_name", { p_name: patch.registered_name }) : 0;
   await log(env, await actorUuid(env, actor), "registration-details", [p.id], Object.keys(patch));
   // Eligibility reads both (and a linked card can re-register a player).
-  await invalidateForTables(env, linked > 0 ? [TABLES.player, TABLES.matchCard] : [TABLES.player]);
+  await invalidatePeople(env);
+  if (linked > 0) await invalidateMatchCards(env);
   return { ok: true, linked };
 }
 
