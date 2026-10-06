@@ -78,12 +78,27 @@ describe("Supabase repositories", () => {
     expect(calls[1].body).toEqual({ p_match: "recM1", p_side: "away", p_people: ["recA", "recB"] });
   });
 
-  it("applies an availability change set in one call and returns the new ids", async () => {
-    const calls = postgrest(() => ["uuid-new"]);
-    const write = { matchId: "recM", playerId: "recP", status: "Maybe" as const, updatedById: "recC" };
-    const out = await availabilityExceptions(env).apply({ deleteIds: ["recE1"], updates: [], creates: [write] });
-    expect(out.createdIds).toEqual(["uuid-new"]);
-    expect(calls[0].body).toEqual({ p: { delete: ["recE1"], update: [], create: [{ match: "recM", player: "recP", status: "Maybe", notes: "", updatedBy: "recC" }] } });
+  it("answers availability in one set_availability call and returns what it did", async () => {
+    const outcome = {
+      updated: 1,
+      results: [{ matchId: "recM", exceptionId: "uuid-new" }],
+      before: [],
+      seasons: ["2026-2027"],
+    };
+    const calls = postgrest(() => outcome);
+    const out = await availabilityExceptions(env).set({ matchIds: ["recM"], playerId: "recP", status: "Maybe", updatedById: "recC" });
+    expect(out).toEqual(outcome);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url.pathname).toBe("/rest/v1/rpc/set_availability");
+    expect(calls[0].body).toEqual({ p_player: "recP", p_matches: ["recM"], p_status: "Maybe", p_notes: null, p_updated_by: "recC" });
+  });
+
+  it("answers a whole day in one set_availability_for_date call", async () => {
+    const calls = postgrest(() => ({ updated: 0, results: [], before: [], seasons: [] }));
+    const out = await availabilityExceptions(env).setForDate({ playerId: "recP", date: "2026-10-10", status: "Unavailable", notes: "Away" });
+    expect(out.results).toEqual([]);
+    expect(calls[0].url.pathname).toBe("/rest/v1/rpc/set_availability_for_date");
+    expect(calls[0].body).toEqual({ p_player: "recP", p_date: "2026-10-10", p_status: "Unavailable", p_notes: "Away" });
   });
 
   it("returns offices in the order they were asked for", async () => {
