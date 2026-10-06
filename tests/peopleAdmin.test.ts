@@ -5,6 +5,7 @@ import {
   membershipChange,
   membershipDraft,
   membershipProblem,
+  newestFirst,
   personChip,
   removedPeriodsNote,
   saveRefusal,
@@ -13,6 +14,7 @@ import {
   stageMoveNeedsConfirm,
 } from "../src/lib/peopleAdmin";
 import { officerItems } from "../src/components/headerItems";
+import { formatFullDate, formatFullDateTime } from "../src/lib/dateUtils";
 import type { PersonMembership } from "../src/api/adminPeople";
 
 const saved: PersonMembership = {
@@ -132,6 +134,21 @@ describe("list chips and search", () => {
   it("words a history row without values", () => {
     expect(historyDetail({ actor: "Pat Lee", fields: ["Member type", "Join date"] })).toBe("Member type, Join date · by Pat Lee");
     expect(historyDetail({ actor: null, fields: [] })).toBe("");
+  });
+
+  it("lists history newest first whatever order it arrives in", () => {
+    const sorted = newestFirst([
+      { at: "2026-10-05T06:57:00.000Z", summary: "Made inactive" },
+      { at: "2026-10-05T07:57:00.000Z", summary: "Made active" },
+      { at: "not a date", summary: "Odd" },
+      { at: "2026-10-06T06:57:00.000Z", summary: "Membership details changed" },
+    ]);
+    expect(sorted.map((e) => e.summary)).toEqual(["Membership details changed", "Made active", "Made inactive", "Odd"]);
+  });
+
+  it("shows history times with the full year, 24-hour, in Hong Kong", () => {
+    expect(formatFullDateTime("2026-10-06T06:57:00.000Z")).toBe("6 Oct 2026, 14:57");
+    expect(formatFullDate("2026-10-06T20:00:00.000Z")).toBe("7 Oct 2026");
   });
 
   it("puts People in the menu for the people section only", () => {
