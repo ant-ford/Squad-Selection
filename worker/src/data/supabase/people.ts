@@ -2,7 +2,7 @@ import type { Env } from "../../env";
 import { normalizeEmail } from "../../../../shared/normalizeEmail";
 import { db, eq } from "../supabase";
 import type { PeopleRepo, PersonPatch } from "../people";
-import { toPlayer, type PlayerRow } from "./mappers";
+import { toPlayer, toPlayerLite, type PlayerLiteRow, type PlayerRow } from "./mappers";
 import { peopleCrmReads } from "./crm";
 
 /** People columns the Worker writes, by PersonPatch key. */
@@ -34,7 +34,9 @@ export function supabasePeople(env: Env): PeopleRepo {
     Promise.all((await d.select<PlayerRow>("api_players", `select=*&${query}`)).map((r) => toPlayer(env, r)));
 
   return {
-    listActive: () => players("active=is.true"),
+    // The squad screens' columns only (api_players_lite): no photo lookup or
+    // signing, CV, coach notes or date of birth.
+    listActive: async () => (await d.select<PlayerLiteRow>("api_players_lite", "select=*&active=is.true")).map(toPlayerLite),
 
     async findByEmail(email) {
       const rows = await d.select<PlayerRow>("api_players", `select=*&email_lower=${eq(normalizeEmail(email))}`);

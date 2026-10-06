@@ -65,7 +65,7 @@ function fake(reviewRow: object | null, opts: { next?: object[]; rpcError?: { co
     if (url.pathname.includes("/rpc/submit_")) return opts.rpcError ? reply(opts.rpcError, 400) : reply(opts.next ?? []);
     if (url.pathname.endsWith("/api_reviews")) return reply(reviewRow ? [reviewRow] : []);
     if (url.pathname.endsWith("/commitments")) return reply(opts.mailbox ? [{ office: { office_email: opts.mailbox } }] : []);
-    if (url.pathname.endsWith("/api_players")) {
+    if (/\/api_players(_lite)?$/.test(url.pathname)) {
       // Two with HKFC D as their Selected Team (one registered elsewhere), one selected for C.
       return reply([
         { id: "recP1", registered_team: "HKFC D", selected_team_sos: null, selected_team_eos: null, active: true },
