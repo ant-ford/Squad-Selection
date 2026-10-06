@@ -45,6 +45,7 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
     s.includes('discipline') && { to: '/suspensions', label: 'Suspensions', icon: Ban },
     s.includes('people') && { to: '/people', label: 'People', icon: Contact },
     s.includes('club') && { to: '/club', label: 'Offices and teams', icon: Landmark },
+    s.includes('dataChecks') && { to: '/data-checks', label: 'Data checks', icon: ListChecks },
   ];
   return all.filter((i): i is MenuEntry => !!i);
 }
