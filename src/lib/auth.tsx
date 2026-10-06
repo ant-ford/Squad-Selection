@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/auth-js';
 import { supabase } from './supabase';
 import { queryClient } from './queryClient';
 import { setAccessDenied } from './accessDenied';

@@ -3,24 +3,32 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 // The player-page banner: the person's own forms (Player Statement,
 // Waivers & Declarations) and whatever the New Joiner and Statements
-// processes are waiting on them for. Driven through the real router.
+// processes are waiting on them for. Driven through the real router, on the
+// Supabase backend: the repositories in memory, and the fake PostgREST for
+// what myTasks reads directly (the signing lines from applicationSigning.ts,
+// the details check, joiner requests and events).
+//
+// On Supabase every line opens an Eddy screen, not a Fillout form, so the
+// URLs differ from the Airtable version of this file: /review/<id>,
+// /waivers, /apply and /sign-application/<id>.
 // ---------------------------------------------------------------------------
 
-import { fakeAirtable, requestedFields, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
-import { resetMissingFieldCache } from "../worker/src/airtable";
-import { invalidateForTables } from "../worker/src/airtableWebhook";
+import { invalidateCommitments, invalidatePeople } from "../worker/src/invalidation";
 import { waiversDoneThisSeason } from "../worker/src/myTasks";
 import worker from "../worker/src/index";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest, type PgRow } from "./helpers/postgrest";
+import { commitment, office, person as personRow } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "***",
-} as any;
+} as unknown as Env;
 
 // 12:00 on 26 September 2026 in Hong Kong: the 2026-27 season began 1 July.
 const NOW = new Date("2026-09-26T04:00:00Z");
@@ -40,94 +48,167 @@ const ID = {
   otto: "recApplicantOtto1", // stage 5
 };
 
+// Office rows: the same ids in the repositories and in PostgREST.
+const OFFICE = {
+  sponsor: "recSponsorRow0001",
+  chair: "recChairRow000001",
+  officer: "recOfficerRow0001",
+  captain: "recCaptainRow0001",
+};
+
 const WAIVER_URL = `https://hkfchockey.fillout.com/t/nLjY8qQTaJus?id=${ID.pat}`;
 const REVIEW_URL = `https://hkfchockey.fillout.com/t/6fPWtBzqUGus?id=${ID.pat}`;
 const url = (form: string, id: string) => `https://hkfchockey.fillout.com/${form}?id=${id}`;
+/** Where each line goes on Supabase: Eddy's own screens. */
+const SIGN = (id: string) => `/sign-application/${id}`;
+const REVIEW = (id: string) => `/review/${id}`;
 
-function tables(): FakeTables {
-  const person = (id: string, email: string, first: string, fields: Record<string, unknown> = {}) => ({
-    id,
-    fields: {
-      "Preferred Name": first, Surname: "Test", Email: email, Active: true, Status: "Member",
-      "Last Submission: Waivers & Declarations": SIGNED,
-      ...fields,
+/** PostgREST's uuid for a People row. */
+const uuid = (apiId: string) => `uuid-${apiId}`;
+
+// ── The repositories ─────────────────────────────────────────────────────
+
+function member(id: string, email: string, first: string, crm: FakePerson["crm"] = {}): FakePerson {
+  return personRow({
+    id, preferredName: first, surname: "Test", email, active: true, status: "Member",
+    crm: { waiversSubmittedAt: SIGNED, ...crm },
+  });
+}
+
+function applicant(id: string, first: string, stage: string, overrides: Partial<FakePerson> = {}, crm: FakePerson["crm"] = {}): FakePerson {
+  return personRow({
+    id, preferredName: first, surname: "Applicant", status: "Applicant", applicantStage: stage, active: false,
+    ...overrides,
+    crm: {
+      joinerFormUrl: url("application", id),
+      sponsorFormUrl: url("sponsor_support", id),
+      chairFormUrl: url("signatures-chairman", id),
+      officerFormUrl: url("signatures-officer", id),
+      ...crm,
     },
   });
-  const applicant = (id: string, first: string, stage: string, fields: Record<string, unknown> = {}) => ({
-    id,
-    fields: {
-      "Preferred Name": first, Surname: "Applicant", Status: "Applicant", "Applicant Stage": stage,
-      "Fillout - Section Captain Dashboard (Update)": url("applicant_update", id),
-      "Fillout - Applicant (New Joiner Form)": url("application", id),
-      "Fillout - Sponsor (Page 7)": url("sponsor_support", id),
-      "Fillout - Chairman (Page 7 Signature)": url("signatures-chairman", id),
-      "Fillout - Membership Officer (Page 7 Signature)": url("signatures-officer", id),
-      ...fields,
-    },
+}
+
+const review = (id: string, stage: string, fields: Parameters<typeof commitment>[0]) =>
+  commitment({
+    id, reviewProgress: stage, periodEnd: ["2026-11-30"],
+    sponsorFormUrl: url("t/tFFoChrXr2us", id),
+    officerFormUrl: url("t/51wrEkwujVus", id),
+    ...fields,
   });
-  const review = (id: string, stage: string, fields: Record<string, unknown>) => ({
-    id,
-    fields: {
-      "Review Progress": stage, "Period End": ["2026-11-30"],
-      "Fillout - Sponsor (Commitment Review Form)": url("t/tFFoChrXr2us", id),
-      "Fillout - Membership Officer (Commitment Review Form)": url("t/51wrEkwujVus", id),
-      ...fields,
-    },
-  });
+
+const db = useFakeRepos(() => ({
+  people: [
+    member(ID.pat, "pat@hkfc.com", "Pat", {
+      waiversFormUrl: WAIVER_URL,
+      // Last season's: this season still needs one.
+      waiversSubmittedAt: "2026-05-20T02:00:00.000Z",
+      ...({ hkidNo: "A123456(7)" } as FakePerson["crm"]),
+    }),
+    member(ID.sue, "sue@hkfc.com", "Sue"),
+    member(ID.chris, "chris@hkfc.com", "Chris"),
+    member(ID.charles, "charles@hkfc.com", "Charles"),
+    member(ID.olive, "olive@hkfc.com", "Olive"),
+    member(ID.cap, "cap@hkfc.com", "Cap"),
+    applicant(ID.tim, "Tim", "1. Trial Application"),
+    applicant(ID.ivy, "Ivy", "2. Section Captain Invitation", { email: "ivy@hkfc.com", active: true }, { waiversSubmittedAt: SIGNED }),
+    applicant(ID.sam, "Sam", "3. Club Application (Signed)", {}, { sponsoredBySponsor: [OFFICE.sponsor] }),
+    applicant(ID.cara, "Cara", "4. Sponsor (Signed)", {}, { sponsoredByChair: [OFFICE.chair] }),
+    applicant(ID.otto, "Otto", "5. Chairman (Signed)", {}, { sponsoredByOfficer: [OFFICE.officer] }),
+  ],
+  officers: [
+    office("sponsor", ID.chris, { id: OFFICE.sponsor }),
+    office("sectionChair", ID.charles, { id: OFFICE.chair, designation: "Chairman" }),
+    office("membershipOfficer", ID.olive, { id: OFFICE.officer }),
+    office("sectionCaptain", ID.cap, { id: OFFICE.captain, designation: "Men's Captain" }),
+  ],
+  commitments: [
+    review("recCmtPat00000001", "Notified Member", {
+      people: [ID.pat], fullName: ["Pat Test"], memberFormUrl: [REVIEW_URL],
+    }),
+    review("recCmtSue00000001", "Member Submitted (with Sponsor)", {
+      people: [ID.sue], fullName: ["Sue Test"], sponsorLink: [OFFICE.sponsor],
+    }),
+    review("recCmtLou00000001", "Sponsor Submitted (with Membership Officer)", {
+      people: ["recMemberLou00001"], fullName: ["Lou Test"], officerLink: [OFFICE.officer],
+    }),
+    // Before the Statements cut-off (1 July 2026): history, not a task.
+    review("recCmtOld00000001", "Member Submitted (with Sponsor)", {
+      people: [ID.sue], fullName: ["Sue Test"], sponsorLink: [OFFICE.sponsor], periodEnd: ["2025-11-30"],
+    }),
+  ],
+}));
+
+// ── PostgREST: the same people, as Postgres has them ─────────────────────
+
+/** One people row per repository person, keyed by uuid, with what the direct reads select. */
+function pgPerson(p: FakePerson): PgRow {
+  const crm = (p.crm ?? {}) as Record<string, unknown>;
+  const link = (key: string) => (Array.isArray(crm[key]) ? (crm[key] as string[])[0] : null);
   return {
-    People: [
-      person(ID.pat, "pat@hkfc.com", "Pat", {
-        "Fillout - Member Waivers & Declarations": WAIVER_URL,
-        // Last season's: this season still needs one.
-        "Last Submission: Waivers & Declarations": "2026-05-20T02:00:00.000Z",
-        "HKID No.": "A123456(7)",
-      }),
-      person(ID.sue, "sue@hkfc.com", "Sue"),
-      person(ID.chris, "chris@hkfc.com", "Chris"),
-      person(ID.charles, "charles@hkfc.com", "Charles"),
-      person(ID.olive, "olive@hkfc.com", "Olive"),
-      person(ID.cap, "cap@hkfc.com", "Cap"),
-      applicant(ID.tim, "Tim", "1. Trial Application"),
-      applicant(ID.ivy, "Ivy", "2. Section Captain Invitation", {
-        Email: "ivy@hkfc.com", Active: true, "Last Submission: Waivers & Declarations": SIGNED,
-      }),
-      applicant(ID.sam, "Sam", "3. Club Application (Signed)", { "Sponsored By Sponsor": ["recSponsorRow0001"] }),
-      applicant(ID.cara, "Cara", "4. Sponsor (Signed)", { "Sponsored By Chair": ["recChairRow000001"] }),
-      applicant(ID.otto, "Otto", "5. Chairman (Signed)", { "Sponsored By Membership Officer": ["recOfficerRow0001"] }),
-    ],
-    Teams: [],
-    Sponsors: [{ id: "recSponsorRow0001", fields: { Status: "Active", Member: [ID.chris] } }],
-    "Section Chairs": [{ id: "recChairRow000001", fields: { Status: "Active", Designation: "Chairman", Member: [ID.charles] } }],
-    "Membership Officers": [{ id: "recOfficerRow0001", fields: { Status: "Active", Member: [ID.olive] } }],
-    "Section Captains": [{ id: "recCaptainRow0001", fields: { Status: "Active", Designation: "Men's Captain", Member: [ID.cap] } }],
-    Commitments: [
-      review("recCmtPat00000001", "Notified Member", {
-        People: [ID.pat], "Full Name": ["Pat Test"], "Fillout - Member (Commitment Record Picker)": [REVIEW_URL],
-      }),
-      review("recCmtSue00000001", "Member Submitted (with Sponsor)", {
-        People: [ID.sue], "Full Name": ["Sue Test"], Sponsor: ["recSponsorRow0001"],
-      }),
-      review("recCmtLou00000001", "Sponsor Submitted (with Membership Officer)", {
-        People: ["recMemberLou00001"], "Full Name": ["Lou Test"], "Membership Officers": ["recOfficerRow0001"],
-      }),
-      // Before the Statements cut-off (1 July 2026): history, not a task.
-      review("recCmtOld00000001", "Member Submitted (with Sponsor)", {
-        People: [ID.sue], "Full Name": ["Sue Test"], Sponsor: ["recSponsorRow0001"], "Period End": ["2025-11-30"],
-      }),
-    ],
+    id: uuid(p.id),
+    api_id: p.id,
+    email: p.email ?? null,
+    status: p.status ?? null,
+    active: p.active,
+    // Everyone confirmed their details this season: no "details" line.
+    profile_updated_at: SIGNED,
+    preferred_name: p.preferredName ?? null,
+    given_names: p.givenNames ?? null,
+    surname: p.surname ?? null,
+    applicant_stage: p.applicantStage ?? null,
+    sponsored_by_sponsor_id: link("sponsoredBySponsor"),
+    sponsored_by_chair_id: link("sponsoredByChair"),
+    sponsored_by_officer_id: link("sponsoredByOfficer"),
+    hkid_no: (crm.hkidNo as string | undefined) ?? null,
   };
 }
 
-let data: FakeTables;
-let handle: ReturnType<typeof fakeAirtable>;
+/** A new member's application, submitted, nobody signed yet. */
+const application = (apiId: string): PgRow => ({
+  id: `app-${apiId}`,
+  person_id: uuid(apiId),
+  application_type: "New HKFC Member",
+  submitted_at: "2026-08-01T02:00:00.000Z",
+  sponsor_signed_at: null,
+  sponsor_signature_file_id: null,
+  chair_signed_at: null,
+  chair_signature_file_id: null,
+  officer_signed_at: null,
+  officer_signature_file_id: null,
+  pdf_file_id: null,
+  sent_at: null,
+  sent_by: null,
+  sent_to: null,
+});
+
+const ROLE = { sponsor: "sponsor", sectionChair: "section_chair", membershipOfficer: "membership_officer", sectionCaptain: "section_captain" } as const;
+
+let pg: FakePostgrest;
 
 beforeEach(() => {
   invalidateAll();
-  resetMissingFieldCache();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
-  data = tables();
-  handle = fakeAirtable(data);
+  pg = fakePostgrest({
+    tables: {
+      people: db.state.people.map(pgPerson),
+      applications: [ID.sam, ID.cara, ID.otto].map(application),
+      offices: db.state.officers.map((o) => ({
+        id: o.id, role: ROLE[o.office as keyof typeof ROLE], status: o.status, person_id: o.member ? uuid(o.member) : null, office_email: null,
+      })),
+      team_people: [],
+      steps: [],
+      events: [],
+      event_responses: [],
+    },
+    relations: { "offices.offices_person_id_fkey": { table: "people", from: "person_id", to: "id", kind: "one" } },
+    // Supabase vouches for any token: "token-for-<email>" signs in as <email>.
+    other: (_u, init) => {
+      const auth = String((init.headers as Record<string, string>).Authorization ?? "");
+      return new Response(JSON.stringify({ email: auth.replace(/^Bearer token-for-/, "") }), { status: 200 });
+    },
+  });
 });
 
 afterEach(() => {
@@ -136,13 +217,6 @@ afterEach(() => {
 });
 
 async function as(email: string | null, path: string): Promise<Response> {
-  const airtable = handle.fetchMock as unknown as typeof fetch;
-  vi.stubGlobal("fetch", vi.fn((u: any, opts?: any) => {
-    if (String(u).startsWith(ENV.SUPABASE_URL)) {
-      return Promise.resolve(new Response(JSON.stringify({ email }), { status: 200 }));
-    }
-    return airtable(u, opts);
-  }));
   const headers: Record<string, string> = { Origin: "https://app.test" };
   if (email) headers.Authorization = `Bearer token-for-${email}`;
   return worker.fetch(new Request(`https://api.test${path}`, { headers }), ENV, { waitUntil: () => {} } as any);
@@ -157,8 +231,8 @@ const tasksFor = async (email: string) => {
 describe("the person's own forms", () => {
   it("asks for the Player Statement once the review email has gone, and this season's waivers", async () => {
     expect(await tasksFor("pat@hkfc.com")).toEqual([
-      { id: "statement:recCmtPat00000001", key: "statement", url: REVIEW_URL },
-      { id: "waivers", key: "waivers", url: WAIVER_URL },
+      { id: "statement:recCmtPat00000001", key: "statement", url: REVIEW("recCmtPat00000001") },
+      { id: "waivers", key: "waivers", url: "/waivers" },
     ]);
   });
 
@@ -172,15 +246,15 @@ describe("the person's own forms", () => {
 
   it("goes as soon as the base shows the statement submitted", async () => {
     await tasksFor("pat@hkfc.com"); // warm the caches
-    data.Commitments[0].fields["Review Progress"] = "Member Submitted (with Sponsor)";
-    await invalidateForTables(ENV, ["Commitments"]); // what the webhook does
+    db.state.commitments[0].reviewProgress = "Member Submitted (with Sponsor)";
+    await invalidateCommitments(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["waivers"]);
   });
 
   it("goes as soon as the base shows this season's waivers", async () => {
     await tasksFor("pat@hkfc.com");
-    data.People[0].fields["Last Submission: Waivers & Declarations"] = "2026-09-26T03:00:00.000Z";
-    await invalidateForTables(ENV, ["People"]);
+    (db.state.people[0].crm as Record<string, unknown>).waiversSubmittedAt = "2026-09-26T03:00:00.000Z";
+    await invalidatePeople(ENV);
     expect((await tasksFor("pat@hkfc.com")).map((t: any) => t.key)).toEqual(["statement"]);
   });
 });
@@ -188,22 +262,22 @@ describe("the person's own forms", () => {
 describe("what the processes are waiting on someone for", () => {
   it("asks each New Joiner signer for their part, with their form", async () => {
     expect(await tasksFor("chris@hkfc.com")).toEqual([
-      { id: `application:${ID.sam}`, key: "application", subject: "Sam Applicant", role: "Sponsor", url: url("sponsor_support", ID.sam) },
+      { id: `application:${ID.sam}`, key: "application", subject: "Sam Applicant", role: "Sponsor", url: SIGN(ID.sam) },
       // Sue's review waits on Chris too; the pre-cut-off one does not appear.
-      { id: "review:recCmtSue00000001", key: "review", subject: "Sue Test", role: "Sponsor", url: url("t/tFFoChrXr2us", "recCmtSue00000001") },
+      { id: "review:recCmtSue00000001", key: "review", subject: "Sue Test", role: "Sponsor", url: REVIEW("recCmtSue00000001") },
     ]);
     expect(await tasksFor("charles@hkfc.com")).toEqual([
-      { id: `application:${ID.cara}`, key: "application", subject: "Cara Applicant", role: "Chairman", url: url("signatures-chairman", ID.cara) },
+      { id: `application:${ID.cara}`, key: "application", subject: "Cara Applicant", role: "Chairman", url: SIGN(ID.cara) },
     ]);
     expect(await tasksFor("olive@hkfc.com")).toEqual([
-      { id: `application:${ID.otto}`, key: "application", subject: "Otto Applicant", role: "Membership Officer", url: url("signatures-officer", ID.otto) },
-      { id: "review:recCmtLou00000001", key: "review", subject: "Lou Test", role: "Membership Officer", url: url("t/51wrEkwujVus", "recCmtLou00000001") },
+      { id: `application:${ID.otto}`, key: "application", subject: "Otto Applicant", role: "Membership Officer", url: SIGN(ID.otto) },
+      { id: "review:recCmtLou00000001", key: "review", subject: "Lou Test", role: "Membership Officer", url: REVIEW("recCmtLou00000001") },
     ]);
   });
 
   it("asks an invited applicant for their New Joiner Form", async () => {
     expect(await tasksFor("ivy@hkfc.com")).toEqual([
-      { id: `joiner:${ID.ivy}`, key: "joiner", url: url("application", ID.ivy) },
+      { id: `joiner:${ID.ivy}`, key: "joiner", url: "/apply" },
     ]);
   });
 
@@ -213,22 +287,28 @@ describe("what the processes are waiting on someone for", () => {
 
   it("moves the line on with the application", async () => {
     await tasksFor("chris@hkfc.com");
-    // Chris signs: stage 4 now waits on the chairman.
-    data.People.find((r) => r.id === ID.sam)!.fields["Applicant Stage"] = "4. Sponsor (Signed)";
-    data.People.find((r) => r.id === ID.sam)!.fields["Sponsored By Chair"] = ["recChairRow000001"];
-    await invalidateForTables(ENV, ["People"]);
+    // Chris signs: stage 4 now waits on the chairman. On Supabase the
+    // signing lines come from the people and applications tables.
+    const sam = pg.tables.people.find((r) => r.api_id === ID.sam)!;
+    Object.assign(sam, { applicant_stage: "4. Sponsor (Signed)", sponsored_by_chair_id: OFFICE.chair });
+    pg.tables.applications.find((a) => a.person_id === sam.id)!.sponsor_signed_at = "2026-09-26T03:00:00.000Z";
+    const samRow = db.state.people.find((r) => r.id === ID.sam)!;
+    samRow.applicantStage = "4. Sponsor (Signed)";
+    (samRow.crm as Record<string, unknown>).sponsoredByChair = [OFFICE.chair];
+    await invalidatePeople(ENV);
     expect((await tasksFor("chris@hkfc.com")).map((t: any) => t.key)).toEqual(["review"]);
     expect((await tasksFor("charles@hkfc.com")).map((t: any) => t.subject)).toEqual(["Cara Applicant", "Sam Applicant"]);
   });
 
   it("reads only what the lines need, and the person's own record by id", async () => {
     const res = await as("pat@hkfc.com", "/api/my-tasks");
-    const formulaOf = (u: string) => new URLSearchParams(u.split("?")[1] ?? "").get("filterByFormula") ?? "";
-    const own = handle.calls.filter((c) => c.url.includes("/People?") && formulaOf(c.url) === `RECORD_ID()="${ID.pat}"`);
+    // The person's own forms: one read, by their id.
+    const own = db.callsTo("people", "getMyTaskFields");
     expect(own).toHaveLength(1);
-    expect(requestedFields(own[0].url)).toEqual(["Last Submission: Waivers & Declarations", "Fillout - Member Waivers & Declarations"]);
-    const applicants = handle.calls.find((c) => c.url.includes("/People?") && formulaOf(c.url).startsWith("OR({Applicant Stage}"));
-    expect(requestedFields(applicants!.url)).not.toContain("HKID No.");
+    expect(own[0].args).toEqual([ID.pat]);
+    // The direct People reads (signing lines, details check) never select the HKID.
+    const selects = pg.reads("people").map((c) => c.params.get("select") ?? "*");
+    expect(selects.filter((s) => s === "*" || s.includes("hkid"))).toEqual([]);
     expect(await res.text()).not.toContain("A123456");
   });
 });

@@ -15,16 +15,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // opt in at all.
 // ---------------------------------------------------------------------------
 
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
 import { invalidateAll } from "../worker/src/cache";
 import { effectiveAvailability, needsExplicitAvailable } from "../worker/src/availabilityRules";
 import { setAvailability, setPlayerOptInOnly } from "../worker/src/availability";
 import { getPlayersForMatch } from "../worker/src/squad";
 import type { AvailabilityRule } from "../shared/schema/domainTypes";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { match, person, recId, team } from "./helpers/factories";
 
 const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "appTest",
+  ...SUPABASE_TEST_ENV,
   CALENDAR_SECRET: "***",
   ALLOWED_ORIGIN: "https://app.test",
   SUPABASE_URL: "https://t.supabase.co",
@@ -32,6 +33,10 @@ const ENV = {
 } as any;
 
 const FIXTURE = { date: "2026-10-10", isPlayUp: false, isSupport: false };
+
+const GHOST = recId("Ghost");
+const REG = recId("Reg");
+const M1 = recId("M1");
 
 function rule(partial: Partial<AvailabilityRule>): AvailabilityRule {
   return {
@@ -45,32 +50,40 @@ function rule(partial: Partial<AvailabilityRule>): AvailabilityRule {
   } as AvailabilityRule;
 }
 
-function tables(): FakeTables {
-  return {
-    Teams: [
-      { id: "recTA", fields: { "Team Name": "A", "Team Rank": 1, Active: true, "Target Squad Size": 16 } },
-      { id: "recTC", fields: { "Team Name": "C", "Team Rank": 3, Active: true, "Target Squad Size": 16 } },
-    ],
-    People: [
-      // Rarely around, never updates anything - the player this is for.
-      { id: "recGhost", fields: { "Preferred Name": "Ghost", Surname: "G", Email: "ghost@hkfc.com", Active: true, "Registered Team": "C", "Playing Position": "Forward", "Playing Ability": "D", Status: "Active", "Opt-In Only": true } },
-      // Ordinary player on the club default.
-      { id: "recReg", fields: { "Preferred Name": "Reg", Surname: "R", Email: "reg@hkfc.com", Active: true, "Registered Team": "C", "Playing Position": "Forward", "Playing Ability": "C", Status: "Active" } },
-    ],
-    Matches: [
-      { id: "recM1", fields: { Date: "2026-10-10T09:00:00.000Z", Season: "2026-2027", "Home Team": "C", "Away Team": "Valley", "Match Status": "Scheduled", "Selected Players Home": [], "Selected Players Away": [] } },
-    ],
-    "Match Cards": [],
-    "Availability Exceptions": [],
-    "Availability Rules": [],
-  };
-}
+const db = useFakeRepos(() => ({
+  teams: [
+    team({ id: recId("TA"), teamName: "A", teamRank: 1, active: true, targetSquadSize: 16 }),
+    team({ id: recId("TC"), teamName: "C", teamRank: 3, active: true, targetSquadSize: 16 }),
+  ],
+  people: [
+    // Rarely around, never updates anything - the player this is for.
+    person({
+      id: GHOST, preferredName: "Ghost", surname: "G", email: "ghost@hkfc.com", active: true, registeredTeam: "C",
+      playingPosition: "Forward", playingAbility: "D", status: "Active", optInOnly: true,
+    }),
+    // Ordinary player on the club default.
+    person({
+      id: REG, preferredName: "Reg", surname: "R", email: "reg@hkfc.com", active: true, registeredTeam: "C",
+      playingPosition: "Forward", playingAbility: "C", status: "Active",
+    }),
+  ],
+  matches: [
+    match({
+      id: M1, matchDate: "2026-10-10T09:00:00.000Z", season: "2026-2027", homeTeam: "C", awayTeam: "Valley",
+      matchStatus: "Scheduled", selectedPlayersHome: [], selectedPlayersAway: [],
+    }),
+  ],
+  matchCards: [],
+  availabilityExceptions: [],
+  availabilityRules: [],
+}));
 
-let state: FakeTables;
+const stored = () => db.state.availabilityExceptions;
+
 beforeEach(() => {
   invalidateAll();
-  state = tables();
-  fakeAirtable(state);
+  // Nothing here should reach Supabase directly; any request fails the test.
+  fakePostgrest({ tables: {} });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -115,41 +128,36 @@ describe("an Available answer is stored only when something would contradict it"
   // screen does not move, and nothing explains why.
   it("writes a real record so an opt-in-only player can actually opt in", async () => {
     const result = await setAvailability(ENV, {
-      playerId: "recGhost",
-      matchIds: ["recM1"],
+      playerId: GHOST,
+      matchIds: [M1],
       status: "Available",
     });
     expect(result.results[0].exceptionId).toBeTruthy();
-    const stored = state["Availability Exceptions"];
-    expect(stored).toHaveLength(1);
-    expect(stored[0].fields["Availability Status"]).toBe("Available");
+    expect(stored()).toHaveLength(1);
+    expect(stored()[0].availabilityStatus).toBe("Available");
   });
 
   it("still keeps the table sparse for a player on the normal default", async () => {
     const result = await setAvailability(ENV, {
-      playerId: "recReg",
-      matchIds: ["recM1"],
+      playerId: REG,
+      matchIds: [M1],
       status: "Available",
     });
     expect(result.results[0].exceptionId).toBeNull();
-    expect(state["Availability Exceptions"]).toHaveLength(0);
+    expect(stored()).toHaveLength(0);
   });
 
   it("removes a stored Available again once the flag is lifted", async () => {
-    await setAvailability(ENV, { playerId: "recGhost", matchIds: ["recM1"], status: "Available" });
-    expect(state["Availability Exceptions"]).toHaveLength(1);
-
-    // "Season (Matches)" is a LOOKUP: Airtable fills it in from the linked
-    // Match, so the write never sets it and the fake never computes it. The
-    // read that finds this record again filters on that season, so without
-    // this line the record is invisible to the second write and the test
-    // fails for a reason that has nothing to do with the behaviour.
-    state["Availability Exceptions"][0].fields["Season (Matches)"] = "2026-2027";
+    await setAvailability(ENV, { playerId: GHOST, matchIds: [M1], status: "Available" });
+    expect(stored()).toHaveLength(1);
+    // (On Supabase the exception's season comes from its match, as the
+    // read that finds it again expects. The Airtable version had to set
+    // the "Season (Matches)" lookup by hand here.)
 
     invalidateAll();
-    state.People[0].fields["Opt-In Only"] = false;
-    await setAvailability(ENV, { playerId: "recGhost", matchIds: ["recM1"], status: "Available" });
-    expect(state["Availability Exceptions"]).toHaveLength(0);
+    db.state.people.find((p) => p.id === GHOST)!.optInOnly = false;
+    await setAvailability(ENV, { playerId: GHOST, matchIds: [M1], status: "Available" });
+    expect(stored()).toHaveLength(0);
   });
 });
 
@@ -157,25 +165,25 @@ describe("the coach toggle", () => {
   it("writes the People field and reports the new state", async () => {
     const res = await setPlayerOptInOnly(ENV, {
       coachEmail: "coach@hkfc.com",
-      playerId: "recReg",
+      playerId: REG,
       optInOnly: true,
     });
-    expect(res).toMatchObject({ success: true, playerId: "recReg", optInOnly: true });
-    expect(state.People.find((p) => p.id === "recReg")!.fields["Opt-In Only"]).toBe(true);
+    expect(res).toMatchObject({ success: true, playerId: REG, optInOnly: true });
+    expect(db.state.people.find((p) => p.id === REG)!.optInOnly).toBe(true);
   });
 
   it("rejects a non-boolean rather than writing something odd", async () => {
     await expect(
-      setPlayerOptInOnly(ENV, { coachEmail: "c@hkfc.com", playerId: "recReg", optInOnly: "yes" as any }),
+      setPlayerOptInOnly(ENV, { coachEmail: "c@hkfc.com", playerId: REG, optInOnly: "yes" as any }),
     ).rejects.toThrow(/must be a boolean/);
   });
 });
 
 describe("what the coach sees on the squad sheet", () => {
   it("shows the player Unavailable, flagged as a default rather than an answer", async () => {
-    const { players } = await getPlayersForMatch(ENV, "recM1", "home");
-    const ghost = players.find((p: any) => p.id === "recGhost");
-    const reg = players.find((p: any) => p.id === "recReg");
+    const { players } = await getPlayersForMatch(ENV, M1, "home");
+    const ghost = players.find((p: any) => p.id === GHOST);
+    const reg = players.find((p: any) => p.id === REG);
 
     expect(ghost).toMatchObject({
       availabilityStatus: "Unavailable",

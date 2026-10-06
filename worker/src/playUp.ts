@@ -1,10 +1,6 @@
 import { linkId } from "../../shared/airtableValueUtils";
 import type { Match, MatchCard } from "../../shared/schema/domainTypes";
 
-// The play-up allowance (Bye-Law 7.2(b): 3, or 8 for a U21) is defined once,
-// in shared/, because the squad screen needs it too.
-export { STANDARD_PLAY_UP_ALLOWANCE, U21_PLAY_UP_ALLOWANCE, playUpAllowance } from "../../shared/playUpAllowance";
-
 /**
  * Friendlies are not competitive fixtures and must never count towards any
  * official total.

@@ -16,7 +16,7 @@ import { recordMembershipEvent } from "./membership";
 import { people, type DirectoryRow } from "./data/people";
 import { GROUPS, type DirectoryPerson, type EmailSource } from "../../shared/emailLists";
 
-/** Five minutes, and dropped at once by the webhook on any People edit. */
+/** Five minutes, and dropped at once by any People write (invalidation.ts). */
 const DIRECTORY_TTL_MS = 5 * 60 * 1000;
 
 const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);

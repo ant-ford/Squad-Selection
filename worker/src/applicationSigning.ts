@@ -24,14 +24,13 @@ import { HttpError } from "./http";
 import { backendFor } from "./data/backend";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
-import { invalidateForTables } from "./airtableWebhook";
+import { invalidatePeople } from "./invalidation";
 import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { inBackground } from "./requestContext";
 import { pdfsEnabled } from "./pdf/render";
 import { makeApplicationPdf, pdfFor, recipientFor, sendApplication } from "./pdf/application";
-import { TABLES } from "../../shared/schema/tableNames";
 import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
 
 const SIGNING_STAGES = Object.keys(TURN_BY_STAGE);
@@ -303,7 +302,7 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
   requireSupabase(env);
   const role = body.role as SignRole;
   if (!SIGN_ROLES.includes(role)) throw new HttpError("Unknown signer.", 400, "INVALID_INPUT");
-  const { p, holderOf } = await loadApplication(env, apiId);
+  const { holderOf } = await loadApplication(env, apiId);
   if (holderOf(role)?.apiId !== user.personId) throw new HttpError(`You're not the ${ROLE_LABEL[role]} on this application.`, 403, "NOT_YOURS");
   const answers = role === "sponsor" ? sponsorAnswersFrom(body) : null;
   if (answers) {
@@ -322,12 +321,13 @@ export async function signApplication(env: Env, user: AuthorizedUser, apiId: str
     }
     throw err;
   }
-  await invalidateForTables(env, [TABLES.player]);
+  await invalidatePeople(env);
   // The last signature: the application, as one PDF, for the Membership
   // Officer to check and send. After the response; a slow render never holds it up.
   if (stage === READY_STAGE && pdfsEnabled(env)) void inBackground(() => makeApplicationPdf(env, apiId));
   const next = TURN_BY_STAGE[stage];
-  if (next) await notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err));
+  // The next signer's email, after the response: the signature is saved, and a slow or failed email never holds it up.
+  if (next) await inBackground(() => notifySigner(env, apiId, next).catch((err) => console.error(`Signing email to the ${next} not sent:`, err instanceof Error ? err.message : err)));
   return { stage };
 }
 
