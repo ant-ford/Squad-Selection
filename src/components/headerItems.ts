@@ -4,7 +4,6 @@ import {
   CalendarClock,
   ClipboardList,
   Contact,
-  Flag,
   HeartHandshake,
   IdCard,
   Landmark,
@@ -50,11 +49,10 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
   return all.filter((i): i is MenuEntry => !!i);
 }
 
-/** Screens a person opens often that used to be header buttons: the coaches' ranking and the umpiring duties. */
+/** Screens a person opens often that used to be header buttons: the coaches' ranking. Umpire view is on the header switch. */
 export function viewItems(p: MenuProfile): MenuEntry[] {
   return [
     ...(p.isCoach ? [{ to: '/coach/ranking', label: 'Ranking', icon: ListChecks }] : []),
-    ...(p.umpiring ? [{ to: '/umpiring', label: 'Umpire view', icon: Flag }] : []),
   ];
 }
 

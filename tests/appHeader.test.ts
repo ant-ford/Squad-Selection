@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { backTarget, canSwitchView, coachScreen, currentView, documentTitle, phoneControls } from "../src/lib/header";
+import { backTarget, canSwitchView, coachScreen, currentView, documentTitle, phoneControls, switchViews } from "../src/lib/header";
 import { mainMenuGroups } from "../src/components/headerItems";
 
 const read = (file: string) => readFileSync(path.join(__dirname, "..", file), "utf8");
@@ -17,20 +17,28 @@ describe("back arrow", () => {
   });
 });
 
-describe("Player view / Coach view switch", () => {
-  it("shows for coaches and Section Captains only", () => {
+describe("Player / Coach / Umpire switch", () => {
+  it("offers Coach to coaches and Section Captains, Umpire to umpires", () => {
+    expect(switchViews({ isCoach: true })).toEqual(["player", "coach"]);
+    expect(switchViews({ isSectionCaptain: true })).toEqual(["player", "coach"]);
+    expect(switchViews({ umpiring: "umpire" })).toEqual(["player", "umpire"]);
+    expect(switchViews({ isCoach: true, umpiring: "coordinator" })).toEqual(["player", "coach", "umpire"]);
+    expect(switchViews({})).toEqual(["player"]);
+  });
+  it("shows only when there is something to switch between", () => {
     expect(canSwitchView({ isCoach: true })).toBe(true);
-    expect(canSwitchView({ isCoach: false, isSectionCaptain: true })).toBe(true);
+    expect(canSwitchView({ umpiring: "umpire" })).toBe(true);
     expect(canSwitchView({ isCoach: false, isSectionCaptain: false })).toBe(false);
     expect(canSwitchView(undefined)).toBe(false);
   });
   it("never shows for an applicant", () => {
-    expect(canSwitchView({ isCoach: true, applicant: true })).toBe(false);
+    expect(canSwitchView({ isCoach: true, umpiring: "umpire", applicant: true })).toBe(false);
   });
   it("knows which side the current screen is on", () => {
     expect(currentView("/")).toBe("player");
     expect(currentView("/coach")).toBe("coach");
     expect(currentView("/coach/match/m1")).toBe("coach");
+    expect(currentView("/umpiring")).toBe("umpire");
     expect(currentView("/coaching")).toBe(null);
     expect(currentView("/kit")).toBe(null);
   });
@@ -48,7 +56,7 @@ describe("header buttons on a phone", () => {
   });
   it("a child screen's back arrow takes the switch's place", () => {
     expect(phoneControls({ back: true, canSwitch: true })).toEqual(["back", "menu", "profile"]);
-    expect(phoneControls({ back: false, canSwitch: true })).toEqual(["menu", "player", "coach", "profile"]);
+    expect(phoneControls({ back: false, canSwitch: true })).toEqual(["menu", "switch", "profile"]);
   });
 });
 
@@ -66,11 +74,10 @@ describe("coach area headers", () => {
 
 describe("burger menu", () => {
   const labels = (groups: { label: string }[][]) => groups.map((g) => g.map((e) => e.label));
-  it("has Ranking for coaches and Umpire view for umpires only", () => {
+  it("has Ranking for coaches; Umpire view is on the switch, not the menu", () => {
     expect(labels(mainMenuGroups({ isCoach: false })).flat()).not.toContain("Ranking");
-    expect(labels(mainMenuGroups({ isCoach: false })).flat()).not.toContain("Umpire view");
-    expect(labels(mainMenuGroups({ isCoach: true, umpiring: "umpire" }))[0]).toEqual(["Ranking", "Umpire view"]);
-    expect(labels(mainMenuGroups({ umpiring: "coordinator" })).flat()).toContain("Umpire view");
+    expect(labels(mainMenuGroups({ isCoach: true, umpiring: "umpire" }))[0]).toEqual(["Ranking"]);
+    expect(labels(mainMenuGroups({ umpiring: "coordinator" })).flat()).not.toContain("Umpire view");
   });
   it("puts the screen's own actions first", () => {
     const page = [{ label: "Active members CSV", icon: (() => null) as never }];
