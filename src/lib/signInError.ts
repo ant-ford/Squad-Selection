@@ -25,6 +25,8 @@ export function signInErrorMessage(err: unknown): string {
 export function sendEmailErrorMessage(err: unknown): string {
   if (isNetworkError(err)) return NETWORK_MESSAGE;
   const raw = err instanceof Error ? err.message : '';
+  // Supabase refused the Turnstile token (missing, expired or already used).
+  if (/captcha/i.test(raw)) return 'The security check did not go through. Wait a moment, then try again.';
   return raw || 'Could not send the email. Please try again.';
 }
 

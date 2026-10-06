@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { ActionButton } from '@/components/ui/action-button';
 import { Sheet } from '@/components/ui/sheet';
 
 interface ConfirmDialogProps {
@@ -56,20 +56,17 @@ export default function ConfirmDialog({
             </label>
           )}
           <div className="flex gap-2">
-            <Button className="flex-1 h-10" onClick={onCancel}>
+            <ActionButton variant="outline" className="flex-1" onClick={onCancel}>
               {cancelLabel}
-            </Button>
-            <Button
-              className={`flex-1 h-10 ${
-                destructive
-                  ? 'bg-destructive text-destructive-foreground'
-                  : 'bg-primary text-primary-foreground'
-              }`}
+            </ActionButton>
+            <ActionButton
+              variant={destructive ? 'danger' : 'primary'}
+              className="flex-1"
               onClick={onConfirm}
               disabled={!ready}
             >
               {confirmLabel}
-            </Button>
+            </ActionButton>
           </div>
         </div>
       </div>

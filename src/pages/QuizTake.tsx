@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ListChecks, X } from 'lucide-react';
-import AppHeader, { headerNavClass } from '@/components/AppHeader';
+import { Check, X } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,17 +16,11 @@ import type { QuizResult, QuizToTake } from '@shared/quizzes';
  */
 export default function QuizTakePage() {
   const { key = '' } = useParams();
-  const navigate = useNavigate();
   const quiz = useQuery({ queryKey: ['quiz', key], queryFn: () => getQuiz(key) });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader subtitle="Hockey Rules quiz">
-        <button onClick={() => navigate('/quizzes')} className={headerNavClass()}>
-          <ListChecks className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">All quizzes</span>
-        </button>
-      </AppHeader>
+      <AppHeader title="Hockey Rules quiz" back="/quizzes" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">
         {quiz.isLoading ? (
           <Skeleton className="h-96 w-full" />
@@ -68,7 +62,7 @@ function Quiz({ quiz }: { quiz: QuizToTake }) {
   return (
     <>
       <section className="rounded-xl border border-border bg-card p-4 space-y-2">
-        <h1 className="text-base font-semibold text-foreground">{quiz.title}</h1>
+        <h2 className="text-base font-semibold text-foreground">{quiz.title}</h2>
         {result ? (
           <p className="text-sm text-foreground">
             You scored <span className="font-semibold">{result.score}</span> out of {result.points}. Each answer is marked below, with why.

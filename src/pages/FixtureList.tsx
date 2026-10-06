@@ -4,6 +4,7 @@ import { useUpcomingFixtures } from '@/lib/queries';
 import { safeFormat, isPastFixture } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabPanel, type TabItem } from '@/components/ui/tabs';
 import FixtureCard from '@/components/FixtureCard';
 import { DateHeading } from '@/components/shared';
 import type { ProfileData } from '@/api/getMyProfile';
@@ -84,11 +85,11 @@ export default function FixtureList() {
     return Array.from(names).sort();
   }, [allFixtures]);
 
-  const tabs = [
-    { key: 'all', label: 'All' },
+  const tabs: TabItem[] = [
+    { value: 'all', label: 'All' },
     ...(coachesAllTeams
-      ? allTeamNames.map((name) => ({ key: name, label: name }))
-      : coachTeams.map((t) => ({ key: t.teamName, label: t.teamName }))
+      ? allTeamNames.map((name) => ({ value: name, label: name }))
+      : coachTeams.map((t) => ({ value: t.teamName, label: t.teamName }))
     ),
   ];
 
@@ -101,35 +102,10 @@ export default function FixtureList() {
   }, [fixtures]);
 
   const sortedDates = Object.keys(grouped).sort();
+  const showTabs = tabs.length > 2;
 
-  return (
-    <div className="container mx-auto px-4 pb-8">
-      <div className="flex items-center justify-between gap-4 border-b border-border py-2">
-        {tabs.length > 2 && (
-          <div className="flex gap-4 overflow-x-auto flex-1">
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                onClick={() => handleTabChange(t.key)}
-                className={`text-sm pb-2 whitespace-nowrap shrink-0 ${activeTab === t.key ? 'font-medium text-foreground border-b-2 border-primary' : 'text-muted-foreground'}`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleTogglePast}
-            className={`text-xs px-2 py-1 rounded-md ${showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
-            title={showPast ? 'Hide past fixtures' : 'Show past fixtures'}
-          >
-            {showPast ? 'Hide past' : 'Show past'}
-          </button>
-          <CoachCalendarExport activeTab={activeTab} />
-        </div>
-      </div>
-
+  const list = (
+    <>
       {isLoading ? (
         <div className="space-y-3 pt-4">
           {[1, 2, 3].map(i => (
@@ -139,16 +115,8 @@ export default function FixtureList() {
       ) : fixtures.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-muted-foreground">
-            {showPast ? 'No fixtures found' : 'No upcoming fixtures found'}
+            {showPast ? 'No fixtures' : 'No upcoming fixtures'}
           </p>
-          {showPast && (
-            <button
-              onClick={handleTogglePast}
-              className="mt-2 text-sm text-primary hover:underline"
-            >
-              Show upcoming fixtures
-            </button>
-          )}
         </div>
       ) : (
         <div className={`pt-4 space-y-6 transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
@@ -164,6 +132,43 @@ export default function FixtureList() {
           ))}
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div className="container mx-auto px-4 pb-8">
+      {/* Team tabs take the row; past and the team calendar sit at its end.
+          On a narrow phone the tabs scroll sideways and fade at the edge. */}
+      <div className="flex items-end gap-1 pt-2">
+        {showTabs ? (
+          <Tabs
+            id="coach-teams"
+            label="Teams"
+            items={tabs}
+            value={activeTab}
+            onChange={handleTabChange}
+            className="flex-1 min-w-0"
+          />
+        ) : (
+          <div className="flex-1" />
+        )}
+        <div className="flex items-center gap-1 shrink-0 pb-1">
+          <CoachCalendarExport activeTab={activeTab} />
+          <button
+            type="button"
+            onClick={handleTogglePast}
+            aria-pressed={showPast}
+            className={`min-h-10 px-3 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              showPast ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Past
+          </button>
+        </div>
+      </div>
+
+      {/* With tabs on screen the list is the selected tab's panel. */}
+      {showTabs ? <TabPanel tabsId="coach-teams" value={activeTab}>{list}</TabPanel> : list}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Plus, Trash2, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { availabilityClasses, availabilityLabel } from '@/lib/availabilityTone';
 import {
   createMyAvailabilityRule,
   deleteMyAvailabilityRule,
@@ -23,11 +24,6 @@ const RULE_TYPES: { value: AvailabilityRuleType; label: string; hint: string }[]
 
 const AVAILABILITY: RuleAvailability[] = ['Available', 'Maybe', 'Unavailable'];
 
-const STATUS_STYLE: Record<RuleAvailability, string> = {
-  Available: 'bg-green-100 text-green-800 border-green-200',
-  Maybe: 'bg-amber-100 text-amber-800 border-amber-200',
-  Unavailable: 'bg-red-100 text-red-800 border-red-200',
-};
 
 function describe(rule: AvailabilityRule): string {
   const type = RULE_TYPES.find((t) => t.value === rule.ruleType)?.label ?? rule.ruleType;
@@ -129,7 +125,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   };
 
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <Sheet open dirty={adding && !saving && !!(startDate || endDate)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
         {/* SheetContent carries no padding of its own, so this sheet used to
             run flush into the edges. Header is sticky because the body
@@ -170,21 +166,22 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground truncate">{describe(rule)}</p>
                   {rule.notes && (
-                    <p className="text-[11px] text-muted-foreground truncate">{rule.notes}</p>
+                    <p className="text-xs text-muted-foreground truncate">{rule.notes}</p>
                   )}
                 </div>
                 {rule.availability && (
                   <span
-                    className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${
-                      STATUS_STYLE[rule.availability]
-                    }`}
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 ${availabilityClasses(
+                      rule.availability,
+                      'chip',
+                    )}`}
                   >
-                    {rule.availability}
+                    {availabilityLabel(rule.availability)}
                   </span>
                 )}
                 <button
                   onClick={() => remove(rule)}
-                  className="p-1 text-muted-foreground hover:text-red-600 transition-colors shrink-0"
+                  className="p-1 text-muted-foreground hover:text-danger transition-colors shrink-0"
                   aria-label="Remove preference"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -205,7 +202,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
         ) : (
           <div className="mt-3 border border-border rounded-lg p-3 space-y-3">
             <label className="block">
-              <span className="text-[11px] text-muted-foreground">I want to set my availability for</span>
+              <span className="text-xs text-muted-foreground">I want to set my availability for</span>
               <select
                 value={ruleType}
                 onChange={(e) => setRuleType(e.target.value as AvailabilityRuleType)}
@@ -220,20 +217,21 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
             </label>
 
             <div>
-              <span className="text-[11px] text-muted-foreground">and I am</span>
+              <span className="text-xs text-muted-foreground">and I am</span>
               <div className="mt-1 flex gap-1.5">
                 {AVAILABILITY.map((a) => (
                   <button
                     key={a}
                     type="button"
                     onClick={() => setAvailability(a)}
+                    aria-pressed={availability === a}
                     className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-full border transition-colors ${
                       availability === a
-                        ? STATUS_STYLE[a]
+                        ? availabilityClasses(a, 'chip')
                         : 'border-border text-muted-foreground hover:bg-muted/50'
                     }`}
                   >
-                    {a}
+                    {availabilityLabel(a)}
                   </button>
                 ))}
               </div>
@@ -242,7 +240,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
             {(needsDates || ruleType === 'All future') && (
               <div className="flex gap-2">
                 <label className="flex-1">
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {needsDates ? 'From' : 'From (optional)'}
                   </span>
                   <input
@@ -254,7 +252,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
                 </label>
                 {needsDates && (
                   <label className="flex-1">
-                    <span className="text-[11px] text-muted-foreground">To</span>
+                    <span className="text-xs text-muted-foreground">To</span>
                     <input
                       type="date"
                       value={endDate}

@@ -3,13 +3,13 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ApiError } from '@/lib/apiClient';
 import { allocateSpare, downloadTopUp, giveNewNumber } from '@/api/kit';
 import { suggestSpares, type KitBoard, type KitPerson, type KitSet } from '@shared/kit';
 import { secondaryButton, sizesLine } from './kitUi';
+import { errorMessage } from '@/lib/errorMessages';
 
 const failed = (err: unknown) =>
-  toast.error(err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Try again.');
+  toast.error(errorMessage(err, 'save'));
 
 function PersonRow({
   person,
