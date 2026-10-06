@@ -96,9 +96,11 @@ export default function MembershipBlock({
       )}
       {change && (
         <div className="flex gap-2">
-          <ActionButton loading={save.isPending && !refusal} disabled={!!problem || refusal?.kind === 'changed'} onClick={() => save.mutate(false)}>
-            Save
-          </ActionButton>
+          {(!refusal || refusal.kind === 'other') && (
+            <ActionButton loading={save.isPending} disabled={!!problem} onClick={() => save.mutate(false)}>
+              Save
+            </ActionButton>
+          )}
           <ActionButton
             variant="ghost"
             disabled={save.isPending}
