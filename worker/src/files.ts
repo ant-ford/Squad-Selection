@@ -8,7 +8,7 @@
  */
 import type { Env } from "./env";
 import { db, eq } from "./data/supabase";
-import { verifyFileLink } from "./data/supabase/files";
+import { thumbKey, verifyFileLink } from "./data/supabase/files";
 import { corsHeaders, json } from "./http";
 import { CLUB_DOCS } from "../../shared/application";
 
@@ -47,18 +47,29 @@ export async function handleFileRequest(env: Env, id: string, url: URL): Promise
     `select=r2_key,content_type,filename&id=${eq(id)}`,
   );
   if (!row) return notFound();
-  const object = await env.FILES.get(row.r2_key);
+  // ?v=thumb: the 128 px thumbnail of a photo, where there is one; otherwise
+  // the photo itself (not yet backfilled). The same link opens both: a
+  // thumbnail shows nothing the photo doesn't.
+  const thumb = url.searchParams.get("v") === "thumb" && (row.content_type ?? "").startsWith("image/")
+    ? await env.FILES.get(thumbKey(row.r2_key))
+    : null;
+  const object = thumb ?? (await env.FILES.get(row.r2_key));
   if (!object) {
     console.error(`File row ${id} points at a missing R2 object`);
     return notFound();
   }
+  // Until the link expires (at most two days); the browser may keep it that long, nothing shared may.
+  const maxAge = Math.max(0, Math.min(2 * 24 * 3600, Number(exp) - Math.floor(Date.now() / 1000)));
   return new Response(object.body, {
     headers: {
-      "Content-Type": row.content_type || "application/octet-stream",
+      "Content-Type": (thumb ? thumb.httpMetadata?.contentType : row.content_type) || "application/octet-stream",
       "Content-Disposition": `inline; filename="${headerFilename(row.filename)}"`,
-      // The link expires within two hours; the browser may keep it that long, nothing shared may.
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": `private, max-age=${maxAge}`,
       "X-Content-Type-Options": "nosniff",
+      // The app's service worker keeps pictures (CacheFirst, vite.config.ts):
+      // it fetches them with CORS, so they're stored as readable responses,
+      // not opaque ones. The link is the permission, from any origin.
+      "Access-Control-Allow-Origin": "*",
     },
   });
 }

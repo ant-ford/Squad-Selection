@@ -196,7 +196,7 @@ const PLAYER_KEYS: (keyof Player)[] = [
   "id", "preferredName", "givenNames", "surname", "shirtNoValue", "email", "mobileNo", "active", "registeredTeam",
   "selectedTeamSos", "selectedTeamEos", "playingPosition", "playingAbility", "isVisitingPlayer", "isSuspended",
   "matchesToServe", "everRegisteredToPremier", "u21Eligible", "playerCoach", "sectionRank",
-  "rankUpdatedAt", "status", "applicantStage", "photo", "sportsBackground", "selectionComments", "optInOnly", "birthday",
+  "rankUpdatedAt", "status", "applicantStage", "photoFileId", "sportsBackground", "selectionComments", "optInOnly", "birthday",
 ];
 const PLAYER_KEY_SET = new Set<string>(PLAYER_KEYS);
 
