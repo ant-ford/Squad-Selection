@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors,
@@ -205,12 +206,7 @@ export default function PlayerRanking() {
     queryClient.invalidateQueries({ queryKey: ['ranking'] });
   }, [queryClient]);
 
-  useEffect(() => {
-    if (!hasChanges) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasChanges]);
+  const leave = useUnsavedChanges(hasChanges, 'Your ranking changes will be lost.');
 
   const displayPlayersRef = useRef(displayPlayers);
   displayPlayersRef.current = displayPlayers;
@@ -449,6 +445,7 @@ export default function PlayerRanking() {
         </div>
       </Sheet>
 
+      {leave.prompt}
       {hasChanges && (
         <RankingSaveBar
           count={modifiedCount}

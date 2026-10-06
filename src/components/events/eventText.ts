@@ -1,18 +1,31 @@
 import { safeFormat } from '@/lib/dateUtils';
-import { PAYMENT_LABEL, priceText, type EventDetails, type ResponseStatus } from '@shared/events';
+import { toneClasses } from '@/lib/statusTone';
+import { PAYMENT_LABEL, priceText, type EventDetails, type ManagedEvent, type ResponseStatus } from '@shared/events';
+import type { StatusTone } from '@/lib/statusTone';
 
 export const statusChip: Record<ResponseStatus, string> = {
-  going: 'bg-emerald-500/15 text-emerald-700',
-  maybe: 'bg-amber-500/15 text-amber-700',
-  not_going: 'bg-muted text-muted-foreground',
+  going: toneClasses('success'),
+  maybe: toneClasses('warning'),
+  not_going: toneClasses('neutral'),
 };
 
-/** "Sat 12 Dec, 7:00 pm – 11:00 pm", or across days "Fri 3 Apr, 6:00 pm – Sun 5 Apr". */
+/** An event's own state on the social secretaries' screens. */
+export const EVENT_STATUS_LABEL: Record<ManagedEvent['status'], string> = { draft: 'Draft', published: 'Published', cancelled: 'Cancelled' };
+export const eventStatusTone = (s: ManagedEvent['status']): StatusTone => (s === 'published' ? 'success' : s === 'cancelled' ? 'danger' : 'neutral');
+
+/** "41 going · 6 maybe · 20 guests · 112 invited" */
+export function countsLine(e: ManagedEvent): string {
+  const c = e.counts;
+  const guests = c.adultGuests + c.childGuests;
+  return [`${c.going} going`, `${c.maybe} maybe`, guests ? `${guests} guest${guests === 1 ? '' : 's'}` : '', `${e.invited} invited`].filter(Boolean).join(' · ');
+}
+
+/** "Sat 12 Dec, 19:00 – 23:00", or across days "Fri 3 Apr, 18:00 – Sun 5 Apr" (24-hour, as the glossary says). */
 export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'>): string {
-  const start = safeFormat(e.startsAt, 'EEE d MMM, h:mm a');
+  const start = safeFormat(e.startsAt, 'EEE d MMM, HH:mm');
   if (!e.endsAt) return start;
   const sameDay = safeFormat(e.startsAt, 'yyyy-MM-dd') === safeFormat(e.endsAt, 'yyyy-MM-dd');
-  return `${start} – ${safeFormat(e.endsAt, sameDay ? 'h:mm a' : 'EEE d MMM')}`;
+  return `${start} – ${safeFormat(e.endsAt, sameDay ? 'HH:mm' : 'EEE d MMM')}`;
 }
 
 /** The price lines: member, then guests, then how it's paid. Empty when free. */

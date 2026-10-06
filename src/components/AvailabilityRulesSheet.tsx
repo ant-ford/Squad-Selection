@@ -125,7 +125,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   };
 
   return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
+    <Sheet open dirty={adding && !saving && !!(startDate || endDate)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh] overflow-y-auto">
         {/* SheetContent carries no padding of its own, so this sheet used to
             run flush into the edges. Header is sticky because the body

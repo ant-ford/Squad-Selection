@@ -7,6 +7,8 @@ import AppFooter from '@/components/AppFooter';
 import SignaturePad from '@/components/SignaturePad';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
+import { differs } from '@/lib/drafts';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { safeFormat } from '@/lib/dateUtils';
 import { getMyDeclarations, submitDeclarations } from '@/api/declarations';
 import {
@@ -52,7 +54,11 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
         accepted: Object.keys(ticked).filter((k) => ticked[k]),
         ...(view.underEighteen ? { guardian, signature: signature ?? undefined } : {}),
       }),
-    onSuccess: onDone,
+    onSuccess: () => {
+      // Saved: going home next isn't leaving anything behind.
+      leave.allowNavigation();
+      onDone();
+    },
   });
 
   const allTicked = DECLARATION_ITEMS.every((i) => ticked[i.key]);
@@ -60,6 +66,9 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
     !view.underEighteen ||
     (!!guardian.surname.trim() && !!guardian.givenNames.trim() && !!guardian.mobileNo.trim() && /^\S+@\S+\.\S+$/.test(guardian.email.trim()) &&
       !!ticked[GUARDIAN_CONFIRM.key] && !!signature);
+  const leave = useUnsavedChanges(
+    !submit.isSuccess && (Object.values(ticked).some(Boolean) || !!signature || differs(guardian, view.guardian)),
+  );
 
   return (
     <>
@@ -123,6 +132,7 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
         </Section>
       )}
 
+      {leave.prompt}
       {submit.error && (
         <p role="alert" className="text-xs text-destructive">
           {submit.error instanceof ApiError ? submit.error.message : 'Not submitted: the connection or the server failed. Please try again.'}

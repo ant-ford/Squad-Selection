@@ -8,6 +8,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
+import { differs } from '@/lib/drafts';
+import { useDraft } from '@/lib/useDraft';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
 import { safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
@@ -40,7 +44,7 @@ function Card({ title, children, note }: { title: string; children: ReactNode; n
     <section className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3">
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
+        {note && <span className="text-xs text-muted-foreground">{note}</span>}
       </div>
       {children}
     </section>
@@ -51,7 +55,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return (
     <label className="block text-xs text-muted-foreground">
       <span className="block text-foreground/80">{label}</span>
-      {hint && <span className="block text-[11px] leading-snug mt-0.5">{hint}</span>}
+      {hint && <span className="block text-xs leading-snug mt-0.5">{hint}</span>}
       <span className="block mt-1">{children}</span>
     </label>
   );
@@ -67,7 +71,7 @@ const HINTS = {
 function Answer({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="py-1.5">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm text-foreground whitespace-pre-wrap">{value || '—'}</p>
     </div>
   );
@@ -77,49 +81,11 @@ function Waiting({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
-/**
- * Form state kept in this browser until the submission succeeds, so a failed
- * submit, a reload or a dropped connection never loses what was typed.
- * Storage can be unavailable (private mode); the form then works without it.
- */
-function useDraft<T extends object>(key: string, initial: T): [T, (next: T) => void, () => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const saved = localStorage.getItem(key);
-      if (!saved) return initial;
-      // What was typed wins, but a box left empty keeps its starting value
-      // (an AI draft that arrived after the form was first opened).
-      const start = initial as Record<string, unknown>;
-      const empty = (v: unknown) => v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0);
-      const kept = Object.entries(JSON.parse(saved) as Record<string, unknown>).filter(([field, v]) => !empty(v) || empty(start[field]));
-      return { ...initial, ...Object.fromEntries(kept) };
-    } catch {
-      return initial;
-    }
-  });
-  const set = (next: T) => {
-    setValue(next);
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-    } catch {
-      /* not kept */
-    }
-  };
-  const clear = () => {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      /* nothing to clear */
-    }
-  };
-  return [value, set, clear];
-}
-
 /** Shown above a reviewer's form when some answers start from an AI suggestion. */
 function DraftNote({ drafts }: { drafts: Record<string, string> }) {
   if (Object.keys(drafts).length === 0) return null;
   return (
-    <p className="text-[11px] rounded-md bg-muted/60 text-muted-foreground px-2 py-1.5">
+    <p className="text-xs rounded-md bg-muted/60 text-muted-foreground px-2 py-1.5">
       Some answers start from a suggested draft. Check and edit them before you sign: what you submit is your review.
     </p>
   );
@@ -149,7 +115,7 @@ function SubmitError({ error }: { error: unknown }) {
 
 function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const options = review.options ?? { sponsors: [], officers: [], usualSponsor: null };
-  const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, {
+  const start: MemberReport = {
     // From the duties Eddy recorded; they can change it.
     gamesUmpired: gamesUmpiredChoice(review.gamesUmpiredInEddy),
     practices: '',
@@ -161,7 +127,8 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
     lowParticipationReason: '',
     sponsor: options.usualSponsor ?? '',
     officer: review.officer.office ?? (options.officers.length === 1 ? options.officers[0].id : ''),
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft<MemberReport>(`review-draft:${review.id}:member`, start);
   const [confirming, setConfirming] = useState(false);
   const set = <K extends keyof MemberReport>(k: K, v: MemberReport[K]) => setForm({ ...form, [k]: v });
   const toggleSocial = (s: string) =>
@@ -177,6 +144,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
     },
   });
   const complete = !!form.gamesUmpired && !!form.practices && !!form.sponsor;
+  const leave = useUnsavedChanges(!submit.isSuccess && differs(form, start), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -213,7 +181,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           })}
         </div>
         {recordedSocialFunctions(review.eventsAttended).length > 0 && (
-          <p className="text-[11px] text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
+          <p className="text-xs text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
         )}
       </fieldset>
       <Field label="Other contributions" hint={HINTS.otherContributions}>
@@ -244,6 +212,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           </select>
         </Field>
       </div>
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Submit Player Statement'}
@@ -288,11 +257,12 @@ function MemberReportView({ review }: { review: ReviewView }) {
 
 function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const ai = review.drafts ?? {};
-  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, {
+  const start = {
     sectionService: ai.sectionService ?? '',
     hkfcService: ai.hkfcService ?? '',
     recommendation: ai.recommendation ?? '',
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:sponsor`, start);
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -306,6 +276,7 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
     },
   });
   const complete = !!form.sectionService.trim() && !!form.hkfcService.trim() && !!form.recommendation.trim() && !!sig;
+  const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -320,6 +291,7 @@ function SponsorForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
         <textarea className={area} value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} />
       </Field>
       <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and submit'}
@@ -350,7 +322,7 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
       <Answer label="Recommendation" value={r.recommendation} />
       {r.signatureUrl && (
         <div className="py-1.5">
-          <p className="text-[11px] text-muted-foreground">Signed</p>
+          <p className="text-xs text-muted-foreground">Signed</p>
           <img src={r.signatureUrl} alt="Sponsor's signature" className="h-16 rounded bg-white object-contain" />
         </div>
       )}
@@ -362,14 +334,15 @@ function SponsorReviewView({ review }: { review: ReviewView }) {
 
 function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: string) => void }) {
   const ai = review.drafts ?? {};
-  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, {
+  const start = {
     playersAvailable: typeof review.teamActivePlayers === 'number' ? String(review.teamActivePlayers) : '',
     optimumPlayers: '',
     isPlayerNeeded: ai.isPlayerNeeded ?? '',
     otherComments: ai.otherComments ?? '',
     otherInformation: ai.otherInformation ?? '',
     recommendedReduction: '',
-  });
+  };
+  const [form, setForm, clearDraft] = useDraft(`review-draft:${review.id}:officer`, start);
   const [sig, setSig] = useState<string | null | 'saved'>(review.savedSignatureUrl ? 'saved' : null);
   const [confirming, setConfirming] = useState(false);
   const submit = useMutation({
@@ -384,6 +357,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
   });
   const n = (v: string) => /^\d{1,3}$/.test(v);
   const complete = n(form.playersAvailable) && n(form.optimumPlayers) && !!form.isPlayerNeeded.trim() && !!form.recommendedReduction && !!sig;
+  const leave = useUnsavedChanges(!submit.isSuccess && (differs(form, start) || (!!sig && sig !== 'saved')), DRAFT_KEPT_MESSAGE);
 
   return (
     <div className="space-y-3">
@@ -416,6 +390,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
         </select>
       </Field>
       <SignBlock savedUrl={review.savedSignatureUrl} onChange={setSig} />
+      {leave.prompt}
       <SubmitError error={submit.error} />
       <button className={primary} disabled={!complete || submit.isPending} onClick={() => setConfirming(true)}>
         {submit.isPending ? 'Submitting…' : 'Sign and complete review'}
@@ -451,7 +426,7 @@ function OfficerReviewView({ review }: { review: ReviewView }) {
       <Answer label="Recommended commitment reduction" value={r.recommendedReduction} />
       {r.signatureUrl && (
         <div className="py-1.5">
-          <p className="text-[11px] text-muted-foreground">Signed</p>
+          <p className="text-xs text-muted-foreground">Signed</p>
           <img src={r.signatureUrl} alt="Membership Officer's signature" className="h-16 rounded bg-white object-contain" />
         </div>
       )}
@@ -529,18 +504,18 @@ export default function CommitmentReview() {
                 ].map(([label, value]) => (
                   <div key={label as string} className="rounded-lg bg-muted/50 py-2">
                     <p className="text-lg font-semibold text-foreground">{value ?? '—'}</p>
-                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="text-xs text-muted-foreground">{label}</p>
                   </div>
                 ))}
               </div>
               {review.attendance.teamsPlayed.length > 0 && (
-                <p className="text-[11px] text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
+                <p className="text-xs text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
               )}
               {!!review.gamesUmpiredInEddy && (
-                <p className="text-[11px] text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
+                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
               )}
               {!!review.eventsAttended?.length && (
-                <p className="text-[11px] text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Events attended (recorded in Eddy): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
                 </p>
               )}

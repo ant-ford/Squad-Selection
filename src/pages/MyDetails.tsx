@@ -110,7 +110,7 @@ export default function MyDetailsPage() {
             <li key={s.key}>
               <button
                 onClick={() => go(i)}
-                className={`text-[11px] px-2 py-0.5 rounded-full border ${i === index ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}
+                className={`text-xs px-2 py-0.5 rounded-full border ${i === index ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}
               >
                 {s.title}
               </button>
