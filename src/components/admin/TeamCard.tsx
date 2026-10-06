@@ -48,7 +48,7 @@ function PeopleList({
           }}
         />
       ) : (
-        <ActionButton variant="ghost" icon={<Plus />} onClick={() => setAdding(true)}>
+        <ActionButton variant="ghost" icon={<Plus />} aria-label={`Add to ${label}`} onClick={() => setAdding(true)}>
           Add
         </ActionButton>
       )}
