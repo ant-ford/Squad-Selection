@@ -10,8 +10,7 @@ import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
 import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
-import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay, multiFixtureDays, firstCardOfEachDay } from '@/lib/sameDayGames';
-import DayAnswerControl from '@/components/DayAnswerControl';
+import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from 'sonner';
 import AppFooter from '@/components/AppFooter';
@@ -53,6 +52,63 @@ function setPromptDismissed(fixtureId: string, dismissed: boolean): void {
   } catch {
     // Storage unavailable: the prompt just comes back next visit.
   }
+}
+
+/**
+ * One-tap availability for a whole day, for the goalkeeper cohort, who see
+ * every HKFC fixture grouped by date. Everyone else is asked about the rest
+ * of the day when they say No to their own team's game (SameDayGamesPrompt).
+ */
+function DayAvailabilityControl({
+  date,
+  busy,
+  onSet,
+}: {
+  date: string;
+  busy: string | null;
+  onSet: (date: string, status: AvailabilityStatus) => void;
+}) {
+  // Collapsed by default, so it doesn't push the fixtures down the page.
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <div className="flex justify-end -mt-1">
+        <button
+          onClick={() => setOpen(true)}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline py-0.5"
+        >
+          Set whole day
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-1.5 py-1 flex-wrap">
+      {(['Available', 'Maybe', 'Unavailable'] as AvailabilityStatus[]).map((s) => (
+        <button
+          key={s}
+          disabled={busy !== null}
+          onClick={() => onSet(date, s)}
+          className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors disabled:opacity-50 ${
+            busy === date + s
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'border-border text-muted-foreground hover:bg-muted/50'
+          }`}
+        >
+          {s === 'Available' ? 'All available' : s === 'Maybe' ? 'All maybe' : 'All no'}
+        </button>
+      ))}
+      <button
+        onClick={() => setOpen(false)}
+        aria-label="Close whole-day availability"
+        className="text-xs text-muted-foreground hover:text-foreground px-1 py-1"
+      >
+        &times;
+      </button>
+    </div>
+  );
 }
 
 export default function PlayerDashboard() {
@@ -161,8 +217,6 @@ export default function PlayerDashboard() {
     [data],
   );
   const fixturesByDay = useMemo(() => groupByHkDay(allFixtures), [allFixtures]);
-  // Days with more than one game get one whole-day answer.
-  const multiDays = useMemo(() => multiFixtureDays(fixturesByDay), [fixturesByDay]);
 
   // A fixture link the coach shared on WhatsApp (?fixture=<match id>) opens
   // that fixture's sheet once the list has loaded. A game that isn't on
@@ -202,32 +256,6 @@ export default function PlayerDashboard() {
       onTap={() => openFixture(f)}
       onAvailabilityChange={(status) => handleCardAvailability(f, status)}
     />
-  );
-
-  // The whole-day control sits in front of the first card of its day, in
-  // the order the cards are shown (a collapsed list shows none).
-  const dayAnchors = firstCardOfEachDay(
-    [...data.fixtures, ...(showPlayUps ? playUps : []), ...(showSupport ? support : [])],
-    multiDays,
-  );
-  const renderDayControl = (f: MyFixture) => {
-    if (!dayAnchors.has(f)) return null;
-    const key = dateKey(f.date);
-    return (
-      <DayAnswerControl
-        date={key}
-        fixtures={multiDays.get(key) ?? []}
-        busy={bulkBusy !== null}
-        onSet={handleBulkAvailability}
-      />
-    );
-  };
-  // A play-up or support card, with its day's control in front when it is the first shown.
-  const renderListed = (f: MyFixture) => (
-    <Fragment key={`${f.id}-${f.hkfcTeam}`}>
-      {renderDayControl(f)}
-      {renderCard(f)}
-    </Fragment>
   );
 
   // Under a My Team card the player is out for, while they still read as in
@@ -287,10 +315,8 @@ export default function PlayerDashboard() {
               {gkFixturesByDate?.map(([date, list]) => (
                 <div key={date}>
                   <DateHeading date={date} suffix={` (${list.length})`} />
+                  <DayAvailabilityControl date={date} busy={bulkBusy} onSet={handleBulkAvailability} />
                   <div className="space-y-2">
-                    {list.length > 1 && (
-                      <DayAnswerControl date={date} fixtures={list} busy={bulkBusy !== null} onSet={handleBulkAvailability} />
-                    )}
                     {list.map((f) => renderCard(f))}
                   </div>
                 </div>
@@ -308,7 +334,6 @@ export default function PlayerDashboard() {
               <div className="space-y-2">
                 {data.fixtures.map((f) => (
                   <Fragment key={`${f.id}-${f.hkfcTeam}`}>
-                    {renderDayControl(f)}
                     {renderCard(f)}
                     {renderSameDayPrompt(f)}
                   </Fragment>
@@ -328,7 +353,7 @@ export default function PlayerDashboard() {
                     className={`h-4 w-4 text-muted-foreground transition-transform ${showPlayUps ? 'rotate-180' : ''}`}
                   />
                 </button>
-                {showPlayUps && <div className="space-y-2 mt-2">{playUps.map((f) => renderListed(f))}</div>}
+                {showPlayUps && <div className="space-y-2 mt-2">{playUps.map((f) => renderCard(f))}</div>}
               </div>
             )}
 
@@ -344,7 +369,7 @@ export default function PlayerDashboard() {
                     className={`h-4 w-4 text-muted-foreground transition-transform ${showSupport ? 'rotate-180' : ''}`}
                   />
                 </button>
-                {showSupport && <div className="space-y-2 mt-2">{support.map((f) => renderListed(f))}</div>}
+                {showSupport && <div className="space-y-2 mt-2">{support.map((f) => renderCard(f))}</div>}
               </div>
             )}
           </>

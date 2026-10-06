@@ -4,7 +4,7 @@ import { ArrowLeft, IdCard } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useMyProfile } from '@/lib/queries';
 import { coachDashboardPath } from '@/lib/scrollMemory';
-import { backTarget, canSwitchView, currentView, documentTitle } from '@/lib/header';
+import { backTarget, currentView, documentTitle, switchViews, type View } from '@/lib/header';
 import { MainMenu, ProfileMenu } from '@/components/HeaderMenus';
 import { headerIconClass, type MenuEntry } from '@/components/headerItems';
 import type { GUIDE_URLS } from '@/components/HelpLink';
@@ -25,7 +25,7 @@ export interface AppHeaderProps {
 
 /**
  * The one header on every signed-in screen: [back] burger · logo (home) ·
- * title … Player/Coach switch · profile menu. Pages pass only what is
+ * title … Player/Coach/Umpire switch · profile menu. Pages pass only what is
  * theirs; the menus and the switch come from the signed-in person's profile.
  * At most four buttons on a phone (lib/header.ts phoneControls).
  */
@@ -36,7 +36,11 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
   const { data: profile } = useMyProfile();
   const applicant = !!profile?.applicant;
   const view = currentView(location.pathname);
-  const canSwitch = canSwitchView(profile);
+  const views = switchViews(profile);
+  const canSwitch = views.length > 1;
+  // On a phone the switch already says which of its views this is, so the
+  // title gives way to it there (still the page's h1 for screen readers).
+  const titleGivesWay = canSwitch && !back && view !== null;
 
   useEffect(() => {
     document.title = documentTitle(title);
@@ -70,15 +74,28 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
         >
           <img src="/assets/logo-plain.svg" alt="Eddy" className="h-7 w-7 sm:h-8 sm:w-8 object-contain" />
         </Link>
-        <h1 className="flex-1 min-w-0 text-base sm:text-lg font-semibold text-foreground truncate">{title}</h1>
+        <h1
+          className={`flex-1 min-w-0 text-base sm:text-lg font-semibold text-foreground truncate ${
+            titleGivesWay ? 'max-sm:text-transparent max-sm:select-none' : ''
+          }`}
+        >
+          {title}
+        </h1>
         {canSwitch && (
           <div
             role="group"
-            aria-label="Player or coach view"
+            aria-label="Switch view"
             className={`${back ? 'hidden sm:flex' : 'flex'} shrink-0 items-center rounded-md bg-muted p-0.5`}
           >
-            <SwitchButton label="Player view" short="Player" active={view === 'player'} onClick={() => navigate('/')} />
-            <SwitchButton label="Coach view" short="Coach" active={view === 'coach'} onClick={() => navigate(coachDashboardPath())} />
+            {views.map((v) => (
+              <SwitchButton
+                key={v}
+                label={VIEW_LABEL[v]}
+                short={VIEW_SHORT[v]}
+                active={view === v}
+                onClick={() => navigate(v === 'player' ? '/' : v === 'coach' ? coachDashboardPath() : '/umpiring')}
+              />
+            ))}
           </div>
         )}
         <ProfileMenu
@@ -91,13 +108,16 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
   );
 }
 
+const VIEW_LABEL: Record<View, string> = { player: 'Player view', coach: 'Coach view', umpire: 'Umpire view' };
+const VIEW_SHORT: Record<View, string> = { player: 'Player', coach: 'Coach', umpire: 'Umpire' };
+
 function SwitchButton({ label, short, active, onClick }: { label: string; short: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
       aria-label={label}
-      className={`h-9 min-w-[3.25rem] px-2.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+      className={`h-9 min-w-[3.25rem] px-2 sm:px-2.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
       }`}
     >

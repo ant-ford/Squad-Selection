@@ -1,13 +1,19 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { CheckCircle2, HelpCircle, XCircle, Info } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
-import { preferenceTagLabel } from '@/lib/availabilityAnswers';
-import AvailabilityAnswerControl from '@/components/AvailabilityAnswerControl';
+import { availabilityLabel } from '@/lib/availabilityTone';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPlayerAvailability, type AvailabilityStatus } from '@/api/setPlayerAvailability';
 import { setPlayerOptInOnly } from '@/api/setPlayerOptInOnly';
+
+const OPTIONS: { value: AvailabilityStatus; label: string; Icon: typeof CheckCircle2 }[] = [
+  { value: 'Available', label: 'Available', Icon: CheckCircle2 },
+  { value: 'Maybe', label: 'Maybe', Icon: HelpCircle },
+  { value: 'Unavailable', label: 'No', Icon: XCircle },
+];
 
 export interface CoachAvailabilityTarget {
   id: string;
@@ -73,7 +79,7 @@ export default function CoachAvailabilitySheet({
     setSaving(true);
     try {
       const result = await setPlayerAvailability(matchId, player.id, status, notes);
-      // No success toast: the sheet closes and the row shows the new answer.
+      toast.success(`${player.name}: ${status}`);
       onSaved(status, notes, result.exceptionId);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not update availability');
@@ -93,17 +99,45 @@ export default function CoachAvailabilitySheet({
           <SheetTitle>Set availability</SheetTitle>
         </SheetHeader>
         <SheetBody>
-          <p className="pt-2 text-sm font-medium text-foreground">{player.name}</p>
+          <div className="py-2">
+            <p className="text-sm font-medium text-foreground">{player.name}</p>
+            <p className="text-xs text-muted-foreground">
+              Currently {availabilityLabel(player.availabilityStatus || 'Available')}
+              {player.availabilityFromRule ? ' from their availability preferences' : ''}
+            </p>
+          </div>
 
-          <AvailabilityAnswerControl
-            className="py-3"
-            value={status}
-            onChange={setStatus}
-            label={`Answer for ${player.name}`}
-            preferenceLabel={
-              player.availabilityFromRule && status === player.availabilityStatus ? preferenceTagLabel('their') : undefined
-            }
-          />
+          <div className="space-y-2 py-3">
+            {OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setStatus(opt.value)}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-colors text-left ${
+                  status === opt.value ? 'border-primary bg-primary/5' : 'border-border'
+                }`}
+              >
+                <opt.Icon className={`h-5 w-5 ${status === opt.value ? 'text-primary' : 'text-muted-foreground'}`} />
+                <p className="text-sm font-medium text-foreground">{opt.label}</p>
+              </button>
+            ))}
+          </div>
+
+          {/* Available used to be stored as "no answer", so it could not beat
+              a standing preference and the coach was warned it would do
+              nothing. It is now recorded explicitly whenever something would
+              otherwise contradict it, so the note says the opposite. */}
+          {status === 'Available' && player.availabilityFromRule && (
+            <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-1.5">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                {player.optInOnly
+                  ? `${player.name} is opt-in only, so they count as Unavailable until they answer.`
+                  : `Their preferences make them ${player.availabilityStatus} for this fixture.`}{' '}
+                Saving Available records an answer for this fixture only, which overrides that.
+              </span>
+            </div>
+          )}
 
           <div className="py-2 flex flex-col">
             <label className="text-xs font-medium text-muted-foreground mb-1">Note (optional)</label>
