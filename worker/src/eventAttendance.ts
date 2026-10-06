@@ -6,13 +6,12 @@
  * loads only this.
  */
 import type { Env } from "./env";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import type { AttendedEvent } from "../../shared/commitmentReview";
 
 /** Events attended from `from` to `to` (dates, both included), oldest first. */
 export async function attendedEvents(env: Env, personApiId: string, from: string | null, to: string | null): Promise<AttendedEvent[]> {
-  if (backendFor(env, "people") !== "supabase" || !from || !to) return [];
+  if (!from || !to) return [];
   const d = db(env);
   const p = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
   if (!p) return [];

@@ -5,7 +5,6 @@ import { CALLS_PER_EMAIL, MAX_PER_RUN, SUBREQUEST_BUDGET, sendDueReviewEmails, s
 import { commitments } from "../worker/src/data/commitments";
 
 const base = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   RESEND_API_KEY: "re_test",

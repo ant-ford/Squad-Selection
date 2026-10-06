@@ -30,15 +30,28 @@ function cardTone(card: string): string {
   return 'bg-amber-100 text-amber-800 border-amber-200';
 }
 
+/**
+ * The score in the same order as the title: home team's goals first, the way
+ * HKHA lists results. goalsFor/goalsAgainst are HKFC's side; the Won / Drew /
+ * Lost badge next to it keeps that perspective.
+ */
+export function scoreInFixtureOrder(f: Pick<PastFixture, 'goalsFor' | 'goalsAgainst' | 'isHome'>): [number, number] | null {
+  if (f.goalsFor === null || f.goalsAgainst === null) return null;
+  return f.isHome ? [f.goalsFor, f.goalsAgainst] : [f.goalsAgainst, f.goalsFor];
+}
+
 export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
-  const hasScore = fixture.goalsFor !== null && fixture.goalsAgainst !== null;
+  const score = scoreInFixtureOrder(fixture);
 
   return (
     <div className="bg-card border border-border rounded-xl p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-foreground truncate">
-            {fixture.hkfcTeam} <span className="text-muted-foreground">v</span> {fixture.opponent}
+          {/* Home team first, as on the upcoming fixture cards. */}
+          <p className="font-semibold text-sm text-foreground truncate">
+            {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
+            <span className="text-muted-foreground font-normal"> vs </span>
+            {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
           </p>
           <div className="mt-1">
             <MetaLine date={fixture.date} venue={fixture.venue} />
@@ -46,9 +59,9 @@ export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
         </div>
 
         <div className="flex flex-col items-end gap-1 shrink-0">
-          {hasScore ? (
+          {score ? (
             <span className="text-lg font-semibold tabular-nums leading-none text-foreground">
-              {fixture.goalsFor}&ndash;{fixture.goalsAgainst}
+              {score[0]}&ndash;{score[1]}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">No score</span>

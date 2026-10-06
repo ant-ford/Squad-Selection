@@ -1,6 +1,6 @@
 /**
  * The sponsor, Chairman and Membership Officer sign a new HKFC member's
- * application (Supabase backend), replacing Fillout forms 4 and 5, Page 7
+ * application, replacing Fillout forms 4 and 5, Page 7
  * and the Make routes that moved the stage and emailed the next signer.
  *
  *  - They sign in order (owner, 2026-10-01): the sponsor gives their
@@ -21,7 +21,6 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import type { MyTask, TaskRole } from "./myTasks";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
@@ -44,12 +43,6 @@ const OFFICE_COLUMN: Record<SignRole, "sponsored_by_sponsor_id" | "sponsored_by_
   officer: "sponsored_by_officer_id",
 };
 const TASK_ROLE: Record<SignRole, TaskRole> = { sponsor: "Sponsor", chair: "Chairman", officer: "Membership Officer" };
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Signing applications moves into Eddy at the switch-over. Until then, use the Fillout form.", 409, "NOT_YET");
-  }
-}
 
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 
@@ -162,7 +155,6 @@ const signatureFile = (app: ApplicationRow, r: SignRole) =>
   r === "sponsor" ? app.sponsor_signature_file_id : r === "chair" ? app.chair_signature_file_id : app.officer_signature_file_id;
 
 export async function getSigningView(env: Env, user: AuthorizedUser, apiId: string): Promise<SigningView> {
-  requireSupabase(env);
   const { p, app, holderOf } = await loadApplication(env, apiId);
   const myRoles = rolesOf(user, holderOf);
   if (!myRoles.length && !officerViewer(user)) throw new HttpError("This application is for its sponsor, Chairman and Membership Officer.", 403, "NOT_YOURS");
@@ -230,7 +222,6 @@ const isMembershipOfficer = (user: AuthorizedUser) => user.officerRoles.some((r)
 
 /** A Membership Officer makes the PDF (again, after a correction), and waits for it. */
 export async function remakeApplicationPdf(env: Env, user: AuthorizedUser, apiId: string): Promise<SigningView> {
-  requireSupabase(env);
   if (!isMembershipOfficer(user)) throw new HttpError("Only a Membership Officer makes the PDF.", 403, "FORBIDDEN");
   const { app } = await loadApplication(env, apiId);
   if (!readyToSend(app)) throw new HttpError("The Membership Officer signs it before the PDF is made.", 409, "NOT_READY");
@@ -241,7 +232,6 @@ export async function remakeApplicationPdf(env: Env, user: AuthorizedUser, apiId
 
 /** A Membership Officer has checked the PDF and sends it on. */
 export async function sendApplicationOn(env: Env, user: AuthorizedUser, apiId: string, body: Record<string, unknown>): Promise<SigningView> {
-  requireSupabase(env);
   await sendApplication(env, user, apiId, body.again === true);
   return getSigningView(env, user, apiId);
 }
@@ -265,7 +255,6 @@ const TRAINING_PROMPT = [
  * and kept on People (the columns the Airtable AI fields filled).
  */
 export async function draftSponsorAnswers(env: Env, user: AuthorizedUser, apiId: string): Promise<SigningView["drafts"]> {
-  requireSupabase(env);
   const { p, holderOf } = await loadApplication(env, apiId);
   if (!rolesOf(user, holderOf).includes("sponsor")) throw new HttpError("The drafts are for the sponsor.", 403, "NOT_YOURS");
   if (p.sports_background_draft || p.training_comments_draft || !env.OPENROUTER_API_KEY) {
@@ -299,7 +288,6 @@ export function sponsorAnswersFrom(body: Record<string, unknown>): SponsorAnswer
 
 /** One signature, as the role given; the sponsor's with their assessment. */
 export async function signApplication(env: Env, user: AuthorizedUser, apiId: string, body: Record<string, unknown>): Promise<{ stage: string }> {
-  requireSupabase(env);
   const role = body.role as SignRole;
   if (!SIGN_ROLES.includes(role)) throw new HttpError("Unknown signer.", 400, "INVALID_INPUT");
   const { holderOf } = await loadApplication(env, apiId);

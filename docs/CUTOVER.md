@@ -2,6 +2,8 @@
 
 **Switched 2 Oct 2026, about 17:05 HKT** (brought forward from Saturday). Import and parity clean (730 files), kit order loaded, the stage-3 application moved into Eddy, production backed up, #116 merged, hkha-sync on production. Never run `import-airtable.mjs` again.
 
+**This runbook is history.** The Airtable code has since been removed from Eddy (phase 2b): the `DATA_BACKEND` switch is gone, so the roll back in step 5 is no longer possible, and `import-airtable.mjs`, `parity.mjs`, `mapping.mjs` and `backfill-applications.mjs` were deleted (they are in the git history). What is left of Airtable is listed in the README's "Airtable (legacy)" section.
+
 - **When:** Saturday 3 Oct 2026 (Sunday 4 Oct in reserve), with the owner present throughout.
 - **Go/no-go:** Friday 2 Oct. Every box under [Before Saturday](#before-saturday) must be ticked, or the switch-over moves.
 - **Hard stop:** Airtable's subscription ends on 20 Oct 2026. Until then Airtable is the way back, but only on the day itself (see [Roll back](#5-decide-the-same-day)).
@@ -182,10 +184,10 @@ Save what only exists in the old tools:
 Then remove the Airtable side of Eddy (Claude PRs):
 
 - ~~shadow reads, the webhook and `register-airtable-webhook.mjs`, the webhook refresh in the daily cron, the webhook-length cache TTLs and the Airtable check in `/health?deep=1`~~ (phase 1; the webhook itself is deleted in Airtable by the owner);
-- the Airtable client and repositories, and the `backendFor` gates;
-- the Fillout links in the field maps and My Tasks;
-- the `AIRTABLE_*` secrets and variables in the Worker and GitHub, and hkha-sync's Airtable target and code;
-- README and tests to match.
+- ~~the Airtable client and repositories, and the `backendFor` gates;~~
+- ~~the Fillout links in the field maps and My Tasks;~~
+- ~~the `AIRTABLE_*` variables in the Worker config~~ (phase 2b). The owner deletes the `AIRTABLE_TOKEN` secret from the production Worker, the preview Worker and the GitHub `preview` environment; hkha-sync's Airtable target and code are in that repository;
+- ~~README and tests to match~~ (phase 2b).
 
 Revoke the Airtable tokens: the Worker's, the read-only import token and the Apps Script's. The raw archive (`archive.airtable_records`) and `scripts/migration/.migration-cache/` are deleted only with the owner's yes.
 
