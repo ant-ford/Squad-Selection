@@ -2,12 +2,12 @@ import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { ApiError } from '@/lib/apiClient';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { moveKit } from '@/api/kit';
 import type { KitBoard, KitPerson } from '@shared/kit';
 import { reportMove } from '@/lib/kitMoves';
 import { PersonPicker, PlaceBadge, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
+import { errorMessage } from '@/lib/errorMessages';
 
 /**
  * Hand a batch of kit to whoever is collecting: a captain taking their
@@ -74,7 +74,7 @@ export default function HandOutSheet({ board, onClose, onDone }: { board: KitBoa
       onDone();
       if (result.conflicts.length === 0) onClose();
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Not handed out: the connection or the server failed. Try again.'),
+    onError: (err) => toast.error(errorMessage(err, 'save')),
   });
 
   return (

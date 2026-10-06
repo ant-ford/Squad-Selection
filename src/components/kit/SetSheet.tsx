@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { allocateSpare, editSetSizes, getSetHistory, moveKit, releaseSet, swapItem } from '@/api/kit';
@@ -22,9 +21,10 @@ import {
 } from '@shared/kit';
 import { reportMove } from '@/lib/kitMoves';
 import { PersonPicker, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
+import { errorMessage } from '@/lib/errorMessages';
 
 const failed = (err: unknown) =>
-  toast.error(err instanceof ApiError ? err.message : 'Not saved: the connection or the server failed. Try again.');
+  toast.error(errorMessage(err, 'save'));
 
 function moveLine(m: KitMove): string {
   switch (m.kind) {

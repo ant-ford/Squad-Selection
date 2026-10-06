@@ -7,6 +7,8 @@ import AppHeader, { headerIconClass } from '@/components/AppHeader';
 import { useAuth } from '@/lib/auth';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorState } from '@/components/ui/error-state';
+import { StepProgress } from '@/components/ui/step-progress';
 import { ApiError } from '@/lib/apiClient';
 import { getMyDetails } from '@/api/details';
 import { getApply } from '@/api/apply';
@@ -121,12 +123,11 @@ export default function ApplyPage() {
     if (loading) return <Skeleton className="h-96 w-full" />;
     if (failed || !details.data || !view.data || !volunteering.data) {
       return (
-        <div className="text-center py-12 border border-dashed border-border rounded-xl">
-          <p className="text-muted-foreground mb-2">{failed instanceof ApiError && failed.status < 500 ? failed.message : 'Could not load your application.'}</p>
-          <button onClick={() => void view.refetch()} className="text-sm text-primary underline">
-            Try again
-          </button>
-        </div>
+        <ErrorState
+          title="Could not load your application"
+          message={failed instanceof ApiError && failed.status < 500 ? failed.message : undefined}
+          onRetry={() => void view.refetch()}
+        />
       );
     }
     // Sent already (in Eddy, or through Fillout before the switch-over): nothing
@@ -145,18 +146,7 @@ export default function ApplyPage() {
     const section = PROFILE_SECTIONS.find((s) => s.key === step.key);
     return (
       <>
-        <ol className="flex flex-wrap gap-1" aria-label="Steps">
-          {steps.map((s, i) => (
-            <li key={s.key}>
-              <button
-                onClick={() => go(i)}
-                className={`text-xs px-2 py-0.5 rounded-full border ${i === index ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'}`}
-              >
-                {s.title}
-              </button>
-            </li>
-          ))}
-        </ol>
+        <StepProgress step={index + 1} total={steps.length} title={step.title} />
         {section && <SectionStep key={section.key} section={section} {...props} />}
         {step.key === 'clubs' && <ClubsStep {...props} view={view.data} />}
         {step.key === 'trials' && <TrialsStep {...props} view={view.data} />}

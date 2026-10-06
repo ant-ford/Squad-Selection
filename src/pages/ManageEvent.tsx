@@ -24,6 +24,9 @@ import RegisterSection from '@/components/events/RegisterSection';
 import CheckInQrSheet from '@/components/events/CheckInQrSheet';
 import { differs } from '@/lib/drafts';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { errorMessage } from '@/lib/errorMessages';
+import { formGaps } from '@/lib/formGaps';
+import { useFormGaps } from '@/lib/useFormGaps';
 import {
   countAudience,
   deleteEvent,
@@ -220,10 +223,10 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
         <Field label="Starts" id="event-starts" required>
           <Input type="datetime-local" value={f.startsAt} onChange={(e) => set({ startsAt: e.target.value })} />
         </Field>
-        <Field label="Ends" error={endBeforeStart ? "It can't end before it starts." : undefined}>
+        <Field label="Ends" id="event-ends" error={endBeforeStart ? "It can't end before it starts." : undefined}>
           <Input type="datetime-local" value={f.endsAt} min={f.startsAt || undefined} onFocus={defaultEnd} onChange={(e) => set({ endsAt: e.target.value })} />
         </Field>
-        <Field label="Answer by" error={lateDeadline ? 'Must be before the event ends.' : undefined}>
+        <Field label="Answer by" id="event-answer-by" error={lateDeadline ? 'Must be before the event ends.' : undefined}>
           <Input type="datetime-local" value={f.respondBy} max={f.startsAt || undefined} onChange={(e) => set({ respondBy: e.target.value })} />
         </Field>
       </div>
@@ -659,11 +662,19 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
         navigate(`/events/manage/${r.id}`, { replace: true });
       }
     },
-    onError: (err) => setProblem(errorText(err)),
+    onError: (err) => setProblem(errorMessage(err, 'save')),
   });
   const endBeforeStart = !!f.startsAt && !!f.endsAt && f.endsAt < f.startsAt;
   const lateDeadline = !!f.respondBy && !!f.startsAt && f.respondBy > (f.endsAt || f.startsAt);
-  const blocked = !f.title.trim() || !f.startsAt || endBeforeStart || lateDeadline || (f.paymentMode === 'payme_fps' && !f.paymentDetails.trim());
+  const gaps = useFormGaps(
+    formGaps([
+      [!f.title.trim(), { id: 'event-title', label: 'Title' }],
+      [!f.startsAt, { id: 'event-starts', label: 'Starts' }],
+      [endBeforeStart, { id: 'event-ends', label: 'An end after the start' }],
+      [lateDeadline, { id: 'event-answer-by', label: 'An answer-by date before it ends' }],
+      [f.paymentMode === 'payme_fps' && !f.paymentDetails.trim(), { id: 'event-pay-to', label: 'PayMe link or FPS ID' }],
+    ]),
+  );
 
   // Only the tabs that apply: answers once it's out, payments for a paid one, the register while it's open.
   const tabs: TabItem<TabKey>[] = e
@@ -699,9 +710,9 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
         />
       )}
       <EventFields view={view} f={f} set={set} />
-      {problem && (
-        <p role="alert" className="text-xs text-danger-soft-foreground whitespace-pre-line">
-          {problem}
+      {(gaps.summary || problem) && (
+        <p role="alert" className="text-xs font-medium text-danger-soft-foreground whitespace-pre-line">
+          {gaps.summary || problem}
         </p>
       )}
       <div className="flex justify-end gap-2 pt-2 border-t border-border">
@@ -710,7 +721,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
             Undo changes
           </ActionButton>
         )}
-        <ActionButton loading={save.isPending} disabled={blocked || (!!e && !dirty)} onClick={() => save.mutate()}>
+        <ActionButton loading={save.isPending} disabled={!!e && !dirty} onClick={() => gaps.check() && save.mutate()}>
           {e ? 'Save' : 'Save draft'}
         </ActionButton>
       </div>
