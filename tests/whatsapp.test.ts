@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildAvailabilityRequest,
   buildSelectionMessage,
   buildSquadAnnouncement,
   fixtureLink,
@@ -111,6 +112,20 @@ describe('message building', () => {
     const msg = buildSelectionMessage('Sam', { ...FIXTURE, link });
     expect(msg).toContain(link);
     expect(msg).not.toContain('Please confirm');
+  });
+});
+
+describe('buildAvailabilityRequest', () => {
+  it('asks for availability with the fixture and its link, and no squad', () => {
+    const link = fixtureLink('https://eddy.example', 'rec123');
+    const msg = buildAvailabilityRequest({ ...FIXTURE, link });
+    expect(msg.startsWith('Availability for HKFC B vs Kowloon')).toBe(true);
+    expect(msg.endsWith(`Please mark whether you can play in Eddy: ${link}`)).toBe(true);
+    expect(msg).not.toContain('Squad');
+  });
+
+  it('still reads cleanly without a link', () => {
+    expect(buildAvailabilityRequest(FIXTURE)).toContain('Please mark whether you can play in Eddy.');
   });
 });
 

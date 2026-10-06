@@ -598,14 +598,19 @@ export default function SquadSelection() {
           </span>
         </button>
 
-        {selectedPlayers.length > 0 && notifyFixture && (
+        {/* Shown with nobody selected too: the sheet then asks for availability. */}
+        {notifyFixture && (
           <button
             onClick={() => setShowNotify(true)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title="Message the selected squad on WhatsApp"
+            title={
+              selectedPlayers.length > 0
+                ? 'Message the selected squad on WhatsApp'
+                : 'Ask the team group for availability on WhatsApp'
+            }
           >
             <MessageCircle className="h-3.5 w-3.5" />
-            Notify ({selectedPlayers.length})
+            {selectedPlayers.length > 0 ? `Notify (${selectedPlayers.length})` : 'Notify'}
           </button>
         )}
 
