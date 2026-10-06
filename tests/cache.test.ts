@@ -24,7 +24,6 @@ import { invalidateAll, invalidateCache, getCached } from "../worker/src/cache";
 import { newRequestStats, runWithRequestContext } from "../worker/src/requestContext";
 import type { AuthorizedUser } from "../worker/src/auth";
 import type { Env } from "../worker/src/env";
-import type { ExceptionChanges } from "../worker/src/data/availabilityExceptions";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { exception, match, person, recId, team, signedIn } from "./helpers/factories";
@@ -206,17 +205,19 @@ describe("availability poll cache", () => {
     expect(exceptionFetches()).toBe(afterFirst);
   });
 
-  it("is invalidated by an availability write so the next poll is fresh", async () => {
-    await getAvailabilityForMatch(ENV, M4);
+  it("is rebuilt after an availability write, because the write moves the version", async () => {
+    // As index.ts runs requests: the versions come from the (fake) database,
+    // whose counters every repository write moves, as the triggers do.
+    const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
+    await request(() => getAvailabilityForMatch(ENV, M4));
     const afterRead = exceptionFetches();
-    await setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" });
-    await getAvailabilityForMatch(ENV, M4);
-    // Two extra reads, both deliberate. The write's own lookup no longer
-    // shares the warm per-season index: it is a read-modify-write, and
-    // reading a cached snapshot meant a delete could silently target a
-    // record that was not in it. Then the invalidated post-write read goes
-    // to the database again.
-    expect(exceptionFetches()).toBe(afterRead + 2);
+    await request(() => setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" }));
+    const r = await request(() => getAvailabilityForMatch(ENV, M4));
+    // One extra read: the post-write poll, under the new version. The write
+    // itself reads nothing here - its read-modify-write happens inside
+    // set_availability, in the database - and clears nothing.
+    expect(exceptionFetches()).toBe(afterRead + 1);
+    expect(r.exceptions[0]).toMatchObject({ playerId: BOB, status: "Unavailable" });
   });
 });
 
@@ -337,17 +338,14 @@ describe("availability exceptions freshness", () => {
 // The availability write is a read-modify-write, so it must never consult the
 // cache. Setting yourself Available deletes the exception, and the delete only
 // happens if the lookup can see the record. The cache is per-isolate, so an
-// exception written moments ago elsewhere is simply absent - nothing is
-// deleted, success is still reported, and the player stays Unavailable however
-// many times they tap.
+// exception written moments ago elsewhere was simply absent - nothing was
+// deleted, success was still reported, and the player stayed Unavailable
+// however many times they tapped. The read now happens inside the database,
+// in the same transaction as the write (set_availability), so the Worker
+// reads nothing of the season's answers at all.
 // ---------------------------------------------------------------------------
 
 describe("availability writes read past the cache", () => {
-  /** Every change set the write sent (one apply_availability_changes call each on Supabase). */
-  const applied = () => db.callsTo("availabilityExceptions", "apply").map((c) => c.args[0] as ExceptionChanges);
-  const deleteCalls = () => applied().filter((c) => c.deleteIds.length > 0).length;
-  const createCalls = () => applied().reduce((n, c) => n + c.creates.length, 0);
-
   /** An exception this isolate's cache has never seen, as if written elsewhere. */
   const addExceptionElsewhere = (id: string, matchId: string) => {
     db.state.availabilityExceptions.push(
@@ -360,17 +358,15 @@ describe("availability writes read past the cache", () => {
     // Warm the cache BEFORE the exception exists - the stale snapshot.
     await getExceptionsForSeasons(ENV, ["2026-27"]);
     addExceptionElsewhere(STALE1, M1);
+    const reads = exceptionFetches();
     await setMyAvailability(ENV, {
       email: "dave@hkfc.com",
       matchId: M1,
       status: "Available",
     });
-    expect(deleteCalls()).toBe(1);
-    // The id must actually reach the database. Asserting only that a delete
-    // happened is what let an Airtable batch delete with an empty query
-    // string - rejected every single time - pass as working.
-    const deleted = applied().find((c) => c.deleteIds.length > 0)!.deleteIds;
-    expect(deleted).toContain(STALE1);
+    // One call that reads and writes in the database; no read of the season here.
+    expect(db.callsTo("availabilityExceptions", "set")).toHaveLength(1);
+    expect(exceptionFetches()).toBe(reads);
     // And the record is gone, not merely asked about.
     expect(db.state.availabilityExceptions.some((e) => e.id === STALE1)).toBe(false);
   });
@@ -379,7 +375,6 @@ describe("availability writes read past the cache", () => {
     const STALE2 = recId("Stale2");
     await getExceptionsForSeasons(ENV, ["2026-27"]);
     addExceptionElsewhere(STALE2, M1);
-    const createsBefore = createCalls();
     await setMyAvailability(ENV, {
       email: "dave@hkfc.com",
       matchId: M1,
@@ -387,6 +382,8 @@ describe("availability writes read past the cache", () => {
     });
     // A second row for the same player and match is a data problem, not
     // just a display one: two answers, and whichever is read first wins.
-    expect(createCalls()).toBe(createsBefore);
+    const rows = db.state.availabilityExceptions.filter((e) => e.player?.[0] === DAVE && e.match?.[0] === M1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: STALE2, availabilityStatus: "Maybe" });
   });
 });
