@@ -20,7 +20,7 @@ import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { match, person, recId, team } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return db.signedIn(email);
 }
 
 const ENV = { ...SUPABASE_TEST_ENV } as unknown as Env;

@@ -231,7 +231,7 @@ export async function addSession(env: Env, user: AuthorizedUser, body: Record<st
   if (!startsAt || Number.isNaN(Date.parse(startsAt))) throw new HttpError("Give the date and time.", 400, "INVALID_INPUT");
   if (Date.parse(startsAt) < Date.now()) throw new HttpError("That's in the past.", 400, "INVALID_INPUT");
   if (!place) throw new HttpError("Give the place.", 400, "INVALID_INPUT");
-  const me = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(user.personId)}`);
+  const me = user.personUuid ? { id: user.personUuid } : null;
   const [row] = await db(env).insert<{ id: string }>("trial_sessions", [
     { starts_at: new Date(startsAt).toISOString(), place, notes: text(body.notes, 300) || null, created_by: me?.id ?? null },
   ]);
@@ -355,7 +355,7 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
     template: "trial-practice-player",
     from,
   });
-  const me = await d.one<{ id: string }>("people", `select=id&api_id=${eq(actor.personId)}`);
+  const me = actor.personUuid ? { id: actor.personUuid } : null;
   await d.insert("activity_log", [{ actor_person_id: me?.id ?? null, action: "trial-practice-invite", entity: "people", entity_id: p.id, fields: [team] }]).catch(() => undefined);
   return { ok: true };
 }
@@ -368,7 +368,7 @@ export async function declineRegistration(env: Env, actor: AuthorizedUser, apiId
   if (!p) throw new HttpError("That person was not found.", 404, "NOT_FOUND");
   if (p.applicant_stage !== TRIAL_STAGE) throw new HttpError("Only a registration at stage 1 can be closed here.", 409, "NOT_A_TRIALIST");
   await d.update("people", `id=${eq(p.id)}`, { applicant_stage: "Rejected" });
-  const me = await d.one<{ id: string }>("people", `select=id&api_id=${eq(actor.personId)}`);
+  const me = actor.personUuid ? { id: actor.personUuid } : null;
   await d.insert("activity_log", [{ actor_person_id: me?.id ?? null, action: "trial-declined", entity: "people", entity_id: p.id, fields: ["applicant_stage"] }]).catch(() => undefined);
   await invalidatePeople(env);
   return { ok: true };

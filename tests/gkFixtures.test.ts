@@ -17,7 +17,7 @@ import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { exception, match, person, recId, team } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return db.signedIn(email);
 }
 
 const ENV = {

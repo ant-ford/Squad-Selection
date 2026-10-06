@@ -383,11 +383,15 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
   if (!to) throw new HttpError(`Eddy has no address for ${label}.`, 500, "SERVER_MISCONFIGURED");
 
   // The sender: the officer pressing Send, in their office's name.
-  const me = await d.one<{ id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null }>(
-    "people",
-    `select=id,preferred_name,given_names,surname,email&api_id=${eq(user.personId)}`,
-  );
-  if (!me) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  // From sign-in (auth_context): no read.
+  if (!user.personUuid) throw new HttpError("Your People record was not found.", 403, "FORBIDDEN");
+  const me = {
+    id: user.personUuid,
+    preferred_name: user.person.preferredName ?? null,
+    given_names: user.person.givenNames ?? null,
+    surname: user.person.surname ?? null,
+    email: user.person.email ?? null,
+  };
   const myOffice = await d.one<{ designation: string | null; office_email: string | null }>(
     "offices",
     `select=designation,office_email&person_id=${eq(me.id)}&role=eq.membership_officer&status=eq.Active&limit=1`,

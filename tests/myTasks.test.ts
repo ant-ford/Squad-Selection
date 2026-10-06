@@ -66,10 +66,15 @@ const uuid = (apiId: string) => `uuid-${apiId}`;
 // ── The repositories ─────────────────────────────────────────────────────
 
 function member(id: string, email: string, first: string, crm: FakePerson["crm"] = {}): FakePerson {
-  return personRow({
-    id, preferredName: first, surname: "Test", email, active: true, status: "Member",
-    crm: { waiversSubmittedAt: SIGNED, ...crm },
-  });
+  return {
+    ...personRow({
+      id, preferredName: first, surname: "Test", email, active: true, status: "Member",
+      // Everyone confirmed their details this season: no "details" line.
+      crm: { waiversSubmittedAt: SIGNED, ...({ profileUpdatedAt: SIGNED } as FakePerson["crm"]), ...crm },
+    }),
+    // Sign-in (auth_context) gives the same uuid the PostgREST rows have.
+    uuid: uuid(id),
+  } as FakePerson;
 }
 
 function applicant(id: string, first: string, stage: string, overrides: Partial<FakePerson> = {}, crm: FakePerson["crm"] = {}): FakePerson {

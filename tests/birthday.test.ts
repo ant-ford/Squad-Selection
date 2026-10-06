@@ -99,9 +99,8 @@ describe("the player dashboard's birthday flag", () => {
       teams: [team({ id: recId("TA"), teamName: "A", teamRank: 1, active: true })],
     });
   };
-  const ann: AuthorizedUser = {
-    email: "ann@hkfc.com", personId: ANN, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-  };
+  /** Ann signed in, as auth_context reads her from the seeded People. */
+  const ann = (): AuthorizedUser => db.signedIn("ann@hkfc.com");
 
   beforeEach(() => {
     invalidateAll();
@@ -116,7 +115,7 @@ describe("the player dashboard's birthday flag", () => {
   it("is set on the Hong Kong calendar day, which starts at 16:00 UTC the day before", async () => {
     seed("1990-09-25");
     vi.setSystemTime(new Date("2026-09-24T16:30:00Z")); // 00:30 on the 25th in Hong Kong
-    const out = await getMyFixtures(ENV, ann);
+    const out = await getMyFixtures(ENV, ann());
     expect(out.isBirthday).toBe(true);
     expect(JSON.stringify(out)).not.toContain("1990");
   });
@@ -124,7 +123,7 @@ describe("the player dashboard's birthday flag", () => {
   it("is not set on any other day", async () => {
     seed("1990-09-25");
     vi.setSystemTime(new Date("2026-09-24T15:30:00Z")); // 23:30 on the 24th in Hong Kong
-    expect((await getMyFixtures(ENV, ann)).isBirthday).toBe(false);
+    expect((await getMyFixtures(ENV, ann())).isBirthday).toBe(false);
   });
 });
 
@@ -135,9 +134,7 @@ describe("teammates' birthdays on the dashboard", () => {
       id: recId(label), preferredName: name, surname: "X", email: `${label.toLowerCase()}@hkfc.com`, active: true,
       birthday: dob.slice(5), crm: { dateOfBirth: dob }, ...overrides,
     });
-  const ann: AuthorizedUser = {
-    email: "ann@hkfc.com", personId: recId("Ann"), role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-  };
+  const ann = (): AuthorizedUser => db.signedIn("ann@hkfc.com");
 
   beforeEach(() => {
     invalidateAll();
@@ -172,14 +169,14 @@ describe("teammates' birthdays on the dashboard", () => {
   });
 
   it("names Active teammates in the same Selected Team, and not the player", async () => {
-    const out = await getMyFixtures(ENV, ann);
+    const out = await getMyFixtures(ENV, ann());
     expect(out.displayTeam).toBe("C");
     expect(out.isBirthday).toBe(true);
     expect(out.teamBirthdays).toEqual(["Ben X", "Cat X"]);
   });
 
   it("sends names only, never a date of birth", async () => {
-    const out = await getMyFixtures(ENV, ann);
+    const out = await getMyFixtures(ENV, ann());
     expect(JSON.stringify(out)).not.toMatch(/19\d\d|20\d\d-\d\d-\d\d/);
   });
 });

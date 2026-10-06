@@ -20,7 +20,7 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
-import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, refreshUmpirePool, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
@@ -215,6 +215,13 @@ export default {
     // records a heartbeat, which is what that check reads.
     if (event.cron === HEALTH_CRON) {
       await runHealthCron(env);
+      // The umpire pool auth_context reads: someone known only by their
+      // name on a match card sees the umpiring screen within a day.
+      try {
+        await refreshUmpirePool(env);
+      } catch (err) {
+        console.error("Umpire pool not refreshed:", err instanceof Error ? err.message : err);
+      }
       return;
     }
     if (event.cron === RETENTION_CRON) {
@@ -1064,10 +1071,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Calendar (Link generation uses email param, Feeds are public signed URLs) ──
     if (method === "GET" && pathname === "/api/calendar/link") {
       const user = await requireAuthorizedUser(request, env);
-      return json(await handleGetCalendarLink(env, user.email, url.origin), 200, origin);
+      return json(await handleGetCalendarLink(env, user.personId, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/feed.ics") {
-      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
+      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"), url.origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-link") {
       const user = await requireAuthorizedUser(request, env);
@@ -1075,7 +1082,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await handleGetTeamCalendarLink(env, user, team, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
-      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
+      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"), url.origin);
     }
 
     return errorJson("Not Found", 404, origin, "NOT_FOUND");

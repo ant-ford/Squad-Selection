@@ -8,18 +8,17 @@
  * virtual-selection indexes - is built once per season and shared by every
  * match+side opened that season.
  *
- * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
- * reads underneath it are cached for 30 s).
- * Invalidated by: syncSquad (selections changed), setAvailability and
- * setMyAvailability (exceptions changed), the Men's Convenor's suspension
- * writes (discipline.ts), and People writes (invalidation.ts).
+ * Cache key: `season-index:<season>@<versions>` (cache.ts getVersioned):
+ * the cache versions of every table it is built from (the Men's Convenor's
+ * suspensions included), so any write to them, the Worker's or hkha-sync's,
+ * means a rebuild on the next request.
  */
 
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
 import { matchCards } from "./data/matchCards";
 import type { Env } from "./env";
-import { getCached, getShared } from "./cache";
+import { getVersioned } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { getExceptionsForSeasons, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
@@ -48,11 +47,11 @@ import type {
 // ── Season-scoped fetches ───────────────────────────────────────────────
 const SEASON_READ_TTL_MS = 10 * 60 * 1000;
 
-// Always the short TTL, never hours: these records
-// carry squad selections, which the eligibility engine's same-day checks
-// read. See SCHEDULED_MATCHES_TTL_MS in fixtures.ts for why.
+// These records carry squad selections, which the eligibility engine's
+// same-day checks read: kept under the matches and match_selections
+// versions, so a saved squad shows everywhere on the next request.
 export async function getAllMatches(env: Env, season: string): Promise<Match[]> {
-  return getShared<Match[]>(env, `all-matches:${season}`, async () => {
+  return getVersioned<Match[]>(env, `all-matches:${season}`, ["matches", "match_selections"], async () => {
     return matches(env).listForSeason(season);
   }, SEASON_READ_TTL_MS);
 }
@@ -74,7 +73,7 @@ export async function getMatchCardsForSeason(
   opts: { cardedOnly?: boolean } = {},
 ): Promise<MatchCard[]> {
   const key = opts.cardedOnly ? `match-cards:${season}:carded` : `match-cards:${season}`;
-  return getShared<MatchCard[]>(env, key, async () => {
+  return getVersioned<MatchCard[]>(env, key, ["match_cards", "matches"], async () => {
     return matchCards(env).listForSeason(season, opts);
   }, SEASON_READ_TTL_MS);
 }
@@ -111,7 +110,7 @@ export function getSameDayMatches(allMatches: readonly Match[], targetDate: stri
   return bucket ? bucket.slice() : [];
 }
 
-/** Cache key of the open manual suspensions; invalidation.ts invalidateSuspensions drops it. */
+/** Cache key of the open manual suspensions, kept under the suspensions cache version. */
 export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
 
 /**
@@ -119,7 +118,7 @@ export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
  * null): a handful of rows at most.
  */
 export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspension[]> {
-  return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, () => suspensions(env).listOpen(), SEASON_READ_TTL_MS);
+  return getVersioned<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, ["suspensions"], () => suspensions(env).listOpen(), SEASON_READ_TTL_MS);
 }
 
 export function previousSeason(season: string): string | null {
@@ -165,16 +164,16 @@ export interface SeasonContext {
 }
 
 /**
- * The derived indexes live in this isolate only, and their lifetime is
- * short: every input is a cached raw read, and rebuilding costs a few
- * parallel reads plus some CPU. A longer lifetime here is what let one
- * isolate keep showing selections another isolate's write had already
- * replaced.
+ * Every table the season index is built from (through the reads it calls):
+ * its cache versions are its key, so a write to any of them, from any
+ * isolate or hkha-sync, makes the next request rebuild it.
  */
-const SEASON_INDEX_TTL_MS = 60 * 1000;
+export const SEASON_INDEX_DEPS = [
+  "matches", "match_selections", "match_cards", "availability_exceptions", "people", "teams", "team_people", "suspensions",
+] as const;
 
 export async function getSeasonContext(env: Env, season: string): Promise<SeasonContext> {
-  const { data } = await getCached<SeasonContext>(`season-index:${season}`, async () => {
+  return getVersioned<SeasonContext>(env, `season-index:${season}`, SEASON_INDEX_DEPS, async () => {
     const prevSeason = previousSeason(season);
     const [exceptionsRaw, matchCards, allMatches, prevMatchCards, prevMatches, ref, openManual] = await Promise.all([
       getExceptionsForSeasons(env, [season]),
@@ -271,8 +270,7 @@ export async function getSeasonContext(env: Env, season: string): Promise<Season
       suspensionByPlayer,
       manualSuspensionByPlayer,
     };
-  }, SEASON_INDEX_TTL_MS);
-  return data;
+  });
 }
 
 // ── Per-request inputs, shared across fixtures ──────────────────────────

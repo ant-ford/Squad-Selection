@@ -7,7 +7,6 @@ import { people, type PersonPatch } from "./data/people";
 import { abilityGroups } from "./data/abilityGroups";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
-import { invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
 import type { AuthorizedUser } from "./auth";
 import {
   validateJustification,
@@ -246,8 +245,6 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
       sectionRank: newRank,
       rankUpdatedAt: new Date().toISOString(),
     });
-    const targetEmail = player.email;
-    if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
     invalidateRankingEventsCache();
     await recordRankingEvents(env, [
       { playerId, actorEmail: actingEmail, kind: "activate", oldRank: hasExistingRank ? newRank : null, newRank },
@@ -306,8 +303,6 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
     rankUpdatedAt: new Date().toISOString(),
   });
 
-  const targetEmail = player.email;
-  if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
   invalidateRankingEventsCache();
   await recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
@@ -365,7 +360,6 @@ async function recomputeDerivedFieldsFromList(
 
   await batchUpdatePlayers(env, fieldUpdates);
   await invalidateRankingCaches(env);
-  await invalidateReferenceData(env);
 
   return forClients({ players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() });
 }

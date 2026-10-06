@@ -13,7 +13,8 @@ import { officers } from "../worker/src/data/officers";
 import type { Env } from "../worker/src/env";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { installFakeRepos } from "./helpers/fakeRepos";
-import { exception, match, office, person, recId } from "./helpers/factories";
+import { exception, match, office, person, recId, team } from "./helpers/factories";
+import { authContexts } from "../worker/src/authContext";
 
 const env = { ...SUPABASE_TEST_ENV } as Env;
 
@@ -199,6 +200,40 @@ describe("fake repositories", () => {
     expect(fake.state.availabilityExceptions[0].availabilityStatus).toBe("Maybe");
     expect(fake.callsTo("availabilityExceptions").map((c) => c.method)).toEqual(["set", "set", "set"]);
     expect(fake.callsTo("people", "listContactsByIds")[0].args).toEqual([[ALICE, "nonsense"]]);
+    fake.restore();
+  });
+});
+
+describe("fake auth_context", () => {
+  it("answers like the SQL: person by email (Active first), all teams' links, Active offices in office order", async () => {
+    const ALICE = recId("Alice");
+    const fake = installFakeRepos({
+      people: [person({ id: ALICE, email: "Alice@X.com", active: false }), person({ id: recId("Other"), email: "bob@x.com" })],
+      teams: [
+        team({ id: recId("TeamB"), teamName: "B", active: false, coach: [ALICE], teamCaptain: [ALICE] }),
+        team({ id: recId("TeamA"), teamName: "A", sectionCaptain: [ALICE], teamCaptain: [ALICE] }),
+      ],
+      officers: [
+        office("sponsor", ALICE),
+        office("sectionChair", ALICE, { designation: "Chairman" }),
+        office("membershipOfficer", ALICE, { status: "Retired" }),
+      ],
+    });
+    const ctx = await authContexts({} as Env).load(" alice@x.COM ");
+    expect(ctx.person).toMatchObject({ id: ALICE, uuid: ALICE, active: false });
+    expect(ctx).toMatchObject({
+      isTeamCoach: true,
+      coachTeams: ["B"], // an inactive team still counts
+      teamSectionCaptain: true,
+      allTeamNames: ["A", "B"],
+      captainTeams: ["A"], // Active teams only
+      offices: [
+        { role: "section_chair", office: "sectionChair", designation: "Chairman" },
+        { role: "sponsor", office: null, designation: "" },
+      ],
+      umpire: false,
+    });
+    expect((await authContexts({} as Env).load("nobody@x.com")).person).toBeNull();
     fake.restore();
   });
 });

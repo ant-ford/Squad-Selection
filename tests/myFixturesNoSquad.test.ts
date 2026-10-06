@@ -20,9 +20,8 @@ const ENV = { ...SUPABASE_TEST_ENV, CALENDAR_SECRET: "test-calendar-secret" } as
 const JONNY = recId("P1");
 const SAM = recId("P2");
 
-const authUser: AuthorizedUser = {
-  email: "jonny@hkfc.com", personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
-};
+/** Jonny signed in, as auth_context reads him from the seeded People. */
+const authUser = (): AuthorizedUser => db.signedIn("jonny@hkfc.com");
 
 const DAY = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().split("T")[0];
 
@@ -33,7 +32,7 @@ function player(id: string, name: string, position: string) {
   });
 }
 
-useFakeRepos(() => ({
+const db = useFakeRepos(() => ({
   people: [player(JONNY, "Jonny", "Forward"), player(SAM, "Sam", "Goalkeeper")],
   teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => team({ teamName: n, teamRank: i + 1, active: true })),
   matches: [
@@ -68,7 +67,7 @@ async function sign(payload: string): Promise<string> {
 
 describe("squad on player fixtures", () => {
   it("is left out of the dashboard response", async () => {
-    const out = await getMyFixtures(ENV, authUser);
+    const out = await getMyFixtures(ENV, authUser());
     expect(out.fixtures).toHaveLength(1);
     expect(out.fixtures[0].selectedCount).toBe(2);
     expect(out.fixtures[0]).not.toHaveProperty("squad");

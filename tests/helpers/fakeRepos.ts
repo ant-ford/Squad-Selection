@@ -11,6 +11,13 @@ import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
 import * as suspensionsModule from "../../worker/src/data/suspensions";
 import * as commitmentsModule from "../../worker/src/data/commitments";
+import * as authContextModule from "../../worker/src/authContext";
+import * as cacheVersionsModule from "../../worker/src/cacheVersions";
+import { noteRequestWrite } from "../../worker/src/requestContext";
+import type { AuthContext } from "../../worker/src/authContext";
+import type { AuthorizedUser } from "../../worker/src/auth";
+import { signedIn } from "./factories";
+import { CACHE_VERSION_KEYS, parseCacheVersions, type CacheVersions } from "../../worker/src/cacheVersions";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
   APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
@@ -146,6 +153,12 @@ export interface FakeReposHandle {
   reset(seed?: Partial<FakeState>): void;
   /** Puts the real accessors back. */
   restore(): void;
+  /**
+   * The signed-in user auth.ts would build for this email from the seeded
+   * state (auth_context's person, captaincies, offices, umpire flag), with
+   * `overrides` on top. Unlike requireAuthorizedUser it never refuses.
+   */
+  signedIn(email: string, overrides?: Partial<AuthorizedUser>): AuthorizedUser;
 }
 
 export function emptyState(): FakeState {
@@ -396,6 +409,15 @@ function buildRepos(s: FakeState): FakeRepos {
     async listPlayedForSeasons(seasons) {
       return s.matches.filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? "")).map(clone);
     },
+    async listResultsForSeasons(seasons) {
+      return s.matches
+        .filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? ""))
+        .map((m) => ({
+          id: m.id, matchDate: m.matchDate, season: m.season, competitionType: m.competitionType,
+          homeTeam: m.homeTeam, homeTeamScore: m.homeTeamScore, awayTeam: m.awayTeam, awayTeamScore: m.awayTeamScore,
+          venue: m.venue, matchStatus: m.matchStatus,
+        }) as Match);
+    },
   };
 
   const matchCards: MatchCardsRepo = {
@@ -594,7 +616,24 @@ function buildRepos(s: FakeState): FakeRepos {
 }
 
 /** Wraps every method so the call is logged. */
-function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]): T {
+/** A repository method that only reads; anything else is a write. */
+const READ_METHOD = /^(get|list|find|count|read|search|load|has|is)/;
+
+/**
+ * The fakes' cache versions (cache_versions): one counter for every table,
+ * moved by every repository write, as the database's triggers move theirs.
+ * So a value cached under the versions is rebuilt after any write.
+ */
+let fakeVersion = 1;
+export function fakeVersions(): CacheVersions {
+  return parseCacheVersions(Object.fromEntries(CACHE_VERSION_KEYS.map((k) => [k, fakeVersion])));
+}
+function onWrite(): void {
+  fakeVersion++;
+  noteRequestWrite();
+}
+
+function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[], written?: () => void): T {
   const out: Record<string, unknown> = {};
   for (const [method, fn] of Object.entries(target)) {
     out[method] = (...raw: unknown[]) => {
@@ -609,7 +648,15 @@ function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]
         logged = args;
       }
       calls.push({ repo, method, args: logged });
-      return (fn as (...a: unknown[]) => unknown)(...args);
+      const result = (fn as (...a: unknown[]) => unknown)(...args);
+      if (written && !READ_METHOD.test(method)) {
+        // After the write lands, as a database write would.
+        return Promise.resolve(result).then((value) => {
+          written();
+          return value;
+        });
+      }
+      return result;
     };
   }
   return out as T;
@@ -630,7 +677,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
   // swap the arrays without re-installing.
   const live = buildRepos(state);
   const repos = Object.fromEntries(
-    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls)]),
+    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls, onWrite)]),
   ) as unknown as FakeRepos;
 
   const spies = [
@@ -646,6 +693,10 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
     vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
+    // auth.ts reads the signed-in person through auth_context: answered from the same state.
+    vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
+    // A request without sign-in reads the versions: the fakes' counter.
+    vi.spyOn(cacheVersionsModule, "readCacheVersions").mockImplementation(async () => fakeVersions()),
   ];
 
   const handle: FakeReposHandle = {
@@ -663,6 +714,21 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     },
     restore() {
       for (const spy of spies) spy.mockRestore();
+    },
+    signedIn(email, overrides = {}) {
+      const ctx = authContextFrom(state, email);
+      const person = ctx.person ?? { id: "", uuid: "", email };
+      return signedIn({
+        email,
+        personId: person.id,
+        personUuid: person.uuid,
+        person,
+        captainTeams: ctx.captainTeams,
+        socialSecretaryTeams: ctx.socialSecretaryTeams,
+        offices: ctx.offices,
+        umpire: ctx.umpire,
+        ...overrides,
+      });
     },
   };
   handle.reset(seed);
@@ -686,7 +752,7 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
         return current[key];
       },
     });
-  (["state", "repos", "calls", "callsTo", "reset", "restore"] as const).forEach(forward);
+  (["state", "repos", "calls", "callsTo", "reset", "restore", "signedIn"] as const).forEach(forward);
   beforeEach(() => {
     current = installFakeRepos(seed?.());
   });
@@ -695,4 +761,68 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
     current = null;
   });
   return proxy;
+}
+
+// ── auth_context ─────────────────────────────────────────────────────────
+
+const OFFICE_ROLES: Record<Office, string> = {
+  membershipOfficer: "membership_officer",
+  sectionChair: "section_chair",
+  sectionCaptain: "section_captain",
+  sponsor: "sponsor",
+  kitConvenor: "kit_convenor",
+  hockeyConvenor: "hockey_convenor",
+  assistantDirector: "assistant_director",
+  umpireCoordinator: "umpire_coordinator",
+};
+const OFFICE_ORDER: Office[] = [
+  "membershipOfficer", "sectionChair", "sectionCaptain", "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator", "sponsor",
+];
+
+/**
+ * What auth_context(p_email) returns for the seeded state, by the SQL's
+ * rules (supabase/migrations/*_auth_context.sql): the person by email
+ * (Active first), Teams links over ALL teams in id order, captaincies of
+ * Active teams, Active offices in office order. A seeded person's `uuid`
+ * defaults to their id; `umpire` is read from the row (default false).
+ */
+export function authContextFrom(s: FakeState, email: string): AuthContext {
+  const want = normalizeEmail(email);
+  const rows = s.people.filter((p) => typeof p.email === "string" && normalizeEmail(p.email) === want);
+  const p = rows.find((r) => r.active) ?? rows[0];
+  const versions = fakeVersions();
+  if (!p) {
+    return {
+      person: null, isTeamCoach: false, coachTeams: [], teamSectionCaptain: false, allTeamNames: [], captainTeams: [],
+      socialSecretaryTeams: [], offices: [], umpire: false, versions,
+    };
+  }
+  const teams = [...s.teams].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const offices = s.officers
+    .filter((o) => o.status === "Active" && o.member === p.id)
+    .sort((a, b) => OFFICE_ORDER.indexOf(a.office) - OFFICE_ORDER.indexOf(b.office) || (a.id < b.id ? -1 : 1))
+    .map((o) => ({ role: OFFICE_ROLES[o.office], office: o.office === "sponsor" ? null : o.office, designation: o.designation ?? "" }));
+  const teamSectionCaptain = teams.some((t) => (t.sectionCaptain ?? []).includes(p.id));
+  const { crm: _crm, ...player } = p;
+  const extra = p as FakePerson & { uuid?: string; umpire?: boolean };
+  const profileUpdatedAt = (p.crm as Record<string, unknown> | undefined)?.profileUpdatedAt;
+  return {
+    person: {
+      ...player,
+      uuid: extra.uuid ?? p.id,
+      ...(typeof profileUpdatedAt === "string" ? { profileUpdatedAt } : {}),
+    },
+    isTeamCoach: teams.some((t) => (t.coach ?? []).includes(p.id)),
+    coachTeams: teams.filter((t) => (t.coach ?? []).includes(p.id) && t.teamName).map((t) => t.teamName!),
+    teamSectionCaptain,
+    allTeamNames:
+      teamSectionCaptain || offices.some((o) => o.office === "assistantDirector")
+        ? teams.filter((t) => t.teamName).map((t) => t.teamName!)
+        : [],
+    captainTeams: teams.filter((t) => t.active && (t.teamCaptain ?? []).includes(p.id)).map((t) => t.teamName || ""),
+    socialSecretaryTeams: [],
+    offices,
+    umpire: extra.umpire === true,
+    versions,
+  };
 }

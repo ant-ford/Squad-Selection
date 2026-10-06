@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { signedIn } from "./helpers/factories";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { getRegistrationBoard, parseDetailsChange, saveRegistrationDetails } from "../worker/src/registration";
@@ -10,7 +11,7 @@ const env = {
   API_ORIGIN: "https://api.example",
 } as Env;
 const convenor = {
-  email: "c@x.com", personId: "recCONVENOR", role: "player", coachTeams: [], isSectionCaptain: false,
+  email: "c@x.com", personId: "recCONVENOR", personUuid: "00000000-0000-4000-8000-000000000009", role: "player", coachTeams: [], isSectionCaptain: false,
   officerRoles: [{ office: "hockeyConvenor", designation: "" }],
 } as unknown as AuthorizedUser;
 
