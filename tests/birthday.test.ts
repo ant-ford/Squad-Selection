@@ -1,10 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { birthdayAtAge, birthdayKey, isBirthdayOn } from "../shared/birthday";
-import { mapPlayer } from "../shared/mappers/playerMapper";
+import { toPlayer, type PlayerRow } from "../worker/src/data/supabase/mappers";
 import { getMyFixtures } from "../worker/src/fixtures";
 import { invalidateAll } from "../worker/src/cache";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { fakeAirtable } from "./helpers/airtable";
+import type { Env } from "../worker/src/env";
+import { useFakeRepos, type FakePerson } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { person as personRow, recId, team } from "./helpers/factories";
+
+// The dashboard runs on the Supabase backend: the repositories in memory,
+// and the fake PostgREST (empty) for what getMyFixtures asks Supabase
+// directly (volunteer, event and umpiring access).
+const ENV = { ...SUPABASE_TEST_ENV } as Env;
+const db = useFakeRepos();
+const emptyPostgrest = () =>
+  fakePostgrest({ tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] } });
+
+/** A People row as Postgres has it (api_people), every column empty but the date of birth. */
+const playerRow = (dob: string | null): PlayerRow => ({
+  id: recId("P1"),
+  preferred_name: null, given_names: null, surname: null, shirt_no_value: null, email: null, mobile_no: null, active: true,
+  registered_team: null, selected_team_sos: null, selected_team_eos: null, playing_position: null, playing_ability: null,
+  is_visiting_player: false, is_suspended: false, matches_to_serve: null, ever_registered_to_premier: false, u21_eligible: false,
+  player_coach: [], section_rank: null, rank_updated_at: null, status: null, applicant_stage: null, sports_background: null,
+  selection_comments: null, opt_in_only: false, date_of_birth: dob, photo_file_id: null,
+});
 
 describe("birthdayKey", () => {
   it("keeps the month and day of an Airtable date and drops the year", () => {
@@ -18,8 +39,8 @@ describe("birthdayKey", () => {
     expect(birthdayKey(19900925)).toBeUndefined();
   });
 
-  it("is all mapPlayer keeps of the date of birth", () => {
-    const player = mapPlayer({ id: "recP1", fields: { "Date of Birth": "1990-09-25" } });
+  it("is all the People mapper keeps of the date of birth", async () => {
+    const player = await toPlayer(ENV, playerRow("1990-09-25"));
     expect(player.birthday).toBe("09-25");
     expect(JSON.stringify(player)).not.toContain("1990");
   });
@@ -65,27 +86,27 @@ describe("isBirthdayOn", () => {
 });
 
 describe("the player dashboard's birthday flag", () => {
-  const people = (dob: string) => ({
-    People: [
-      {
-        id: "recP1",
-        fields: { "Preferred Name": "Ann", Email: "ann@hkfc.com", Active: true, "Registered Team": "A", "Date of Birth": dob },
-      },
-    ],
-    Teams: [{ id: "recTA", fields: { "Team Name": "A", "Team Rank": 1, Active: true } }],
-    Matches: [],
-    "Match Cards": [],
-    "Availability Exceptions": [],
-    "Availability Rules": [],
-  });
-  const ann: AuthorizedUser = {
-    email: "ann@hkfc.com", personId: "recP1", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
+  const ANN = recId("P1");
+  /** Ann, born 25 September 1990: the repositories carry the month and day only, as the mapper leaves them. */
+  const seed = (dob: string) => {
+    db.reset({
+      people: [
+        personRow({
+          id: ANN, preferredName: "Ann", email: "ann@hkfc.com", active: true, registeredTeam: "A",
+          birthday: dob.slice(5), crm: { dateOfBirth: dob },
+        }),
+      ],
+      teams: [team({ id: recId("TA"), teamName: "A", teamRank: 1, active: true })],
+    });
   };
-  const ENV = { AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any;
+  const ann: AuthorizedUser = {
+    email: "ann@hkfc.com", personId: ANN, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
+  };
 
   beforeEach(() => {
     invalidateAll();
     vi.useFakeTimers({ toFake: ["Date"] });
+    emptyPostgrest();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -93,7 +114,7 @@ describe("the player dashboard's birthday flag", () => {
   });
 
   it("is set on the Hong Kong calendar day, which starts at 16:00 UTC the day before", async () => {
-    fakeAirtable(people("1990-09-25"));
+    seed("1990-09-25");
     vi.setSystemTime(new Date("2026-09-24T16:30:00Z")); // 00:30 on the 25th in Hong Kong
     const out = await getMyFixtures(ENV, ann);
     expect(out.isBirthday).toBe(true);
@@ -101,50 +122,48 @@ describe("the player dashboard's birthday flag", () => {
   });
 
   it("is not set on any other day", async () => {
-    fakeAirtable(people("1990-09-25"));
+    seed("1990-09-25");
     vi.setSystemTime(new Date("2026-09-24T15:30:00Z")); // 23:30 on the 24th in Hong Kong
     expect((await getMyFixtures(ENV, ann)).isBirthday).toBe(false);
   });
 });
 
 describe("teammates' birthdays on the dashboard", () => {
-  const ENV = { AIRTABLE_TOKEN: "***", AIRTABLE_BASE_ID: "b" } as any;
-  const person = (id: string, name: string, fields: Record<string, unknown>) => ({
-    id,
-    fields: { "Preferred Name": name, Surname: "X", Email: `${id}@hkfc.com`, Active: true, ...fields },
-  });
+  /** An Active player; the date of birth reaches the repositories as month and day only. */
+  const person = (label: string, name: string, dob: string, overrides: Partial<FakePerson>) =>
+    personRow({
+      id: recId(label), preferredName: name, surname: "X", email: `${label.toLowerCase()}@hkfc.com`, active: true,
+      birthday: dob.slice(5), crm: { dateOfBirth: dob }, ...overrides,
+    });
   const ann: AuthorizedUser = {
-    email: "recAnn@hkfc.com", personId: "recAnn", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
+    email: "ann@hkfc.com", personId: recId("Ann"), role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
   };
 
   beforeEach(() => {
     invalidateAll();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-25T04:00:00Z")); // midday, 25 Sept, Hong Kong
-    fakeAirtable({
-      People: [
+    emptyPostgrest();
+    db.reset({
+      people: [
         // Ann: registered D, Selected Team C. Her own birthday is today too.
-        person("recAnn", "Ann", { "Registered Team": "D", "Selected Team EOS": "C", "Date of Birth": "1991-09-25" }),
+        person("Ann", "Ann", "1991-09-25", { registeredTeam: "D", selectedTeamEos: "C" }),
         // Selected Team C by EOS: a teammate.
-        person("recBen", "Ben", { "Registered Team": "D", "Selected Team EOS": "C", "Date of Birth": "1988-09-25" }),
+        person("Ben", "Ben", "1988-09-25", { registeredTeam: "D", selectedTeamEos: "C" }),
         // Registered C, no Selected Team: falls back to C, a teammate.
-        person("recCat", "Cat", { "Registered Team": "C", "Date of Birth": "2001-09-25" }),
+        person("Cat", "Cat", "2001-09-25", { registeredTeam: "C" }),
         // Registered C but selected for B: not a teammate this season.
-        person("recDan", "Dan", { "Registered Team": "C", "Selected Team EOS": "B", "Date of Birth": "1990-09-25" }),
+        person("Dan", "Dan", "1990-09-25", { registeredTeam: "C", selectedTeamEos: "B" }),
         // Teammate, but not today.
-        person("recEve", "Eve", { "Registered Team": "C", "Date of Birth": "1990-09-26" }),
+        person("Eve", "Eve", "1990-09-26", { registeredTeam: "C" }),
         // Teammate with a birthday today, but inactive.
-        person("recFay", "Fay", { "Registered Team": "C", Active: false, "Date of Birth": "1990-09-25" }),
+        person("Fay", "Fay", "1990-09-25", { registeredTeam: "C", active: false }),
       ],
-      Teams: [
-        { id: "recTB", fields: { "Team Name": "B", "Team Rank": 2, Active: true } },
-        { id: "recTC", fields: { "Team Name": "C", "Team Rank": 3, Active: true } },
-        { id: "recTD", fields: { "Team Name": "D", "Team Rank": 4, Active: true } },
+      teams: [
+        team({ id: recId("TB"), teamName: "B", teamRank: 2, active: true }),
+        team({ id: recId("TC"), teamName: "C", teamRank: 3, active: true }),
+        team({ id: recId("TD"), teamName: "D", teamRank: 4, active: true }),
       ],
-      Matches: [],
-      "Match Cards": [],
-      "Availability Exceptions": [],
-      "Availability Rules": [],
     });
   });
   afterEach(() => {
