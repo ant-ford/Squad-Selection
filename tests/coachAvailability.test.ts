@@ -16,7 +16,7 @@ import type { Env } from "../worker/src/env";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { exception, match, person, recId, team } from "./helpers/factories";
 
-const ENV = { DATA_BACKEND: "supabase" } as Env;
+const ENV = {} as Env;
 
 const DATE_KEY = new Date(Date.now() + 7 * 86_400_000).toISOString().split("T")[0];
 

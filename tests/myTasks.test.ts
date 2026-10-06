@@ -56,10 +56,7 @@ const OFFICE = {
   captain: "recCaptainRow0001",
 };
 
-const WAIVER_URL = `https://hkfchockey.fillout.com/t/nLjY8qQTaJus?id=${ID.pat}`;
-const REVIEW_URL = `https://hkfchockey.fillout.com/t/6fPWtBzqUGus?id=${ID.pat}`;
-const url = (form: string, id: string) => `https://hkfchockey.fillout.com/${form}?id=${id}`;
-/** Where each line goes on Supabase: Eddy's own screens. */
+/** Where each line goes: Eddy's own screens. */
 const SIGN = (id: string) => `/sign-application/${id}`;
 const REVIEW = (id: string) => `/review/${id}`;
 
@@ -79,28 +76,19 @@ function applicant(id: string, first: string, stage: string, overrides: Partial<
   return personRow({
     id, preferredName: first, surname: "Applicant", status: "Applicant", applicantStage: stage, active: false,
     ...overrides,
-    crm: {
-      joinerFormUrl: url("application", id),
-      sponsorFormUrl: url("sponsor_support", id),
-      chairFormUrl: url("signatures-chairman", id),
-      officerFormUrl: url("signatures-officer", id),
-      ...crm,
-    },
+    crm,
   });
 }
 
 const review = (id: string, stage: string, fields: Parameters<typeof commitment>[0]) =>
   commitment({
     id, reviewProgress: stage, periodEnd: ["2026-11-30"],
-    sponsorFormUrl: url("t/tFFoChrXr2us", id),
-    officerFormUrl: url("t/51wrEkwujVus", id),
     ...fields,
   });
 
 const db = useFakeRepos(() => ({
   people: [
     member(ID.pat, "pat@hkfc.com", "Pat", {
-      waiversFormUrl: WAIVER_URL,
       // Last season's: this season still needs one.
       waiversSubmittedAt: "2026-05-20T02:00:00.000Z",
       ...({ hkidNo: "A123456(7)" } as FakePerson["crm"]),
@@ -124,7 +112,7 @@ const db = useFakeRepos(() => ({
   ],
   commitments: [
     review("recCmtPat00000001", "Notified Member", {
-      people: [ID.pat], fullName: ["Pat Test"], memberFormUrl: [REVIEW_URL],
+      people: [ID.pat], fullName: ["Pat Test"],
     }),
     review("recCmtSue00000001", "Member Submitted (with Sponsor)", {
       people: [ID.sue], fullName: ["Sue Test"], sponsorLink: [OFFICE.sponsor],

@@ -5,7 +5,6 @@ import { commitments } from "../worker/src/data/commitments";
 import { membershipEvents } from "../worker/src/data/membershipEvents";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   API_ORIGIN: "https://api.test",
@@ -25,7 +24,7 @@ function postgrest(respond: (c: Call) => unknown) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("officer-section reads on Supabase", () => {
-  it("selects exactly the field map's keys, and signs attachments", async () => {
+  it("selects exactly the field list, and signs attachments", async () => {
     const calls = postgrest(() => [{
       id: "recA", applicantStage: "6. Membership Officer (Signed)", photo: [{ fileId: "11111111-2222-3333-4444-555555555555", filename: "a.jpg" }],
       applicationForm: [], sponsorName: ["Sam"],

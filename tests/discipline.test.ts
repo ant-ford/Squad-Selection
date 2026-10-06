@@ -37,7 +37,6 @@ const ENV = {
   ALLOWED_ORIGIN: "https://hkfc-squad-selection.test",
   SUPABASE_URL: "https://test.supabase.co",
   SUPABASE_ANON_KEY: "k",
-  DATA_BACKEND: "supabase",
 } as any;
 const CTX = { waitUntil: () => {} } as any;
 const ID = "0f8c2b9e-3c1d-4a8e-9b7f-2d6e5a4c3b21";
@@ -126,11 +125,6 @@ describe("reading the open suspensions for eligibility", () => {
     expect(mocks.select.mock.calls[0][1]).toContain("cleared_at=is.null");
   });
 
-  it("is empty on Airtable without asking Supabase", async () => {
-    expect(await getOpenManualSuspensions({ ...ENV, DATA_BACKEND: "airtable" })).toEqual([]);
-    expect(mocks.select).not.toHaveBeenCalled();
-  });
-
   it("reads as none only when the view does not exist yet; any other failure fails the read", async () => {
     mocks.select.mockRejectedValueOnce(new SupabaseError("Supabase GET api_suspensions failed (404)", 404, "PGRST205"));
     expect(await getOpenManualSuspensions(ENV)).toEqual([]);
@@ -141,15 +135,13 @@ describe("reading the open suspensions for eligibility", () => {
 });
 
 describe("the discipline section", () => {
-  const env = { DATA_BACKEND: "supabase" } as any;
   const holding = (office: string) => ({ officerRoles: [{ office, designation: "" }] }) as any;
 
-  it("opens to the Men's Convenor only, on Supabase only", () => {
-    expect(sectionsFor(holding("hockeyConvenor"), env)).toContain("discipline");
+  it("opens to the Men's Convenor only", () => {
+    expect(sectionsFor(holding("hockeyConvenor"))).toContain("discipline");
     for (const office of ["sectionCaptain", "membershipOfficer", "assistantDirector", "sectionChair"]) {
-      expect(sectionsFor(holding(office), env)).not.toContain("discipline");
+      expect(sectionsFor(holding(office))).not.toContain("discipline");
     }
-    expect(sectionsFor(holding("hockeyConvenor"), { DATA_BACKEND: "airtable" } as any)).not.toContain("discipline");
   });
 
   it("refuses anyone without it before anything is saved", async () => {

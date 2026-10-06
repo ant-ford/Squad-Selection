@@ -1,5 +1,5 @@
 /**
- * The Men's Convenor's suspensions (Supabase backend): red cards and
+ * The Men's Convenor's suspensions: red cards and
  * Disciplinary Committee decisions, which suspension.ts deliberately leaves
  * manual. Gated on the "discipline" section (auth.ts), which only the
  * Hockey Convenor office opens (owner, 6 Oct 2026).
@@ -14,11 +14,9 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, inList, SupabaseError } from "./data/supabase";
-import { invalidateCachePrefix, invalidateShared } from "./cache";
-import { invalidatePeople } from "./invalidation";
-import { currentSeason, getSeasonContext, MANUAL_SUSPENSIONS_KEY } from "./seasonContext";
+import { invalidatePeople, invalidateSuspensions } from "./invalidation";
+import { currentSeason, getSeasonContext } from "./seasonContext";
 import {
   groupByPlayer,
   manualSuspensionProgress,
@@ -37,12 +35,6 @@ import {
   type SuspensionRow,
   type SuspensionsBoard,
 } from "../../shared/discipline";
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Suspensions are on the Supabase backend only.", 409, "NOT_YET");
-  }
-}
 
 interface ApiSuspension {
   id: string;
@@ -85,7 +77,6 @@ const nameOf = (p: PersonRow | undefined) =>
  * automatic card suspensions in force, and any old hand-set flag still set.
  */
 export async function getSuspensionsBoard(env: Env, now = new Date()): Promise<SuspensionsBoard> {
-  requireSupabase(env);
   const d = db(env);
   // api_suspensions gives timestamps as ISO text, which compare in order.
   const since = new Date(now.getTime() - CLEARED_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -262,13 +253,8 @@ function mapError(err: unknown): never {
  * People flag, so that one drops the People caches too.
  */
 async function invalidate(env: Env, peopleChanged: boolean): Promise<void> {
-  await invalidateShared(env, [MANUAL_SUSPENSIONS_KEY]);
-  if (peopleChanged) {
-    await invalidatePeople(env);
-  } else {
-    invalidateCachePrefix("season-index:");
-    invalidateCachePrefix("players-for-match:");
-  }
+  await invalidateSuspensions(env);
+  if (peopleChanged) await invalidatePeople(env);
 }
 
 export async function createSuspension(
@@ -276,7 +262,6 @@ export async function createSuspension(
   actor: AuthorizedUser,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; id: string }> {
-  requireSupabase(env);
   const p = parseNewSuspension(body);
   const id = await db(env).rpc<string>("admin_save_suspension", { p, p_actor: actor.personId }).catch(mapError);
   await invalidate(env, true);
@@ -289,7 +274,6 @@ export async function updateSuspension(
   id: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true }> {
-  requireSupabase(env);
   const p = parseSuspensionChange(id, body);
   await db(env).rpc<string>("admin_save_suspension", { p, p_actor: actor.personId }).catch(mapError);
   await invalidate(env, false);
@@ -302,7 +286,6 @@ export async function clearSuspension(
   id: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true }> {
-  requireSupabase(env);
   if (!UUID.test(id)) throw new HttpError("Suspension not found.", 404, "NOT_FOUND");
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
   if (reason.length > MAX_SUSPENSION_REASON) throw bad(`Reason: at most ${MAX_SUSPENSION_REASON} characters.`);

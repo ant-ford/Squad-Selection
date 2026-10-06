@@ -6,7 +6,6 @@ import { invitationEmail, kitEmail, registrationEmail } from "../worker/src/join
 import { EMPTY_JOINER, joinerProblem, type JoinerForm } from "../shared/joiners";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
   RESEND_API_KEY: "re_test",
@@ -95,10 +94,9 @@ describe("the Section Captain's new joiner form", () => {
     expect(parsed).not.toHaveProperty("extra");
   });
 
-  it("is for Section Captains, and only once the app is on Supabase", async () => {
+  it("is for Section Captains", async () => {
     fake();
     await expect(createJoiner(env, player, { form })).rejects.toThrow(/Section Captains/);
-    await expect(createJoiner({ ...env, DATA_BACKEND: "airtable" } as Env, captain, { form })).rejects.toThrow(/switch-over/);
   });
 
   it("creates the applicant and, when asked, invites them from the captain's mailbox", async () => {

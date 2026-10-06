@@ -119,7 +119,6 @@ beforeEach(() => {
       people: [{ id: "00000000-0000-4000-8000-000000000001", api_id: P1 }],
       event_responses: [],
       events: [],
-      api_suspensions: [],
     },
   });
 });

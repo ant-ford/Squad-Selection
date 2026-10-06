@@ -30,7 +30,7 @@ beforeEach(() => {
   // keeps volunteers, events or umpiring duties (volunteerAccess.ts,
   // eventAccess.ts, umpiring.ts). None of them: every table is empty.
   pg = fakePostgrest({
-    tables: { api_offices: [], api_suspensions: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
+    tables: { api_offices: [], people: [], offices: [], team_people: [], matches: [], umpire_assignments: [] },
   });
 });
 

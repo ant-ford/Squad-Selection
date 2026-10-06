@@ -9,7 +9,7 @@
  * match+side opened that season.
  *
  * Cache key: `season-index:<season>` (one minute, in this isolate; the raw
- * reads underneath it are shared through KV and live much longer).
+ * reads underneath it are cached for 30 s).
  * Invalidated by: syncSquad (selections changed), setAvailability and
  * setMyAvailability (exceptions changed), the Men's Convenor's suspension
  * writes (discipline.ts), and People writes (invalidation.ts).
@@ -30,8 +30,7 @@ import {
   type ManualSuspension,
   type ManualSuspensionState,
 } from "./suspension";
-import { backendFor } from "./data/backend";
-import { db, SupabaseError } from "./data/supabase";
+import { suspensions } from "./data/suspensions";
 import {
   computeCompletedLeagueMatchCounts,
   type EvaluationContext,
@@ -112,39 +111,15 @@ export function getSameDayMatches(allMatches: readonly Match[], targetDate: stri
   return bucket ? bucket.slice() : [];
 }
 
-/** Cache key of the open manual suspensions; discipline.ts drops it on every write. */
+/** Cache key of the open manual suspensions; invalidation.ts invalidateSuspensions drops it. */
 export const MANUAL_SUSPENSIONS_KEY = "manual-suspensions";
 
 /**
  * The Men's Convenor's open suspensions (public.suspensions, cleared_at
- * null): a handful of rows at most. Supabase backend only - on Airtable
- * the table does not exist and the old People flags are all there is.
+ * null): a handful of rows at most.
  */
 export async function getOpenManualSuspensions(env: Env): Promise<ManualSuspension[]> {
-  if (backendFor(env, "people") !== "supabase") return [];
-  return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, async () => {
-    type Row = { id: string; player: string; matches: number | null; from_date: string; serving_team: string; created_at: string };
-    const rows = await db(env)
-      .select<Row>("api_suspensions", "select=id,player,matches,from_date,serving_team,created_at&cleared_at=is.null")
-      .catch((err: unknown): Row[] => {
-        // Only a database without the migration yet (PGRST205: no such
-        // view) reads as "none": with no table there are none. Anything
-        // else fails the read, as the other reads here do - never "none".
-        if (err instanceof SupabaseError && err.code === "PGRST205") {
-          console.error("api_suspensions missing: apply 20261007010203_suspensions.sql");
-          return [];
-        }
-        throw err;
-      });
-    return rows.map((r) => ({
-      id: r.id,
-      player: r.player,
-      matches: r.matches,
-      fromDate: r.from_date,
-      servingTeam: r.serving_team,
-      createdAt: r.created_at,
-    }));
-  }, SEASON_READ_TTL_MS);
+  return getShared<ManualSuspension[]>(env, MANUAL_SUSPENSIONS_KEY, () => suspensions(env).listOpen(), SEASON_READ_TTL_MS);
 }
 
 export function previousSeason(season: string): string | null {
@@ -190,11 +165,11 @@ export interface SeasonContext {
 }
 
 /**
- * The derived indexes live in this isolate only (Maps and Sets do not
- * survive KV's JSON round trip), so their lifetime is short: every input is
- * a shared raw read, and rebuilding from KV costs a few parallel gets plus
- * some CPU. A longer lifetime here is what let one isolate keep showing
- * selections another isolate's write had already replaced.
+ * The derived indexes live in this isolate only, and their lifetime is
+ * short: every input is a cached raw read, and rebuilding costs a few
+ * parallel reads plus some CPU. A longer lifetime here is what let one
+ * isolate keep showing selections another isolate's write had already
+ * replaced.
  */
 const SEASON_INDEX_TTL_MS = 60 * 1000;
 

@@ -1,5 +1,5 @@
 /**
- * The Hockey Rules quizzes (Supabase backend; migration 20261002140000),
+ * The Hockey Rules quizzes (migration 20261002140000),
  * replacing Fillout forms 14-17. Anyone signed in takes them; Eddy marks
  * the answers, keeps the latest score in quiz_scores (as the Fillout form
  * wrote one score to People) and shows each answer with its explanation.
@@ -8,15 +8,8 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq } from "./data/supabase";
 import type { QuizResult, QuizScoreBoard, QuizSummary, QuizToTake } from "../../shared/quizzes";
-
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("The quizzes move into Eddy at the switch-over. Until then, use the Fillout link.", 409, "NOT_YET");
-  }
-}
 
 interface Question {
   id: string;
@@ -42,7 +35,6 @@ async function me(env: Env, user: AuthorizedUser): Promise<string> {
 }
 
 export async function listQuizzes(env: Env, user: AuthorizedUser): Promise<{ quizzes: QuizSummary[]; canSeeScores: boolean }> {
-  requireSupabase(env);
   const d = db(env);
   const [quizzes, personId] = await Promise.all([
     d.select<QuizRow>("quizzes", "select=key,title,questions&active=is.true&order=sort", "key"),
@@ -73,7 +65,6 @@ async function loadQuiz(env: Env, key: string): Promise<QuizRow> {
 
 /** The questions, without their answers. */
 export async function getQuiz(env: Env, user: AuthorizedUser, key: string): Promise<QuizToTake> {
-  requireSupabase(env);
   void user;
   const q = await loadQuiz(env, key);
   return { key: q.key, title: q.title, intro: q.intro, questions: q.questions.map(({ id, text, options }) => ({ id, text, options })) };
@@ -94,7 +85,6 @@ export function markQuiz(questions: Question[], given: Record<string, unknown>):
 }
 
 export async function submitQuiz(env: Env, user: AuthorizedUser, key: string, body: Record<string, unknown>): Promise<QuizResult> {
-  requireSupabase(env);
   const q = await loadQuiz(env, key);
   const given = (body.answers ?? {}) as Record<string, unknown>;
   const result = markQuiz(q.questions, given);
@@ -107,7 +97,6 @@ export async function submitQuiz(env: Env, user: AuthorizedUser, key: string, bo
 
 /** Everyone's scores, for the Section Captains. */
 export async function quizScoreBoard(env: Env, user: AuthorizedUser): Promise<QuizScoreBoard> {
-  requireSupabase(env);
   if (!user.officerRoles.some((r) => r.office === "sectionCaptain")) throw new HttpError("This is for Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
   const d = db(env);
   const [quizzes, scores] = await Promise.all([
