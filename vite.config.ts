@@ -113,6 +113,8 @@ export default defineConfig(({ command }) => ({
           // Not /@tanstack/: react-virtual is only used by coach lists.
           if (/\/node_modules\/@tanstack\/(react-query|query-core)\//.test(id)) return "vendor-query";
           if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor-react";
+          // Still lazy (two coach pages share it); named so it isn't "index".
+          if (/\/node_modules\/@tanstack\/(react-virtual|virtual-core)\//.test(id)) return "vendor-virtual";
         },
       },
     },
