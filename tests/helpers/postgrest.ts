@@ -6,7 +6,7 @@ import { onTestFinished, vi } from "vitest";
  * db(env). Tables are plain arrays of rows (Postgres column names), mutated
  * in place by writes, so a test seeds them and asserts on them.
  *
- * Unlike tests/helpers/airtable.ts, nothing unknown is guessed at: a filter
+ * Nothing unknown is guessed at: a filter
  * operator, select syntax, table, embed or RPC the fake does not know is a
  * PROBLEM. The request fails with HTTP 400 (as PostgREST would) and, because
  * code often catches a failed read and carries on, the test itself is failed

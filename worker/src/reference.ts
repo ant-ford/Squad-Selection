@@ -135,8 +135,8 @@ export const OFFICER_LINKS_KEY = "officer-links";
 /**
  * The applicant records behind the membership board and Insights
  * (membership.ts). Declared here rather than there so invalidation.ts can
- * name it without a circular import. v2: holds rows keyed by the field map's
- * keys (data/rows.ts), not raw Airtable records.
+ * name it without a circular import. v2: holds rows keyed by column name
+ * (data/rows.ts), not raw Airtable records.
  */
 export const MEMBERSHIP_RECORDS_KEY = "membership-records:v2";
 

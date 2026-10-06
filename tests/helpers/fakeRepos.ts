@@ -25,7 +25,7 @@ import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/r
 import type { MembershipEventsRepo, NewMembershipEvent } from "../../worker/src/data/membershipEvents";
 import type { CommitmentsRepo } from "../../worker/src/data/commitments";
 import { NOTIFY_FIELDS, REVIEW_TASK_FIELDS } from "../../worker/src/data/commitments";
-import type { FieldMap, Row } from "../../worker/src/data/rows";
+import type { FieldList, Row } from "../../worker/src/data/rows";
 import { API_ID_RE } from "../../worker/src/data/ids";
 import { HttpError } from "../../worker/src/http";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../shared/schema/fieldMaps";
@@ -42,24 +42,23 @@ import type {
  * in production: the same filters, the same "blank counts as different" for
  * a != filter, the same errors for a missing row. Writes mutate the arrays.
  *
- * Installed by spying on each module's accessor (people(env), teams(env),
- * ...), so it does not depend on backend.ts or pick(): it keeps working once
- * the Airtable implementations are deleted. See tests/helpers/README.md.
+ * Installed by spying on each module accessor (people(env), teams(env),
+ * ...): the seam the data modules keep for tests.
  */
 
 // ── State ────────────────────────────────────────────────────────────────
 
 /** Every key a People row view (api_people_crm) can carry. */
 type PeopleCrmKey =
-  | keyof typeof MEMBERSHIP_FIELDS
-  | keyof typeof CHAIRMAN_FIELDS
-  | keyof typeof EXPORT_FIELDS
-  | keyof typeof NUMBER_HOLDER_FIELDS
-  | keyof typeof APPLICANT_STAGE_FIELDS
-  | keyof typeof CONTACT_FIELDS
-  | keyof typeof NAME_FIELDS
-  | keyof typeof MY_TASK_FIELDS
-  | keyof typeof APPLICANT_TASK_FIELDS;
+  | (typeof MEMBERSHIP_FIELDS)[number]
+  | (typeof CHAIRMAN_FIELDS)[number]
+  | (typeof EXPORT_FIELDS)[number]
+  | (typeof NUMBER_HOLDER_FIELDS)[number]
+  | (typeof APPLICANT_STAGE_FIELDS)[number]
+  | (typeof CONTACT_FIELDS)[number]
+  | (typeof NAME_FIELDS)[number]
+  | (typeof MY_TASK_FIELDS)[number]
+  | (typeof APPLICANT_TASK_FIELDS)[number];
 
 /**
  * One People row: the Player the squad reads see, plus `crm`, the officer
@@ -84,8 +83,8 @@ export interface FakeOffice {
 /** An availability exception, plus who gave the answer (not on the domain type). */
 export type FakeException = AvailabilityException & { updatedBy?: string };
 
-type CommitmentKey = keyof typeof COMMITMENT_FIELDS | keyof typeof NOTIFY_FIELDS | keyof typeof REVIEW_TASK_FIELDS;
-/** One Commitments row as api_commitments_crm has it, keyed by field-map KEYS. */
+type CommitmentKey = (typeof COMMITMENT_FIELDS)[number] | (typeof NOTIFY_FIELDS)[number] | (typeof REVIEW_TASK_FIELDS)[number];
+/** One Commitments row as api_commitments_crm has it, keyed by its column names. */
 export type FakeCommitment = { id: string } & Partial<Record<CommitmentKey, unknown>>;
 
 export interface FakeState {
@@ -195,18 +194,18 @@ function personValue(p: FakePerson, key: string): unknown {
   return (p as unknown as Record<string, unknown>)[column];
 }
 
-function personRow<M extends FieldMap>(p: FakePerson, map: M): Row<M> {
+function personRow<M extends FieldList>(p: FakePerson, map: M): Row<M> {
   const row: Record<string, unknown> = { id: p.id };
-  for (const key of Object.keys(map)) {
+  for (const key of map) {
     const v = personValue(p, key);
     if (v !== undefined && v !== null) row[key] = clone(v);
   }
   return row as Row<M>;
 }
 
-function commitmentRow<M extends FieldMap>(c: FakeCommitment, map: M): Row<M> {
+function commitmentRow<M extends FieldList>(c: FakeCommitment, map: M): Row<M> {
   const row: Record<string, unknown> = { id: c.id };
-  for (const key of Object.keys(map)) {
+  for (const key of map) {
     const v = (c as Record<string, unknown>)[key];
     if (v !== undefined && v !== null) row[key] = clone(v);
   }

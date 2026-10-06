@@ -25,7 +25,7 @@ function postgrest(respond: (c: Call) => unknown) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("officer-section reads on Supabase", () => {
-  it("selects exactly the field map's keys, and signs attachments", async () => {
+  it("selects exactly the field list, and signs attachments", async () => {
     const calls = postgrest(() => [{
       id: "recA", applicantStage: "6. Membership Officer (Signed)", photo: [{ fileId: "11111111-2222-3333-4444-555555555555", filename: "a.jpg" }],
       applicationForm: [], sponsorName: ["Sam"],

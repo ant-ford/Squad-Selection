@@ -172,7 +172,7 @@ const ORDER: Record<MyTaskKey, number> = { joiner: 0, details: 1, statement: 2, 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
   // An imported person's id, or the uuid of one created in Eddy.
-  if (!isRowId(env, "people", personId)) return { tasks: [] };
+  if (!isRowId(personId)) return { tasks: [] };
 
   const [mine, waitingOn] = await Promise.all([
     getCached(
