@@ -8,7 +8,6 @@ import type { Env } from "../env";
 import { sectionsFor, type AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
 import { db, eq } from "../data/supabase";
-import { requireSupabaseAdmin } from "./rpc";
 import { PIPELINE_STAGES, ACCEPTED_STAGE, stageTargets } from "../../../shared/membershipStages";
 import { actionLabel, fieldLabel, type HistoryEntry } from "../../../shared/history";
 import { displayName, type PersonAdminCan, type PersonAdminView, type PersonSearchRow } from "../../../shared/adminPeople";
@@ -42,7 +41,6 @@ const blank = (v: string | null | undefined) => (v == null || v === "" ? null : 
  * surname (case-insensitive). At most 20, by surname.
  */
 export async function searchPeople(env: Env, q: string): Promise<PersonSearchRow[]> {
-  requireSupabaseAdmin(env);
   const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 4);
   if (words.length === 0) return [];
   if (q.length > 60 || !words.every((w) => SEARCH.test(w))) {
@@ -101,8 +99,8 @@ export function isJuniorMember(p: Pick<PersonDb, "status" | "applicant_stage" | 
  *  - the junior route: a Section Captain or the Membership Officer, for a
  *    junior member.
  */
-export function canFor(env: Env, user: AuthorizedUser, p: PersonDb): PersonAdminCan {
-  const sections = sectionsFor(user, env);
+export function canFor(user: AuthorizedUser, p: PersonDb): PersonAdminCan {
+  const sections = sectionsFor(user);
   const offices = new Set(user.officerRoles.map((r) => r.office));
   const membership = sections.includes("membership");
   const registeredTeam = sections.includes("registration");
@@ -125,9 +123,8 @@ export async function readPerson(env: Env, id: string): Promise<PersonDb> {
 }
 
 export async function getPersonAdmin(env: Env, user: AuthorizedUser, id: string): Promise<PersonAdminView> {
-  requireSupabaseAdmin(env);
   const p = await readPerson(env, id);
-  const can = canFor(env, user, p);
+  const can = canFor(user, p);
   const view: PersonAdminView = {
     id: p.api_id,
     name: displayName(p),
@@ -203,7 +200,6 @@ export function buildHistory(activity: ActivityRowDb[], ranking: RankingRowDb[])
 
 /** GET /api/history?person=<api id>: three reads (the person, the log, the ranking events). */
 export async function getPersonHistory(env: Env, personApiId: string): Promise<{ entries: HistoryEntry[] }> {
-  requireSupabaseAdmin(env);
   if (!API_ID.test(personApiId)) throw new HttpError("Choose a person.", 400, "INVALID_INPUT");
   const d = db(env);
   const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);

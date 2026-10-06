@@ -1,5 +1,5 @@
 /**
- * The new joiner (applicant) form (Supabase backend), replacing Fillout
+ * The new joiner (applicant) form, replacing Fillout
  * form 3. The shared details sections save through details.ts; this module
  * holds the applicant's own parts (family, private clubs, trials attended),
  * family members' documents, and the submit: it checks the application is
@@ -9,7 +9,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { invalidatePeople } from "./invalidation";
 import { isUnderEighteen } from "./declarations";
@@ -88,12 +87,6 @@ const FAMILY_COLUMNS: Record<keyof Omit<FamilyMemberDetails, "id">, string> = {
 
 const today = () => hkDateKey(new Date().toISOString());
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("The application moves into Eddy at the switch-over. Until then, use the New Joiner Form link.", 409, "NOT_YET");
-  }
-}
-
 /** The signed-in applicant (every column: the submit checks them all). */
 async function loadApplicant(env: Env, personApiId: string): Promise<PersonRow> {
   const p = await db(env).one<PersonRow>("people", `select=*&api_id=${eq(personApiId)}`);
@@ -128,7 +121,6 @@ function memberColumns(m: Record<string, unknown>, spouse: boolean): Record<stri
 }
 
 export async function getApply(env: Env, user: AuthorizedUser): Promise<ApplyView> {
-  requireSupabase(env);
   const p = await loadApplicant(env, user.personId);
   const d = db(env);
   const [family, relatives, clubs, trials, apps, ownFiles] = await Promise.all([
@@ -169,7 +161,6 @@ export async function getApply(env: Env, user: AuthorizedUser): Promise<ApplyVie
 
 /** Spouse, children and close relatives. Saving replaces what was there; returns the family members' ids. */
 export async function saveFamily(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const p = await loadApplicant(env, user.personId);
   const spouse = body.spouse && typeof body.spouse === "object" ? (body.spouse as FamilyMemberDetails) : null;
   const children = Array.isArray(body.children) ? (body.children as FamilyMemberDetails[]) : [];
@@ -198,7 +189,6 @@ export async function saveFamily(env: Env, user: AuthorizedUser, body: Record<st
 }
 
 export async function saveClubs(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const p = await loadApplicant(env, user.personId);
   const clubs = Array.isArray(body.clubs) ? (body.clubs as PrivateClub[]) : [];
   if (clubs.length > MAX_CLUBS) throw new HttpError("Up to four clubs.", 400, "INVALID_INPUT");
@@ -215,7 +205,6 @@ export async function saveClubs(env: Env, user: AuthorizedUser, body: Record<str
 }
 
 export async function saveTrials(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const p = await loadApplicant(env, user.personId);
   const trials = Array.isArray(body.trials) ? (body.trials as TrialAttended[]) : [];
   if (trials.length > MAX_TRIALS) throw new HttpError("Up to five trials.", 400, "INVALID_INPUT");
@@ -234,7 +223,6 @@ export async function saveTrials(env: Env, user: AuthorizedUser, body: Record<st
 
 /** A family member's photo, HKID copy or birth certificate (replaces the old one); or the applicant's marriage certificate. */
 export async function uploadApplicantFile(env: Env, user: AuthorizedUser, memberId: string | null, kind: string, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const allowed = memberId ? ["photo", "hkid", "birth_certificate"] : ["marriage_certificate"];
   if (!allowed.includes(kind)) throw new HttpError("Unknown upload.", 404, "NOT_FOUND");
@@ -279,7 +267,6 @@ const POLISH: Record<string, { question: string; aim: string; words: number }> =
 };
 
 export async function polishAnswer(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   const spec = POLISH[String(body.field)];
   if (!spec) throw new HttpError("That answer can't be polished.", 400, "INVALID_INPUT");
   const answer = text(body.text, 2000);
@@ -352,7 +339,6 @@ export function applicationGaps(p: PersonRow, view: ApplyView, who: Audience, ha
  * records the boxes ticked and moves it on to the sponsor.
  */
 export async function submitApplication(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
-  requireSupabase(env);
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   if (body.version !== APPLICATION_VERSION) {
     throw new HttpError("The wording has changed since this page was opened. Reload to read the current version.", 409, "WORDING_CHANGED");

@@ -16,7 +16,7 @@ import { invalidateCommitments, invalidatePeople } from "../invalidation";
 import { CATEGORY_TYPES, MEMBER_TYPES } from "../../../shared/profile";
 import { isOpenStage, stageTargets } from "../../../shared/membershipStages";
 import { describeHolders, getNumberHolders } from "../membership";
-import { adminRpc, requireSupabaseAdmin } from "./rpc";
+import { adminRpc } from "./rpc";
 import { readPerson } from "./people";
 
 interface UpdateResult {
@@ -102,7 +102,6 @@ export async function saveMembership(
   personId: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; changed: string[]; removedPeriods: number }> {
-  requireSupabaseAdmin(env);
   const change = parseMembershipChange(body);
   const p = await readPerson(env, personId);
 
@@ -153,7 +152,6 @@ export async function moveStage(
   personId: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; changed: string[] }> {
-  requireSupabaseAdmin(env);
   const stage = typeof body.stage === "string" ? body.stage : "";
   const from = body.from === null ? null : typeof body.from === "string" ? body.from : undefined;
   if (!stage || from === undefined) throw new HttpError("Choose a stage.", 400, "INVALID_INPUT");

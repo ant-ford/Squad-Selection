@@ -6,7 +6,6 @@ import { moveStage, parseMembershipChange, saveMembership } from "../worker/src/
 import { canFor } from "../worker/src/admin/people";
 
 const env = {
-  DATA_BACKEND: "supabase",
   DATA_SUPABASE_URL: "https://proj.supabase.co",
   DATA_SUPABASE_SECRET_KEY: "sb_secret_test",
 } as Env;
@@ -68,8 +67,8 @@ describe("stageTargets", () => {
   });
 
   it("opens the stage block on the person page only when there is somewhere to go", () => {
-    expect(canFor(env, officer, person() as any).stage).toBe(false);
-    expect(canFor(env, officer, person({ status: "Applicant", applicant_stage: "2. Section Captain Invitation" }) as any).stage).toBe(true);
+    expect(canFor(officer, person() as any).stage).toBe(false);
+    expect(canFor(officer, person({ status: "Applicant", applicant_stage: "2. Section Captain Invitation" }) as any).stage).toBe(true);
   });
 });
 

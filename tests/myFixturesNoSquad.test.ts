@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // The squad list on each fixture is for the calendar feed (its SQUAD block).
@@ -9,16 +9,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getMyFixtures, getPlayerFixtures } from "../worker/src/fixtures";
 import { handlePlayerCalendarFeed } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
-import { fakeAirtable, type FakeTables } from "./helpers/airtable";
+import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
+import { useFakeRepos } from "./helpers/fakeRepos";
+import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
+import { match, person, recId, team } from "./helpers/factories";
 
-const ENV = {
-  AIRTABLE_TOKEN: "***",
-  AIRTABLE_BASE_ID: "test-base",
-  CALENDAR_SECRET: "test-calendar-secret",
-  SUPABASE_URL: "https://test.supabase.co",
-  SUPABASE_ANON_KEY: "***",
-} as any;
+const ENV = { ...SUPABASE_TEST_ENV, CALENDAR_SECRET: "test-calendar-secret" } as Env;
+
+const JONNY = recId("P1");
+const SAM = recId("P2");
 
 const authUser: AuthorizedUser = {
   email: "jonny@hkfc.com", personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [],
@@ -26,35 +26,37 @@ const authUser: AuthorizedUser = {
 
 const DAY = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().split("T")[0];
 
-function person(id: string, name: string, team: string, position: string) {
-  return {
-    id,
-    fields: {
-      "Preferred Name": name, Email: `${name.toLowerCase()}@hkfc.com`, Active: true,
-      "Registered Team": team, "Playing Ability": "B", "Playing Position": position,
-    },
-  };
+function player(id: string, name: string, position: string) {
+  return person({
+    id, preferredName: name, email: `${name.toLowerCase()}@hkfc.com`, active: true,
+    registeredTeam: "F", playingAbility: "B", playingPosition: position, status: "Player",
+  });
 }
 
-function tables(): FakeTables {
-  return {
-    People: [person("recP1", "Jonny", "F", "Forward"), person("recP2", "Sam", "F", "Goalkeeper")],
-    Teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => ({
-      id: `recT${i}`,
-      fields: { "Team Name": n, "Team Rank": i + 1, Active: true },
-    })),
-    Matches: [
-      {
-        id: "recM_F",
-        fields: {
-          Date: `${DAY(2)}T09:00:00.000Z`, Season: "2026-2027", "Home Team": "F", "Away Team": "Opponent",
-          "Match Status": "Scheduled", "Selected Players Home": ["recP1", "recP2"],
-        },
-      },
-    ],
-    "Availability Exceptions": [],
-  };
-}
+useFakeRepos(() => ({
+  people: [player(JONNY, "Jonny", "Forward"), player(SAM, "Sam", "Goalkeeper")],
+  teams: ["A", "B", "C", "D", "E", "F", "G", "H"].map((n, i) => team({ teamName: n, teamRank: i + 1, active: true })),
+  matches: [
+    match({
+      id: recId("M_F"), matchDate: `${DAY(2)}T09:00:00.000Z`, season: "2026-2027", homeTeam: "F", awayTeam: "Opponent",
+      matchStatus: "Scheduled", selectedPlayersHome: [JONNY, SAM],
+    }),
+  ],
+}));
+
+beforeEach(() => {
+  invalidateAll();
+  // Read straight from Supabase: the dashboard's officer-screen checks
+  // (volunteerAccess, eventAccess, umpiring) and the feed's special events.
+  // Nobody here has any of them.
+  fakePostgrest({
+    tables: {
+      api_offices: [], offices: [], team_people: [], matches: [], umpire_assignments: [],
+      people: [{ id: "00000000-0000-4000-8000-000000000001", api_id: JONNY, active: true, qualified_umpire: null }],
+      event_responses: [], events: [],
+    },
+  });
+});
 
 async function sign(payload: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -63,15 +65,6 @@ async function sign(payload: string): Promise<string> {
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-beforeEach(() => {
-  invalidateAll();
-  fakeAirtable(tables());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("squad on player fixtures", () => {
   it("is left out of the dashboard response", async () => {
@@ -83,10 +76,10 @@ describe("squad on player fixtures", () => {
   });
 
   it("is still there for the calendar feed", async () => {
-    const { fixtures } = await getPlayerFixtures(ENV, "recP1");
+    const { fixtures } = await getPlayerFixtures(ENV, JONNY);
     expect(fixtures[0].squad.map((p: { name: string }) => p.name)).toEqual(["Jonny", "Sam"]);
 
-    const res = await handlePlayerCalendarFeed(ENV, "recP1", await sign("player:recP1"));
+    const res = await handlePlayerCalendarFeed(ENV, JONNY, await sign(`player:${JONNY}`));
     const ics = (await res.text()).replace(/\r\n /g, "");
     expect(ics).toContain("SQUAD (2)");
     expect(ics).toMatch(/SQUAD \(2\)\\nSam\\nJonny/);

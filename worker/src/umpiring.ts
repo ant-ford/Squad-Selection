@@ -1,5 +1,5 @@
 /**
- * Umpiring duties (Supabase backend): the club's umpires take HKFC's
+ * Umpiring duties: the club's umpires take HKFC's
  * umpiring duties, and the Umpire Coordinator (and the Section Captains)
  * fills the gaps, sends the week's WhatsApp messages and keeps the season's
  * record. See shared/umpiring.ts and
@@ -8,7 +8,6 @@
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
-import { backendFor } from "./data/backend";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { getCached, invalidateCache } from "./cache";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -83,12 +82,6 @@ const firstName = (p: PersonRow) => (p.preferred_name || p.given_names || p.surn
 const fullName = (p: PersonRow) => [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const qualified = (p: PersonRow) => !!p.qualified_umpire && p.qualified_umpire !== NO_QUALIFICATION;
 
-function requireSupabase(env: Env): void {
-  if (backendFor(env, "people") !== "supabase") {
-    throw new HttpError("Umpiring duties are in Eddy from the switch-over.", 409, "NOT_YET");
-  }
-}
-
 /** The Umpire Coordinator and the Section Captains run the duties. */
 export function isCoordinator(user: AuthorizedUser): boolean {
   return user.officerRoles.some((r) => r.office === "umpireCoordinator" || r.office === "sectionCaptain");
@@ -144,7 +137,6 @@ async function personByApiId(env: Env, apiId: string): Promise<PersonRow> {
 
 /** Who may open the umpiring screen, and as what; null for no one else. */
 export async function umpiringAccess(env: Env, user: AuthorizedUser): Promise<UmpiringAccess | null> {
-  if (backendFor(env, "people") !== "supabase") return null;
   if (isCoordinator(user)) return "coordinator";
   // Asked on every player page: a failure here (a database without the
   // umpiring tables yet) hides the screen, never the page.
@@ -158,7 +150,6 @@ export async function umpiringAccess(env: Env, user: AuthorizedUser): Promise<Um
 }
 
 async function requireAccess(env: Env, user: AuthorizedUser): Promise<{ access: UmpiringAccess; me: PersonRow }> {
-  requireSupabase(env);
   const access = await umpiringAccess(env, user);
   if (!access) throw new HttpError("The umpiring duties are for the club's umpires.", 403, "UMPIRE_ACCESS_REQUIRED");
   return { access, me: await personByApiId(env, user.personId) };
@@ -579,7 +570,6 @@ export async function getUmpiringReport(env: Env, user: AuthorizedUser, seasonPa
  * confirmed, played, not a no-show. For their commitment review.
  */
 export async function gamesUmpiredBetween(env: Env, personApiId: string, from: string, to: string): Promise<number> {
-  if (backendFor(env, "people") !== "supabase") return 0;
   const person = await db(env).one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
   if (!person) return 0;
   const start = new Date(`${from}T00:00:00+08:00`).toISOString();
