@@ -373,7 +373,6 @@ const td = 'px-2 py-1.5';
 /** George's summary: per duty team, how its duties were covered. */
 function TeamTable({ report }: { report: UmpiringReport }) {
   const rows: [string, (t: TeamTally) => number, number][] = [
-    ['Duties', (t) => t.duties, report.duties],
     ['Outside, paid', (t) => t.outside, report.coveredExternal],
     ['Members, paid', (t) => t.paidMembers, report.coveredPaidMembers],
     ['Free', (t) => t.free, report.coveredFree],
@@ -406,6 +405,17 @@ function TeamTable({ report }: { report: UmpiringReport }) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="text-right font-semibold text-foreground border-t-2 border-foreground/40 bg-muted/50">
+            <td className={`${td} text-left whitespace-nowrap`}>Total duties</td>
+            {report.byTeam.map((t) => (
+              <td key={t.team} className={td}>
+                {t.duties}
+              </td>
+            ))}
+            <td className={td}>{report.duties}</td>
+          </tr>
+        </tfoot>
       </table>
     </section>
   );
