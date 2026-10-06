@@ -112,7 +112,7 @@ import {
 import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
-import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch, recommendationOrder } from "./recommendations";
 import {
   handleGetCalendarLink,
   handlePlayerCalendarFeed,
@@ -131,6 +131,7 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
+import { getTeamAttendance } from "./teamAttendance";
 import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
 import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
@@ -296,11 +297,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && matchPlayersMatch) {
       await requireCoach(request, env);
       const side = url.searchParams.get("side") as "home" | "away" | null;
-      return json(
-        await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined),
-        200,
-        origin,
-      );
+      const data = await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined);
+      // ?recommendations=1: the squad screen's ranking with the players, in
+      // the same request (it used to ask /recommendations, which built the
+      // whole players-for-match again).
+      if (url.searchParams.get("recommendations") === "1") {
+        return json({ ...data, recommendationOrder: await recommendationOrder(env, data) }, 200, origin);
+      }
+      return json(data, 200, origin);
     }
 
     const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
@@ -480,6 +484,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
       }
       return json(await getPlayerAttendance(env, playerAttendanceMatch[1]), 200, origin);
+    }
+
+    // ── Team Availability Dashboard (Read - Coach) ─────────────────────────
+    // Every squad's grid at once: names and statuses only, no notes.
+    if (method === "GET" && pathname === "/api/team-attendance") {
+      await requireCoach(request, env);
+      return json(await getTeamAttendance(env), 200, origin);
     }
 
     // Player-facing routes: identity always comes from the verified Supabase

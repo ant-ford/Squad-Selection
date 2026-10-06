@@ -220,8 +220,13 @@ export function supabaseRankingEvents(env: Env): RankingEventsRepo {
       if (events.length === 0) return;
       await d.rpc("insert_ranking_events", { p: events });
     },
-    async listNewestFirst() {
-      const rows = await d.select<RankingEventViewRow>("api_ranking_events", "select=*&order=occurred_at.desc");
+    async listRecent(since, limit, upTo) {
+      // occurred_at is the view's fixed-width ISO text (airtable_ts), so text order is time order.
+      const range = `occurred_at=gte.${encodeURIComponent(since)}${upTo ? `&occurred_at=lte.${encodeURIComponent(upTo)}` : ""}`;
+      const rows = await d.select<RankingEventViewRow>(
+        "api_ranking_events",
+        `select=*&${range}&order=occurred_at.desc&limit=${Math.max(1, Math.floor(limit))}`,
+      );
       return rows.map((r): RankingEventRow => ({
         id: r.id,
         playerId: r.player ?? "",

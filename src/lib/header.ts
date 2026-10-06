@@ -61,6 +61,7 @@ export function phoneControls({ back, canSwitch, applicant }: { back: boolean; c
 export function coachScreen(pathname: string): { title: string; child: boolean } {
   if (pathname.startsWith('/coach/match/')) return { title: 'Squad selection', child: true };
   if (pathname.startsWith('/coach/ranking')) return { title: 'Ranking', child: false };
+  if (pathname.startsWith('/coach/availability')) return { title: 'Team availability', child: false };
   return { title: 'Coach view', child: false };
 }
 

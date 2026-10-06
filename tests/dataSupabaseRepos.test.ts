@@ -39,13 +39,23 @@ const playerRow = {
 describe("Supabase repositories", () => {
   it("maps api_players rows as the Airtable mapper does, with the photo's file id (signed only where shown)", async () => {
     const calls = postgrest(() => [playerRow]);
-    const [p] = await people(env).listActive();
+    const p = (await people(env).getById("recP1"))!;
     expect(calls[0].url.pathname).toBe("/rest/v1/api_players");
-    expect(calls[0].url.searchParams.get("active")).toBe("is.true");
     expect(p).toMatchObject({ id: "recP1", preferredName: "Al", shirtNoValue: "7", sectionRank: 12, playingAbility: undefined, birthday: "05-17" });
     expect(p.photoFileId).toBe("11111111-2222-3333-4444-555555555555");
     expect(p.photo).toBeUndefined();
     expect(p.teamRank).toBeUndefined();
+  });
+
+  it("reads the Active list from api_players_lite: the squad fields, no photo to sign", async () => {
+    const { photo_file_id: _photo, date_of_birth: _dob, sports_background: _cv, selection_comments: _notes, player_coach: _pc, rank_updated_at: _rank, ...lite } = playerRow;
+    const calls = postgrest(() => [{ ...lite, birthday: "05-17" }]);
+    const [p] = await people(env).listActive();
+    expect(calls[0].url.pathname).toBe("/rest/v1/api_players_lite");
+    expect(calls[0].url.searchParams.get("active")).toBe("is.true");
+    expect(p).toMatchObject({ id: "recP1", preferredName: "Al", shirtNoValue: "7", sectionRank: 12, playingAbility: undefined, birthday: "05-17", optInOnly: false });
+    expect(p.photo).toBeUndefined();
+    expect(p.selectionComments).toBeUndefined();
   });
 
   it("looks people up by lower-cased email", async () => {

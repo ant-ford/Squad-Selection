@@ -70,6 +70,7 @@ export function peopleCrmReads(env: Env) {
       return selectOne(env, "api_people_crm", APPLICANT_STAGE_FIELDS, id);
     },
     listDirectory: () => selectRows(env, "api_people_crm", CHAIRMAN_FIELDS, "or=(status.is.null,status.neq.Resigned)"),
+    getDirectoryRow: (id: string) => selectOne(env, "api_people_crm", CHAIRMAN_FIELDS, id),
     listContactsByIds: async (ids: Iterable<string>) => {
       const wanted = [...new Set([...ids].filter((id) => API_ID_RE.test(id)))];
       if (wanted.length === 0) return [];

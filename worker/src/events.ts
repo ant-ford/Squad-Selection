@@ -23,7 +23,7 @@ import { db, eq, inList } from "./data/supabase";
 import { fileLink, photoLink } from "./data/supabase/files";
 import { getCached, invalidateCache, invalidateCachePrefix } from "./cache";
 import { eventRights, managesEvent, type EventRights } from "./eventAccess";
-import { getChairmanDirectory } from "./chairman";
+import { getChairmanDirectory, getDirectoryPerson } from "./chairman";
 import { uploadBytes } from "./details";
 import { readPaymentProof } from "./paymentRead";
 import { groupOptions, matches, type DirectoryPerson, type Selection } from "../../shared/emailLists";
@@ -277,15 +277,19 @@ async function requireManages(env: Env, user: AuthorizedUser, id: string): Promi
 
 /** Published (or cancelled) events they're invited to or answered, until the day after each ends. */
 export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ events: MyEvent[] }> {
-  const [rights, dir] = await Promise.all([eventRights(env, user), directory(env)]);
+  const rights = await eventRights(env, user);
   const me = rights.personUuid;
   if (!me) return { events: [] };
   const d = db(env);
   const since = encodeURIComponent(new Date(Date.now() - 86_400_000).toISOString());
-  const rows = await d.select<EventRow>(
-    "events",
-    `select=${EVENT_COLS}&status=in.(published,cancelled)&or=(ends_at.gte.${since},and(ends_at.is.null,starts_at.gte.${since}))&order=starts_at`,
-  );
+  // Only their own directory entry: is each event's audience them?
+  const [rows, person] = await Promise.all([
+    d.select<EventRow>(
+      "events",
+      `select=${EVENT_COLS}&status=in.(published,cancelled)&or=(ends_at.gte.${since},and(ends_at.is.null,starts_at.gte.${since}))&order=starts_at`,
+    ),
+    getDirectoryPerson(env, user.personId),
+  ]);
   if (!rows.length) return { events: [] };
   const ids = rows.map((r) => r.id);
   const [responses, posters, payments] = await Promise.all([
@@ -293,7 +297,6 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
     posterLinks(env, ids),
     d.select<PaymentRow>("event_payments", `select=${PAYMENT_COLS}&payer_id=${eq(me)}&event_id=${inList(ids)}`),
   ]);
-  const person = dir.find((p) => p.id === user.personId);
   const now = Date.now();
   const events = await Promise.all(rows.map(async (r): Promise<MyEvent | null> => {
     const invited = !!person && matches(person, audienceOf(r));
@@ -330,7 +333,15 @@ const STATUSES: readonly ResponseStatus[] = ["going", "maybe", "not_going"];
  */
 export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: string, body: Record<string, unknown>): Promise<{ ok: true }> {
   const d = db(env);
-  const [rights, ev, dir] = await Promise.all([eventRights(env, user), loadEvent(env, eventId), directory(env)]);
+  const targetApi = text(body.personId, 40) || user.personId;
+  const self = targetApi === user.personId;
+  // Their own and the target's directory entries, not the whole directory: are they invited?
+  const [rights, ev, viewerEntry, targetEntry] = await Promise.all([
+    eventRights(env, user),
+    loadEvent(env, eventId),
+    getDirectoryPerson(env, user.personId),
+    self ? null : getDirectoryPerson(env, targetApi),
+  ]);
   if (!rights.personUuid) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
   if (ev.status === "draft") throw new HttpError("Event not found.", 404, "NOT_FOUND");
   if (ev.status === "cancelled") throw new HttpError("This event has been cancelled.", 409, "EVENT_CANCELLED");
@@ -338,8 +349,6 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
   const details = toDetails(ev, null);
   if (!manager && !isOpen(details)) throw new HttpError("Answers for this event have closed. Ask the social secretary.", 409, "EVENT_CLOSED");
 
-  const targetApi = text(body.personId, 40) || user.personId;
-  const self = targetApi === user.personId;
   const target = self
     ? { id: rights.personUuid, preferred_name: null, given_names: null, surname: null }
     : await d.one<NameParts & { id: string }>("people", `select=id,preferred_name,given_names,surname&api_id=${eq(targetApi)}`);
@@ -351,10 +360,10 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
     `select=signed_up_by_id,signer:people!event_responses_signed_up_by_id_fkey(preferred_name,given_names,surname)&event_id=${eq(ev.id)}&person_id=${eq(target.id)}`,
   );
   if (!manager) {
-    const invited = invitedFrom(dir, ev);
-    const isInvited = (apiId: string) => invited.some((p) => p.id === apiId);
-    if (!isInvited(user.personId) && !(self && existing)) throw new HttpError("This event isn't for you.", 403, "NOT_INVITED");
-    if (!self && !existing && !isInvited(targetApi)) throw new HttpError(`${targetName} isn't invited to this event.`, 403, "NOT_INVITED");
+    const audience = audienceOf(ev);
+    const isInvited = (entry: DirectoryPerson | null) => !!entry && matches(entry, audience);
+    if (!isInvited(viewerEntry) && !(self && existing)) throw new HttpError("This event isn't for you.", 403, "NOT_INVITED");
+    if (!self && !existing && !isInvited(targetEntry)) throw new HttpError(`${targetName} isn't invited to this event.`, 403, "NOT_INVITED");
   }
   const refusal = answerRefusal({
     actorId: rights.personUuid,
@@ -457,21 +466,24 @@ export async function eventTasks(env: Env, user: AuthorizedUser): Promise<EventT
   const { data } = await getCached(
     `event-tasks:${user.personId}`,
     async (): Promise<EventTask[]> => {
-      const { data: open } = await getCached(
-        "events:open",
-        () =>
-          db(env).select<EventRow>(
-            "events",
-            `select=${EVENT_COLS}&status=eq.published&starts_at=gte.${encodeURIComponent(new Date().toISOString())}&order=starts_at`,
-          ),
-        OPEN_EVENTS_TTL_MS,
-      );
+      const rights = await eventRights(env, user);
+      if (!rights.personUuid) return [];
+      // The open events and their own directory entry, side by side.
+      const [{ data: open }, person] = await Promise.all([
+        getCached(
+          "events:open",
+          () =>
+            db(env).select<EventRow>(
+              "events",
+              `select=${EVENT_COLS}&status=eq.published&starts_at=gte.${encodeURIComponent(new Date().toISOString())}&order=starts_at`,
+            ),
+          OPEN_EVENTS_TTL_MS,
+        ),
+        getDirectoryPerson(env, user.personId),
+      ]);
       const now = Date.now();
       const live = open.filter((r) => isOpen(toDetails(r, null), now));
-      if (!live.length) return [];
-      const [rights, dir] = await Promise.all([eventRights(env, user), directory(env)]);
-      const person = dir.find((p) => p.id === user.personId);
-      if (!person || !rights.personUuid) return [];
+      if (!live.length || !person) return [];
       const mine = live.filter((r) => matches(person, audienceOf(r)));
       if (!mine.length) return [];
       const answered = await db(env).select<{ event_id: string }>(

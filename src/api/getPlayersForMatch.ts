@@ -77,6 +77,12 @@ export async function setMatchKit(
 export interface GetPlayersForMatchOutput {
   match: MatchInfo;
   players: MatchPlayer[];
+  /**
+   * With ?recommendations=1: every candidate's id, best first (the coach's
+   * recommendation ranking, current squad included). Absent from a Worker
+   * older than this field.
+   */
+  recommendationOrder?: string[];
 }
 
 export async function getPlayersForMatch(matchId: string): Promise<GetPlayersForMatchOutput> {

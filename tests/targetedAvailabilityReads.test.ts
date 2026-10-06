@@ -78,7 +78,12 @@ describe("availability reads through the repositories", () => {
 
   const calls = (method: string) => db.callsTo("availabilityExceptions", method);
 
-  it("my-fixtures reads only the player's own answers for their cards, exact under the cache versions", async () => {
+  // my-fixtures and the calendar feed now take the answers from the player's
+  // own season context (season_context's player mode, already read for the
+  // eligibility gate), so they make no answers read of their own. The fakes
+  // answer season_context through the season's answers (listForSeasons), one
+  // call per context build.
+  it("my-fixtures takes the player's own answers from their season context, exact under the cache versions", async () => {
     // As index.ts runs a request: the versions come from the (fake) database.
     const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
     const first = await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
@@ -86,13 +91,13 @@ describe("availability reads through the repositories", () => {
       [M1, "Maybe", "Late"],
       [M4, "Unavailable", "Work"],
     ]);
-    expect(calls("listForSeasons")).toHaveLength(0);
     expect(calls("listForMatches")).toHaveLength(0);
-    expect(calls("listForPlayer").map((c) => c.args)).toEqual([[BOB, [M1, M4].sort()]]);
+    expect(calls("listForPlayer")).toHaveLength(0);
+    expect(calls("listForSeasons")).toHaveLength(1);
 
     // While the versions stand, the next request reads nothing.
     await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
-    expect(calls("listForPlayer")).toHaveLength(1);
+    expect(calls("listForSeasons")).toHaveLength(1);
 
     // An answer written on another isolate moves the version (the fakes move
     // every counter on any repository write), and shows on the next request.
@@ -100,15 +105,15 @@ describe("availability reads through the repositories", () => {
     await db.repos.people.update(DAVE, { playingAbility: "A" });
     const third = await request(() => getMyFixtures(ENV, user("bob@hkfc.com")));
     expect(third.fixtures[0].availabilityStatus).toBe("Unavailable");
-    expect(calls("listForPlayer")).toHaveLength(2);
+    expect(calls("listForSeasons")).toHaveLength(2);
   });
 
-  it("the calendar feed reads its cards' answers once, for the squad as well", async () => {
+  it("the calendar feed takes its cards' answers, the squad's too, from the player's season context", async () => {
     const out = await getPlayerFixtures(ENV, DAVE);
     const m1 = out.fixtures.find((f: any) => f.id === M1)!;
     expect(m1.squad.map((s: any) => [s.name, s.availabilityStatus])).toEqual([["Bob", "Maybe"], ["Dave", ""]]);
-    expect(calls("listForSeasons")).toHaveLength(0);
-    expect(calls("listForMatches").map((c) => c.args)).toEqual([[[M1, M4].sort()]]);
+    expect(calls("listForMatches")).toHaveLength(0);
+    expect(calls("listForSeasons")).toHaveLength(1);
   });
 
   it("the coach fixture list reads the answers of its fixtures only", async () => {

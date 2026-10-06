@@ -67,6 +67,48 @@ export async function toPlayer(_env: Env, r: PlayerRow): Promise<Player> {
   };
 }
 
+/** An api_players_lite row: the squad screens' columns, birthday already "MM-DD". */
+export interface PlayerLiteRow {
+  id: string;
+  preferred_name: string | null; given_names: string | null; surname: string | null; shirt_no_value: string | null;
+  email: string | null; mobile_no: string | null; active: boolean;
+  registered_team: string | null; selected_team_sos: string | null; selected_team_eos: string | null;
+  playing_position: string | null; playing_ability: string | null;
+  is_visiting_player: boolean; is_suspended: boolean; matches_to_serve: number | null;
+  ever_registered_to_premier: boolean; u21_eligible: boolean;
+  section_rank: number | null; status: string | null; applicant_stage: string | null; opt_in_only: boolean;
+  birthday: string | null;
+}
+
+/** As toPlayer, for the lite view: no photo (so nothing to sign), CV, coach notes, Player/Coach or rank date. */
+export function toPlayerLite(r: PlayerLiteRow): Player {
+  return {
+    id: r.id,
+    preferredName: str(r.preferred_name),
+    givenNames: str(r.given_names),
+    surname: str(r.surname),
+    shirtNoValue: str(r.shirt_no_value),
+    email: str(r.email),
+    mobileNo: str(r.mobile_no),
+    active: r.active,
+    registeredTeam: str(r.registered_team),
+    selectedTeamSos: str(r.selected_team_sos),
+    selectedTeamEos: str(r.selected_team_eos),
+    playingPosition: str(r.playing_position),
+    playingAbility: str(r.playing_ability),
+    isVisitingPlayer: r.is_visiting_player,
+    isSuspended: r.is_suspended,
+    matchesToServe: int(r.matches_to_serve),
+    everRegisteredToPremier: r.ever_registered_to_premier,
+    u21Eligible: r.u21_eligible,
+    sectionRank: int(r.section_rank),
+    status: str(r.status),
+    applicantStage: str(r.applicant_stage),
+    optInOnly: r.opt_in_only === true,
+    birthday: str(r.birthday),
+  };
+}
+
 export interface TeamRow {
   id: string; team_name: string | null; team_rank: number | null; is_premier: boolean; target_squad_size: number | null;
   active: boolean; coach: string[]; team_captain: string[]; section_captain: string[]; auto_select_players: string[];
