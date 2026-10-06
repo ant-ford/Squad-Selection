@@ -12,11 +12,14 @@ const HATCH = availabilityHatch('Available');
 
 type Look = { className: string; style?: React.CSSProperties; label: string };
 
+/** What a cell's look depends on - also all the team dashboard has per player. */
+export type CellLookInput = Pick<AttendanceCell, 'status' | 'source' | 'past' | 'elsewhereTeam'>;
+
 /**
  * How each status reads in a cell. Past fixtures use lighter shades than
  * upcoming ones, so the eye goes to what can still be acted on.
  */
-function lookFor(cell: AttendanceCell): Look {
+export function lookFor(cell: CellLookInput): Look {
   const unconfirmed = cell.source === 'default' || cell.source === 'opt-in';
   switch (cell.status) {
     case 'played':
@@ -53,7 +56,7 @@ function BlackSpot({ size = 'h-3.5 w-3.5' }: { size?: string }) {
   return <span className={`block rounded-full bg-neutral-900 ${size}`} />;
 }
 
-function CellGlyph({ cell }: { cell: AttendanceCell }) {
+export function CellGlyph({ cell }: { cell: Pick<AttendanceCell, 'status' | 'elsewhereTeam'> }) {
   const icon = 'h-3.5 w-3.5';
   switch (cell.status) {
     case 'played':
@@ -105,7 +108,7 @@ const LEGEND: { past: boolean; sample: AttendanceCell }[] = (
   },
 }));
 
-function Swatch({ cell, size = 'h-4 w-4' }: { cell: AttendanceCell; size?: string }) {
+export function Swatch({ cell, size = 'h-4 w-4' }: { cell: CellLookInput; size?: string }) {
   const look = lookFor(cell);
   if (cell.status === 'no-show') {
     return (
@@ -287,25 +290,32 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
 
       {openCells && openDate && openTeam && <Detail date={openDate} cells={openCells} />}
 
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs text-muted-foreground">
-        {[true, false].map((past) => (
-          <div key={String(past)}>
-            <p className="mb-1.5 text-xs uppercase tracking-wide">{past ? 'Past' : 'Upcoming'}</p>
-            <ul className="space-y-1">
-              {LEGEND.filter((l) => l.past === past).map((l) => (
-                <li key={`${l.sample.status}-${l.sample.source}`} className="flex items-center gap-2">
-                  <Swatch cell={l.sample} />
-                  {lookFor(l.sample).label}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        <p className="sm:col-span-2 flex items-center gap-2">
-          <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground text-[9px] font-semibold">C</span>
-          With another side that day (the letter says which)
-        </p>
-      </div>
+      <AttendanceLegend className="mt-4" />
     </section>
+  );
+}
+
+/** The key to a player's cells: shared with the team availability dashboard. */
+export function AttendanceLegend({ className = '' }: { className?: string }) {
+  return (
+    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 text-xs text-muted-foreground ${className}`}>
+      {[true, false].map((past) => (
+        <div key={String(past)}>
+          <p className="mb-1.5 text-xs uppercase tracking-wide">{past ? 'Past' : 'Upcoming'}</p>
+          <ul className="space-y-1">
+            {LEGEND.filter((l) => l.past === past).map((l) => (
+              <li key={`${l.sample.status}-${l.sample.source}`} className="flex items-center gap-2">
+                <Swatch cell={l.sample} />
+                {lookFor(l.sample).label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      <p className="sm:col-span-2 flex items-center gap-2">
+        <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground text-[9px] font-semibold">C</span>
+        With another side that day (the letter says which)
+      </p>
+    </div>
   );
 }

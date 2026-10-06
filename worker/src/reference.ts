@@ -149,4 +149,29 @@ export async function getExceptionsForSeasons(
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Every answer for these matches, and nothing else (match=in.(...), narrow
+ * columns): what a coach list, a calendar squad or the poll needs, instead
+ * of the whole season's answers (~177 KB on preview) filtered here.
+ *
+ * Kept under the availability_exceptions version (cache.ts getVersioned),
+ * like getExceptionsForSeasons, so a cached copy is the current one in
+ * every isolate. Only that version: the rows are looked up by match and
+ * player api ids, which never change, and carry no season (which is why
+ * the season read also depends on matches). { fresh: true } skips the cache.
+ */
+export async function getExceptionsForMatches(
+  env: Env,
+  matchIds: string[],
+  opts?: { fresh?: boolean },
+): Promise<AvailabilityException[]> {
+  const ids = [...new Set(matchIds.filter(Boolean))].sort();
+  if (ids.length === 0) return [];
+  const load = () => availabilityExceptions(env).listForMatches(ids);
+  if (opts?.fresh) return load();
+  return getVersioned<AvailabilityException[]>(
+    env, `exceptions:matches:${ids.join(",")}`, ["availability_exceptions"], load, EXCEPTIONS_TTL_MS,
+  );
+}
+
 export { invalidateCache };

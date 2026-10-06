@@ -130,7 +130,29 @@ const toOutcome = (o: Partial<AvailabilityOutcome> | null): AvailabilityOutcome 
 
 export function supabaseAvailabilityExceptions(env: Env): AvailabilityExceptionsRepo {
   const d = db(env);
+  /** The columns a targeted answers read needs: not season or updated_at. */
+  const EXCEPTION_COLUMNS = "id,player,match,availability_status,note";
+  /** Match ids per request, so the URL stays well inside PostgREST's limits. */
+  const IDS_PER_READ = 100;
+  // match=in.(...) is an index lookup per match (matches_api_id_key, then
+  // availability_exceptions_match_idx); chunks are read in parallel.
+  const byMatches = async (matchIds: string[], extra: string) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < matchIds.length; i += IDS_PER_READ) chunks.push(matchIds.slice(i, i + IDS_PER_READ));
+    const rows = await Promise.all(
+      chunks.map((ids) => d.select<ExceptionRow>("api_availability_exceptions", `select=${EXCEPTION_COLUMNS}${extra}&match=${inList(ids)}`)),
+    );
+    return rows.flat().map(toException);
+  };
   return {
+    async listForMatches(matchIds) {
+      if (matchIds.length === 0) return [];
+      return byMatches(matchIds, "");
+    },
+    async listForPlayer(playerId, matchIds) {
+      if (!playerId || matchIds.length === 0) return [];
+      return byMatches(matchIds, `&player=${eq(playerId)}`);
+    },
     async listForSeasons(seasons) {
       if (seasons.length === 0) return [];
       return (await d.select<ExceptionRow>("api_availability_exceptions", `select=*&season=${inList(seasons)}`)).map(toException);
