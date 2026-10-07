@@ -75,6 +75,16 @@ node tools/demo/smoke.mjs --only coach --as section-captain   # a subset, by pat
 
 CI runs it on every pull request (`.github/workflows/smoke.yml`).
 
+## Guide screenshots
+
+The user guides (the eddy-site repository, published at eddy.global/guides) are screenshotted from here, at phone width:
+
+```bash
+node tools/demo/shots/run.mjs players ../eddy-site/guides/img       # or: --only home
+```
+
+Each guide has a spec in `shots/`: a list of shots, each with a persona, a path, optional steps (open a menu or a sheet), and the viewport, the full page or an element to capture. The runner saves WebP files under the shot's name, so a refresh is one command per guide.
+
 ## Gotchas
 
 - **Windows:** the repo path must be the long name (`anthony.ford`, not `ANTHON~1.FOR`), or Vite's file watcher crashes. `server.mjs` resolves it.

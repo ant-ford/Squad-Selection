@@ -202,6 +202,45 @@ async function makePage(conn, { width, height, scale, close }) {
       const w = await page.eval('return document.documentElement.clientWidth');
       await page.screenshot(file, { x: 0, y: 0, width: w, height: h });
     },
+    /**
+     * A PNG of the element(s) a page expression returns (their union, padded),
+     * scrolled into view first.
+     */
+    async element(file, expr, pad = 12) {
+      const r = await page.eval(`
+        const els = [].concat(${expr}).filter(Boolean);
+        if (!els.length) throw new Error('element: nothing matches');
+        els[0].scrollIntoView({ block: 'center' });
+        await new Promise((r) => setTimeout(r, 250));
+        const rs = els.map((e) => e.getBoundingClientRect());
+        const x = Math.min(...rs.map((r) => r.left)), y = Math.min(...rs.map((r) => r.top));
+        const x2 = Math.max(...rs.map((r) => r.right)), y2 = Math.max(...rs.map((r) => r.bottom));
+        return { x: x + scrollX, y: y + scrollY, w: x2 - x, h: y2 - y, vw: document.documentElement.clientWidth };`);
+      const x = Math.max(0, r.x - pad);
+      const y = Math.max(0, r.y - pad);
+      await page.screenshot(file, { x, y, width: Math.min(r.vw - x, r.w + pad * 2), height: r.h + pad * 2 });
+    },
+    /** Opens a header drop-down menu by its label (Radix opens on pointerdown, not click). */
+    async openMenu(label, wait = 400) {
+      await page.eval(`
+        const b = document.querySelector('[aria-label=${JSON.stringify(label)}]');
+        if (!b) throw new Error('openMenu: no ' + ${JSON.stringify(label)});
+        b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }));`);
+      await sleep(wait);
+    },
+    /** Re-encodes a PNG file as WebP (quality 0-1) in the browser, and deletes the PNG. */
+    async toWebp(pngFile, quality = 0.86) {
+      const b64 = fs.readFileSync(pngFile).toString('base64');
+      const url = await page.eval(`
+        const img = new Image(); img.src = 'data:image/png;base64,${b64}'; await img.decode();
+        const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        return c.toDataURL('image/webp', ${quality});`);
+      const out = pngFile.replace(/\.png$/, '.webp');
+      fs.writeFileSync(out, Buffer.from(url.split(',')[1], 'base64'));
+      fs.unlinkSync(pngFile);
+      return out;
+    },
     async close() {
       conn.close();
       await close();
