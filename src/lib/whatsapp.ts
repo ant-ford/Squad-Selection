@@ -152,6 +152,16 @@ export function buildAvailabilityRequest(f: FixtureBrief): string {
   return `Availability for ${fixtureLine(f)}.\n\n${ask}`;
 }
 
+/**
+ * A nudge for one player who hasn't opened Eddy for weeks ("not seen" on the
+ * squad screen). It goes through WhatsAppListSheet, which fills in
+ * {first name} for each person.
+ */
+export function buildNotSeenNudge(f: FixtureBrief): string {
+  const ask = f.link ? `Please answer in Eddy: ${f.link}` : 'Please answer in Eddy.';
+  return `Hi {first name}, can you play in ${fixtureLine(f)}? ${ask}`;
+}
+
 export interface AnnouncedPlayer {
   name: string;
   shirtNo?: string;

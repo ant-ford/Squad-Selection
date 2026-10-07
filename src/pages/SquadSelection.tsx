@@ -4,15 +4,16 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
-import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle, History } from 'lucide-react';
+import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle, History, EyeOff } from 'lucide-react';
 import { apiPost, apiGet, ApiError } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
 import PlayerRow, { canToggleSelection } from '@/components/PlayerRow';
 import NotifySquadSheet from '@/components/NotifySquadSheet';
+import WhatsAppListSheet from '@/components/WhatsAppListSheet';
 import SeasonStatsSheet from '@/components/SeasonStatsSheet';
 import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/components/CoachAvailabilitySheet';
-import { fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
+import { buildNotSeenNudge, fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { noteSquadNotified, type MatchPlayer } from '@/api/getPlayersForMatch';
@@ -137,6 +138,7 @@ export default function SquadSelection() {
   const [priorityPlayers, setPriorityPlayers] = useState<PriorityPlayer[]>([]);
   const [showPriorityManager, setShowPriorityManager] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
+  const [showNotSeen, setShowNotSeen] = useState(false);
   const [statsPlayer, setStatsPlayer] = useState<{ id: string; name: string } | null>(null);
   const [availabilityTarget, setAvailabilityTarget] = useState<CoachAvailabilityTarget | null>(null);
   const [prioritySearch, setPrioritySearch] = useState('');
@@ -372,6 +374,9 @@ export default function SquadSelection() {
       return true;
     });
   }, [mergedPlayers, filters]);
+
+  // Rows with the "not seen" chip: 6+ weeks since they opened Eddy, and no answer for this fixture.
+  const notSeenPlayers = useMemo(() => filteredPlayers.filter(p => p.notSeenWeeks != null), [filteredPlayers]);
 
   const recRankById = useMemo(
     () => {
@@ -722,6 +727,17 @@ export default function SquadSelection() {
           </button>
         )}
 
+        {notifyFixture && notSeenPlayers.length > 0 && (
+          <button
+            onClick={() => setShowNotSeen(true)}
+            className="inline-flex items-center gap-1 min-h-10 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            title="WhatsApp the players who haven't opened Eddy for 6+ weeks"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+            Not seen ({notSeenPlayers.length})
+          </button>
+        )}
+
         {autoSelectEnabled && (
           <>
             {autoSelectedCount !== null && (
@@ -916,6 +932,15 @@ export default function SquadSelection() {
             setShowNotify(false);
             notifiedRef.current = false;
           }}
+        />
+      )}
+
+      {showNotSeen && notifyFixture && (
+        <WhatsAppListSheet
+          title="Not seen for 6+ weeks"
+          people={notSeenPlayers.map(p => ({ id: p.id, name: p.preferredName, mobile: p.mobile }))}
+          defaultMessage={buildNotSeenNudge(notifyFixture)}
+          onClose={() => setShowNotSeen(false)}
         />
       )}
 
