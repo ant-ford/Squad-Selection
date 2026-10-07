@@ -121,7 +121,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - An object released by a removal is deleted 35 days later (`r2_deletions`), to match backup retention.
   - Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
 
-The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events.ts`, `apply.ts`, `admin/*`, …).
+The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
 
 ---
 
