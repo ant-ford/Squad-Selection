@@ -95,11 +95,11 @@ async function waves<T>(work: () => Promise<T>): Promise<{ result: T; waves: num
 const me = () => signedIn({ email: "me@hkfc.com", personId: ME, personUuid: "uuid-me", person: { id: ME, uuid: "uuid-me", registeredTeam: "HKFC C", active: true } });
 
 describe("cold my-fixtures", () => {
-  it("asks for everything in one wave: players, teams, scheduled matches, the season context, the rules", async () => {
+  it("asks for everything in one wave: players, teams, scheduled and called-off matches, the season context, the rules", async () => {
     const { result, waves: w } = await waves(() => getMyFixtures(env, me()));
-    expect(w).toEqual([5]);
+    expect(w).toEqual([6]);
     expect(pg.calls.map((c) => c.table).sort()).toEqual(
-      ["api_availability_rules", "api_matches", "api_players_lite", "api_teams", "rpc/season_context"].sort(),
+      ["api_availability_rules", "api_matches", "api_matches", "api_players_lite", "api_teams", "rpc/season_context"].sort(),
     );
     // The player's own answer, note and id, came from the season context: no read of their own.
     const card = result.fixtures.find((f: any) => f.id === "recM1000000000000");
@@ -109,7 +109,7 @@ describe("cold my-fixtures", () => {
 
   it("with past results too: still one wave", async () => {
     const { waves: w } = await waves(() => getMyFixtures(env, me(), { includePast: true }));
-    expect(w).toEqual([5]);
+    expect(w).toEqual([6]);
   });
 
   it("warm (same versions): no database call at all", async () => {

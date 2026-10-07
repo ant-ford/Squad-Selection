@@ -1,3 +1,4 @@
+import type { FixtureChange } from '@shared/fixtureChange';
 import { apiGet } from '@/lib/apiClient';
 import type { KitColour } from '@/api/getPlayersForMatch';
 
@@ -38,6 +39,8 @@ export interface MyFixture {
   selectionTeam?: string;
   /** Shirt colour for this fixture; '' until a coach sets it. */
   kit?: KitColour;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
 }
 
 /** A named goal or card contribution on a played fixture. */

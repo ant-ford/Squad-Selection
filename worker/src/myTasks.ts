@@ -36,6 +36,7 @@ import { commitments } from "./data/commitments";
 import { isRowId } from "./data/ids";
 import { openJoinerTasks } from "./joiners";
 import { dutyChangeText, getMyDuties, myDutiesKey } from "./myDuties";
+import { openReactivationTasks, reactivationTasksKey } from "./reactivation";
 import { systemNeedsLook } from "./systemHealth";
 import { signingTasks } from "./applicationSigning";
 import { eventTasks, registerTasks } from "./events";
@@ -44,7 +45,7 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "system" | "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration" | "duty" | "event" | "register";
+export type MyTaskKey = "system" | "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration" | "reactivate" | "duty" | "event" | "register";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -164,7 +165,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { system: -1, joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9, duty: 10, event: 11, register: 12 };
+const ORDER: Record<MyTaskKey, number> = { system: -1, joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9, reactivate: 10, duty: 11, event: 12, register: 13 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
@@ -172,7 +173,7 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   if (!isRowId(personId)) return { tasks: [] };
 
   // Every part at once: none depends on another, and each is a read or two.
-  const [mine, waitingOn, requests, duties, events, registers, systemLook] = await Promise.all([
+  const [mine, waitingOn, requests, reactivations, duties, events, registers, systemLook] = await Promise.all([
     getCached(
       `my-tasks:${personId}`,
       async (): Promise<Partial<MyTaskRow>> => (await people(env).getMyTaskFields(personId)) ?? {},
@@ -181,6 +182,8 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     getWaitingOn(env),
     // A minute in this isolate, dropped when a request is made or marked done.
     getCached(`joiner-tasks:${personId}`, () => openJoinerTasks(env, user.personUuid), MY_RECORD_TTL_MS).then((hit) => hit.data),
+    // Members asking to be reactivated: Section Captains (reactivation.ts).
+    getCached(reactivationTasksKey(personId), () => openReactivationTasks(env, user.personUuid), MY_RECORD_TTL_MS).then((hit) => hit.data),
     // An umpire's duties that moved or were called off (myDuties.ts).
     user.umpire
       ? getCached(myDutiesKey(personId), () => getMyDuties(env, personId), MY_RECORD_TTL_MS).then((hit) => hit.data).catch(() => [])
@@ -204,6 +207,7 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     tasks.push({ id: "details", key: "details", url: "/my-details" });
   }
   for (const r of requests) tasks.push({ id: `${r.kind}:${r.id}`, key: r.kind, subject: r.subject, url: `/joiner-task/${r.id}` });
+  for (const r of reactivations) tasks.push({ id: `reactivate:${r.id}`, key: "reactivate", subject: r.subject, url: `/reactivate/${r.id}` });
   for (const d of duties) {
     const text = dutyChangeText(d);
     if (text) tasks.push({ id: `duty:${d.assignmentId}`, key: "duty", subject: text, url: "/umpiring?seen=1" });

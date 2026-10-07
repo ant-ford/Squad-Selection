@@ -4,7 +4,7 @@ import { apiGet } from '@/lib/apiClient';
 export interface MyTask {
   /** Unique within the list. */
   id: string;
-  key: 'system' | 'joiner' | 'details' | 'statement' | 'waivers' | 'application' | 'send' | 'accept' | 'review' | 'kit' | 'registration' | 'duty' | 'event' | 'register';
+  key: 'system' | 'joiner' | 'details' | 'statement' | 'waivers' | 'application' | 'send' | 'accept' | 'review' | 'kit' | 'registration' | 'reactivate' | 'duty' | 'event' | 'register';
   /** The applicant or member the line is about; absent for the person's own forms. */
   subject?: string;
   /** The part the signed-in person plays for them. */

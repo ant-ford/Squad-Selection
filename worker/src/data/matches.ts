@@ -48,6 +48,8 @@ export interface MatchesRepo {
   listForSeason(season: string): Promise<Match[]>;
   /** Every match with Match Status = Scheduled, any season. */
   listScheduled(): Promise<Match[]>;
+  /** Matches called off (Rescheduled, Cancelled, Postponed) since the given time (changed_at). */
+  listCalledOffSince(sinceIso: string): Promise<Match[]>;
   /** Played matches in any of the given (non-empty, de-duplicated) seasons. */
   listPlayedForSeasons(seasons: string[]): Promise<Match[]>;
   /**

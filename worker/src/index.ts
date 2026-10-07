@@ -13,6 +13,7 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
+import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
@@ -533,7 +534,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // Recently played matches cost an extra Airtable read, so the coach
       // list asks for them only while "Show past" is on.
       const includePast = url.searchParams.get("past") === "1";
-      return json(await getUpcomingFixtures(env, { user, team, includePast }), 200, origin);
+      return json(await getUpcomingFixtures(env, { user, team, includePast, calledOff: true }), 200, origin);
     }
 
     // Dashboard metrics (Coach) - expose every player's rank moves / play-up counts.
@@ -892,6 +893,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && clubDoc) {
       await requireAuthorizedUser(request, env);
       return await serveClubDoc(env, clubDoc[1], origin);
+    }
+    // Ask to be reactivated (reactivation.ts): the asker has no access yet,
+    // so only their email is checked; a captain's view and answer need sign-in.
+    if (pathname === "/api/reactivation") {
+      const email = await requireVerifiedEmail(request, env);
+      if (method === "GET") return json(await reactivationStatus(env, email), 200, origin);
+      if (method === "POST") return json(await askToBeReactivated(env, email), 200, origin);
+    }
+    const reactivation = pathname.match(/^\/api\/reactivation\/([0-9a-f-]{36})$/);
+    if (reactivation) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET") return json(await getReactivationRequest(env, user, reactivation[1]), 200, origin);
+      if (method === "POST") return json(await answerReactivation(env, user, reactivation[1], await readJsonBody(request)), 200, origin);
     }
     if (pathname.startsWith("/api/joiner-tasks/")) {
       const user = await requireAuthorizedUser(request, env);

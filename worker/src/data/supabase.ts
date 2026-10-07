@@ -13,7 +13,7 @@
  * policies, so nothing else can read them.
  */
 import type { Env } from "../env";
-import { noteRequestWrite, recordDbCall } from "../requestContext";
+import { currentRequestContext, noteRequestWrite, recordDbCall } from "../requestContext";
 
 export class SupabaseError extends Error {
   status: number;
@@ -114,6 +114,9 @@ export function db(env: Env): Db {
     // is tried once more. Writes are not: a write that timed out may have
     // landed, and repeating it could apply it twice.
     const attempts = readOnly ? 2 : 1;
+    // Who is making a write: the change history's triggers read it from the
+    // request headers (migration 20261007160004_change_history).
+    const actor = readOnly ? undefined : currentRequestContext()?.personUuid;
     let response!: Response;
     let text!: string;
     let tokenRetries = 0;
@@ -126,6 +129,7 @@ export function db(env: Env): Db {
             apikey: key!,
             "Content-Type": "application/json",
             Accept: "application/json",
+            ...(actor ? { "x-eddy-actor": actor } : {}),
             ...(init.headers ?? {}),
           },
         });
