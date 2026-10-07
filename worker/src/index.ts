@@ -18,6 +18,7 @@ import { noteSquadNotified } from "./squadNotices";
 import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
+import { getFormsDue } from "./formsDue";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
 import { getMyDeclarations, submitDeclarations } from "./declarations";
@@ -84,6 +85,7 @@ import {
   getKitBoard,
   getMyKit,
   getSetHistory,
+  getUncollectedKit,
   giveNewNumber,
   moveKit,
   releaseSet,
@@ -705,6 +707,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       await requireSection(request, env, "membership");
       return json(await getMembershipInsights(env), 200, origin);
     }
+    if (method === "GET" && pathname === "/api/membership/forms-due") {
+      await requireSection(request, env, "membership");
+      return json(await getFormsDue(env), 200, origin);
+    }
     if (method === "GET" && pathname === "/api/membership/active-members") {
       const user = await requireSection(request, env, "membership");
       return json(await getActiveMembersCsv(env, user), 200, origin);
@@ -1067,6 +1073,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "GET" && pathname === "/api/kit/board") {
         return json(await getKitBoard(env, url.searchParams.get("order")), 200, origin);
       }
+      if (method === "GET" && pathname === "/api/kit/uncollected") return json(await getUncollectedKit(env), 200, origin);
       if (method === "GET" && pathname === "/api/kit/top-up") {
         return json(await topUpCsv(env, url.searchParams.get("order")), 200, origin);
       }

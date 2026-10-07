@@ -57,6 +57,8 @@ Not yet delayed: replacing a photo, ID copy, application upload, payment screens
 
 Anyone signed in can delete their own profile from the bottom of **My details**, at any time. They have to type DELETE first. It does the same removal straight away (their files leave R2 35 days later, like everyone's), makes them inactive, and retires any office they hold. Officers and coaches can do this too (owner, 2 Oct 2026). They are signed out, and if they come back they fill in their details again.
 
+Signing out also wipes what the app keeps on their phone: their own profile, fixtures and tasks, kept for at most 24 hours so the app opens quickly (`src/lib/persistedQueries.ts`). Form drafts go on Log out too.
+
 ## Running it
 
 The Worker's second daily cron (`30 3 * * *` UTC, 11:30 Hong Kong) runs the job on the Supabase backend:
