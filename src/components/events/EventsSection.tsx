@@ -21,10 +21,10 @@ const EventSheet = lazy(() => import('./EventSheet'));
  * line, or one a social secretary shared on WhatsApp) even while the list is
  * closed. The open event stays in the URL, so Back closes it.
  */
-export default function EventsSection({ enabled }: { enabled: boolean }) {
+export default function EventsSection() {
   const sheet = useSheetParam('event');
   const [expanded, setExpanded] = useState(false);
-  const { data } = useQuery({ queryKey: ['myEvents'], queryFn: getMyEvents, enabled });
+  const { data } = useQuery({ queryKey: ['myEvents'], queryFn: getMyEvents });
   const events = data?.events ?? [];
   const openId = sheet.value;
   const open = openId ? events.find((e) => e.id === openId) : undefined;
