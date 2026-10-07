@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ChevronDown, Plus, X } from 'lucide-react';
 import PersonPicker from '@/components/admin/PersonPicker';
 import { ActionButton } from '@/components/ui/action-button';

@@ -6,7 +6,7 @@ import { isAuthRetryableFetchError } from '@supabase/auth-js';
 import { supabase } from './supabase';
 import { signOut } from './auth';
 import { setAccessDenied } from './accessDenied';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { FRESH_HEADER, FRESH_WINDOW_MS } from '@shared/freshHeader';
 
 const API_URL = import.meta.env.VITE_API_URL;

@@ -13,7 +13,7 @@ import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
 import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppFooter from '@/components/AppFooter';
 import AppHeader from '@/components/AppHeader';
 import PastFixtureCard from '@/components/PastFixtureCard';

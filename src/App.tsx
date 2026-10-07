@@ -6,10 +6,13 @@ import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
 import { reportClientError } from '@/lib/clientErrors';
-import Login from './pages/Login';
-import AccessNotActive from '@/components/AccessNotActive';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
+
+// Only signed-out people see Login, and only someone without access sees
+// AccessNotActive, so a signed-in player never downloads either.
+const Login = lazy(() => import('./pages/Login'));
+const AccessNotActive = lazy(() => import('@/components/AccessNotActive'));
 
 // Coach-only routes — deferred so player-only visits skip this bundle.
 const CoachLayout    = lazy(() => import('./components/CoachLayout'));
@@ -75,9 +78,9 @@ function AuthGate() {
   // achieves nothing except another round trip through their inbox.
   const accessDenied = useSyncExternalStore(subscribeAccessDenied, getAccessDenied, () => null);
   if (isLoading) return <AppLoading />;
-  if (!user) return <Login />;
+  if (!user) return <Suspense fallback={<AppLoading />}><Login /></Suspense>;
   if (accessDenied && pendingJoin()) return <Navigate to="/join" replace />;
-  if (accessDenied) return <AccessNotActive message={accessDenied} />;
+  if (accessDenied) return <Suspense fallback={<AppLoading />}><AccessNotActive message={accessDenied} /></Suspense>;
   return <Outlet />;
 }
 
