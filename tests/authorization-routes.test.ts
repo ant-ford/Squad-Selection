@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     setMyAvailability: vi.fn(),
     setMyAvailabilityForDate: vi.fn(),
     setPlayerAvailability: vi.fn(),
+    setPlayerOptInOnly: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     getTeamAvailabilityForMatch: vi.fn(),
     recommendationOrder: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock("../worker/src/availability", () => ({
   setMyAvailability: mocks.setMyAvailability,
   setMyAvailabilityForDate: mocks.setMyAvailabilityForDate,
   setPlayerAvailability: mocks.setPlayerAvailability,
+  setPlayerOptInOnly: mocks.setPlayerOptInOnly,
 }));
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
@@ -96,6 +98,68 @@ vi.mock("../worker/src/chairman", () => ({
   logEmailExport: vi.fn(),
 }));
 
+// The routes added after the 6 Oct 2026 review (see "routes added since the
+// 6 Oct review" below). Each handler answers {ok: true}; the tests check who
+// reaches it, and that it gets the session's user.
+const later = vi.hoisted(() => {
+  const ok = () => vi.fn(async () => ({ ok: true }));
+  return {
+    searchPeople: ok(), getPersonAdmin: ok(), getPersonHistory: ok(), getMatchHistory: ok(),
+    saveSquad: ok(), saveMembership: ok(), moveStage: ok(),
+    listOffices: ok(), listTeams: ok(), addOffice: ok(), editOffice: ok(), createOfficeHolder: ok(), saveTeam: ok(),
+    getDataChecks: ok(), linkMatchCard: ok(), resolveRegistrationEvent: ok(),
+    getSuspensionsBoard: ok(), createSuspension: ok(), updateSuspension: ok(), clearSuspension: ok(),
+    getRegistrationBoard: ok(), registrationCsv: ok(), markRegistered: ok(), unmarkRegistered: ok(), saveRegistrationDetails: ok(),
+    getSystemView: ok(), logClientError: ok(),
+    listTemplates: ok(), logMessage: ok(),
+    reactivationStatus: ok(), askToBeReactivated: ok(), getReactivationRequest: ok(), answerReactivation: ok(),
+    noteSquadNotified: ok(), ackDutyChanges: ok(),
+  };
+});
+vi.mock("../worker/src/admin/people", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/admin/people")>()),
+  searchPeople: later.searchPeople, getPersonAdmin: later.getPersonAdmin, getPersonHistory: later.getPersonHistory,
+}));
+vi.mock("../worker/src/history", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/history")>()),
+  getMatchHistory: later.getMatchHistory,
+}));
+vi.mock("../worker/src/admin/squad", () => ({ saveSquad: later.saveSquad }));
+vi.mock("../worker/src/admin/membership", () => ({ saveMembership: later.saveMembership, moveStage: later.moveStage }));
+vi.mock("../worker/src/admin/club", () => ({
+  listOffices: later.listOffices, listTeams: later.listTeams, addOffice: later.addOffice,
+  editOffice: later.editOffice, createOfficeHolder: later.createOfficeHolder, saveTeam: later.saveTeam,
+}));
+vi.mock("../worker/src/dataChecks", () => ({ getDataChecks: later.getDataChecks }));
+vi.mock("../worker/src/matchCardLink", () => ({ linkMatchCard: later.linkMatchCard }));
+vi.mock("../worker/src/reRegistrations", () => ({ resolveRegistrationEvent: later.resolveRegistrationEvent }));
+vi.mock("../worker/src/discipline", () => ({
+  getSuspensionsBoard: later.getSuspensionsBoard, createSuspension: later.createSuspension,
+  updateSuspension: later.updateSuspension, clearSuspension: later.clearSuspension,
+}));
+vi.mock("../worker/src/registration", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/registration")>()),
+  getRegistrationBoard: later.getRegistrationBoard, registrationCsv: later.registrationCsv, markRegistered: later.markRegistered,
+  unmarkRegistered: later.unmarkRegistered, saveRegistrationDetails: later.saveRegistrationDetails,
+}));
+vi.mock("../worker/src/systemHealth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/systemHealth")>()),
+  getSystemView: later.getSystemView, logClientError: later.logClientError,
+}));
+vi.mock("../worker/src/messages", () => ({ listTemplates: later.listTemplates, logMessage: later.logMessage }));
+vi.mock("../worker/src/reactivation", () => ({
+  reactivationStatus: later.reactivationStatus, askToBeReactivated: later.askToBeReactivated,
+  getReactivationRequest: later.getReactivationRequest, answerReactivation: later.answerReactivation,
+}));
+vi.mock("../worker/src/squadNotices", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/squadNotices")>()),
+  noteSquadNotified: later.noteSquadNotified,
+}));
+vi.mock("../worker/src/myDuties", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../worker/src/myDuties")>()),
+  ackDutyChanges: later.ackDutyChanges,
+}));
+
 import worker from "../worker/src/index";
 import * as auth from "../worker/src/auth";
 import type { AuthorizedUser } from "../worker/src/auth";
@@ -103,7 +167,7 @@ import { SupabaseError } from "../worker/src/data/supabase";
 import { invalidateAll } from "../worker/src/cache";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { office, person, recId, team } from "./helpers/factories";
+import { match, office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
   ...SUPABASE_TEST_ENV,
@@ -131,8 +195,10 @@ const ADH = recId("Adh");
 const CAPTAIN = recId("Captain");
 /** Holds the Section Captain office, with no Teams link. */
 const VICE = recId("Vice");
-/** Holds the Hockey Convenor office (the Men's Convenor). */
+/** Holds the Men's Convenor office (hockeyConvenor). */
 const CONVENOR = recId("Convenor");
+/** Holds the Membership Officer office. */
+const MO = recId("Mo");
 
 const TOKENS = {
   player: "player.jwt",
@@ -143,6 +209,7 @@ const TOKENS = {
   captain: "captain.jwt",
   vice: "vice.jwt",
   convenor: "convenor.jwt",
+  mo: "mo.jwt",
   /** A verified email with no People record. */
   stranger: "stranger.jwt",
   /** Supabase rejects this one. */
@@ -158,6 +225,7 @@ const SESSION_EMAILS: Record<string, string> = {
   [TOKENS.captain]: "captain@hkfc.com",
   [TOKENS.vice]: "vice@hkfc.com",
   [TOKENS.convenor]: "convenor@hkfc.com",
+  [TOKENS.mo]: "mo@hkfc.com",
   [TOKENS.stranger]: "stranger@hkfc.com",
 };
 /** What requireAuthorizedUser resolves for the ordinary player (the access fields): Active, no coach link, no office. */
@@ -170,7 +238,20 @@ const COACH_USER: AuthorizedUser = expect.objectContaining({
   email: "coach@hkfc.com", personId: COACH, role: "coach", coachTeams: ["Men's 1s"], isSectionCaptain: false, officerRoles: [],
 });
 
+// Fixtures the coach routes look up: coaches act only on their own teams'
+// matches (coachAccess.ts). "recM1" is the coach's own team's.
+const OWN_MATCH = "recM1";
+/** Men's 3s away: the coach of Men's 1s has no side in it. */
+const OTHER_MATCH = recId("M3");
+/** Men's 1s at home to Men's 3s. */
+const DERBY = recId("Derby");
+
 const db = useFakeRepos(() => ({
+  matches: [
+    match({ id: OWN_MATCH, homeTeam: "Men's 1s", awayTeam: "Valley" }),
+    match({ id: OTHER_MATCH, homeTeam: "KCC", awayTeam: "Men's 3s" }),
+    match({ id: DERBY, homeTeam: "Men's 1s", awayTeam: "Men's 3s" }),
+  ],
   people: [
     person({ id: PLAYER, preferredName: "Test Player", email: "player@hkfc.com", registeredTeam: "Men's 3s" }),
     person({ id: COACH, preferredName: "Test Coach", email: "coach@hkfc.com", registeredTeam: "Men's 1s" }),
@@ -180,6 +261,7 @@ const db = useFakeRepos(() => ({
     person({ id: CAPTAIN, preferredName: "Test Captain", email: "captain@hkfc.com", registeredTeam: "Men's 1s" }),
     person({ id: VICE, preferredName: "Test Vice", email: "vice@hkfc.com", active: false }),
     person({ id: CONVENOR, preferredName: "Test Convenor", email: "convenor@hkfc.com", registeredTeam: "Men's 3s" }),
+    person({ id: MO, preferredName: "Test MO", email: "mo@hkfc.com", registeredTeam: "Men's 3s" }),
   ],
   teams: [
     team({ teamName: "Men's 1s", teamRank: 1, coach: [COACH] }),
@@ -190,6 +272,7 @@ const db = useFakeRepos(() => ({
     office("assistantDirector", ADH),
     office("sectionCaptain", VICE, { designation: "Men's Vice Captain" }),
     office("hockeyConvenor", CONVENOR),
+    office("membershipOfficer", MO),
   ],
 }));
 
@@ -507,7 +590,8 @@ describe("coach-only routes", () => {
       jsonInit({ playerIds: ["recP9", "recP8"], actingEmail: "attacker@evil.com" }),
     );
     expect(res.status).toBe(200);
-    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined);
+    // A coach of one team moves only their own players (ranking.ts).
+    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined, expect.any(Function));
   });
 
   it("passes the optional justification note through on ranking writes", async () => {
@@ -523,6 +607,7 @@ describe("coach-only routes", () => {
       ["recP9", "recP8"],
       "coach@hkfc.com",
       "bulk reorder",
+      expect.any(Function),
     );
 
     // Without a note the argument is simply absent.
@@ -532,6 +617,7 @@ describe("coach-only routes", () => {
       ["recP9", "recP8"],
       "coach@hkfc.com",
       undefined,
+      expect.any(Function),
     );
   });
 
@@ -611,6 +697,150 @@ describe("coach-only routes", () => {
     const res = await call("/api/my-profile");
     expect(res.status).toBe(200);
     expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, COACH_USER);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coaches act only on their own teams' matches (owner decision, 7 Oct 2026,
+// after the security review, PR #285): "Coaches act only on their teams'
+// matches; Section Captains and the Assistant Director keep every team."
+// The coach coaches Men's 1s; the Teams-linked Section Captain and the
+// Assistant Director coach every team. A derby needs the written side's team.
+// ---------------------------------------------------------------------------
+
+describe("coaches act only on their own teams", () => {
+  type Scope = "match" | "side";
+  const matchRoutes: { name: string; scope: Scope; request: (id: string, side: "home" | "away") => [string, RequestInit]; handler: () => ReturnType<typeof vi.fn> }[] = [
+    { name: "GET players", scope: "match", request: (id, side) => [`/api/match/${id}/players?side=${side}`, {}], handler: () => mocks.getPlayersForMatch },
+    { name: "GET recommendations", scope: "match", request: (id, side) => [`/api/match/${id}/recommendations?side=${side}`, {}], handler: () => mocks.getRecommendationsForMatch },
+    { name: "GET availability", scope: "match", request: (id) => [`/api/match/${id}/availability`, {}], handler: () => mocks.getAvailabilityForMatch },
+    { name: "POST availability for a player", scope: "match", request: (id) => [`/api/match/${id}/availability`, jsonInit({ playerId: PLAYER, status: "Maybe" })], handler: () => mocks.setPlayerAvailability },
+    { name: "POST auto-select", scope: "match", request: (id) => [`/api/match/${id}/auto-select`, jsonInit({ enabled: true })], handler: () => mocks.toggleAutoSelect },
+    { name: "POST kit", scope: "side", request: (id, side) => [`/api/match/${id}/kit`, jsonInit({ side, kit: "Blue" })], handler: () => mocks.setMatchKit },
+    { name: "POST squad changes", scope: "side", request: (id, side) => ["/api/squad/changes", jsonInit({ matchId: id, side, add: [], remove: [], version: 0 })], handler: () => mocks.applySquadChanges },
+    { name: "POST squad sync", scope: "side", request: (id, side) => ["/api/squad/sync", jsonInit({ matchId: id, side, selectedIds: [] })], handler: () => mocks.syncSquad },
+  ];
+
+  beforeEach(() => {
+    mocks.getPlayersForMatch.mockResolvedValue({ match: {}, players: [] });
+    mocks.getRecommendationsForMatch.mockResolvedValue({ recommendations: [] });
+    mocks.getAvailabilityForMatch.mockResolvedValue({ exceptions: [] });
+    mocks.setPlayerAvailability.mockResolvedValue({ success: true, exceptionId: null });
+    mocks.setMatchKit.mockResolvedValue({ success: true });
+    mocks.applySquadChanges.mockResolvedValue({ status: "ok", version: 1, selectedIds: [], displaced: [] });
+  });
+
+  // [who, match, side, allowed]
+  const cases = (scope: Scope): [string, string, "home" | "away", boolean][] => [
+    ["coach", OWN_MATCH, "home", true],
+    ["coach", OTHER_MATCH, "away", false],
+    // Asking for the other side of someone else's match gets nowhere either.
+    ["coach", OTHER_MATCH, "home", false],
+    ["coach", DERBY, "home", true],
+    // A derby: either side's coach reads it; only the side's own coach writes it.
+    ["coach", DERBY, "away", scope === "match"],
+    ["captain", OTHER_MATCH, "away", true],
+    ["captain", DERBY, "away", true],
+    ["adh", OTHER_MATCH, "away", true],
+    ["adh", DERBY, "away", true],
+  ];
+
+  for (const { name, scope, request, handler } of matchRoutes) {
+    it.each(cases(scope))(`${name}: %s on %s (%s) allowed=%s`, async (who, id, side, allowed) => {
+      signInAs(TOKENS[who as "coach" | "captain" | "adh"]);
+      const res = await call(...request(id, side));
+      if (allowed) {
+        expect(res.status).toBe(200);
+        expect(handler()).toHaveBeenCalledTimes(1);
+      } else {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+        expect(handler()).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("answers 404 for a coach naming a match that does not exist, and calls nothing", async () => {
+    signInAs(TOKENS.coach);
+    const res = await call(`/api/match/${recId("Nowhere")}/players`);
+    expect(res.status).toBe(404);
+    expect(mocks.getPlayersForMatch).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/squad/notified needs the side's own coach", async () => {
+    signInAs(TOKENS.coach);
+    const away = await call("/api/squad/notified", jsonInit({ matchId: DERBY, side: "away" }));
+    expect(away.status).toBe(403);
+    expect(await away.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+    const other = await call("/api/squad/notified", jsonInit({ matchId: OTHER_MATCH, side: "away" }));
+    expect(other.status).toBe(403);
+    const noSide = await call("/api/squad/notified", jsonInit({ matchId: OWN_MATCH }));
+    expect(noSide.status).toBe(400);
+  });
+
+  it("the priority player list: the coach's own team only", async () => {
+    signInAs(TOKENS.coach);
+    expect((await call("/api/team/auto-select-players?team=Men's%201s")).status).toBe(200);
+    const read = await call("/api/team/auto-select-players?team=Men's%203s");
+    expect(read.status).toBe(403);
+    expect(await read.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+    const write = await call("/api/team/auto-select-players", jsonInit({ teamName: "Men's 3s", playerIds: [] }));
+    expect(write.status).toBe(403);
+    expect(mocks.getTeamAutoSelectPlayers).toHaveBeenCalledTimes(1);
+    expect(mocks.setTeamAutoSelectPlayers).not.toHaveBeenCalled();
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      expect((await call("/api/team/auto-select-players?team=Men's%203s")).status).toBe(200);
+      expect((await call("/api/team/auto-select-players", jsonInit({ teamName: "Men's 3s", playerIds: [] }))).status).toBe(200);
+    }
+  });
+
+  it("the team availability dashboard: the coach's own squads; every squad for those who coach every team", async () => {
+    mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
+    signInAs(TOKENS.coach);
+    await call("/api/team-attendance");
+    expect(mocks.getTeamAttendance).toHaveBeenLastCalledWith(ENV, ["Men's 1s"]);
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call("/api/team-attendance");
+      expect([...mocks.getTeamAttendance.mock.lastCall![1]].sort()).toEqual(["Men's 1s", "Men's 3s"]);
+    }
+  });
+
+  it("Opt-In Only: a coach may change only their own team's players (availability.ts checks)", async () => {
+    mocks.setPlayerOptInOnly.mockResolvedValue({ success: true });
+    signInAs(TOKENS.coach);
+    expect((await call(`/api/player/${PLAYER}/opt-in-only`, jsonInit({ optInOnly: true }))).status).toBe(200);
+    const { mayChange } = mocks.setPlayerOptInOnly.mock.lastCall![1];
+    expect(mayChange({ registeredTeam: "Men's 1s" })).toBe(true);
+    expect(mayChange({ registeredTeam: "Men's 3s" })).toBe(false);
+    expect(mayChange({ registeredTeam: "Men's 3s", selectedTeamEos: "Men's 1s" })).toBe(true);
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call(`/api/player/${PLAYER}/opt-in-only`, jsonInit({ optInOnly: true }));
+      expect(mocks.setPlayerOptInOnly.mock.lastCall![1].mayChange).toBeUndefined();
+    }
+  });
+
+  it("the ranking: one section-wide list; a coach moves only their own players, those who coach every team anyone", async () => {
+    signInAs(TOKENS.coach);
+    expect((await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }))).status).toBe(200);
+    const mayMove = mocks.reorderRanking.mock.lastCall![4];
+    expect(mayMove({ registeredTeam: "Men's 1s" })).toBe(true);
+    expect(mayMove({ registeredTeam: "Men's 3s" })).toBe(false);
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }));
+      expect(mocks.reorderRanking.mock.lastCall![4]).toBeUndefined();
+    }
+
+    // Reading the ranking stays open to every coach.
+    mocks.getActiveRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    signInAs(TOKENS.coach);
+    expect((await call("/api/ranking")).status).toBe(200);
   });
 });
 
@@ -738,7 +968,8 @@ describe("read routes require authentication", () => {
     mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
     const res = await call("/api/team-attendance");
     expect(res.status).toBe(200);
-    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV);
+    // Their own squads only.
+    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV, ["Men's 1s"]);
   });
 
   it("allows a coach through to recent-changes", async () => {
@@ -1061,5 +1292,168 @@ describe("GET /health?deep=1", () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Routes added since the 6 Oct 2026 review (security review, 7 Oct). Each
+// officers' route is pinned to the README's "Screens and who opens them":
+// every seeded signed-in person is tried, and only the offices the README
+// names get through, with their own session as the user. Sections come from
+// office rows only, so a Teams-linked Section Captain without the office
+// opens none of them.
+// ---------------------------------------------------------------------------
+
+describe("routes added since the 6 Oct review", () => {
+  const WHO = {
+    player: TOKENS.player,
+    coach: TOKENS.coach,
+    chair: TOKENS.chair,
+    adh: TOKENS.adh,
+    teamsLinkedCaptain: TOKENS.captain,
+    sectionCaptain: TOKENS.vice,
+    convenor: TOKENS.convenor,
+    membershipOfficer: TOKENS.mo,
+  } as const;
+  type Who = keyof typeof WHO;
+  const PERSON: Record<Who, string> = {
+    player: PLAYER, coach: COACH, chair: CHAIR, adh: ADH, teamsLinkedCaptain: CAPTAIN, sectionCaptain: VICE, convenor: CONVENOR, membershipOfficer: MO,
+  };
+
+  // README "Screens and who opens them".
+  const PEOPLE: Who[] = ["membershipOfficer", "convenor", "sectionCaptain"];
+  const MEMBERSHIP: Who[] = ["membershipOfficer", "sectionCaptain"];
+  const CLUB: Who[] = ["sectionCaptain"];
+  const DATA_CHECKS: Who[] = ["convenor", "sectionCaptain"];
+  const SUSPENSIONS: Who[] = ["convenor"];
+  const REGISTRATION: Who[] = ["convenor"];
+
+  const ID = "11111111-2222-3333-4444-555555555555";
+  const officerRoutes: { method: "GET" | "POST"; path: string; who: Who[]; handler: () => ReturnType<typeof vi.fn> }[] = [
+    { method: "GET", path: "/api/admin/people?q=Smith", who: PEOPLE, handler: () => later.searchPeople },
+    { method: "GET", path: `/api/admin/people/${PLAYER}`, who: PEOPLE, handler: () => later.getPersonAdmin },
+    // The route opens to the people section; squad.ts then checks each field (adminSquad.test.ts).
+    { method: "POST", path: `/api/admin/people/${PLAYER}/squad`, who: PEOPLE, handler: () => later.saveSquad },
+    { method: "POST", path: `/api/admin/people/${PLAYER}/membership`, who: MEMBERSHIP, handler: () => later.saveMembership },
+    { method: "POST", path: `/api/admin/people/${PLAYER}/stage`, who: MEMBERSHIP, handler: () => later.moveStage },
+    { method: "GET", path: "/api/admin/offices", who: CLUB, handler: () => later.listOffices },
+    { method: "GET", path: "/api/admin/teams", who: CLUB, handler: () => later.listTeams },
+    { method: "POST", path: "/api/admin/offices", who: CLUB, handler: () => later.addOffice },
+    { method: "POST", path: `/api/admin/offices/${ID}`, who: CLUB, handler: () => later.editOffice },
+    { method: "POST", path: "/api/admin/people", who: CLUB, handler: () => later.createOfficeHolder },
+    { method: "POST", path: `/api/admin/teams/${ID}`, who: CLUB, handler: () => later.saveTeam },
+    { method: "GET", path: "/api/admin/data-checks", who: DATA_CHECKS, handler: () => later.getDataChecks },
+    { method: "POST", path: `/api/admin/match-cards/${ID}/link`, who: DATA_CHECKS, handler: () => later.linkMatchCard },
+    { method: "POST", path: `/api/admin/registration-events/${ID}/resolve`, who: DATA_CHECKS, handler: () => later.resolveRegistrationEvent },
+    { method: "GET", path: "/api/discipline/suspensions", who: SUSPENSIONS, handler: () => later.getSuspensionsBoard },
+    { method: "POST", path: "/api/discipline/suspensions", who: SUSPENSIONS, handler: () => later.createSuspension },
+    { method: "POST", path: `/api/discipline/suspensions/${ID}`, who: SUSPENSIONS, handler: () => later.updateSuspension },
+    { method: "POST", path: `/api/discipline/suspensions/${ID}/clear`, who: SUSPENSIONS, handler: () => later.clearSuspension },
+    { method: "GET", path: "/api/registration/board", who: REGISTRATION, handler: () => later.getRegistrationBoard },
+    { method: "GET", path: "/api/registration/export?todo=1", who: REGISTRATION, handler: () => later.registrationCsv },
+    { method: "POST", path: "/api/registration/registered", who: REGISTRATION, handler: () => later.markRegistered },
+    { method: "POST", path: "/api/registration/unregistered", who: REGISTRATION, handler: () => later.unmarkRegistered },
+    { method: "POST", path: "/api/registration/details", who: REGISTRATION, handler: () => later.saveRegistrationDetails },
+  ];
+  const request = (method: "GET" | "POST", path: string) => call(path, method === "POST" ? jsonInit({ personId: "recForged", actor: "recForged" }) : {});
+
+  for (const { method, path, who, handler } of officerRoutes) {
+    const cases = (Object.keys(WHO) as Who[]).map((w) => [w, who.includes(w)] as const);
+
+    it.each(cases)(`${method} ${path}: %s allowed=%s`, async (w, allowed) => {
+      signInAs(WHO[w]);
+      const res = await request(method, path);
+      if (allowed) {
+        expect(res.status).toBe(200);
+        expect(handler()).toHaveBeenCalledTimes(1);
+        // The acting officer is the session's person, whatever the body says.
+        const user = handler().mock.calls[0].find((a: unknown) => !!a && typeof a === "object" && "personId" in (a as object));
+        if (user) expect((user as AuthorizedUser).personId).toBe(PERSON[w]);
+      } else {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ error: "OFFICER_ACCESS_REQUIRED" });
+        expect(handler()).not.toHaveBeenCalled();
+      }
+    });
+
+    it(`${method} ${path}: 401 without a session`, async () => {
+      signOut();
+      const res = await request(method, path);
+      expect(res.status).toBe(401);
+      expect(handler()).not.toHaveBeenCalled();
+    });
+  }
+
+  // Signed in, then the module decides (history.ts, systemHealth.ts,
+  // messages.ts, myDuties.ts): the route must hand over the session's user.
+  const signedInRoutes: { method: "GET" | "POST"; path: string; handler: () => ReturnType<typeof vi.fn> }[] = [
+    { method: "GET", path: `/api/history?person=${PLAYER}`, handler: () => later.getPersonHistory },
+    { method: "GET", path: "/api/history?match=recM1", handler: () => later.getMatchHistory },
+    { method: "GET", path: "/api/system", handler: () => later.getSystemView },
+    { method: "GET", path: "/api/messages/templates", handler: () => later.listTemplates },
+    { method: "POST", path: "/api/messages/log", handler: () => later.logMessage },
+    { method: "POST", path: "/api/umpiring/seen", handler: () => later.ackDutyChanges },
+    { method: "GET", path: `/api/reactivation/${ID}`, handler: () => later.getReactivationRequest },
+    { method: "POST", path: `/api/reactivation/${ID}`, handler: () => later.answerReactivation },
+  ];
+
+  it.each(signedInRoutes)("$method $path hands the session's user to the module", async ({ method, path, handler }) => {
+    signInAs(TOKENS.coach);
+    const res = await request(method, path);
+    expect(res.status).toBe(200);
+    const args = handler().mock.calls[0];
+    expect(args[0]).toBe(ENV);
+    // getPersonHistory takes the user last; the others second.
+    expect(args.filter((a: unknown) => !!a && typeof a === "object" && (a as AuthorizedUser).personId === COACH)).toHaveLength(1);
+  });
+
+  it.each(signedInRoutes)("$method $path is 401 without a session, and 403 for an email with no People record", async ({ method, path, handler }) => {
+    signOut();
+    expect((await request(method, path)).status).toBe(401);
+    signInAs(TOKENS.stranger);
+    expect((await request(method, path)).status).toBe(403);
+    expect(handler()).not.toHaveBeenCalled();
+  });
+
+  it("history: the reader is given the session's user, not anyone the query names", async () => {
+    signInAs(TOKENS.player);
+    await call(`/api/history?person=${COACH}&viewer=${VICE}`);
+    expect(later.getPersonHistory).toHaveBeenCalledWith(ENV, COACH, expect.objectContaining({ personId: PLAYER, officerRoles: [] }));
+  });
+
+  it("POST /api/squad/notified is coach-only and records the session's person", async () => {
+    const res = await call("/api/squad/notified", jsonInit({ matchId: "recM1", side: "home", actorId: "recForged" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+    expect(later.noteSquadNotified).not.toHaveBeenCalled();
+
+    signInAs(TOKENS.coach);
+    expect((await call("/api/squad/notified", jsonInit({ matchId: "recM1", side: "home", actorId: "recForged" }))).status).toBe(200);
+    expect(later.noteSquadNotified).toHaveBeenCalledWith(ENV, COACH, expect.objectContaining({ matchId: "recM1" }));
+  });
+
+  it("POST /api/client-error needs a session and logs against the session's person", async () => {
+    const report = { kind: "render", message: "boom", route: "/coach", stack: "" };
+    signOut();
+    expect((await call("/api/client-error", jsonInit(report))).status).toBe(401);
+    expect(later.logClientError).not.toHaveBeenCalled();
+
+    signInAs(TOKENS.player);
+    expect((await call("/api/client-error", jsonInit({ ...report, personId: "recForged" }))).status).toBe(200);
+    expect(later.logClientError).toHaveBeenCalledWith(ENV, expect.objectContaining({ personId: PLAYER }), expect.objectContaining({ message: "boom" }));
+  });
+
+  // Asking to be reactivated: the asker has no access yet, so only a verified
+  // email is needed; it is the session's email, never one the body names.
+  it("/api/reactivation takes the session's verified email, even without a People record", async () => {
+    signOut();
+    expect((await call("/api/reactivation")).status).toBe(401);
+    expect(later.reactivationStatus).not.toHaveBeenCalled();
+
+    signInAs(TOKENS.stranger);
+    expect((await call("/api/reactivation")).status).toBe(200);
+    expect(later.reactivationStatus).toHaveBeenCalledWith(ENV, "stranger@hkfc.com");
+    expect((await call("/api/reactivation", jsonInit({ email: "someone@else.com" }))).status).toBe(200);
+    expect(later.askToBeReactivated).toHaveBeenCalledWith(ENV, "stranger@hkfc.com");
   });
 });

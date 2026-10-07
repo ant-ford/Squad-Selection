@@ -9,7 +9,7 @@ import type { MyFixture } from '@/api/getMyFixtures';
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
 const CATEGORY_LABEL: Record<string, string> = {
-  own: 'My Team',
+  own: 'My team',
   'play-up': 'Play-up',
   support: 'Support',
 };
@@ -44,7 +44,7 @@ export default function SameDayGamesPrompt({
     <div className={`p-3 rounded-xl border ${toneClasses('warning', 'chip')}`}>
       <p className="text-xs font-semibold flex items-start gap-1.5">
         <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        {allOut ? `You're out for all of ${day}` : `Other games on ${day}`}
+        {allOut ? `You said No to every game on ${day}` : `Other games on ${day}`}
       </p>
 
       <div className="mt-2 space-y-1.5">

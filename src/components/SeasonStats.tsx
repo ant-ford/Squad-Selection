@@ -25,7 +25,7 @@ function Headline({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex-1 px-3 first:pl-0 last:pr-0">
       <p className="text-2xl font-semibold tabular-nums leading-none text-foreground">{value}</p>
-      <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -36,7 +36,7 @@ function DetailRow({ label, value, hint }: { label: string; value: string; hint?
     <div className="flex items-baseline justify-between gap-3 py-2">
       <span className="text-sm text-muted-foreground">
         {label}
-        {hint && <span className="ml-1.5 text-[11px] text-muted-foreground">{hint}</span>}
+        {hint && <span className="ml-1.5 text-xs text-muted-foreground">{hint}</span>}
       </span>
       <span className="text-sm font-medium tabular-nums text-foreground">{value}</span>
     </div>
@@ -123,7 +123,7 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
       {/* Form guide. Tap a tile for what happened in that game. */}
       {stats.recentGames.length > 0 && (
         <div className="mb-5">
-          <p className="mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">
             Recent form
           </p>
           <div className="flex gap-1.5">
@@ -181,7 +181,7 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
           hint="selected, not on the match card"
           value={String(stats.gamesNoShow)}
         />
-        <DetailRow label="Unavailable" value={String(stats.gamesUnavailable)} />
+        <DetailRow label="No" value={String(stats.gamesUnavailable)} />
         <DetailRow label="Card points" value={String(stats.cardPoints)} />
       </div>
     </section>

@@ -1,9 +1,10 @@
 import { ClipboardCheck, ExternalLink } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { MyTask } from '@/api/getMyTasks';
 import { useMyTasks } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkSeasonLabel } from '@/lib/season';
+import { sheetLinkState } from '@/lib/sheetParam';
 
 /** "sponsor" / "Chairman" / "Membership Officer", as said in a sentence. */
 const as = (role: MyTask['role']) => (role === 'Sponsor' ? 'sponsor' : role ?? '');
@@ -18,7 +19,7 @@ export function taskTitle(task: MyTask): string {
     case 'statement':
       return 'Complete your Player Statement';
     case 'waivers':
-      return "Complete this season's Waivers & Declarations";
+      return "Complete this season's waivers & declarations";
     case 'details':
       return `Check your details for ${hkSeasonLabel()}`;
     case 'application':
@@ -34,7 +35,7 @@ export function taskTitle(task: MyTask): string {
     case 'kit':
       return `Kit for ${task.subject ?? 'a new joiner'}`;
     case 'registration':
-      return `Register ${task.subject ?? 'a new joiner'} with HockeyHK`;
+      return `Register ${task.subject ?? 'a new joiner'} with HKHA`;
     case 'reactivate':
       return `${task.subject ?? 'A member'} asks to be reactivated`;
     case 'duty':
@@ -47,7 +48,7 @@ export function taskTitle(task: MyTask): string {
 }
 
 function noLinkHint(task: MyTask): string {
-  if (task.key === 'statement') return 'Use the Commitment Form link in your review email.';
+  if (task.key === 'statement') return 'Use the Player Statement link in your review email.';
   return 'Ask the Membership Officer for the form link.';
 }
 
@@ -61,6 +62,7 @@ function noLinkHint(task: MyTask): string {
  */
 export default function MyTasksBanner() {
   const { data } = useMyTasks();
+  const { pathname } = useLocation();
   const tasks = data?.tasks ?? [];
   if (tasks.length === 0) return null;
 
@@ -76,13 +78,15 @@ export default function MyTasksBanner() {
             <p className="text-sm font-semibold text-foreground">{taskTitle(task)}</p>
             {/* Only when there is no button to press. */}
             {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{noLinkHint(task)}</p>}
-            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, h:mm a')}</p>}
+            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, HH:mm')}</p>}
           </div>
           {task.url &&
             // Eddy's own screens open in place; the Fillout forms in a new tab.
             (task.url.startsWith('/') ? (
               <Link
                 to={task.url}
+                // An event on this page opens as a sheet; closing it goes back.
+                state={sheetLinkState(task.url, pathname)}
                 className="shrink-0 inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 Open

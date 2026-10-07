@@ -52,7 +52,7 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Screen | Route | Who |
 |---|---|---|
 | Player view | `/` | Everyone signed in. Applicants at stages 1–2 go to `/apply` instead. |
-| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. Only Section Captains make players inactive. |
+| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
 | Umpire view | `/umpiring` | The club's umpires. The Umpire Coordinator and Section Captains run the duties. |
 | Membership | `/membership` | Membership Officer, Section Captains |
 | Email lists | `/chairman` | Chairman, Section Captains |
@@ -70,6 +70,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Stats, quizzes | `/stats`, `/quizzes` | Everyone |
 
 "Men's Convenor" is the `hockeyConvenor` office, and "Chairman" is `sectionChair` (see the glossary).
+
+A new screen here also needs a line in `tools/demo/screens.mjs`, and fixtures for the calls it makes, so the screen smoke test opens it ([Testing](#testing)).
 
 ---
 
@@ -114,6 +116,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - linking match cards to people by exact Registered Name (`match_cards_link_person`). Both match-card triggers run only when the columns they read change;
   - stamping `inactive_since` and the membership stage;
   - commitment periods.
+- **Constraints.** `people.status` is Member, Applicant or Resigned, and `people.applicant_stage` one of the stages in `shared/membershipStages.ts` (CHECKs). The team columns Eddy writes (people's registered and selected teams, `hkha_registrations`, `season_rollover_people`, `shirt_numbers`, `suspensions`) reference `teams.team_name`, `ON UPDATE CASCADE`. Columns hkha-sync fills (opponents, `match_cards`, `umpire_duties`, `registration_events`) stay free text, so a sync never fails on a name. Renaming a team also needs `hkfc_team_level()` and hkha-sync changed.
 - **Squad changes.** Every squad write goes through `on_squad_changed()`. It stores who was added or removed, by whom and by which path, in `match_selection_changes`, and bumps that side's version.
 - **Files.**
   - Stored in R2 (binding `FILES`) and referenced from `files`. The browser only ever gets signed links (`worker/src/files.ts`), which expire within two hours, or two days for photos and posters.
@@ -121,7 +124,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - An object released by a removal is deleted 35 days later (`r2_deletions`), to match backup retention.
   - Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
 
-The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events.ts`, `apply.ts`, `admin/*`, …).
+The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
 
 ---
 
@@ -137,9 +140,10 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 | Squad saves: a save sends only adds and removes; changes merge unless a change since the loaded version touched the same player (`409`); derby safety; higher-team priority | `worker/src/squad.ts`, `src/lib/squadDelta.ts`, SQL `apply_squad_changes()` / `on_squad_changed()` |
 | Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts`, SQL `set_availability()` / `availability_rule_status()`. The rule cases are pinned on both sides: `tests/availabilityRuleCases.test.ts` and `scripts/availability-rule-checks.mjs` |
 | Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` (`SECTION_OFFICES`), `worker/src/authContext.ts`, SQL `auth_context()` |
+| Coaches act only on their own teams (a match's HKFC side, a derby's written side, a team, a player's shown or registered team); Section Captains and the Assistant Director on every team; `403 NOT_YOUR_TEAM` | `worker/src/coachAccess.ts` (`requireCoachOfMatch`, `requireCoachOfMatchSide`), `worker/src/auth.ts` (`coachesEveryTeam`, `requireCoachOfTeam`, `coachesPlayer`) |
 | Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name (`worker/src/registration.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
 | Data checks (unlinked cards, shared Registered Names, re-registrations to review, incomplete players, likely duplicates) | `worker/src/dataChecks.ts`, `shared/dataChecks.ts` |
-| Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`) | `worker/src/admin/*`, SQL `admin_*()`; a person's history: `GET /api/history` |
+| Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`); granting or ending a Men's Convenor, Section Captain, Membership Officer or Chairman office, or giving yourself any office, emails `SYSTEM_ALERT_EMAIL` | `worker/src/admin/*` (the alert: `officeAlert.ts`), SQL `admin_*()`; a person's history: `GET /api/history` |
 | System health | `worker/src/systemHealth.ts`: 5xx errors and app crashes go to `error_log`, each scheduled job writes `heartbeats`, a daily check runs, and `/system` shows the results |
 | Season rollover (each July, run by the owner) | SQL `season_rollover_plan()` / `season_rollover()` / `season_rollover_undo()`; checklist `docs/SEASON_ROLLOVER.md` |
 | Membership stages, applications, signing order | `shared/membershipStages.ts`, `worker/src/apply.ts`, `worker/src/applicationSigning.ts`, SQL `sign_application()` |
@@ -164,7 +168,12 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 ## Worker internals
 
-- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`, and registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
+- **Routing:** one route table, `worker/src/routes.ts`, with the officer admin routes in `worker/src/admin/routes.ts` spliced into it. `worker/src/router.ts` dispatches; `index.ts` keeps CORS preflight, the read-only switch, error mapping and request stats.
+  - Each entry is a method, a path (exact, or a pattern like `/api/events/:id([0-9a-f-]{36})/respond`), a named guard and a handler. The first entry that matches wins, so a specific path goes above a pattern that also fits it. A known path with the wrong method is a 404, as before; there is no 405.
+  - The guard is checked before the handler runs: `public`, `signed-file`, `calendar-hmac`, `verified-email`, `signed-in`, `self-or-coach`, `coach`, `coach-of-match`, `section-captain` or `section:<name>` (router.ts says what each means). Coach routes whose match, side or team is in the body name that extra check (`+coach-of-match-side`, `+coach-of-team`, `+coach-of-player`); the handler makes it (`coachAccess.ts`).
+  - `GUARDED_SCOPES` keeps the old 401 / 403 for an unknown path under a group that used to sign in first (`/api/kit/*` and others).
+  - **Adding a route:** one `route(...)` line in its section of `routes.ts`, and the same line in the expected list in `tests/routeTable.test.ts`, which fails on any new, moved or re-guarded route until the list is updated.
+  - Every `/api` route needs a verified Supabase session, except registering to join and asking to be reactivated, which need only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` checks the guards hold.
 - **Sign-in:** each request checks the JWT with Supabase (`/auth/v1/user`; an isolate remembers a checked token for 60 s) and, in parallel, reads `auth_context()`. An isolate reuses that answer for 10 s. For 10 s after a write the app sends `X-Eddy-Fresh`, so a person always reads their own change, whichever isolate answers (`shared/freshHeader.ts`).
 - **Caching:**
   - `worker/src/cache.ts` keeps reads in each isolate's memory, under keys that carry the cache versions of the tables they're built from (`getVersioned`), so a write anywhere moves the key.
@@ -183,15 +192,18 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - Resend's free plan allows 100 emails a day and 3,000 a month, and Supabase sign-in codes share that allowance.
   - Eddy caps itself at 70 recipients a day (`DAILY_LIMIT`) and logs every send in `email_log`.
   - Preview sends everything to `MAIL_REDIRECT_TO`.
+  - Officers are written to at their office's mailbox (`offices.office_email`), else their own email, and an officer's email goes out from that mailbox when it is on hkfchockey.com, else from `REVIEW_EMAIL_FROM`. The rule and the office-holder reads are in `worker/src/officeContacts.ts`; the Assistant Director of Hockey is the Active `assistant_director` office.
 - **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied, 25 s timeout) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
+- **Read-only switch:** `WRITES="off"` (`worker/src/readOnly.ts`), for a restore. Every non-GET request gets `503 READ_ONLY` before sign-in, the crons and the error log stop, and `/health` says `"writes": "off"`. The app shows one toast (`src/lib/apiClient.ts`). How to switch it: [docs/RESTORE.md](docs/RESTORE.md#the-read-only-switch).
 
 ---
 
 ## Frontend
 
-- **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded, and unknown paths go to `/`.
+- **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded through `lazyPage()`, and unknown paths go to `/`.
 - **Data:** React Query hooks in `src/lib/queries.ts`, over `src/lib/apiClient.ts` (Bearer JWT, plus `X-Eddy-Fresh` after writes). The player page starts its requests in parallel as soon as there is a session.
+  - **Kept on the phone:** the person's own profile, fixtures and tasks (nothing else) are kept in IndexedDB for up to 24 hours (`src/lib/persistedQueries.ts`), so the app opens on them and refetches at once behind. They're used only by the same person on the same build. Log out, a lapsed session, Delete my profile and a different person signing in all wipe them.
 - **Sign-in:** `@supabase/auth-js` only (`src/lib/supabase.ts`, `src/lib/auth.tsx`), never the whole supabase-js. Turnstile (`src/components/Turnstile.tsx`) is on when `VITE_TURNSTILE_SITE_KEY` is set.
 - **One header on every signed-in screen:** `src/components/AppHeader.tsx`, with its rules in `src/lib/header.ts`. It has:
   - the screen's title, which is also the page's `h1` and tab title;
@@ -207,10 +219,13 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `useUnsavedChanges` asks before leaving unsaved work.
   - `useDraft` keeps drafts of long forms.
   - `useFormGaps` lists what's missing next to the submit button.
+- **Sheets in the URL:** `useSheetParam` (`src/lib/useSheetParam.ts`) keeps the weekly sheets in a search parameter, so a phone's Back closes the sheet rather than the screen, and a shared link opens it. Player view: `?fixture=`, `?note=` (match id), `?stats=`, `?preferences=1`, `?calendar=1`, `?event=`. Kit: `?set=`. Ranking: `?stats=`, `?attendance=`, `?history=` (player id). Squad: `?history=1`. A Sheet with unsaved changes asks before Back closes it. Confirm dialogs, menus and popovers stay out of the URL.
+- **Product name:** on screen, the product name is `<EddyWordmark />` (`src/components/brand/EddyWordmark.tsx`: the logo's Fairwater Script lettering as one inline SVG path, 1.2em tall on the text baseline); plain "Eddy" only where the device draws the text (tab title, manifest, push, emails, WhatsApp, calendar, CSV, PDF, `alt` and `aria-label`). `tests/brandWordmark.test.ts` enforces it. Never add the font file: the repo is public and the font is licensed.
 - **Words:** `docs/glossary.md`. Weekly screens carry almost no explanatory text: rules are enforced by which options are shown.
 - **PWA** (`vite.config.ts`, Workbox):
-  - The app shell is precached.
-  - `web-shell/index.ts` answers a missing hashed file with a 404, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
+  - Only sign-in and Player view are precached: the entry chunk, the vendor chunks, and the sheets and menus the player page opens. `scripts/precache-set.ts` works the list out from the bundle at build time.
+  - Every other screen is cached the first time it is opened (the `eddy-assets` cache), so officer screens are not downloaded to every player's phone.
+  - `web-shell/index.ts` answers a missing hashed file with a 404, which is never cached, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
   - Files opened through signed links (photos, posters) are cached for up to two days. Each new link is a new URL, so a cached copy is never stale.
   - App crashes are reported to the Worker (`src/lib/clientErrors.ts`).
 
@@ -238,14 +253,14 @@ The owner (Anthony) does these, and Claude asks first:
 - anything that writes to production (migrations, data fixes, scripts with `--target=production`);
 - GitHub secrets and environments; Cloudflare, Supabase and Resend settings, including Supabase Auth's CAPTCHA and email rate limit;
 - approving preview deploys and merging PRs;
-- flipping `RETENTION_MODE`; running the July season rollover;
+- flipping `RETENTION_MODE` or `WRITES`; running the July season rollover;
 - setting `hkid_hidden`; who is in `SYSTEM_OWNER_IDS`.
 
 Live scripts:
 - `scripts/migration/`: `import-kit-order`, `load-quizzes`, `upload-club-doc`, `upload-pdf-template`, `backfill-photo-thumbnails`.
 - `scripts/`:
   - `check-migrations.mjs` and `worker-secrets.mjs`, both used by CI;
-  - `availability-rule-checks.mjs`, the SQL half of the availability rule cases;
+  - `availability-rule-checks.mjs`, the SQL half of the availability rule cases (CI runs it through `sql-tests.yml`);
   - `backup/`: dump, restore and heartbeat.
 
 ### Branches and PRs
@@ -303,13 +318,22 @@ npx vitest run tests/golden-eligibility.test.ts
 - The data layer is faked in two ways, both explained in `tests/helpers/README.md`:
   - the repositories in `worker/src/data/` are replaced by in-memory fakes (`tests/helpers/fakeRepos.ts`);
   - direct PostgREST calls go to one shared fetch fake (`tests/helpers/postgrest.ts`), which fails a test on any query it doesn't understand.
-- SQL functions don't run in the tests. When you change one, test it on eddy-preview inside a transaction that is rolled back. For the availability rules, `scripts/availability-rule-checks.mjs` prints that SQL.
+- **Screens on fictional data:** `node tools/demo/serve.mjs` runs the real app on the demo harness's fixtures, as any persona (`?as=coach`, `?as=mens-convenor`, …). `node tools/demo/smoke.mjs` opens every screen in the table above, as each persona that can open it, and fails on a console error, a request with no fixture, or the error screen. The fixtures are typed against `src/api`, so `npx tsc -p tools/demo` catches a changed response shape. CI runs both on every pull request (`.github/workflows/smoke.yml`). **An endpoint that changes shape needs its fixture changed in the same PR.** See `tools/demo/README.md`.
+- **SQL tests.** The SQL functions and triggers run in CI (`.github/workflows/sql-tests.yml`, a few minutes, on every PR and push to main):
+  - a throwaway local Supabase database (Docker) applies every migration in order, so a migration that fails to apply fails the PR;
+  - then the pgTAP files in `supabase/tests/` run, each in its own transaction that is rolled back. They cover `apply_squad_changes` / `on_squad_changed`, `admin_update_person`, the season rollover and its undo, the `cache_versions` triggers and `erase_personal_data`;
+  - the availability rule cases run from the same JSON as the TypeScript test: `scripts/availability-rule-checks.mjs --tap` writes `supabase/tests/availability_rule_cases.test.sql` (generated, not committed);
+  - `erase_personal_data.test.sql` lists every foreign key `retentionCoverage` classifies as erased, and that vitest test fails until the two lists match.
+- **Adding a SQL test:** a new `supabase/tests/<name>.test.sql` that starts `begin; select plan(n);` and ends `select * from finish(); rollback;`. The database starts empty, so insert only the rows the test needs (teams, people, matches...), with `airtable_id`s like `recXyz` so their `api_id`s are readable. Assertions are pgTAP's (`is`, `results_eq`, `throws_ok`, ...).
+- **Running them locally** (needs Docker Desktop): `npx supabase@2.118.0 db start` once (`db reset` after adding a migration), then `npm run test:sql`. Or push and read the workflow's log.
+- To check a changed function against real data, run it on eddy-preview inside a transaction that is rolled back. For the availability rules, `node scripts/availability-rule-checks.mjs` prints that SQL.
 - Must-run tests by module:
   - `eligibility.ts`: `eligibility`, `golden-eligibility` and `recommendations`;
   - `ranking.ts`: `ranking`, `abilityGroup` and `abilityRank`;
   - anything touching availability: the `availability*` and `sameDay*` files, including `availabilityRuleCases`;
-  - `auth.ts` or any route: `authorization-routes`; sign-in on the app: `authClientOptions`;
-  - retention or any new table that refers to a person: `retentionCoverage`.
+  - `auth.ts` or any route: `authorization-routes` and `routeTable`; sign-in on the app: `authClientOptions`;
+  - retention or any new table that refers to a person: `retentionCoverage`, and the SQL test `erase_personal_data`;
+  - a SQL function or trigger: its file in `supabase/tests/` (CI runs them all).
 
 ---
 
@@ -326,6 +350,7 @@ npx vitest run tests/golden-eligibility.test.ts
 | [docs/SEASON_ROLLOVER.md](docs/SEASON_ROLLOVER.md) | The July checklist: dry run, apply, undo |
 | [docs/design/HISTORY_AND_NOTICES.md](docs/design/HISTORY_AND_NOTICES.md) | Design and owner decisions for change history and notices |
 | [tests/helpers/README.md](tests/helpers/README.md) | How to use the test fakes |
+| [tools/demo/README.md](tools/demo/README.md) | The demo harness: the app on fictional data, personas, the screen smoke test, guide screenshots |
 | [scripts/migration/README.md](scripts/migration/README.md) | The live data scripts (kit order, quizzes, club docs, PDF templates, photo thumbnails) |
 | [docs/supabase-magic-link-email.html](docs/supabase-magic-link-email.html) | The sign-in email template set in Supabase Auth. It deliberately has no link, because mail scanners that follow one burn the code. |
 | [docs/CUTOVER.md](docs/CUTOVER.md) | The 2 Oct 2026 Airtable → Supabase switch-over runbook (record) |

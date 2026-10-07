@@ -8,6 +8,8 @@ import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
 import { noteRequestPerson, noteRequestVersions, onRequestWrite } from "./requestContext";
 import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
 import { raiseVersionFloor, withVersionFloor, type CacheVersions } from "./cacheVersions";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import type { Player } from "../../shared/schema/domainTypes";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
 const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
@@ -36,7 +38,7 @@ export interface AuthorizedUser {
   coachTeams: string[];
   isSectionCaptain: boolean;
   /**
-   * Active Membership Officer, Section Chair and Section Captain rows linked
+   * Active Membership Officer, Chairman and Section Captain rows linked
    * to this person.
    * Empty for almost everyone. Holding any office grants application access
    * on its own, like a coach link: an officer need not be a playing member.
@@ -65,7 +67,7 @@ export interface AuthorizedUser {
  *  - coaches / section captains may be Active = false and are still allowed
  *  - the Teams table linked Coach / Section Captain fields are the ONLY
  *    source of coach access - computed once, here, for the whole request
- *  - an Active Membership Officer, Section Chair or Section Captain row
+ *  - an Active Membership Officer, Chairman or Section Captain row
  *    linked to the person also grants access with Active = false, and never
  *    grants coach access
  */
@@ -152,7 +154,7 @@ export function authorize(normalizedEmail: string, context: AuthContext): Author
   );
   // The Assistant Director of Hockey coaches every team, like a Section
   // Captain's team link (owner decision, 2026-10-04).
-  const coachesAllTeams = isSectionCaptain || officerRoles.some((r) => r.office === "assistantDirector");
+  const coachesAllTeams = coachesEveryTeam({ isSectionCaptain, officerRoles });
   // Section Captains see every team everywhere - the most permissive of the
   // paths this used to be computed on, now the single definition.
   const coachTeams = coachesAllTeams ? context.allTeamNames : context.coachTeams;
@@ -229,6 +231,47 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
 }
 
 /**
+ * Coaches every team: a Section Captain's team link or the Assistant
+ * Director of Hockey office (owner decisions, 2026-10-04 and 2026-10-07).
+ * Their coachTeams is every team name.
+ */
+export function coachesEveryTeam(user: Pick<AuthorizedUser, "isSectionCaptain" | "officerRoles">): boolean {
+  return user.isSectionCaptain || user.officerRoles.some((r) => r.office === "assistantDirector");
+}
+
+/** Whether this coach acts for the team: one they coach, or any team for those who coach every team. */
+export function coachesTeam(user: Pick<AuthorizedUser, "role" | "coachTeams">, team: string | null | undefined): boolean {
+  return user.role === "coach" && !!team && user.coachTeams.includes(team);
+}
+
+/**
+ * Whether this coach acts for the player: they coach the team the app shows
+ * the player in, or the player's registered team (the same rule as a
+ * coach's view of a person's history, history.ts coachesPerson).
+ */
+export function coachesPlayer(
+  user: Pick<AuthorizedUser, "role" | "coachTeams">,
+  player: Pick<Player, "registeredTeam" | "selectedTeamSos" | "selectedTeamEos">,
+): boolean {
+  return coachesTeam(user, selectedDisplayTeam(player)) || coachesTeam(user, player.registeredTeam);
+}
+
+/**
+ * The 403 for a coach acting outside their own teams (owner decision,
+ * 2026-10-07: "Coaches act only on their teams' matches; Section Captains
+ * and the Assistant Director keep every team"). Like COACH_ACCESS_REQUIRED,
+ * it keeps them signed in.
+ */
+export function notYourTeam(): HttpError {
+  return new HttpError("You can only do this for your own teams.", 403, "NOT_YOUR_TEAM");
+}
+
+/** 403 NOT_YOUR_TEAM unless this coach acts for the team (coachAccess.ts has the match and side checks). */
+export function requireCoachOfTeam(user: Pick<AuthorizedUser, "role" | "coachTeams">, team: string | null | undefined): void {
+  if (!coachesTeam(user, team)) throw notYourTeam();
+}
+
+/**
  * A Section Captain: linked as Section Captain on a team (the
  * isSectionCaptain coach link) or holding the Section Captain office.
  * Coaches, the Men's Convenor and the Assistant Director of Hockey are not.
@@ -256,7 +299,7 @@ export async function requireSectionCaptain(request: Request, env: Env): Promise
  * one of the listed tables is enough.
  *
  *   membership - the membership board: Membership Officers, Section Captains
- *   chairman   - the chairman's email lists: Section Chairs, Section Captains
+ *   chairman   - the chairman's email lists: the Chairman, Section Captains
  *   kit        - kit orders, handing out and spares: the Kit Convenor and
  *                Section Captains (owner decision, 2026-09-30).
  *   planning   - every team's season plans: Section Captains (coaches see
@@ -266,7 +309,7 @@ export async function requireSectionCaptain(request: Request, env: Env): Promise
  *                Hockey (owner decision, 2026-10-04). Deciding on a
  *                registration stays with the Section Captains.
  *   registration - every Active player's HKHA registration details, HKID
- *                and passport numbers included: the Hockey Convenor ONLY,
+ *                and passport numbers included: the Men's Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
  *   people     - finding a person and their admin page and change history:
  *                the Membership Officer, the Men's Convenor and Section

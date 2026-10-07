@@ -11,7 +11,7 @@
  *   POST /api/reactivation/:id      a captain's answer: {activate: boolean}
  */
 import type { Env } from "./env";
-import type { AuthorizedUser } from "./auth";
+import { isSectionCaptainUser, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq } from "./data/supabase";
 import { invalidateCache } from "./cache";
@@ -94,6 +94,9 @@ export async function answerReactivation(
   body: Record<string, unknown>,
 ): Promise<{ status: "activated" | "declined" | "closed" }> {
   if (!STEP_ID.test(stepId)) throw new HttpError("Request not found.", 404, "NOT_FOUND");
+  // The step was opened for whoever was a Section Captain when they asked:
+  // someone who has since stepped down can't answer it (security review, 7 Oct 2026).
+  if (!isSectionCaptainUser(user)) throw new HttpError("Only Section Captains can do this.", 403, "SECTION_CAPTAIN_REQUIRED");
   if (typeof body.activate !== "boolean") throw new HttpError("Say whether to activate.", 400, "INVALID_INPUT");
   try {
     const result = await db(env).rpc<{ status: "activated" | "declined" | "closed" }>("answer_reactivation", {

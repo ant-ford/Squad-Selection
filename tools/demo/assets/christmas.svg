@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f3d2e"/>
+      <stop offset="1" stop-color="#06231a"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="1000" fill="url(#bg)"/>
+  <g fill="#ffffff" opacity="0.18">
+    <circle cx="90" cy="120" r="6"/><circle cx="700" cy="90" r="5"/><circle cx="620" cy="260" r="4"/><circle cx="160" cy="340" r="5"/>
+    <circle cx="720" cy="420" r="6"/><circle cx="70" cy="560" r="4"/><circle cx="740" cy="700" r="5"/><circle cx="120" cy="860" r="6"/>
+  </g>
+  <polygon points="400,150 520,400 450,400 560,620 240,620 350,400 280,400" fill="#1f8a5b"/>
+  <rect x="380" y="620" width="40" height="60" fill="#7a4b26"/>
+  <polygon points="400,110 412,140 444,140 418,158 428,190 400,170 372,190 382,158 356,140 388,140" fill="#f5c542"/>
+  <circle cx="360" cy="460" r="14" fill="#e0453a"/><circle cx="445" cy="520" r="14" fill="#f5c542"/><circle cx="330" cy="580" r="14" fill="#5aa9e6"/><circle cx="480" cy="590" r="14" fill="#e0453a"/>
+  <text x="400" y="770" text-anchor="middle" font-family="Georgia, serif" font-size="82" font-weight="700" fill="#f5c542">Christmas Party</text>
+  <text x="400" y="840" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" fill="#ffffff">HKFC Hockey Section</text>
+  <text x="400" y="900" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#cfe9dc">Members' Bar · dress to impress</text>
+</svg>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AlertTriangle, Check, ChevronDown, Copy, Download, FileText, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -25,7 +25,7 @@ const VIEWS: { key: View; label: string }[] = [
 const NO_TEAM = 'No registered team';
 const selectClass = inputClass.replace('w-full', 'w-auto');
 
-const chip = 'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full';
+const chip = 'inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full';
 const failed = (err: unknown) => toast.error(errorMessage(err, 'save'));
 
 async function copy(label: string, value: string) {
@@ -37,11 +37,11 @@ async function copy(label: string, value: string) {
   }
 }
 
-/** One detail, with a copy button for pasting into HockeyHK's forms. */
+/** One detail, with a copy button for pasting into HKHA's forms. */
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-1 text-sm text-foreground">
         {value ? (
           <>
@@ -69,7 +69,7 @@ function RegisteredName({ p, busy, onSave }: { p: RegistrationPlayer; busy: bool
   const value = tidyRegisteredName(draft) || null;
   return (
     <div className="space-y-1">
-      <label htmlFor={`rn-${p.id}`} className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <label htmlFor={`rn-${p.id}`} className="text-xs uppercase tracking-wide text-muted-foreground">
         Registered name
       </label>
       <div className="flex items-center gap-2">
@@ -168,8 +168,8 @@ function PlayerItem({
               <Field label="Date of birth" value={p.dateOfBirth} />
               <Field label="Nationality" value={p.nationality} />
               <Field label="HKID No." value={p.hkidNo} />
-              <Field label="Passport No." value={p.passportNo} />
-              <Field label="Shirt No" value={p.shirtNo?.toString() ?? null} />
+              <Field label="Passport no." value={p.passportNo} />
+              <Field label="Shirt no." value={p.shirtNo?.toString() ?? null} />
               <Field label="Mobile" value={p.mobileNo} />
               <Field label="Email" value={p.email} />
               <Field label="Previous EOS" value={p.previousEos} />
@@ -197,7 +197,7 @@ function PlayerItem({
             <span className="flex-1" />
             {p.reason ? (
               <button className={`${primaryButton} h-8 text-xs`} disabled={busy || !p.team} onClick={onRegistered}>
-                <Check className="h-3.5 w-3.5" /> Registered with HockeyHK
+                <Check className="h-3.5 w-3.5" /> Registered with HKHA
               </button>
             ) : (
               <button className="text-xs text-muted-foreground underline" disabled={busy} onClick={onUndo}>
@@ -212,10 +212,10 @@ function PlayerItem({
 }
 
 /**
- * HKHA registration (the Hockey Convenor only): every Active player's
+ * HKHA registration (the Men's Convenor only): every Active player's
  * registration details by registered team, who still needs registering
- * with HockeyHK this season and why, what's missing before they can be,
- * and a CSV for HockeyHK's spreadsheet.
+ * with HKHA this season and why, what's missing before they can be,
+ * and a CSV for HKHA's spreadsheet.
  */
 export default function Registration() {
   const queryClient = useQueryClient();
@@ -304,7 +304,7 @@ export default function Registration() {
 
   const body = () => {
     if (profileLoading || (allowed && isLoading)) return <Skeleton className="h-96 w-full" />;
-    if (!allowed) return <p className="text-center py-12 text-muted-foreground">This screen is for the Hockey Convenor.</p>;
+    if (!allowed) return <p className="text-center py-12 text-muted-foreground">This screen is for the Men's Convenor.</p>;
     if (error || !data) {
       return (
         <div className="text-center py-12 border border-dashed border-border rounded-xl">
@@ -394,7 +394,7 @@ export default function Registration() {
         {confirmTeam && (
           <ConfirmDialog
             title={`Mark ${confirmTeam.team} as registered?`}
-            message={`All ${confirmTeam.ids.length} players listed for ${confirmTeam.team}${q ? ' (matching your search)' : ''} come off the list as registered with HockeyHK for ${data.season}.`}
+            message={`All ${confirmTeam.ids.length} players listed for ${confirmTeam.team}${q ? ' (matching your search)' : ''} come off the list as registered with HKHA for ${data.season}.`}
             confirmLabel="Mark them registered"
             onCancel={() => setConfirmTeam(null)}
             onConfirm={() => {
@@ -409,7 +409,7 @@ export default function Registration() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="HKHA registration" />
+      <AppHeader title="HKHA registration" guide="convenor" />
       <main className="flex-1 container mx-auto max-w-4xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

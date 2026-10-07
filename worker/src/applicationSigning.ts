@@ -25,6 +25,7 @@ import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { fileLink, photoLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
 import { sendEmail } from "./mailer";
+import { OFFICE_HOLDER_SELECT, contactOf, type OfficeHolderRow } from "./officeContacts";
 import { cleanDraft, complete } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
 import { inBackground } from "./requestContext";
@@ -114,21 +115,18 @@ const nameOf = (p: { preferred_name: string | null; given_names: string | null; 
 async function holders(env: Env, officeIds: string[]): Promise<Record<string, Holder>> {
   const ids = [...new Set(officeIds.filter(Boolean))];
   if (!ids.length) return {};
-  const rows = await db(env).select<{
-    id: string;
-    office_email: string | null;
-    people: { id: string; api_id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null } | null;
-  }>("offices", `select=id,office_email,people!offices_person_id_fkey(id,api_id,preferred_name,given_names,surname,email)&id=${inList(ids)}`);
+  const rows = await db(env).select<OfficeHolderRow>("offices", `${OFFICE_HOLDER_SELECT}&id=${inList(ids)}`);
   const out: Record<string, Holder> = {};
   for (const r of rows) {
     if (!r.people) continue;
+    const c = contactOf(r);
     out[r.id] = {
       officeId: r.id,
       personId: r.people.id,
       apiId: r.people.api_id,
-      firstName: r.people.preferred_name || r.people.given_names,
-      name: nameOf(r.people),
-      email: r.office_email || r.people.email,
+      firstName: c.firstName,
+      name: c.name ?? "the applicant",
+      email: c.email,
     };
   }
   return out;

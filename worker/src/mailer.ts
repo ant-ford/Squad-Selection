@@ -12,7 +12,7 @@
  *    sign-in codes Supabase Auth sends through the same account.
  *  - Emails carry links, not documents. The one exception is a filled PDF
  *    for someone who passes it on outside Eddy (the Club's membership office,
- *    the front desk, the Hockey Convenor for HockeyHK; owner, 1 Oct 2026).
+ *    the front desk, the Men's Convenor for HKHA; owner, 1 Oct 2026).
  *    Resend fetches it from a signed file link (`path`), so the Worker never
  *    base64-encodes megabytes inside its 10 ms of CPU.
  *  - An email sent in someone's name (`from`) comes from their address. No

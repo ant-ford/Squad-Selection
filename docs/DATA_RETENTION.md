@@ -57,6 +57,8 @@ Not yet delayed: replacing a photo, ID copy, application upload, payment screens
 
 Anyone signed in can delete their own profile from the bottom of **My details**, at any time. They have to type DELETE first. It does the same removal straight away (their files leave R2 35 days later, like everyone's), makes them inactive, and retires any office they hold. Officers and coaches can do this too (owner, 2 Oct 2026). They are signed out, and if they come back they fill in their details again.
 
+Signing out also wipes what the app keeps on their phone: their own profile, fixtures and tasks, kept for at most 24 hours so the app opens quickly (`src/lib/persistedQueries.ts`). Form drafts go on Log out too.
+
 ## Running it
 
 The Worker's second daily cron (`30 3 * * *` UTC, 11:30 Hong Kong) runs the job on the Supabase backend:
@@ -65,7 +67,7 @@ The Worker's second daily cron (`30 3 * * *` UTC, 11:30 Hong Kong) runs the job 
 2. With `RETENTION_MODE = "remove"`: `remove_personal_data()` for up to 20 due people, oldest first. Each one is checked again just before removal.
 3. Deletes the R2 objects queued in `r2_deletions` whose `delete_after` has passed, up to 250 a run, oldest first. A failure stays queued for the next run.
 
-`RETENTION_MODE` starts as **`"report"`**, which stamps people but removes nothing. Before switching to `"remove"` (in `worker/wrangler.toml`), check the list in the Supabase SQL editor:
+`RETENTION_MODE` is **`"remove"`** since 7 Oct 2026. It started as `"report"`, which stamps people but removes nothing. Before switching to `"remove"` (in `worker/wrangler.toml`), check the list in the Supabase SQL editor:
 
 ```sql
 select name, last_activity, due_on from public.retention_due_v order by last_activity;

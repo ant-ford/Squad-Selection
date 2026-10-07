@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,7 +19,7 @@ import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
   belowAttendance,
@@ -37,7 +38,7 @@ import {
 const area = `${inputClass} h-auto min-h-[84px] py-2`;
 const shortArea = `${inputClass} h-auto py-2 resize-none`;
 
-const day = (d: string | null | undefined) => safeFormat(d, 'd MMM yyyy');
+const day = (d: string | null | undefined) => safeFormat(d, LONG_DATE);
 
 function Card({ title, children, note }: { title: string; children: ReactNode; note?: string }) {
   return (
@@ -167,7 +168,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           })}
         </div>
         {recordedSocialFunctions(review.eventsAttended).length > 0 && (
-          <p className="text-xs text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
+          <p className="text-xs text-muted-foreground mt-1">Ticked from the events <EddyWordmark size={1.5} /> recorded you at. Add any it missed.</p>
         )}
       </fieldset>
       <Field label="Other contributions" hint={HINTS.otherContributions}>
@@ -370,7 +371,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
           id="cr-o-available"
           required
           label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}
-          hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their Selected Team` : undefined}
+          hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their selected team` : undefined}
         >
           <input className={inputClass} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />
         </Field>
@@ -506,7 +507,7 @@ export default function CommitmentReview() {
                 {[
                   ['Played', review.attendance.matchesPlayed],
                   ['Team played', review.attendance.matchesTeamPlayed],
-                  ['Unavailable', review.attendance.matchesNotAvailable],
+                  ['No', review.attendance.matchesNotAvailable],
                 ].map(([label, value]) => (
                   <div key={label as string} className="rounded-lg bg-muted/50 py-2">
                     <p className="text-lg font-semibold text-foreground">{value ?? '—'}</p>
@@ -518,11 +519,11 @@ export default function CommitmentReview() {
                 <p className="text-xs text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
               )}
               {!!review.gamesUmpiredInEddy && (
-                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
+                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in <EddyWordmark size={1.5} />): {review.gamesUmpiredInEddy}</p>
               )}
               {!!review.eventsAttended?.length && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Events attended (recorded in Eddy): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
+                  Events attended (recorded in <EddyWordmark size={1.5} />): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
                 </p>
               )}
             </section>

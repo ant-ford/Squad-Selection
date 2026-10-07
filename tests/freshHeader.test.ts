@@ -11,7 +11,7 @@ const auth = vi.hoisted(() => ({ getSession: vi.fn(), refreshSession: vi.fn() })
 vi.mock("../src/lib/supabase", () => ({ supabase: { auth } }));
 vi.mock("../src/lib/auth", () => ({ signOut: vi.fn(async () => {}) }));
 vi.mock("../src/lib/accessDenied", () => ({ setAccessDenied: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("../src/lib/toast", () => ({ toast: { error: vi.fn() } }));
 
 const fetchMock = vi.fn();
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });

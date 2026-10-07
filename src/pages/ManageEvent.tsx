@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Copy, Download, Plus, QrCode, Search, X } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import FileUpload from '@/components/profile/FileUpload';
 import { errorText } from '@/components/profile/steps';
@@ -266,7 +267,7 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
         <Field
           label="PayMe link or FPS ID to pay to"
           id="event-pay-to"
-          hint="Everyone invited sees this. Each payer uploads a screenshot of their payment, which Eddy reads for you to confirm."
+          hint={<>Everyone invited sees this. Each payer uploads a screenshot of their payment, which <EddyWordmark size={1.5} /> reads for you to confirm.</>}
           required
         >
           <Input value={f.paymentDetails} onChange={(e) => set({ paymentDetails: e.target.value })} placeholder="e.g. https://payme.hsbc/yourname, or FPS ID 1234567" />
@@ -460,7 +461,7 @@ function StatusAndPoster({ e, data, onDeleted }: { e: ManagedEvent; data: Respon
       </div>
       {e.includesMe === false && e.status !== 'cancelled' && (
         <p className="text-xs rounded-md bg-warning-soft text-warning-soft-foreground px-3 py-2">
-          You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” under Answers.
+          You're not in this invite list, so it won't show in your Player view. Edit who's invited, or use “Answer for someone” under Answers.
         </p>
       )}
       <FileUpload kind="document" label="Poster" hint="A picture: JPEG, PNG or WebP" hasFile={!!e.posterUrl} onUploaded={refresh} upload={(dataUrl) => uploadPoster(id, dataUrl)} />

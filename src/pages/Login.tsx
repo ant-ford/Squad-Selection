@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { normalizeEmail } from '@shared/normalizeEmail';
 import { sendEmailErrorMessage, signInErrorMessage } from '@/lib/signInError';
 import { Turnstile, TURNSTILE_SITE_KEY, type TurnstileHandle } from '@/components/Turnstile';
+import { PRIVACY_URL } from '@/components/HelpLink';
 
 const CODE_LENGTH = 6;
 
@@ -30,8 +31,8 @@ function writePendingEmail(value: string | null) {
   }
 }
 
-/** The sign-in screen; the join page gives its own title, intro and return address. */
-export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter your email to sign in', redirectTo }: { title?: string; intro?: string; redirectTo?: string } = {}) {
+/** The sign-in screen: the logo (badger and wordmark) as its heading; the join page gives its own title, intro and return address. */
+export default function Login({ title, intro = 'Enter your email to sign in', redirectTo }: { title?: string; intro?: string; redirectTo?: string } = {}) {
   const [email, setEmail] = useState(() => readPendingEmail());
   const [code, setCode] = useState('');
   // 'request' collects the email; 'verify' accepts the code. We resume
@@ -120,19 +121,20 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
 
   if (user) return null;
 
+  const logo = <img src="/assets/logo-animated.svg" alt="Eddy" className="h-24 w-48 object-contain" />;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="max-w-md w-full bg-card p-6 rounded-lg border border-border shadow-lg">
-        <div className="flex justify-center mb-6">
-          <img
-            src="/assets/logo-animated.svg"
-            alt="Eddy"
-            className="h-24 w-48 object-contain"
-          />
-        </div>
-        <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
-          {title}
-        </h1>
+        {/* The logo is the badger and the wordmark, so on plain sign-in it is the heading. */}
+        {title ? (
+          <>
+            <div className="flex justify-center mb-6">{logo}</div>
+            <h1 className="text-2xl font-bold text-foreground mb-6 text-center">{title}</h1>
+          </>
+        ) : (
+          <h1 className="flex justify-center mb-6">{logo}</h1>
+        )}
 
         {step === 'request' ? (
           <>
@@ -162,7 +164,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
                 disabled={sending || waitingForCheck}
                 className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {sending ? 'Sending...' : waitingForCheck ? 'Checking...' : 'Send Sign-In Email'}
+                {sending ? 'Sending...' : waitingForCheck ? 'Checking...' : 'Send sign-in email'}
               </button>
             </form>
             {/* Someone who already has a code — read on another device, or
@@ -226,7 +228,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
                 disabled={verifying || code.length !== CODE_LENGTH}
                 className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {verifying ? 'Verifying...' : 'Sign In'}
+                {verifying ? 'Verifying...' : 'Sign in'}
               </button>
             </form>
             <div className="flex justify-between mt-4 text-xs">
@@ -255,6 +257,16 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Don't see the email? Please check your junk or spam folder.
+        </p>
+        <p className="text-xs mt-3 text-center">
+          <a
+            href={PRIVACY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Privacy
+          </a>
         </p>
       </div>
     </div>

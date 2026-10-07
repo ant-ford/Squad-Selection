@@ -67,15 +67,14 @@ MAIL_FROM = "Eddy <notifications@eddy.global>"
 APP_ORIGIN = "https://app.eddy.global"
 # The review request goes in the captain's name, copied to the membership inbox.
 REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
-ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 
 # The data retention job (src/retention.ts): "remove" removes the personal
 # details of people inactive for 13 months; "report" only counts them (the
-# list is the retention_due_v view). Report until the first list is checked.
-RETENTION_MODE = "report"
+# list is the retention_due_v view). Switched to remove on 7 Oct 2026 (owner).
+RETENTION_MODE = "remove"
 
 # The app's owner (src/systemHealth.ts): People api_ids, comma-separated,
 # not emails (this file is public). They open /system and get the System
@@ -83,6 +82,11 @@ RETENTION_MODE = "report"
 # to SYSTEM_ALERT_EMAIL.
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
+
+# The read-only switch for a restore (src/readOnly.ts, docs/RESTORE.md).
+# "off": every save gets 503 READ_ONLY and the daily jobs are skipped;
+# reads carry on. "on" otherwise.
+WRITES = "on"
 
 # The first sends the commitment review emails that are due
 # (src/reviewEmails.ts); the second runs the data retention job
@@ -146,13 +150,14 @@ MAIL_FROM = "Eddy <notifications@eddy.global>"
 MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
 APP_ORIGIN = "http://localhost:5173"
 REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
-ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # The owner's People row in eddy-preview has the same api_id.
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
+# The read-only switch (src/readOnly.ts): "off" turns every save away.
+WRITES = "on"
 
 [env.preview.triggers]
 crons = []

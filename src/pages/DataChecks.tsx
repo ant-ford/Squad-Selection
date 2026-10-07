@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -12,8 +12,9 @@ import { StatusChip } from '@/components/ui/status-chip';
 import { ErrorState } from '@/components/ui/error-state';
 import { inputClass } from '@/components/ui/input';
 import { TabPanel, Tabs } from '@/components/ui/tabs';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
+import { officerGuide } from '@/components/HelpLink';
 import {
   DUPLICATE_LABELS,
   FIXING_LABELS,
@@ -120,7 +121,7 @@ export default function DataChecks() {
                 <li key={c.id} className="flex items-center gap-2 px-3 py-2">
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm font-medium text-foreground">{c.rawName}</span>
-                    {sub([c.team, safeFormat(c.matchDate, 'd MMM yyyy', ''), c.opponent && `v ${c.opponent}`])}
+                    {sub([c.team, safeFormat(c.matchDate, LONG_DATE, ''), c.opponent && `v ${c.opponent}`])}
                     {c.suggestions.length > 0 && sub([`Maybe ${c.suggestions.map((s) => s.name).join(', ')}`])}
                   </span>
                   <ActionButton variant="outline" onClick={() => setLinking(c)}>
@@ -210,7 +211,7 @@ export default function DataChecks() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Data checks" />
+      <AppHeader title="Data checks" guide={officerGuide(profile, 'convenor')} />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

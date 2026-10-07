@@ -6,7 +6,7 @@
  *
  *  - Section Captains (the Section Captains office) propose and edit new
  *    joiners and send the three emails.
- *  - The Kit Convenor and the Hockey Convenor see their request in My
+ *  - The Kit Convenor and the Men's Convenor see their request in My
  *    Tasks, open it (/joiner-task/:id) and mark it done.
  */
 import type { Env } from "./env";
@@ -23,6 +23,7 @@ import { AGREEMENT_PDFS, NEW_MEMBERS_INFO_SHEET } from "../../shared/application
 import { isUnderEighteen } from "./declarations";
 import { joinerTrial } from "./trials";
 import { recordRegistered } from "./registration";
+import { activeOfficeHolders, contactOf, senderFor, type OfficeHolderRow } from "./officeContacts";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -49,24 +50,10 @@ function requireCaptain(user: AuthorizedUser): void {
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 const text = (v: unknown, max = 200) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
 
-interface OfficeRow {
-  id: string;
-  role: string;
-  designation: string | null;
-  office_email: string | null;
-  person_id: string | null;
-  people: { id: string; api_id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null } | null;
-}
+type OfficeRow = OfficeHolderRow;
 
-const OFFICE_SELECT = "select=id,role,designation,office_email,person_id,people!offices_person_id_fkey(id,api_id,preferred_name,given_names,surname,email)";
-const firstName = (p: OfficeRow["people"]) => p?.preferred_name || p?.given_names || null;
-const fullName = (p: OfficeRow["people"]) => [firstName(p), p?.surname].filter(Boolean).join(" ") || null;
-/** Where an office is written to: its own mailbox, else its holder's. */
-const officeEmail = (o: OfficeRow | undefined) => o?.office_email || o?.people?.email || null;
-
-async function activeOffices(env: Env): Promise<OfficeRow[]> {
-  return db(env).select<OfficeRow>("offices", `${OFFICE_SELECT}&status=eq.Active`);
-}
+/** Every Active office with its holder. */
+const activeOffices = (env: Env): Promise<OfficeRow[]> => activeOfficeHolders(env);
 
 export async function getJoinerOptions(env: Env, user: AuthorizedUser): Promise<JoinerOptions> {
   requireCaptain(user);
@@ -74,7 +61,7 @@ export async function getJoinerOptions(env: Env, user: AuthorizedUser): Promise<
   const of = (role: string): OfficeChoice[] =>
     rows
       .filter((r) => r.role === role && r.people)
-      .map((r) => ({ id: r.id, name: fullName(r.people) ?? "?", designation: r.designation ?? "" }))
+      .map((r) => ({ id: r.id, name: contactOf(r).name ?? "?", designation: r.designation ?? "" }))
       .sort((a, b) => a.name.localeCompare(b.name));
   const teams = await db(env).select<{ team_name: string }>("teams", "select=team_name&active=eq.true&order=team_name");
   return {
@@ -164,9 +151,9 @@ async function checkOffices(env: Env, f: JoinerForm): Promise<void> {
   const want: [string, string, string][] = [
     [f.sponsorId, "sponsor", "sponsor"],
     [f.officerId, "membership_officer", "Membership Officer"],
-    [f.chairId, "section_chair", "Section Chair"],
+    [f.chairId, "section_chair", "Chairman"],
     [f.kitConvenorId, "kit_convenor", "Kit Convenor"],
-    [f.hockeyConvenorId, "hockey_convenor", "Hockey Convenor"],
+    [f.hockeyConvenorId, "hockey_convenor", "Men's Convenor"],
   ];
   const ids = want.map(([id]) => id).filter(Boolean);
   if (ids.some((id) => !/^[0-9a-f-]{36}$/.test(id))) throw new HttpError("Choose each office from the list.", 400, "INVALID_INPUT");
@@ -268,13 +255,12 @@ async function log(env: Env, actor: AuthorizedUser, action: string, apiId: strin
 }
 
 /** The acting captain, as the emails are signed and sent. */
-async function senderFor(env: Env, actor: AuthorizedUser, offices: OfficeRow[]): Promise<{ sender: Sender; from: string | undefined }> {
+function signedBy(env: Env, actor: AuthorizedUser, offices: OfficeRow[]): { sender: Sender; from: string | undefined } {
   const own = offices.find((o) => o.role === "section_captain" && o.people?.api_id === actor.personId);
-  const name = fullName(own?.people ?? null) ?? "HKFC Hockey";
+  const name = contactOf(own).name ?? "HKFC Hockey";
   const designation = own?.designation || "Section Captain";
-  // From the captain's own club mailbox (hkfchockey.com is verified in Resend), else the configured captain.
-  const from = own?.office_email?.endsWith("@hkfchockey.com") ? `${name} <${own.office_email}>` : env.REVIEW_EMAIL_FROM || undefined;
-  return { sender: { name, designation }, from };
+  // From the captain's own club mailbox, else the configured captain.
+  return { sender: { name, designation }, from: senderFor(env, name, own?.office_email) };
 }
 
 /** Stage 2 and the invitation email (Make: "1. New Joiner Process"). Sending again is allowed. */
@@ -290,24 +276,24 @@ export async function inviteJoiner(env: Env, actor: AuthorizedUser, apiId: strin
   const officer = byId(p.sponsored_by_officer_id);
   const vcs = offices.filter((o) => o.role === "section_captain" && /vice/i.test(o.designation ?? ""));
   const newMember = p.applicant_type === "New HKFC Member";
-  const { sender, from } = await senderFor(env, actor, offices);
+  const { sender, from } = signedBy(env, actor, offices);
   const app = appOrigin(env);
   const { subject, text: body } = invitationEmail({
     preferredName: p.preferred_name || "there",
     email: p.email,
     newMember,
-    viceCaptains: vcs.map((o) => fullName(o.people)).filter((n): n is string => !!n),
-    viceCaptainEmail: officeEmail(vcs[0]) ?? "mensvicecaptain@hkfchockey.com",
-    officerName: fullName(officer?.people ?? null),
-    officerEmail: officeEmail(officer) ?? "mensmembership@hkfchockey.com",
-    sponsorName: newMember ? fullName(sponsor?.people ?? null) : null,
+    viceCaptains: vcs.map((o) => contactOf(o).name).filter((n): n is string => !!n),
+    viceCaptainEmail: contactOf(vcs[0]).email ?? "mensvicecaptain@hkfchockey.com",
+    officerName: contactOf(officer).name,
+    officerEmail: contactOf(officer).email ?? "mensmembership@hkfchockey.com",
+    sponsorName: newMember ? contactOf(sponsor).name : null,
     app,
     infoSheetUrl: NEW_MEMBERS_INFO_SHEET ? `${app}${NEW_MEMBERS_INFO_SHEET}` : null,
     termsUrl: `${app}${AGREEMENT_PDFS.samTerms}`,
     sender,
   });
   // The vice captains, and a new member's sponsor; not the membership inbox (owner, 2 Oct 2026).
-  const cc = [...new Set([...vcs.map(officeEmail), newMember ? sponsor?.people?.email : null].filter((e): e is string => !!e))];
+  const cc = [...new Set([...vcs.map((o) => contactOf(o).email), newMember ? sponsor?.people?.email : null].filter((e): e is string => !!e))];
   await sendEmail(env, { toPersonId: p.id, to: p.email, subject, text: body, template: "joiner-invitation", cc, from });
   await db(env).update("people", `id=${eq(p.id)}`, { status: "Applicant", applicant_stage: INVITED_STAGE });
   await log(env, actor, "invite", apiId, ["applicant_stage"]);
@@ -327,7 +313,10 @@ async function shirtNoOf(env: Env, p: Pick<JoinerRow, "shirt_number_id">): Promi
   return (await db(env).one<{ shirt_no: number }>("shirt_numbers", `select=shirt_no&id=${eq(p.shirt_number_id)}`))?.shirt_no ?? null;
 }
 
-const STEP_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Hockey Convenor" };
+/** Who each step waits on, as shown in messages. */
+const STEP_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Men's Convenor" };
+/** steps.waiting_on_role keeps the stored wording (the office title is a separate decision). */
+const STEP_WAITING_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Hockey Convenor" };
 
 /**
  * Opens (or re-points) the convenor's step, sends the email, and undoes a
@@ -347,35 +336,35 @@ async function request(
   const offices = await activeOffices(env);
   const convenor = offices.find((o) => o.id === convenorId && o.role === role);
   if (!convenor?.people) throw new HttpError(`Choose the ${STEP_ROLE[key]} from the list.`, 400, "INVALID_INPUT");
-  const to = officeEmail(convenor);
+  const to = contactOf(convenor).email;
   if (!to) throw new HttpError(`The ${STEP_ROLE[key]} has no email address in Eddy.`, 400, "INVALID_INPUT");
   const d = db(env);
   await d.update("people", `id=${eq(p.id)}`, key === "kit" ? { sponsored_by_kit_convenor_id: convenor.id } : { sponsored_by_hockey_convenor_id: convenor.id });
 
   const open = await d.one<{ id: string }>("steps", `select=id&process=eq.new_joiner&step=eq.${key}&person_id=${eq(p.id)}&done_at=is.null`);
-  const waiting = { waiting_on_person_id: convenor.people.id, waiting_on_role: STEP_ROLE[key] };
+  const waiting = { waiting_on_person_id: convenor.people.id, waiting_on_role: STEP_WAITING_ROLE[key] };
   const stepId = open
     ? (await d.update<{ id: string }>("steps", `id=${eq(open.id)}`, { ...waiting, started_at: new Date().toISOString() }))[0].id
     : (await d.insert<{ id: string }>("steps", [{ process: "new_joiner", step: key, person_id: p.id, ...waiting }]))[0].id;
 
   try {
-    const { sender, from } = await senderFor(env, actor, offices);
+    const { sender, from } = signedBy(env, actor, offices);
     const taskUrl = `${appOrigin(env)}/joiner-task/${stepId}`;
     const sponsor = offices.find((o) => o.id === p.sponsored_by_sponsor_id);
     const preferredName = p.preferred_name || p.given_names || "the new joiner";
     const email =
       key === "kit"
         ? kitEmail({
-            convenorName: firstName(convenor.people),
+            convenorName: contactOf(convenor).firstName,
             preferredName,
             mobileNo: p.mobile_no,
-            sponsorName: firstName(sponsor?.people ?? null),
+            sponsorName: contactOf(sponsor).firstName,
             shirtNo: await shirtNoOf(env, p),
             sizes: await sizesOf(env, p.id),
             taskUrl,
             sender,
           })
-        : registrationEmail({ convenorName: firstName(convenor.people), preferredName, rows: await registrationRows(env, p), taskUrl, sender });
+        : registrationEmail({ convenorName: contactOf(convenor).firstName, preferredName, rows: await registrationRows(env, p), taskUrl, sender });
     const cc = [p.email, key === "kit" ? sponsor?.people?.email : null].filter((e): e is string => !!e);
     await sendEmail(env, { toPersonId: convenor.people.id, to, subject: email.subject, text: email.text, template: `joiner-${key}`, stepId, cc, from });
   } catch (err) {
@@ -387,7 +376,7 @@ async function request(
   return { ok: true };
 }
 
-/** The details HockeyHK registration needs (the Fillout form's list). */
+/** The details HKHA registration needs (the Fillout form's list). */
 async function registrationRows(env: Env, p: JoinerRow): Promise<[string, string | null][]> {
   return [
     ["Team", p.registered_team],
@@ -462,7 +451,7 @@ export interface JoinerTask {
   applicant: string;
   startedAt: string;
   doneAt: string | null;
-  /** Kit: sizes and number. Registration: the HockeyHK details. */
+  /** Kit: sizes and number. Registration: the HKHA details. */
   rows: [string, string | null][];
   /** Registration: links to the photo and ID documents (valid for an hour or so). */
   files: { label: string; url: string }[];
@@ -517,7 +506,7 @@ export async function getJoinerTask(env: Env, user: AuthorizedUser, stepId: stri
 export async function completeJoinerTask(env: Env, user: AuthorizedUser, stepId: string): Promise<{ ok: true }> {
   const { step, me } = await loadStep(env, user, stepId);
   if (!step.done_at) await db(env).update("steps", `id=${eq(step.id)}&done_at=is.null`, { done_at: new Date().toISOString(), done_by_person_id: me });
-  // Registered with HockeyHK: off the Convenor's "Needs registering" list too.
+  // Registered with HKHA: off the Convenor's "Needs registering" list too.
   if (step.step === "registration") await recordRegistered(env, [step.person_id], me);
   invalidateCache(`joiner-tasks:${user.personId}`);
   return { ok: true };

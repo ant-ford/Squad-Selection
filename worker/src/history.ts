@@ -69,6 +69,16 @@ const fixture = (m: { home_team: string | null; away_team: string | null } | nul
 const COACH_ACTIONS = new Set(["squad", "row-availability", "row-team-role", "activate", "deactivate"]);
 
 /**
+ * The People columns a coach sees changes of: the hockey side. The audit
+ * keeps values for more (membership type and stage, hkid_hidden), which
+ * only officers see (security review, 7 Oct 2026).
+ */
+export const COACH_FIELDS = new Set([
+  "active", "opt_in_only", "registered_team", "selected_team_sos", "selected_team_eos", "previous_eos",
+  "playing_position", "playing_level", "playing_ability", "is_visiting_player", "is_suspended", "matches_to_serve",
+]);
+
+/**
  * One activity_log row as an entry. `names` resolves the player of a coach's
  * answer (changes.person); `matches` the fixture it was for.
  */
@@ -77,7 +87,7 @@ export function activityEntry(
   opts: { names?: Map<string, string>; matches?: Map<string, string>; forCoach?: boolean } = {},
 ): HistoryEntry | null {
   const changes = (r.changes ?? {}) as Record<string, unknown>;
-  const base = { at: iso(r.occurred_at), actor: actorName(r), action: r.action };
+  const base = { at: iso(r.occurred_at), actor: actorName(r), ...(!r.actor && r.actor_label ? { actorLabel: r.actor_label } : {}), action: r.action };
 
   if (r.action === "row-availability") {
     const status = changes.status as [string, string] | undefined;
@@ -111,7 +121,7 @@ export function activityEntry(
   }
 
   // Everything else: the fields that changed, with values where kept.
-  const fields = (r.fields ?? []).filter((f) => !opts.forCoach || f in changes);
+  const fields = (r.fields ?? []).filter((f) => !opts.forCoach || (f in changes && COACH_FIELDS.has(f)));
   if (opts.forCoach && !COACH_ACTIONS.has(r.action) && (!r.action.startsWith("row-") || fields.length === 0)) return null;
   return { ...base, summary: actionLabel(r.action), fields: fields.map((f) => changeText(f, changes[f])) };
 }

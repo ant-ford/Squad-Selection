@@ -1,8 +1,8 @@
 /**
- * HockeyHK's Player Registration Form for players under 18: filled when a
+ * HKHA's Player Registration Form for players under 18: filled when a
  * parent or guardian signs the waivers (declarations.ts), kept on the
  * player (files kind 'u18_registration_form', like the imported ones), and
- * emailed to the Hockey Convenor, who sends it on to HockeyHK (owner,
+ * emailed to the Men's Convenor, who sends it on to HKHA (owner,
  * 1 Oct 2026).
  *
  * The template is a flat page, so the text goes at measured positions:
@@ -15,6 +15,7 @@ import { documentFilename, fileAsset, renderPdf, storeDocument, templateAsset } 
 import { db, eq } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
+import { activeOfficeHolders, contactOf } from "../officeContacts";
 import { PDF_TEMPLATES } from "./templates";
 import { ddmmyyyy } from "./playerStatement";
 
@@ -103,12 +104,6 @@ interface PlayerRow {
   sponsored_by_hockey_convenor_id: string | null;
 }
 
-interface ConvenorRow {
-  id: string;
-  office_email: string | null;
-  people: { id: string; preferred_name: string | null; given_names: string | null; email: string | null } | null;
-}
-
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 
 /**
@@ -154,28 +149,25 @@ export async function makeU18Registration(env: Env, personUuid: string): Promise
   });
   if (rendered.warnings.length) console.warn(`U18 form ${personUuid}: ${rendered.warnings.join("; ")}`);
   const playerName = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
-  const filename = documentFilename("HockeyHK U18 Registration", playerName);
+  const filename = documentFilename("HKHA U18 Registration", playerName);
   const fileId = await storeDocument(env, rendered.pdf, { kind: "u18_registration_form", filename, personId: p.id });
 
-  // The player's own Hockey Convenor, else the first active one.
-  const convenors = await d.select<ConvenorRow>(
-    "offices",
-    "select=id,office_email,people!offices_person_id_fkey(id,preferred_name,given_names,email)&role=eq.hockey_convenor&status=eq.Active&order=created_at",
-  );
+  // The player's own Men's Convenor, else the first active one.
+  const convenors = await activeOfficeHolders(env, "hockey_convenor");
   const convenor = convenors.find((o) => o.id === p.sponsored_by_hockey_convenor_id) ?? convenors.find((o) => o.people);
-  const to = convenor?.office_email || convenor?.people?.email;
+  const to = contactOf(convenor).email;
   if (!convenor?.people || !to) {
-    console.warn(`U18 form ${personUuid}: kept, but no active Hockey Convenor with an email to send it to`);
+    console.warn(`U18 form ${personUuid}: kept, but no active Men's Convenor with an email to send it to`);
     return fileId;
   }
   await sendEmail(env, {
     toPersonId: convenor.people.id,
     to,
-    subject: `HockeyHK U18 registration form: ${playerName}`,
+    subject: `HKHA U18 registration form: ${playerName}`,
     text: [
-      `Hi ${convenor.people.preferred_name || convenor.people.given_names || "there"},`,
+      `Hi ${contactOf(convenor).firstName ?? "there"},`,
       "",
-      `${playerName}'s parent or guardian has signed HockeyHK's Player Registration Form for players under 18. It is attached, ready to send on to HockeyHK.`,
+      `${playerName}'s parent or guardian has signed HKHA's Player Registration Form for players under 18. It is attached, ready to send on to HKHA.`,
       "",
       `It is also kept on ${playerName}'s record in Eddy: ${appOrigin(env)}`,
       "",

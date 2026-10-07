@@ -186,6 +186,22 @@ describe("reading a crash report", () => {
     await expect(readClientError(post(big))).rejects.toMatchObject({ status: 413 });
   });
 
+  it("refuses an oversized body that declares no length, without reading it all", async () => {
+    const chunk = new TextEncoder().encode("x".repeat(1024));
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        if (pulled > 100) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const req = new Request("https://api.example.com/api/client-error", { method: "POST", body, duplex: "half" } as RequestInit);
+    expect(req.headers.get("Content-Length")).toBeNull();
+    await expect(readClientError(req)).rejects.toMatchObject({ status: 413 });
+    expect(pulled).toBeLessThan(20);
+  });
+
   it("keeps the path only, and a known kind", async () => {
     const r = await readClientError(post(JSON.stringify({ kind: "nonsense", message: "m", route: "/review/1?token=abc#x" })));
     expect(r).toEqual({ kind: "error", message: "m", route: "/review/1", stack: "" });
@@ -248,5 +264,18 @@ describe("scrub", () => {
   it("blanks addresses and caps the length", () => {
     expect(scrub("mail Jo.Smith+x@hkfc.com.hk now", 100)).toBe("mail [email] now");
     expect(scrub("abcdef", 3)).toBe("abc");
+  });
+
+  // Security review, 7 Oct 2026: messages and stacks show on /system.
+  it("blanks query strings, HKID-like numbers and phone numbers", () => {
+    expect(scrub("GET https://api.eddy.global/api/files/abc?exp=1&sig=deadbeef failed", 200)).toBe("GET https://api.eddy.global/api/files/abc?[query] failed");
+    expect(scrub("bad id A123456(7) and AB987654 3", 200)).toBe("bad id [id] and [id]");
+    expect(scrub("call +852 9123 4567 or 91234567", 200)).toBe("call [number] or [number]");
+  });
+
+  it("leaves stack positions and short numbers alone", () => {
+    const stack = "at render (https://app.eddy.global/assets/index-CvcIC1ua.js:12:34567)";
+    expect(scrub(stack, 200)).toBe(stack);
+    expect(scrub("status 404 after 3 tries in 2026", 200)).toBe("status 404 after 3 tries in 2026");
   });
 });
