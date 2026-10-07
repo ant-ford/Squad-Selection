@@ -19,5 +19,5 @@
       "@shared/*": ["shared/*"]
     }
   },
-  "include": ["tests", "src", "shared", "worker/src"]
+  "include": ["tests", "src", "shared", "worker/src", "scripts/precache-set.ts"]
 }

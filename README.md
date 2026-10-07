@@ -209,8 +209,9 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `useFormGaps` lists what's missing next to the submit button.
 - **Words:** `docs/glossary.md`. Weekly screens carry almost no explanatory text: rules are enforced by which options are shown.
 - **PWA** (`vite.config.ts`, Workbox):
-  - The app shell is precached.
-  - `web-shell/index.ts` answers a missing hashed file with a 404, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
+  - Only sign-in and Player view are precached: the entry chunk, the vendor chunks, and the sheets and menus the player page opens. `scripts/precache-set.ts` works the list out from the bundle at build time.
+  - Every other screen is cached the first time it is opened (the `eddy-assets` cache), so officer screens are not downloaded to every player's phone.
+  - `web-shell/index.ts` answers a missing hashed file with a 404, which is never cached, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
   - Files opened through signed links (photos, posters) are cached for up to two days. Each new link is a new URL, so a cached copy is never stale.
   - App crashes are reported to the Worker (`src/lib/clientErrors.ts`).
 
