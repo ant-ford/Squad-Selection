@@ -134,7 +134,7 @@ export default function TrialSessionsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Trial sessions" />
+      <AppHeader title="Trial sessions" guide="captains" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

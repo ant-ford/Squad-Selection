@@ -71,6 +71,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 
 "Men's Convenor" is the `hockeyConvenor` office, and "Chairman" is `sectionChair` (see the glossary).
 
+A new screen here also needs a line in `tools/demo/screens.mjs`, and fixtures for the calls it makes, so the screen smoke test opens it ([Testing](#testing)).
+
 ---
 
 ## Data model (Supabase Postgres)
@@ -308,6 +310,7 @@ npx vitest run tests/golden-eligibility.test.ts
 - The data layer is faked in two ways, both explained in `tests/helpers/README.md`:
   - the repositories in `worker/src/data/` are replaced by in-memory fakes (`tests/helpers/fakeRepos.ts`);
   - direct PostgREST calls go to one shared fetch fake (`tests/helpers/postgrest.ts`), which fails a test on any query it doesn't understand.
+- **Screens on fictional data:** `node tools/demo/serve.mjs` runs the real app on the demo harness's fixtures, as any persona (`?as=coach`, `?as=mens-convenor`, …). `node tools/demo/smoke.mjs` opens every screen in the table above, as each persona that can open it, and fails on a console error, a request with no fixture, or the error screen. The fixtures are typed against `src/api`, so `npx tsc -p tools/demo` catches a changed response shape. CI runs both on every pull request (`.github/workflows/smoke.yml`). **An endpoint that changes shape needs its fixture changed in the same PR.** See `tools/demo/README.md`.
 - **SQL tests.** The SQL functions and triggers run in CI (`.github/workflows/sql-tests.yml`, a few minutes, on every PR and push to main):
   - a throwaway local Supabase database (Docker) applies every migration in order, so a migration that fails to apply fails the PR;
   - then the pgTAP files in `supabase/tests/` run, each in its own transaction that is rolled back. They cover `apply_squad_changes` / `on_squad_changed`, `admin_update_person`, the season rollover and its undo, the `cache_versions` triggers and `erase_personal_data`;
@@ -339,6 +342,7 @@ npx vitest run tests/golden-eligibility.test.ts
 | [docs/SEASON_ROLLOVER.md](docs/SEASON_ROLLOVER.md) | The July checklist: dry run, apply, undo |
 | [docs/design/HISTORY_AND_NOTICES.md](docs/design/HISTORY_AND_NOTICES.md) | Design and owner decisions for change history and notices |
 | [tests/helpers/README.md](tests/helpers/README.md) | How to use the test fakes |
+| [tools/demo/README.md](tools/demo/README.md) | The demo harness: the app on fictional data, personas, the screen smoke test, guide screenshots |
 | [scripts/migration/README.md](scripts/migration/README.md) | The live data scripts (kit order, quizzes, club docs, PDF templates, photo thumbnails) |
 | [docs/supabase-magic-link-email.html](docs/supabase-magic-link-email.html) | The sign-in email template set in Supabase Auth. It deliberately has no link, because mail scanners that follow one burn the code. |
 | [docs/CUTOVER.md](docs/CUTOVER.md) | The 2 Oct 2026 Airtable → Supabase switch-over runbook (record) |

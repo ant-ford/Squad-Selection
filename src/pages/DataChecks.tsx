@@ -14,6 +14,7 @@ import { inputClass } from '@/components/ui/input';
 import { TabPanel, Tabs } from '@/components/ui/tabs';
 import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
+import { officerGuide } from '@/components/HelpLink';
 import {
   DUPLICATE_LABELS,
   FIXING_LABELS,
@@ -210,7 +211,7 @@ export default function DataChecks() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Data checks" />
+      <AppHeader title="Data checks" guide={officerGuide(profile, 'convenor')} />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>
