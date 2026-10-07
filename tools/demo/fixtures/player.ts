@@ -20,6 +20,12 @@ const isCaptain = (p: Persona) => p.offices.includes('sectionCaptain');
 const isCoach = (p: Persona) => !!p.coachTeams?.length || isCaptain(p);
 const coachTeamNames = (p: Persona) => (isCaptain(p) ? TEAMS : p.coachTeams ?? []);
 
+// Flags the app reads on main today and session 6's #276 removes (the menu
+// then always offers the quizzes, and My details always shows). Spread in, so
+// the fixtures typecheck on either side of that change; drop them after it.
+const RETIRING_PROFILE_FLAGS: object = { quizzes: true };
+const RETIRING_FIXTURES_FLAGS: object = { eddyProfile: true };
+
 export function profile(p: Persona): ProfileData {
   const officer = p.offices.length > 0;
   return {
