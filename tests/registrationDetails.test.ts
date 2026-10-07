@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { signedIn } from "./helpers/factories";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { getRegistrationBoard, parseDetailsChange, saveRegistrationDetails } from "../worker/src/registration";

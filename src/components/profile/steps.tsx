@@ -57,8 +57,6 @@ export const errorText = (err: unknown) => errorMessage(err, 'save');
  */
 export function StepShell({
   title,
-  step,
-  total,
   children,
   onBack,
   onNext,
@@ -69,6 +67,7 @@ export function StepShell({
   draftKept = false,
 }: {
   title: string;
+  /** Passed along with the step's nav props; StepProgress above the card shows them. */
   step: number;
   total: number;
   children: ReactNode;

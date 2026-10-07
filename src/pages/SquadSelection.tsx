@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from '@/lib/toast';
-import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle, History } from 'lucide-react';
+import { Wand2, X, Settings2, Search, Plus, MessageCircle, History } from 'lucide-react';
 import { apiPost, apiGet, ApiError } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
