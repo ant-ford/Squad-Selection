@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AttendanceSheet } from '@/components/SeasonStatsSheet';
 import { AttendanceLegend, CellGlyph, Swatch, lookFor, type CellLookInput } from '@/components/AttendanceGrid';
@@ -7,7 +7,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { shortTeam } from '@/lib/format';
 import { useTeamAttendance } from '@/lib/queries';
 import { toneClasses } from '@/lib/statusTone';
-import { MIN_SIDE, STATUS_ORDER, countSquad, squadTone } from '@/lib/teamAvailability';
+import { MIN_SIDE, statusOrder, countSquad, squadTone } from '@/lib/teamAvailability';
 import { openTeamAvailability, rememberOpenTeamAvailability } from '@/lib/scrollMemory';
 import type { SquadPlayer, TeamFixture, TeamSquad } from '@/api/getTeamAttendance';
 
@@ -16,6 +16,19 @@ const DATE_COL = 'w-10 min-w-10';
 const STICKY = 'sticky left-0 z-10 bg-background shadow-[0_0_0_3px_hsl(var(--background))]';
 
 type OpenPlayer = { id: string; name: string };
+
+/** How many took the field: a round count on the tile's corner, like an unread badge. */
+// z-[1]: above the next tile (painted later, so it would cover the corner),
+// below the sticky name column (z-10) when the grid scrolls under it.
+function CardBadge({ count, className = 'absolute -top-1 -right-1 z-[1]' }: { count: number; className?: string }) {
+  return (
+    <span
+      className={`${className} flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-0.5 text-[8px] font-semibold tabular-nums leading-none text-info-foreground ring-2 ring-background`}
+    >
+      {count}
+    </span>
+  );
+}
 
 /** One team's fixture: the squad's availability as a count, coloured against the target squad size. */
 function TeamCell({
@@ -32,8 +45,10 @@ function TeamCell({
   const f = fixtures[0];
   const ring = open ? 'ring-2 ring-foreground ring-offset-1 ring-offset-background' : '';
   const base = `relative flex h-8 w-10 flex-col items-center justify-center rounded-md transition-transform active:scale-95 ${ring}`;
+  // Two fixtures that day (rare): the count goes top-left, leaving the
+  // corner the match card badge uses.
   const badge = fixtures.length > 1 && (
-    <span className="absolute -top-1 -right-1 rounded-full bg-foreground px-1 text-[9px] leading-tight text-background">
+    <span className="absolute -top-1 -left-1 rounded-full bg-muted-foreground px-1 text-[9px] leading-tight text-background">
       {fixtures.length}
     </span>
   );
@@ -58,6 +73,7 @@ function TeamCell({
     >
       <span className="text-xs font-semibold tabular-nums leading-none">{available}</span>
       {maybe > 0 && <span className="mt-0.5 text-[9px] leading-none">+{maybe}?</span>}
+      {f.past && f.cardCount ? <CardBadge count={f.cardCount} /> : null}
       {badge}
     </button>
   );
@@ -87,8 +103,9 @@ function FixtureDetail({
           if (group) group.players.push(p);
           else groups.set(label, { cell, players: [p] });
         }
+        const order = statusOrder(f.past);
         const ordered = [...groups.entries()].sort(
-          ([a, ga], [b, gb]) => STATUS_ORDER.indexOf(ga.cell.status) - STATUS_ORDER.indexOf(gb.cell.status) || a.localeCompare(b),
+          ([a, ga], [b, gb]) => order.indexOf(ga.cell.status) - order.indexOf(gb.cell.status) || a.localeCompare(b),
         );
         const scored = f.goalsFor !== undefined && f.goalsAgainst !== undefined;
         return (
@@ -99,6 +116,7 @@ function FixtureDetail({
                 {' '}&middot; {f.isHome ? 'Home' : 'Away'}
                 {f.friendly && <> &middot; Friendly</>}
                 {!f.past && !f.off && <> &middot; {f.selectedCount}/{squad.targetSquadSize} picked</>}
+                {f.past && f.cardCount ? <> &middot; {f.cardCount} on the match card</> : null}
               </span>
             </p>
             {ordered.map(([label, g]) => (
@@ -190,6 +208,12 @@ export default function TeamAvailability() {
       rememberOpenTeamAvailability(next);
       return next;
     });
+  const allOpen = data.teams.every((t) => expanded.has(t.team));
+  const toggleAll = () => {
+    const next = new Set(allOpen ? [] : data.teams.map((t) => t.team));
+    rememberOpenTeamAvailability(next);
+    setExpanded(next);
+  };
   const toggleCell = (key: string) => setOpenKey((k) => (k === key ? null : key));
 
   const [openTeam, openDate] = openKey ? openKey.split('|') : [];
@@ -200,11 +224,20 @@ export default function TeamAvailability() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-4 pb-8">
-      <div ref={scrollRef} className="overflow-x-auto pb-1">
+      {/* pr: room for the last column's match card badge, which overhangs the tile. */}
+      <div ref={scrollRef} className="overflow-x-auto pb-1 pr-1.5">
         <table className="border-separate border-spacing-0.5 text-xs">
           <thead>
             <tr>
-              <th className={`${NAME_COL} ${STICKY}`} />
+              <th className={`${NAME_COL} ${STICKY} pr-1 text-left align-bottom`}>
+                <button
+                  onClick={toggleAll}
+                  className="flex items-center gap-1 pb-1 font-normal text-muted-foreground hover:text-foreground"
+                >
+                  {allOpen ? <ChevronsDownUp className="h-3.5 w-3.5 shrink-0" /> : <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" />}
+                  {allOpen ? 'Collapse all' : 'Expand all'}
+                </button>
+              </th>
               {data.dates.map((d) => {
                 const isToday = d === firstUpcoming;
                 return (
@@ -316,6 +349,12 @@ export default function TeamAvailability() {
           <li className="flex items-center gap-2">
             <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[9px]">+2?</span>
             Maybes
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="inline-flex w-4 shrink-0 justify-center">
+              <CardBadge count={14} className="" />
+            </span>
+            On the match card (past games)
           </li>
           <li className="flex items-center gap-2">
             <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[10px]">19</span>

@@ -100,8 +100,9 @@ describe("data retention job", () => {
     const calls = fakeDb({ queue });
     const { bucket, deleted } = fakeBucket();
     const result = await runRetention({ ...base, FILES: bucket });
-    expect(deleted.map((b) => b.length)).toEqual([R2_BATCH, 3]);
-    expect(deleted.flat()).toEqual(queue);
+    // Each object with the photo thumbnail that may sit next to it (thumbKey).
+    expect(deleted.map((b) => b.length)).toEqual([R2_BATCH * 2, 6]);
+    expect(deleted.flat()).toEqual(queue.flatMap((k) => [k, `${k}.thumb`]));
     expect(result.filesDeleted).toBe(queue.length);
     expect(calls.filter((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "DELETE")).toHaveLength(2);
   });

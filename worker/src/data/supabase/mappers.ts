@@ -9,7 +9,6 @@ import type {
   AbilityGroupConfiguration, AvailabilityException, AvailabilityRule, AvailabilityRuleType, KitColour, Match, MatchCard,
   Player, Team,
 } from "../../../../shared/schema/domainTypes";
-import { fileLink } from "./files";
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -28,7 +27,7 @@ export interface PlayerRow {
   date_of_birth: string | null; photo_file_id: string | null;
 }
 
-export async function toPlayer(env: Env, r: PlayerRow): Promise<Player> {
+export async function toPlayer(_env: Env, r: PlayerRow): Promise<Player> {
   return {
     id: r.id,
     preferredName: str(r.preferred_name),
@@ -57,7 +56,10 @@ export async function toPlayer(env: Env, r: PlayerRow): Promise<Player> {
     rankUpdatedAt: str(r.rank_updated_at),
     status: str(r.status),
     applicantStage: str(r.applicant_stage),
-    photo: r.photo_file_id ? await fileLink(env, r.photo_file_id) : undefined,
+    // Not signed here: most reads of people never show the photo (the club
+    // reference signed one per player). A screen that shows it signs it
+    // (photoLink in data/supabase/files.ts), as the ranking does.
+    photoFileId: r.photo_file_id ?? undefined,
     sportsBackground: str(r.sports_background),
     selectionComments: str(r.selection_comments),
     optInOnly: r.opt_in_only === true,

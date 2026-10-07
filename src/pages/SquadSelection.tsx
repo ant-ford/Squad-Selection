@@ -56,9 +56,12 @@ export default function SquadSelection() {
 
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-  // includeSelected: the current squad is ranked too, so a player taken out
-  // of it before saving drops back into their natural place in the list.
-  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT, true, true);
+  // The ranking comes with the players (recommendationOrder); only a Worker
+  // older than that field is asked for it separately. includeSelected: the
+  // current squad is ranked too, so a player taken out of it before saving
+  // drops back into their natural place in the list.
+  const needsRecommendations = !!data && data.recommendationOrder === undefined;
+  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT, needsRecommendations, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => {
@@ -371,8 +374,11 @@ export default function SquadSelection() {
   }, [mergedPlayers, filters]);
 
   const recRankById = useMemo(
-    () => new Map((recData?.recommendations ?? []).map((r, i) => [r.id, i] as [string, number])),
-    [recData]
+    () => {
+      const order = data?.recommendationOrder ?? recData?.recommendations.map((r) => r.id) ?? [];
+      return new Map(order.map((id, i) => [id, i] as [string, number]));
+    },
+    [data?.recommendationOrder, recData]
   );
 
   const sortedPlayers = useMemo(
