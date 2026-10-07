@@ -14,6 +14,7 @@ import { invalidatePeople } from "./invalidation";
 import { alertKitOffered } from "./push";
 import { toCsv } from "../../shared/csv";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName, fullName } from "../../shared/personName";
 import {
   KIT_ITEMS,
   SWAPPABLE,
@@ -93,8 +94,6 @@ const EMPTY_SIZES: KitSizes = { shirt: null, shorts: null, socks: null, goalieSm
 
 export const isKitOfficer = (user: AuthorizedUser) => sectionsFor(user).includes("kit");
 
-const personName = (p: Pick<PersonRow, "preferred_name" | "given_names" | "surname">) =>
-  [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos || p.registered_team || "";
 
 function placeOf(r: SetRow): KitPlace {
@@ -177,7 +176,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
       teamRange: r.team_range,
       sizes: sizesOf(r),
       orderedForName: r.ordered_for_name,
-      owner: owner ? { id: owner.api_id, name: personName(owner), team: personTeam(owner), status: owner.status ?? "" } : null,
+      owner: owner ? { id: owner.api_id, name: fullName(owner), team: personTeam(owner), status: owner.status ?? "" } : null,
       numberHeldBy:
         !r.owner_id && r.number_holder_name ? { name: r.number_holder_name, status: r.number_holder_status ?? "" } : null,
       holder: r.holder_id ? { id: r.holder_id, name: r.holder_name ?? "" } : null,
@@ -195,7 +194,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
       const no = p.shirt_number_id ? shirtNo.get(p.shirt_number_id) ?? null : null;
       return {
         id: p.api_id,
-        name: personName(p),
+        name: fullName(p),
         search: [p.preferred_name, p.given_names, p.surname].filter(Boolean).join(" ").toLowerCase(),
         team: personTeam(p),
         status: p.status ?? "",
@@ -252,8 +251,8 @@ export async function getUncollectedKit(env: Env, now = new Date()): Promise<{ p
     seen.add(s.owner_id);
     people.push({
       id: p.api_id,
-      name: personName(p),
-      firstName: (p.preferred_name || p.given_names || "").split(" ")[0],
+      name: fullName(p),
+      firstName: firstName(p).split(" ")[0],
       mobile: p.mobile_no ?? "",
       shirtNo: s.shirt_no,
       since: s.received_on,
@@ -298,7 +297,7 @@ export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {
         "people",
         `select=id,preferred_name,given_names,surname&api_id=in.(${ids.map((i) => `"${encodeURIComponent(i)}"`).join(",")})`,
       );
-      convenors = people.map(personName);
+      convenors = people.map(fullName);
     }
   }
   return {
@@ -485,7 +484,7 @@ export async function getSetHistory(env: Env, setId: string): Promise<KitMove[]>
         `select=id,api_id,preferred_name,given_names,surname&api_id=in.(${named.map((i) => `"${encodeURIComponent(i)}"`).join(",")})`,
       )
     : [];
-  const name = (id: string | null) => (id ? personName(people.find((p) => p.api_id === id) ?? { preferred_name: null, given_names: "Someone", surname: null }) : null);
+  const name = (id: string | null) => (id ? fullName(people.find((p) => p.api_id === id) ?? { preferred_name: null, given_names: "Someone", surname: null }) : null);
   return moves.map((m) => ({ kind: m.kind, from: name(m.from_id), to: name(m.to_id), by: name(m.by_id), note: m.note, at: m.at }));
 }
 

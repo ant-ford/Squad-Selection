@@ -19,6 +19,7 @@ import { getMatchRecord } from "./coachAccess";
 import { notSeenWeeks } from "./lastSeen";
 
 import { fixtureChange } from "../../shared/fixtureChange";
+import { firstName } from "../../shared/personName";
 type MatchSide = "home" | "away";
 
 // ── HKFC side resolution ────────────────────────────────────────────────
@@ -303,7 +304,7 @@ async function revalidateAdds(
 
     const eligibility = evaluatePlayerEligibility(player, match, ctx);
     if (eligibility.status === "blocked") {
-      const name = player.preferredName || player.givenNames || id;
+      const name = firstName(player) || id;
       violations.push(`${name}: ${eligibility.reason}`);
     }
   }

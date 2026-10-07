@@ -10,6 +10,7 @@ import type { Env } from "./env";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, SupabaseError } from "./data/supabase";
+import { fullName } from "../../shared/personName";
 import {
   AVAILABILITY_HALVES,
   AVAILABILITY_LEVELS,
@@ -119,7 +120,6 @@ export function canSeeSeasonPlans(user: AuthorizedUser): boolean {
   return teams === "all" || teams.length > 0;
 }
 
-const personName = (p: PersonRow) => [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos || p.registered_team || "";
 
 /** Active players by the team they're shown in, with this season's plan. */
@@ -143,7 +143,7 @@ export async function getSeasonPlanBoard(env: Env, user: AuthorizedUser): Promis
     const row = byPerson.get(p.id);
     const plan = row ? (({ captaincyInterest: _hidden, ...rest }) => rest)(toAnswers(row)) : null;
     const list = grouped.get(team) ?? [];
-    list.push({ id: p.api_id, name: personName(p), status: p.status ?? "", playingPosition: p.playing_position ?? "", plan });
+    list.push({ id: p.api_id, name: fullName(p), status: p.status ?? "", playingPosition: p.playing_position ?? "", plan });
     grouped.set(team, list);
   }
   return {

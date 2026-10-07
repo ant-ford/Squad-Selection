@@ -26,6 +26,7 @@ import { TRIAL_STAGE, type JoinResult, type JoinerTrial, type MyTrial, type Tria
 import { audienceOf } from "../../shared/profile";
 import { isUnderEighteen } from "./declarations";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName, fullName } from "../../shared/personName";
 import { activeOfficeHolders, officeContact, senderFor } from "./officeContacts";
 
 const isCaptain = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "sectionCaptain");
@@ -42,8 +43,6 @@ function requireTrialSessions(user: AuthorizedUser): void {
 
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 const text = (v: unknown, max = 200) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
-const nameOf = (p: { preferred_name: string | null; given_names: string | null; surname: string | null }) =>
-  [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 
 /**
  * Signs someone up from a member's link, by their confirmed email (the
@@ -109,7 +108,7 @@ async function referrerName(env: Env, id: string | null): Promise<string | null>
     "people",
     `select=preferred_name,given_names,surname&id=${eq(id)}`,
   );
-  return r ? nameOf(r) || null : null;
+  return r ? fullName(r) || null : null;
 }
 
 export async function getMyTrial(env: Env, user: AuthorizedUser): Promise<MyTrial> {
@@ -180,7 +179,7 @@ async function captainMailboxes(env: Env): Promise<{ emails: string[]; personId:
 async function tellCaptains(env: Env, t: TrialistRow, p: Record<string, unknown>): Promise<void> {
   const { emails, personId } = await captainMailboxes(env);
   if (!emails.length || !personId) return;
-  const name = nameOf(p as never) || "Someone";
+  const name = fullName(p as never) || "Someone";
   const [referredBy, chosen] = await Promise.all([
     referrerName(env, t.referred_by_id),
     db(env).select<{ trial_sessions: { starts_at: string; place: string } | null }>(
@@ -307,11 +306,11 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
     `select=preferred_name,given_names,surname,offices!offices_person_id_fkey(office_email,designation,role)&api_id=${eq(actor.personId)}`,
   );
   const own = captain?.offices.find((o) => o.role === "section_captain");
-  const captainName = captain ? nameOf(captain) : "HKFC Hockey";
+  const captainName = captain ? fullName(captain) : "HKFC Hockey";
   const from = senderFor(env, captainName, own?.office_email);
-  const name = nameOf(p as never) || "the player";
+  const name = fullName(p as never) || "the player";
   const first = (p.preferred_name as string) || (p.given_names as string) || "there";
-  const greeting = [adh?.firstName, ...coachList.map((c) => c.preferred_name || c.given_names)].filter(Boolean).join(" and ") || "all";
+  const greeting = [adh?.firstName, ...coachList.map((c) => firstName(c))].filter(Boolean).join(" and ") || "all";
   const visiting = !p.hkid_no && p.passport_no ? " (no HKID: a visiting player)" : "";
   const coachTo = coachList[0];
 
