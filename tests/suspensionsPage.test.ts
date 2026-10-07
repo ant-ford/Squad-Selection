@@ -7,6 +7,7 @@ import {
   isDirty,
   leftLabel,
   newSuspension,
+  personSuspensions,
   queueLabel,
   queuePositions,
   stepMatches,
@@ -85,6 +86,24 @@ describe("the matches stepper", () => {
   it("steps from Until cleared to the top of the range", () => {
     expect(stepMatches(null, -1)).toBe(10);
     expect(stepMatches(null, 1)).toBe(10);
+  });
+});
+
+describe("one person's suspensions", () => {
+  it("cuts the board to them: open, recently closed, cards and an old flag", () => {
+    const board = {
+      open: [row({ id: "o1" }), row({ id: "o2", player: "p2" })],
+      cleared: [row({ id: "c1", servedOn: "2026-09-26", active: false })],
+      cards: [{ player: "p1", name: "Pat Example", servingTeam: "HKFC C", remainingMatches: 1, points: 5, dcReferral: false, indeterminate: false }],
+      legacy: [{ player: "p2", name: "Kim Ho", team: null, isSuspended: true, matchesToServe: null }],
+    };
+    const mine = personSuspensions(board, "p1");
+    expect(mine.open.map((s) => s.id)).toEqual(["o1"]);
+    expect(mine.cleared.map((s) => s.id)).toEqual(["c1"]);
+    expect(mine.card?.points).toBe(5);
+    expect(mine.flag).toBeNull();
+    expect(personSuspensions(board, "p2").flag?.name).toBe("Kim Ho");
+    expect(personSuspensions(board, "p3")).toEqual({ open: [], cleared: [], card: null, flag: null });
   });
 });
 
