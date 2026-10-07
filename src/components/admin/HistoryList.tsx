@@ -2,15 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { ErrorState } from '@/components/ui/error-state';
 import { formatFullDateTime } from '@/lib/dateUtils';
 import { historyDetail, newestFirst } from '@/lib/peopleAdmin';
-import { getPersonHistory } from '@/api/adminPeople';
+import { getMatchHistory, getPersonHistory } from '@/api/adminPeople';
 
 export const historyKey = (id: string) => ['personHistory', id] as const;
+export const matchHistoryKey = (id: string) => ['matchHistory', id] as const;
 
-/** A person's change history, newest first (GET /api/history). */
-export default function HistoryList({ personId }: { personId: string }) {
+/** A person's or a fixture's change history, newest first (GET /api/history). */
+export default function HistoryList({ personId, matchId }: { personId?: string; matchId?: string }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: historyKey(personId),
-    queryFn: () => getPersonHistory(personId),
+    queryKey: matchId ? matchHistoryKey(matchId) : historyKey(personId ?? ''),
+    queryFn: () => (matchId ? getMatchHistory(matchId) : getPersonHistory(personId ?? '')),
     staleTime: 30_000,
   });
   if (isLoading) return <p className="text-xs text-muted-foreground">Loading…</p>;

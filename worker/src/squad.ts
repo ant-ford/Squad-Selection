@@ -14,6 +14,7 @@ import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import { hkfcSides } from "./match";
+import { notSeenWeeks } from "./lastSeen";
 
 import { fixtureChange } from "../../shared/fixtureChange";
 type MatchSide = "home" | "away";
@@ -158,6 +159,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
        * that apart from a player who actually declined.
        */
       optInOnly: p.optInOnly === true,
+      /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture (lastSeen.ts). */
+      notSeenWeeks: notSeenWeeks(p.lastSeenAt, exc !== undefined),
       supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,
