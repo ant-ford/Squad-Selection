@@ -157,4 +157,5 @@ export const routes: Routes = {
   'GET /api/ranking/inactive': () => INACTIVE,
   'GET /api/recent-changes': () => ({ changes: CHANGES }),
   'GET /api/team-attendance': () => teamAttendance(),
+  'POST /api/match/:id/auto-select': () => ({ success: true }),
 };
