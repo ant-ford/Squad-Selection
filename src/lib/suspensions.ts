@@ -4,7 +4,7 @@
  * sheet's save.
  */
 import type { StatusTone } from '@/lib/statusTone';
-import type { LegacySuspensionRow, NewSuspension, SuspensionChange, SuspensionRow } from '@/api/suspensions';
+import type { LegacySuspensionRow, NewSuspension, SuspensionChange, SuspensionRow, SuspensionsBoard } from '@/api/suspensions';
 
 /** The stepper's range; "Until cleared" is the other choice. */
 export const MIN_MATCHES = 1;
@@ -124,4 +124,14 @@ export function isDirty(start: SuspensionDraft, d: SuspensionDraft): boolean {
     start.reason.trim() !== d.reason.trim() ||
     start.servingTeam !== d.servingTeam
   );
+}
+
+/** One person's part of the board, for their person page. */
+export function personSuspensions(board: SuspensionsBoard, player: string) {
+  return {
+    open: board.open.filter((s) => s.player === player),
+    cleared: board.cleared.filter((s) => s.player === player),
+    card: board.cards.find((c) => c.player === player) ?? null,
+    flag: board.legacy.find((l) => l.player === player) ?? null,
+  };
 }

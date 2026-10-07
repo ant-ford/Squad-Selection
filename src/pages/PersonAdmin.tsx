@@ -11,6 +11,7 @@ import MembershipBlock from '@/components/admin/MembershipBlock';
 import StageBlock from '@/components/admin/StageBlock';
 import ActiveBlock from '@/components/admin/ActiveBlock';
 import SquadBlock from '@/components/admin/SquadBlock';
+import PersonSuspensions from '@/components/admin/PersonSuspensions';
 import HistoryList, { historyKey } from '@/components/admin/HistoryList';
 import { useMyProfile } from '@/lib/queries';
 import { officerGuide } from '@/components/HelpLink';
@@ -85,6 +86,7 @@ export default function PersonAdmin() {
         {can.activate && <ActiveBlock personId={person.id} name={person.name} active={person.active} onSaved={saved} />}
         {can.suspend && (
           <AdminBlock title="Suspension">
+            {profile?.sections?.includes('discipline') && <PersonSuspensions personId={person.id} />}
             <Link
               to={`/suspensions?person=${encodeURIComponent(person.id)}`}
               className="inline-flex items-center gap-1.5 h-10 px-3 rounded-md border border-border bg-background text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
