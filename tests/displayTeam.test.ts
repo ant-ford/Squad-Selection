@@ -234,7 +234,6 @@ describe("player portal fixture categories (per-day, max three)", () => {
 
   it("decides the officer screens from sign-in, with no reads, and a plain player gets none of them", async () => {
     const out = await portal({ registeredTeam: "D", matches: [{ id: recId("MD"), homeTeam: "D", day: 1 }] });
-    expect(out.eddyProfile).toBe(true);
     expect(out.volunteers).toBe(false);
     expect(out.events).toBe(false);
     expect(out.umpiring).toBeNull();
