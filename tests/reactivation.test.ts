@@ -63,4 +63,9 @@ describe("ask to be reactivated", () => {
     await expect(answerReactivation(env, captain, STEP, { activate: false })).rejects.toMatchObject({ status: 404 });
     await expect(answerReactivation(env, captain, "not-a-uuid", { activate: false })).rejects.toMatchObject({ status: 404 });
   });
+
+  it("is 409 when the person is no longer a member", async () => {
+    fake(() => ({ status: 400, body: { code: "22023", message: "Only a member can be reactivated" } }));
+    await expect(answerReactivation(env, captain, STEP, { activate: true })).rejects.toMatchObject({ status: 409, code: "NOT_A_MEMBER" });
+  });
 });
