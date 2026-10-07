@@ -252,7 +252,7 @@ export async function updateJoiner(env: Env, actor: AuthorizedUser, apiId: strin
   await checkOffices(env, form);
   if (form.email !== (p.email ?? "").toLowerCase()) {
     const clash = await db(env).select<{ id: string; email: string }>("people", `select=id,email&email=ilike.${encodeURIComponent(form.email)}`);
-    if (clash.some((c) => c.id !== p.id && c.email.toLowerCase() === form.email)) throw new HttpError("Someone else in Eddy has that email.", 409, "EMAIL_TAKEN");
+    if (clash.some((c) => c.id !== p.id && c.email.toLowerCase() === form.email)) throw new HttpError("Someone else already has that email.", 409, "EMAIL_TAKEN");
   }
   await db(env).update("people", `id=${eq(p.id)}`, formColumns(form));
   await log(env, actor, "update", apiId, Object.keys(formColumns(form)));
@@ -351,7 +351,7 @@ async function request(
   const convenor = offices.find((o) => o.id === convenorId && o.role === role);
   if (!convenor?.people) throw new HttpError(`Choose the ${STEP_ROLE[key]} from the list.`, 400, "INVALID_INPUT");
   const to = officeEmail(convenor);
-  if (!to) throw new HttpError(`The ${STEP_ROLE[key]} has no email address in Eddy.`, 400, "INVALID_INPUT");
+  if (!to) throw new HttpError(`The ${STEP_ROLE[key]} has no email address on record.`, 400, "INVALID_INPUT");
   const d = db(env);
   await d.update("people", `id=${eq(p.id)}`, key === "kit" ? { sponsored_by_kit_convenor_id: convenor.id } : { sponsored_by_hockey_convenor_id: convenor.id });
 

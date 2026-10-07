@@ -297,7 +297,7 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
   const coachList = coaches.map((c) => c.people).filter((c): c is NonNullable<typeof c> => !!c?.email);
   const adh = env.ASSISTANT_DIRECTOR || "";
   const to = [...(adh ? [addressOf(adh)] : []), ...coachList.map((c) => c.email!)];
-  if (!to.length) throw new HttpError(`Neither the Assistant Director of Hockey nor a ${team} coach has an email address in Eddy.`, 400, "INVALID_INPUT");
+  if (!to.length) throw new HttpError(`Neither the Assistant Director of Hockey nor a ${team} coach has an email address on record.`, 400, "INVALID_INPUT");
 
   const captain = await d.one<{ preferred_name: string | null; given_names: string | null; surname: string | null; offices: { office_email: string | null; designation: string | null; role: string }[] }>(
     "people",
