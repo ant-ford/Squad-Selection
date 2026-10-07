@@ -93,7 +93,7 @@ WRITES = "on"
 # with scripts/vapid-keys.mjs); anything else sends nothing and the app
 # hides the Notifications switch. VAPID_SUBJECT is who push services can
 # contact about Eddy's pushes.
-PUSH = "off"
+PUSH = "on"
 VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"
 
 # The first sends the commitment review emails that are due
@@ -167,7 +167,7 @@ SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
 # The read-only switch (src/readOnly.ts): "off" turns every save away.
 WRITES = "on"
 # Web Push (src/push.ts), as above, with preview's own VAPID key.
-PUSH = "off"
+PUSH = "on"
 VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"
 
 [env.preview.triggers]
