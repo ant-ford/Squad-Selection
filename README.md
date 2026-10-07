@@ -190,7 +190,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 ## Frontend
 
-- **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded, and unknown paths go to `/`.
+- **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded through `lazyPage()`, and unknown paths go to `/`.
 - **Data:** React Query hooks in `src/lib/queries.ts`, over `src/lib/apiClient.ts` (Bearer JWT, plus `X-Eddy-Fresh` after writes). The player page starts its requests in parallel as soon as there is a session.
 - **Sign-in:** `@supabase/auth-js` only (`src/lib/supabase.ts`, `src/lib/auth.tsx`), never the whole supabase-js. Turnstile (`src/components/Turnstile.tsx`) is on when `VITE_TURNSTILE_SITE_KEY` is set.
 - **One header on every signed-in screen:** `src/components/AppHeader.tsx`, with its rules in `src/lib/header.ts`. It has:
