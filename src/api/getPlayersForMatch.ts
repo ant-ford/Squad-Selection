@@ -1,3 +1,4 @@
+import type { FixtureChange } from '@shared/fixtureChange';
 import { apiGet, apiPost } from '@/lib/apiClient';
 
 export interface EligibilityIssue {
@@ -23,6 +24,8 @@ export interface MatchPlayer {
    * they have not answered counts as Unavailable.
    */
   optInOnly?: boolean;
+  /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture. */
+  notSeenWeeks?: number | null;
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';
@@ -60,6 +63,8 @@ export interface MatchInfo {
    *  back so the server can tell whether someone else changed the squad
    *  since (POST /api/squad/changes). 0 before the first change. */
   selectionVersion?: number;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
 }
 
 /** Shirt colour options. '' means not yet decided. */

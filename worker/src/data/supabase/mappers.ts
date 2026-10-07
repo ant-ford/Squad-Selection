@@ -78,6 +78,7 @@ export interface PlayerLiteRow {
   ever_registered_to_premier: boolean; u21_eligible: boolean;
   section_rank: number | null; status: string | null; applicant_stage: string | null; opt_in_only: boolean;
   birthday: string | null;
+  last_seen_at?: string | null;
 }
 
 /** As toPlayer, for the lite view: no photo (so nothing to sign), CV, coach notes, Player/Coach or rank date. */
@@ -106,6 +107,7 @@ export function toPlayerLite(r: PlayerLiteRow): Player {
     applicantStage: str(r.applicant_stage),
     optInOnly: r.opt_in_only === true,
     birthday: str(r.birthday),
+    lastSeenAt: str(r.last_seen_at ?? null),
   };
 }
 
@@ -136,6 +138,7 @@ export interface MatchRow {
   selected_players_home: string[]; selected_players_away: string[]; auto_select_enabled: boolean;
   home_kit: string | null; away_kit: string | null; ump_1: string | null; ump_2: string | null;
   selection_version_home?: number | null; selection_version_away?: number | null;
+  previous_match_date?: string | null; previous_venue?: string | null; previous_status?: string | null; changed_at?: string | null;
 }
 
 export function toMatch(r: MatchRow): Match {
@@ -161,6 +164,10 @@ export function toMatch(r: MatchRow): Match {
     ump2: r.ump_2 || "",
     selectionVersionHome: r.selection_version_home ?? 0,
     selectionVersionAway: r.selection_version_away ?? 0,
+    previousMatchDate: r.previous_match_date || undefined,
+    previousVenue: r.previous_venue || undefined,
+    previousStatus: r.previous_status || undefined,
+    changedAt: r.changed_at || undefined,
   };
 }
 

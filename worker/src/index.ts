@@ -533,7 +533,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // Recently played matches cost an extra Airtable read, so the coach
       // list asks for them only while "Show past" is on.
       const includePast = url.searchParams.get("past") === "1";
-      return json(await getUpcomingFixtures(env, { user, team, includePast }), 200, origin);
+      return json(await getUpcomingFixtures(env, { user, team, includePast, calledOff: true }), 200, origin);
     }
 
     // Dashboard metrics (Coach) - expose every player's rank moves / play-up counts.

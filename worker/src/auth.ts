@@ -174,7 +174,7 @@ export function authorize(normalizedEmail: string, context: AuthContext): Author
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
-  noteRequestPerson(player.id, normalizedEmail);
+  noteRequestPerson(player.id, normalizedEmail, player.uuid);
   // A reused answer's versions, raised to the newest this isolate has seen.
   const versions = withVersionFloor(context.versions);
   noteRequestVersions(versions);
