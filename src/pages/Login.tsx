@@ -4,6 +4,7 @@ import { toast } from '@/lib/toast';
 import { normalizeEmail } from '@shared/normalizeEmail';
 import { sendEmailErrorMessage, signInErrorMessage } from '@/lib/signInError';
 import { Turnstile, TURNSTILE_SITE_KEY, type TurnstileHandle } from '@/components/Turnstile';
+import { PRIVACY_URL } from '@/components/HelpLink';
 
 const CODE_LENGTH = 6;
 
@@ -255,6 +256,16 @@ export default function Login({ title = 'Eddy', intro = 'Enter your email to sig
 
         <p className="text-xs text-muted-foreground mt-4 text-center">
           Don't see the email? Please check your junk or spam folder.
+        </p>
+        <p className="text-xs mt-3 text-center">
+          <a
+            href={PRIVACY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Privacy
+          </a>
         </p>
       </div>
     </div>

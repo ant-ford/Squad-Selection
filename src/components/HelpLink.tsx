@@ -33,3 +33,6 @@ export function officerGuide(profile: Pick<ProfileData, 'officerRoles'> | undefi
   if (offices.has('membershipOfficer')) return 'membership';
   return fallback;
 }
+
+/** The privacy notice, also on eddy.global. Linked from the footer and the sign-in screen. */
+export const PRIVACY_URL = 'https://eddy.global/privacy/';
