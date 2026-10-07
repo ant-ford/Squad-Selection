@@ -62,6 +62,7 @@ interface DutyRow {
   slot: 1 | 2;
   duty_team: string;
   status: UmpireDuty["status"];
+  not_needed: boolean;
 }
 
 interface AssignmentRow {
@@ -76,7 +77,7 @@ interface AssignmentRow {
 
 const PERSON_COLUMNS =
   "id,api_id,preferred_name,given_names,surname,qualified_umpire,commitment_end_date,selected_team_eos,selected_team_sos,registered_team";
-const DUTY_COLUMNS = "id,match_date,time_tbc,division,venue,home_team,away_team,slot,duty_team,status";
+const DUTY_COLUMNS = "id,match_date,time_tbc,division,venue,home_team,away_team,slot,duty_team,status,not_needed";
 const ASSIGNMENT_COLUMNS = "id,duty_id,person_id,external_name,paid,status,created_at";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -239,6 +240,7 @@ function toDuty(d: DutyRow, assignments: DutyAssignment[]): UmpireDuty {
     slot: d.slot,
     dutyTeam: d.duty_team,
     status: d.status,
+    notNeeded: d.not_needed === true,
     assignments,
   };
 }
@@ -408,8 +410,11 @@ async function liveAssignments(env: Env, dutyId: string): Promise<AssignmentRow[
   return db(env).select<AssignmentRow>("umpire_assignments", `select=${ASSIGNMENT_COLUMNS}&duty_id=${eq(dutyId)}&status=neq.withdrawn`);
 }
 
+const notNeeded = () => new HttpError("No umpire is needed for this game.", 409, "DUTY_NOT_NEEDED");
+
 function requireUpcoming(d: DutyRow): void {
   if (d.status === "cancelled") throw new HttpError("HKHA has taken this game off the list.", 409, "DUTY_CANCELLED");
+  if (d.not_needed) throw notNeeded();
   // A TBC kick-off is midnight: open until the day is over.
   const starts = new Date(d.match_date).getTime() + (d.time_tbc ? DAY_MS : 0);
   if (starts <= Date.now()) throw new HttpError("This game has already started.", 409, "DUTY_PAST");
@@ -490,6 +495,7 @@ export async function confirmAssignment(env: Env, user: AuthorizedUser, id: stri
   if (a.status !== "offered") throw new HttpError("Only an offer can be confirmed.", 409, "NOT_AN_OFFER");
   const d = await dutyRow(env, a.duty_id);
   if (d.status === "cancelled") throw new HttpError("HKHA has taken this game off the list.", 409, "DUTY_CANCELLED");
+  if (d.not_needed) throw notNeeded();
   await writing(() => db(env).update("umpire_assignments", `id=${eq(a.id)}`, { status: "confirmed", confirmed_at: new Date().toISOString() }));
   afterChange();
   return { ok: true };
@@ -505,6 +511,7 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   requireCoordinator(user);
   const d = await dutyRow(env, dutyId);
   if (d.status === "cancelled") throw new HttpError("HKHA has taken this game off the list.", 409, "DUTY_CANCELLED");
+  if (d.not_needed) throw notNeeded();
   const personId = typeof body.personId === "string" ? body.personId.trim() : "";
   const externalName = typeof body.externalName === "string" ? body.externalName.trim().replace(/\s+/g, " ") : "";
   if (!!personId === !!externalName) throw new HttpError("Choose a club umpire, or type an outside umpire's name.", 400, "INVALID_INPUT");
@@ -540,6 +547,26 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   return { ok: true };
 }
 
+/**
+ * The coordinator marks a duty as needing no umpire (a walk-over), or undoes
+ * it. Only while nobody is confirmed for it: whoever has it is taken off
+ * first, so no one is left thinking they're umpiring.
+ */
+export async function setNotNeeded(env: Env, user: AuthorizedUser, dutyId: string, body: Record<string, unknown>) {
+  await requireAccess(env, user);
+  requireCoordinator(user);
+  const d = await dutyRow(env, dutyId);
+  const value = body.notNeeded === true;
+  if (value) {
+    const live = await liveAssignments(env, d.id);
+    if (live.some((a) => a.status === "confirmed" || a.status === "no_show")) {
+      throw new HttpError("Remove the umpire first.", 409, "DUTY_TAKEN");
+    }
+  }
+  await db(env).update("umpire_duties", `id=${eq(d.id)}`, { not_needed: value });
+  return { ok: true };
+}
+
 /** The coordinator marks a played game's umpire as a no-show, or undoes it. */
 export async function setNoShow(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>) {
   await requireAccess(env, user);
@@ -567,6 +594,14 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
   const report: UmpiringReport = { season, duties: 0, coveredFree: 0, coveredPaidMembers: 0, coveredExternal: 0, noShows: 0, uncovered: 0, umpires: [], byTeam: [], rows: [] };
   for (const d of [...duties].sort((x, y) => x.matchDate.localeCompare(y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
     if (d.status === "cancelled") continue;
+    // A walk-over: listed, not counted.
+    if (d.notNeeded) {
+      report.rows.push({
+        matchDate: d.matchDate, timeTbc: d.timeTbc, venue: d.venue, division: d.division, homeTeam: d.homeTeam, awayTeam: d.awayTeam,
+        dutyTeam: d.dutyTeam, personId: null, umpire: null, short: null, outcome: "not_needed",
+      });
+      continue;
+    }
     report.duties++;
     const team = byTeam.get(d.dutyTeam) ?? { team: d.dutyTeam, duties: 0, free: 0, paidMembers: 0, outside: 0, uncovered: 0 };
     team.duties++;

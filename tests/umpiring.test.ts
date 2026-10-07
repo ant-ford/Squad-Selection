@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { assignDuty, confirmAssignment, getUmpiringBoard, refreshUmpirePool, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, refreshUmpirePool, setNotNeeded, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
 import { signedIn } from "./helpers/factories";
 import { invalidateAll } from "../worker/src/cache";
 import {
@@ -75,7 +75,7 @@ const assignment = (over: Partial<DutyAssignment> = {}): DutyAssignment => ({
 });
 const duty = (over: Partial<UmpireDuty> = {}): UmpireDuty => ({
   id: "d1", matchDate: "2026-10-11T01:00:00.000Z", timeTbc: false, division: "3", venue: "HKFC",
-  homeTeam: "HKFC F", awayTeam: "Elite B", slot: 1, dutyTeam: "HKFC D", status: "scheduled", assignments: [], ...over,
+  homeTeam: "HKFC F", awayTeam: "Elite B", slot: 1, dutyTeam: "HKFC D", status: "scheduled", notNeeded: false, assignments: [], ...over,
 });
 
 describe("umpiring messages", () => {
@@ -97,6 +97,12 @@ describe("umpiring messages", () => {
     expect(text).toBe(
       ["🏑Weekly Club Duties🥳", "", "11/10 0900 HKFC D ✅George", "11/10 1045 HKFC G", "", "Put your name down: https://app.eddy.global/umpiring?week=2026-10-05"].join("\n"),
     );
+  });
+
+  it("marks a walk-over Not needed in both messages", () => {
+    const week = [duty({ notNeeded: true }), duty({ id: "d2", matchDate: "2026-10-11T02:45:00.000Z", dutyTeam: "HKFC G" })];
+    expect(umpiresMessage(week, "https://x").split("\n").slice(2, 4)).toEqual(["11/10 0900 HKFC D Not needed", "11/10 1045 HKFC G"]);
+    expect(captainsMessage(week).split("\n").slice(2)).toEqual(["11/10 0900 HKFC D Not needed", "11/10 1045 HKFC G ❓"]);
   });
 
   it("sends the captains the final list: club umpires ✅, paid 💰, gaps ❓, offers not shown", () => {
@@ -275,6 +281,44 @@ describe("the coordinator", () => {
   });
 });
 
+
+describe("a duty no umpire is needed for", () => {
+  const base = (live: unknown[] = []) => ({
+    people: byApiId,
+    matches: [],
+    umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled", not_needed: false }],
+    umpire_assignments: (url: URL, method: string, body: any) => (method === "GET" ? (url.searchParams.get("duty_id") ? live : []) : body ?? []),
+  });
+
+  it("is marked and undone by the coordinator only", async () => {
+    const calls = fake(base());
+    await setNotNeeded(env, george, DUTY, { notNeeded: true });
+    await setNotNeeded(env, george, DUTY, { notNeeded: false });
+    const patches = calls.filter((c) => c.method === "PATCH" && c.url.pathname.endsWith("/umpire_duties")).map((c) => c.body);
+    expect(patches).toEqual([{ not_needed: true }, { not_needed: false }]);
+    await expect(setNotNeeded(env, user("recANN"), DUTY, { notNeeded: true })).rejects.toThrow(/Umpire Coordinator/);
+  });
+
+  it("needs whoever has the game taken off first", async () => {
+    fake(base([{ id: "a1", duty_id: DUTY, person_id: "u-ann", paid: false, status: "confirmed" }]));
+    await expect(setNotNeeded(env, george, DUTY, { notNeeded: true })).rejects.toThrow(/Remove the umpire first/);
+  });
+
+  it("can't be taken or assigned while marked", async () => {
+    fake({ ...base(), umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled", not_needed: true }] });
+    await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/No umpire is needed/);
+    await expect(assignDuty(env, george, DUTY, { externalName: "Pagey" })).rejects.toThrow(/No umpire is needed/);
+  });
+
+  it("is listed in the season report but not counted", () => {
+    const report = tallyDuties([duty({ notNeeded: true }), duty({ id: "d2", assignments: [assignment({ name: "George", personId: "recGEORGE" })] })], "2026-2027");
+    expect(report).toMatchObject({ duties: 1, coveredFree: 1, uncovered: 0 });
+    expect(report.byTeam).toEqual([{ team: "HKFC D", duties: 1, free: 1, paidMembers: 0, outside: 0, uncovered: 0 }]);
+    expect(report.rows.map((r) => r.outcome)).toEqual(["not_needed", "free"]);
+    expect(reportCsvRows(report)[1].at(-1)).toBe("Not needed");
+    expect(reportGrid(report).days[0].cells["HKFC D"]).toEqual(["n/a", "George"]);
+  });
+});
 describe("clashes with the umpire's own games", () => {
   const game = (hk: string, venue = "HKFC") => ({ matchDate: new Date(`2026-10-11T${hk}:00+08:00`).toISOString(), venue, homeTeam: "HKFC D", awayTeam: "Valley B" });
   const at = (hk: string, venue = "HKFC", timeTbc = false) => ({ matchDate: new Date(`2026-10-11T${hk}:00+08:00`).toISOString(), venue, timeTbc });
