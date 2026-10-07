@@ -52,11 +52,16 @@ export function useMyProfile() {
   });
 }
 
-/** Whether Eddy sends push alerts, and the key to subscribe with (worker/src/push.ts). */
+/** GET /api/push/config: whether Eddy sends push alerts, and the key to subscribe with (worker/src/push.ts). */
+export interface PushConfig {
+  enabled: boolean;
+  publicKey: string | null;
+}
+
 export function usePushConfig(enabled = true) {
   return useQuery({
     queryKey: ['pushConfig'],
-    queryFn: () => apiGet<{ enabled: boolean; publicKey: string | null }>('/api/push/config'),
+    queryFn: () => apiGet<PushConfig>('/api/push/config'),
     staleTime: Infinity,
     enabled,
   });

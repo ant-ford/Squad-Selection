@@ -10,6 +10,7 @@ import type { MySeasonPlan } from '@shared/seasonPlan';
 import type { MyVolunteering } from '@shared/volunteering';
 import type { Persona } from '../personas.mjs';
 import type { Routes } from './routing';
+import type { PushConfig } from '@/lib/queries';
 import { umpireNextDuty } from './umpiring';
 import {
   PERSONAS, SQUAD_PLAYERS, TEAMS, SEASON, SEASON_SHORT, SAT1, SUN1, WED, SAT2, SAT3, SAT4,
@@ -197,6 +198,8 @@ const VOLUNTEERING: MyVolunteering = {
 export const routes: Routes = {
   'GET /api/my-profile': ({ persona }) => profile(persona),
   'GET /api/my-fixtures': ({ persona, query }) => myFixtures(persona, query.get('past') === '1'),
+  // Push is off until the owner switches it on, so the demo matches production: no Notifications entry.
+  'GET /api/push/config': (): PushConfig => ({ enabled: false, publicKey: null }),
   'GET /api/my-tasks': ({ persona }) => ({ tasks: tasks(persona) }),
   'GET /api/my-availability-rules': () => ({ rules: RULES }),
   'GET /api/player-stats/:id': ({ params }) => stats(params.id),
