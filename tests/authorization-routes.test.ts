@@ -988,6 +988,52 @@ describe("read routes require authentication", () => {
   });
 });
 
+describe("Web Push routes (push.ts)", () => {
+  const PUSH_ROUTES: [string, RequestInit][] = [
+    ["/api/push/config", {}],
+    ["/api/push/subscribe", jsonInit({ endpoint: "https://push.example/1", keys: { p256dh: "x", auth: "y" } })],
+    ["/api/push/unsubscribe", jsonInit({ endpoint: "https://push.example/1" })],
+    ["/api/push/squad", jsonInit({ matchId: "recM1", side: "home" })],
+  ];
+
+  it.each(PUSH_ROUTES)("refuses %s without a session", async (path, init) => {
+    signOut();
+    const res = await call(path, init);
+    expect(res.status).toBe(401);
+  });
+
+  it("tells a signed-in player push is off while PUSH is unset, without reading anything", async () => {
+    const res = await call("/api/push/config");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false, publicKey: null });
+  });
+
+  it("keeps Send to Eddy app for coaches", async () => {
+    const res = await call("/api/push/squad", jsonInit({ matchId: "recM1", side: "home" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "COACH_ACCESS_REQUIRED" });
+  });
+
+  it("subscribes the device for the session's person, whatever the body claims", async () => {
+    const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"])) as CryptoKeyPair;
+    const pushEnv = { ...ENV, PUSH: "on", VAPID_PRIVATE_KEY: JSON.stringify(await crypto.subtle.exportKey("jwk", pair.privateKey)) };
+    const pg = fakePostgrest({ tables: { error_log: [], push_subscriptions: [] }, other: supabaseAuth });
+    const headers = new Headers({ Authorization: `Bearer ${TOKENS.player}`, "Content-Type": "application/json" });
+    const body = {
+      endpoint: "https://push.example/1",
+      keys: { p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", auth: "BTBZMqHH6r4Tts7J_aSIgg" },
+      personId: COACH,
+    };
+    const res = await worker.fetch(
+      new Request("https://hkfc-api.test/api/push/subscribe", { method: "POST", headers, body: JSON.stringify(body) }),
+      pushEnv,
+      CTX,
+    );
+    expect(res.status).toBe(200);
+    expect(pg.tables.push_subscriptions).toEqual([expect.objectContaining({ person_id: PLAYER, endpoint: "https://push.example/1" })]);
+  });
+});
+
 describe("a coach answering for a player is coach-only", () => {
   it("denies a non-coach, and writes nothing", async () => {
     signInAs(TOKENS.player);

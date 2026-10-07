@@ -152,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async (): Promise<void> => {
+    // This device stops getting their alerts (best effort, a few seconds at most).
+    await import('./push').then((push) => push.forgetThisDevice()).catch(() => undefined);
     await signOut();
     // Log out (not a lapsed session) also drops form drafts kept on this
     // device, so the next person on a shared phone can't see them.

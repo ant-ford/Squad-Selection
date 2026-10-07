@@ -36,8 +36,8 @@ insert into erased_fks values
   ('event_responses.person_id', 'blanked'),
   ('event_payments.payer_id', 'blanked');
 
--- One "seeded" test per column, one "no rows left" per deleted one, and nine more.
-select plan((select count(*)::int + count(*) filter (where how = 'deleted')::int from erased_fks) + 9);
+-- One "seeded" test per column, one "no rows left" per deleted one, and eleven more.
+select plan((select count(*)::int + count(*) filter (where how = 'deleted')::int from erased_fks) + 11);
 
 -- Rows in one table.column that refer to the person being removed.
 create function pg_temp.rows_for(p_fk text) returns bigint language plpgsql as $$
@@ -109,6 +109,11 @@ select id, pg_temp.p(), 'going', '[{"name": "Jane Guest", "age": "child"}]', '{"
 from public.events where title = 'Erase test social';
 insert into public.event_payments (event_id, payer_id, read_status, reference, payee, amount_due)
 select id, pg_temp.p(), 'matched', 'FPS 123456', 'HKFC Hockey', 100 from public.events where title = 'Erase test social';
+-- Web Push devices: removed by a trigger on personal_data_removed_at
+-- (20261007180005), not by erase_personal_data itself ("erasedBy" in
+-- tests/retentionCoverage.test.ts). The other person's device stays.
+insert into public.push_subscriptions (person_id, endpoint, p256dh, auth)
+values (pg_temp.p(), 'https://push.example/erase-p', 'k', 'a'), (pg_temp.q(), 'https://push.example/erase-q', 'k', 'a');
 -- The playing record, which stays.
 insert into public.match_selections (match_id, side, person_id)
 select id, 'home', pg_temp.p() from public.matches where airtable_id = 'recErMatch';
@@ -137,6 +142,10 @@ select set_eq($$ select r2_key from public.r2_deletions where r2_key like 'test/
               array['test/erase/p-form', 'test/erase/photo'], 'their stored files are queued for deletion, not the other person''s');
 select is((select count(*) from public.files where r2_key = 'test/erase/q-form'), 1::bigint,
           'the form they signed for someone else is kept');
+select is((select count(*) from public.push_subscriptions where person_id = pg_temp.p()), 0::bigint,
+          'push_subscriptions: their devices are removed with their personal data');
+select is((select count(*) from public.push_subscriptions where person_id = pg_temp.q()), 1::bigint,
+          'push_subscriptions: someone else''s device stays');
 select is((select count(*) from public.match_selections where person_id = pg_temp.p()), 1::bigint,
           'the playing record (match_selections) is kept');
 select results_eq(

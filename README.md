@@ -93,7 +93,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
 | Events | `events`, `event_responses`, `event_payments` |
 | Umpiring and HKHA | `umpire_duties`, `umpire_assignments`, `umpire_pool`, `hkha_registrations` |
 | Quizzes | `quizzes`, `quiz_scores` |
-| Messages and logs | `email_log`, `message_templates`, `message_log`, `activity_log`, `files`, `r2_deletions` |
+| Messages and logs | `email_log`, `message_templates`, `message_log`, `push_subscriptions` (Web Push devices), `activity_log`, `files`, `r2_deletions` |
 | System | `cache_versions`, `error_log`, `heartbeats` |
 
 - **Views.** `api_*` views (`api_players`, `api_players_lite`, `api_matches`, `api_match_cards`, `api_people_crm`, `api_reviews`, `api_suspensions`, …) are the shapes the Worker reads, and carry `api_id`. `api_players_lite` is the squad screens' narrow player read. `*_v` views are derived reads (`people_v`, `commitments_v`, `kit_sets_v`, `reviews_due_v`, `retention_due_v`, `retention_schedule_v`, …).
@@ -115,7 +115,8 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - automatic re-registration after the last allowed play-up (`match_cards_auto_reregister`);
   - linking match cards to people by exact Registered Name (`match_cards_link_person`). Both match-card triggers run only when the columns they read change;
   - stamping `inactive_since` and the membership stage;
-  - commitment periods.
+  - commitment periods;
+  - removing a person's push devices when `erase_personal_data()` stamps `personal_data_removed_at` (`people_erase_push_subscriptions`).
 - **Constraints.** `people.status` is Member, Applicant or Resigned, and `people.applicant_stage` one of the stages in `shared/membershipStages.ts` (CHECKs). The team columns Eddy writes (people's registered and selected teams, `hkha_registrations`, `season_rollover_people`, `shirt_numbers`, `suspensions`) reference `teams.team_name`, `ON UPDATE CASCADE`. Columns hkha-sync fills (opponents, `match_cards`, `umpire_duties`, `registration_events`) stay free text, so a sync never fails on a name. Renaming a team also needs `hkfc_team_level()` and hkha-sync changed.
 - **Squad changes.** Every squad write goes through `on_squad_changed()`. It stores who was added or removed, by whom and by which path, in `match_selection_changes`, and bumps that side's version.
 - **Files.**
@@ -195,6 +196,13 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - Officers are written to at their office's mailbox (`offices.office_email`), else their own email, and an officer's email goes out from that mailbox when it is on hkfchockey.com, else from `REVIEW_EMAIL_FROM`. The rule and the office-holder reads are in `worker/src/officeContacts.ts`; the Assistant Director of Hockey is the Active `assistant_director` office.
 - **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied, 25 s timeout) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
+- **Web Push:** `worker/src/push.ts`, with VAPID signing and aes128gcm encryption in WebCrypto (`worker/src/webPush.ts`). Personal alerts only:
+  - a selected player answers No → that team's coaches (`/coach/match/:id`);
+  - the Umpire Coordinator takes someone off a duty → that umpire (`/umpiring`);
+  - kit passed on → the receiver, who confirms it on Player view (`/`);
+  - "Send to Eddy app" in Notify → the saved squad (`POST /api/push/squad`, that side's coaches only).
+
+  It is off unless `PUSH="on"` and the `VAPID_PRIVATE_KEY` secret (a P-256 private JWK) is set. Alerts go out after the response (`waitUntil`), within at most 40 device sends per request and the subrequests the request has left. A device the push service answers 404 or 410 for is deleted. `push_subscriptions` is read fresh, never cached.
 - **Read-only switch:** `WRITES="off"` (`worker/src/readOnly.ts`), for a restore. Every non-GET request gets `503 READ_ONLY` before sign-in, the crons and the error log stop, and `/health` says `"writes": "off"`. The app shows one toast (`src/lib/apiClient.ts`). How to switch it: [docs/RESTORE.md](docs/RESTORE.md#the-read-only-switch).
 
 ---
@@ -228,6 +236,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `web-shell/index.ts` answers a missing hashed file with a 404, which is never cached, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
   - Files opened through signed links (photos, posters) are cached for up to two days. Each new link is a new URL, so a cached copy is never stale.
   - App crashes are reported to the Worker (`src/lib/clientErrors.ts`).
+  - `public/push-sw.js`, added to the generated service worker through Workbox `importScripts`, shows push alerts and opens them. Profile menu → Notifications switches them on for one device (`src/lib/push.ts`), and Log out switches them off. iPhones need iOS 16.4 or later and Eddy on the Home Screen.
 
 ---
 
@@ -254,12 +263,14 @@ The owner (Anthony) does these, and Claude asks first:
 - GitHub secrets and environments; Cloudflare, Supabase and Resend settings, including Supabase Auth's CAPTCHA and email rate limit;
 - approving preview deploys and merging PRs;
 - flipping `RETENTION_MODE` or `WRITES`; running the July season rollover;
+- Web Push: making each environment's `VAPID_PRIVATE_KEY` with `node scripts/vapid-keys.mjs --env preview|production`, then setting `PUSH = "on"`;
 - setting `hkid_hidden`; who is in `SYSTEM_OWNER_IDS`.
 
 Live scripts:
 - `scripts/migration/`: `import-kit-order`, `load-quizzes`, `upload-club-doc`, `upload-pdf-template`, `backfill-photo-thumbnails`.
 - `scripts/`:
   - `check-migrations.mjs` and `worker-secrets.mjs`, both used by CI;
+  - `vapid-keys.mjs`, the owner's Web Push key maker;
   - `availability-rule-checks.mjs`, the SQL half of the availability rule cases (CI runs it through `sql-tests.yml`);
   - `backup/`: dump, restore and heartbeat.
 
@@ -287,7 +298,7 @@ Several sessions share one checkout, so don't switch branches in it. Work in a g
     1. verifies the code;
     2. checks that production has every migration;
     3. deploys the web Worker;
-    4. deploys the API Worker, with `DATA_SUPABASE_SECRET_KEY`, `RESEND_API_KEY` and `OPENROUTER_API_KEY` from that environment (`wrangler deploy --secrets-file`, via `scripts/worker-secrets.mjs`);
+    4. deploys the API Worker, with `DATA_SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, `OPENROUTER_API_KEY` and `VAPID_PRIVATE_KEY` from that environment (`wrangler deploy --secrets-file`, via `scripts/worker-secrets.mjs`);
     5. deploys the `render-pdf` Edge Function.
   - `CALENDAR_SECRET` is a Worker secret set once.
   - Roll back with `npx wrangler rollback`, or from the Cloudflare dashboard.

@@ -11,6 +11,7 @@ import { HttpError } from "./http";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { getCached, invalidateCache } from "./cache";
 import { inBackground } from "./requestContext";
+import { alertDutyRemoved } from "./push";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { buildNameDictionary, canonicalKey, parseUmpire } from "../../shared/umpires";
 import { NO_QUALIFICATION } from "../../shared/volunteering";
@@ -476,6 +477,8 @@ export async function withdrawAssignment(env: Env, user: AuthorizedUser, id: str
   if (a.status === "withdrawn") return { ok: true };
   await db(env).update("umpire_assignments", `id=${eq(a.id)}`, { status: "withdrawn" });
   afterChange();
+  // The coordinator took someone else off: they get a push.
+  if (a.person_id !== me.id) void alertDutyRemoved(env, a.person_id, a.duty_id);
   return { ok: true };
 }
 

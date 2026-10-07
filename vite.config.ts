@@ -126,6 +126,8 @@ export default defineConfig(({ command }) => ({
         // load. Officer and coach screens go through the "eddy-assets" rule
         // above, the first time they are opened.
         manifestTransforms: [precache.manifestTransform],
+        // Web Push: shows Eddy's alerts and opens them (public/push-sw.js).
+        importScripts: ["push-sw.js"],
       },
       manifest: {
         name: "Eddy",

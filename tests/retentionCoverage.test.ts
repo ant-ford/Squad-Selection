@@ -7,9 +7,12 @@ import { describe, expect, it } from "vitest";
  * and "Delete my profile") clears that personal data, or "kept" with the
  * reason it stays. A new table that refers to a person fails this test
  * until someone decides, so the removal can't quietly miss it.
+ * "erasedBy" names a trigger function that clears it when
+ * erase_personal_data stamps personal_data_removed_at, for a table added
+ * without redefining erase_personal_data.
  * docs/DATA_RETENTION.md.
  */
-type Classification = "erased" | { kept: string };
+type Classification = "erased" | { kept: string } | { erasedBy: string };
 
 const PEOPLE_FKS: Record<string, Classification> = {
   // ── Personal data: deleted or blanked by erase_personal_data ──
@@ -37,6 +40,8 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "event_responses.person_id": "erased",
   "event_payments.payer_id": "erased",
   "suspensions.person_id": "erased",
+  // Devices for Web Push: deleted by a trigger on personal_data_removed_at (20261007180005).
+  "push_subscriptions.person_id": { erasedBy: "push_subscriptions_erase" },
 
   // ── The playing record ──
   "match_selections.person_id": { kept: "playing record: who was picked for which match" },
@@ -264,7 +269,7 @@ describe("personal data removal covers every reference to a person", () => {
 
   it("every kept one says why", () => {
     for (const [fk, c] of Object.entries(PEOPLE_FKS)) {
-      if (c !== "erased") expect(c.kept.trim(), fk).not.toBe("");
+      if (c !== "erased" && "kept" in c) expect(c.kept.trim(), fk).not.toBe("");
     }
   });
 
@@ -275,6 +280,17 @@ describe("personal data removal covers every reference to a person", () => {
       .map(([fk]) => fk.split(".")[0])
       .filter((table) => !new RegExp(`\\bpublic\\.${table}\\b`).test(body));
     expect([...new Set(missing)]).toEqual([]);
+  });
+
+  it("every table erased by a trigger is cleared by that trigger's function", () => {
+    for (const [fk, c] of Object.entries(PEOPLE_FKS)) {
+      if (c === "erased" || !("erasedBy" in c)) continue;
+      const table = fk.split(".")[0];
+      expect(latestFunctionBody(MIGRATIONS, c.erasedBy), fk).toMatch(new RegExp(`\\bdelete from public\\.${table}\\b`));
+      // ...and the function runs when personal data is removed.
+      const trigger = new RegExp(`after update of personal_data_removed_at on public\\.people[\\s\\S]*?execute function public\\.${c.erasedBy}\\(\\)`);
+      expect(MIGRATIONS.join("\n"), fk).toMatch(trigger);
+    }
   });
 
   // The SQL test (.github/workflows/sql-tests.yml) seeds a row for each

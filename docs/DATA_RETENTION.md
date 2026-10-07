@@ -39,6 +39,7 @@ People already inactive at the switch-over are counted from their Airtable recor
 - on their event payments: the payment screenshot, and the reference and payee read from it
 - their files in R2: photos, ID copies, signatures, payment screenshots and PDFs (35 days later, see below)
 - their sign-in account
+- the devices they turned Notifications on for (`push_subscriptions`, removed by a trigger when the removal is stamped)
 - their raw Airtable copy, while the archive exists
 
 **Stays:** their name, gender, teams, position and membership dates, and every appearance, selection and match card. That is the club's playing record, so results and stats stay whole. Their HKHA registrations, automatic re-registrations and umpiring duties stay with it. So do their offices (retired, not deleted), whether they went to an event and how many guests they brought, and what they owed and paid for it, so an event's register and accounts stay whole.

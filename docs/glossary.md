@@ -28,6 +28,7 @@ For: developers (Claude sessions) and the section's officers. Counts are rough a
 | My details | The person's own details form (`/my-details`). | "Profile" | |
 | Availability preferences | The sheet where a player sets standing rules (profile menu). | "Availability rules", "standing rules" | Already consistent in the UI. "Rules" is only the code name. |
 | Help | The profile-menu link to the guides on eddy.global. | | |
+| Notifications | The profile-menu sheet that turns Eddy's alerts on or off for one device (Web Push). Notify's "Send to Eddy app" sends the squad to players who have it on. | "Push", "push notifications" on screen | `src/components/NotificationsSheet.tsx` |
 
 ## Signing in and out
 

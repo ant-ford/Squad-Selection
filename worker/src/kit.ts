@@ -11,6 +11,7 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { invalidatePeople } from "./invalidation";
+import { alertKitOffered } from "./push";
 import { toCsv } from "../../shared/csv";
 import { hkDateKey } from "../../shared/hkDateKey";
 import {
@@ -345,8 +346,9 @@ export async function moveKit(env: Env, user: AuthorizedUser, body: Record<strin
       if (setIds.includes(k) && (v === null || typeof v === "string")) expected[k] = v;
     }
   }
+  let result: KitMoveResult;
   try {
-    return await db(env).rpc<KitMoveResult>("kit_move", {
+    result = await db(env).rpc<KitMoveResult>("kit_move", {
       p_actor: user.personId,
       p_officer: isKitOfficer(user),
       p_sets: setIds,
@@ -356,6 +358,9 @@ export async function moveKit(env: Env, user: AuthorizedUser, body: Record<strin
   } catch (err) {
     asHttpError(err);
   }
+  // Passed on, waiting for the receiver to confirm: they get a push.
+  void alertKitOffered(env, user, to, result.offered?.length ?? 0);
+  return result;
 }
 
 /** The receiver of an offered set says whether they've got it. */

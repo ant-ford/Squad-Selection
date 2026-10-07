@@ -615,6 +615,7 @@ export default function SquadSelection() {
           }))}
           sinceNotice={sinceNotice}
           onNotified={handleNotified}
+          appSend={matchId && data?.match.side && pendingDeltas.length === 0 ? { matchId, side: data.match.side } : undefined}
           onClose={() => {
             setShowNotify(false);
             notifiedRef.current = false;

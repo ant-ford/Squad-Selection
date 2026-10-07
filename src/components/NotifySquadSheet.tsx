@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from '@/lib/toast';
-import { Check, Copy, MessageCircle } from 'lucide-react';
+import { Bell, Check, Copy, MessageCircle } from 'lucide-react';
 import {
   buildAvailabilityRequest,
   buildDroppedMessage,
@@ -12,7 +12,10 @@ import {
   type FixtureBrief,
 } from '@/lib/whatsapp';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import { safeFormat } from '@/lib/dateUtils';
+import { apiPost } from '@/lib/apiClient';
+import { usePushConfig } from '@/lib/queries';
 
 export interface NotifyTarget {
   id: string;
@@ -44,6 +47,7 @@ export default function NotifySquadSheet({
   players,
   sinceNotice,
   onNotified,
+  appSend,
   onClose,
 }: {
   fixture: FixtureBrief;
@@ -52,9 +56,26 @@ export default function NotifySquadSheet({
   sinceNotice?: { at: string; added: NotifyTarget[]; removed: NotifyTarget[] } | null;
   /** The squad was sent (copied, or a WhatsApp opened): it's remembered as what the players know. */
   onNotified?: () => void;
+  /** The saved squad's fixture and side, for "Send to Eddy app" (push alerts). */
+  appSend?: { matchId: string; side: 'home' | 'away' };
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const { data: push } = usePushConfig(!!appSend);
+  const [sending, setSending] = useState(false);
+  const sendToApp = async () => {
+    if (!appSend) return;
+    setSending(true);
+    try {
+      const r = await apiPost<{ reached: number }>('/api/push/squad', appSend);
+      if (r.reached > 0) onNotified?.();
+      toast.success(`Sent to ${r.reached} player${r.reached === 1 ? '' : 's'}`);
+    } catch {
+      toast.error("Couldn't send. Try again.");
+    } finally {
+      setSending(false);
+    }
+  };
   const [messaged, setMessaged] = useState<Set<string>>(new Set());
 
   const rows = useMemo(
@@ -189,6 +210,15 @@ export default function NotifySquadSheet({
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               {copied ? 'Copied' : 'Copy for team group'}
             </button>
+            {appSend && push?.enabled && !askingAvailability && (
+              <button
+                onClick={() => void sendToApp()}
+                disabled={sending}
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 border border-border py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                <Bell className="h-4 w-4" /> <span>Send to <EddyWordmark /> app</span>
+              </button>
+            )}
           </section>
 
           {/* One tap per player. */}

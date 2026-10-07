@@ -197,11 +197,12 @@ jobs:
           DATA_SUPABASE_SECRET_KEY: ${{ secrets.DATA_SUPABASE_SECRET_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
         run: |
           umask 077
           secrets="$RUNNER_TEMP/worker-secrets.json"
           trap 'rm -f "$secrets"' EXIT
-          node scripts/worker-secrets.mjs DATA_SUPABASE_SECRET_KEY RESEND_API_KEY OPENROUTER_API_KEY > "$secrets"
+          node scripts/worker-secrets.mjs DATA_SUPABASE_SECRET_KEY RESEND_API_KEY OPENROUTER_API_KEY VAPID_PRIVATE_KEY > "$secrets"
           npx wrangler deploy --config worker/wrangler.toml --secrets-file "$secrets"
 
       # The render-pdf Edge Function (supabase/functions) on eddy-production,

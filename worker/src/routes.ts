@@ -19,6 +19,7 @@ import { HttpError, json, requireParam } from "./http";
 import { route, scope, readBodyOrEmpty, readJsonBody, type Route, type Scope } from "./router";
 import { listTemplates, logMessage } from "./messages";
 import { noteSquadNotified } from "./squadNotices";
+import { pushConfig, pushSquad, pushSubscribe, pushUnsubscribe } from "./push";
 import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
 import { coachesEveryTeam, coachesPlayer, requireCoachOfTeam } from "./auth";
 import { requireCoachOfMatchSide } from "./coachAccess";
@@ -779,6 +780,12 @@ export const ROUTES: readonly Route[] = [
   // "WhatsApp these people": templates and the message log (messages.ts).
   route("GET", "/api/messages/templates", "signed-in", ({ env, user }) => listTemplates(env, user)),
   route("POST", "/api/messages/log", "signed-in", async ({ request, env, user }) => logMessage(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>)),
+  // Web Push (push.ts): the app's switch, this device, and Notify's "Send to Eddy app".
+  route("GET", "/api/push/config", "signed-in", ({ env }) => pushConfig(env)),
+  route("POST", "/api/push/subscribe", "signed-in", async ({ request, env, user }) =>
+    pushSubscribe(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>, request.headers.get("User-Agent"))),
+  route("POST", "/api/push/unsubscribe", "signed-in", async ({ request, env, user }) => pushUnsubscribe(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>)),
+  route("POST", "/api/push/squad", "signed-in", async ({ request, env, user }) => pushSquad(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>)),
   route("GET", "/api/chairman/directory", "section:chairman", ({ env }) => getChairmanDirectory(env)),
   route("POST", "/api/chairman/export-log", "section:chairman", async ({ request, env, user }) => {
     const body = (await readJsonBody(request)) as Partial<EmailExportInput>;
