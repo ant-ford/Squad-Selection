@@ -47,6 +47,7 @@ import { HttpError } from "../../worker/src/http";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../shared/schema/fieldMaps";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import { REVIEWS_FROM } from "../../shared/statementStages";
+import { addDays } from "../../shared/hkDateKey";
 import type {
   AbilityGroupConfiguration, AvailabilityException, AvailabilityRule, Match, MatchCard, Player, Team,
 } from "../../shared/schema/domainTypes";
@@ -241,9 +242,6 @@ function commitmentRow<M extends FieldList>(c: FakeCommitment, map: M): Row<M> {
 function removeWhere<T>(rows: T[], pred: (row: T) => boolean): void {
   for (let i = rows.length - 1; i >= 0; i--) if (pred(rows[i])) rows.splice(i, 1);
 }
-
-const addDays = (dayKey: string, n: number) =>
-  new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 // ── The repositories ─────────────────────────────────────────────────────
 

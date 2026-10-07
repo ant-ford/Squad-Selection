@@ -5,13 +5,12 @@ import type { KitColour, Match, Player } from "../../../shared/schema/domainType
 import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
 import { fixtureChange } from "../../../shared/fixtureChange";
+import { POS_SHORT } from "../../../shared/positions";
 import type { AuthorizedUser } from "../auth";
 import { changedSinceNotice, noticesForMatches, type SquadNotice } from "../squadNotices";
 import { hkfcSides, type SideInfo } from "../match";
 import { outcomeOf } from "../teamRecord";
 import { getScheduledMatches, getCalledOffMatches, PAST_FIXTURE_WINDOW_DAYS, getPlayedMatches } from "./matchReads";
-
-const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
 export async function getUpcomingFixtures(
   env: Env,
@@ -120,7 +119,7 @@ export async function getUpcomingFixtures(
 
       const selectedPositionSummary: Record<string, number> = {};
       for (const id of selectedIds) {
-        const pos = POS_KEY[playerById.get(id)?.playingPosition ?? ""] ?? "FLEX";
+        const pos = POS_SHORT[playerById.get(id)?.playingPosition ?? ""] ?? "FLEX";
         selectedPositionSummary[pos] = (selectedPositionSummary[pos] ?? 0) + 1;
       }
 

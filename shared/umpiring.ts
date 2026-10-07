@@ -14,7 +14,7 @@
  *    the coordinator, so an unpaid umpire can still take the game first.
  *  - Paid is a flag only: no fee is recorded.
  */
-import { hkDateKey } from "./hkDateKey";
+import { addDays, hkDateKey } from "./hkDateKey";
 import { canonicalKey, tidy } from "./umpires";
 
 export type DutyStatus = "scheduled" | "rescheduled" | "cancelled";
@@ -268,9 +268,7 @@ export function weekOf(iso: string): string {
 
 /** The Sunday ending a week given by its Monday. */
 export function weekEnd(monday: string): string {
-  const d = new Date(`${monday}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 6);
-  return d.toISOString().slice(0, 10);
+  return addDays(monday, 6);
 }
 
 /** The season (July to June, HK) a date falls in: "2026-2027". */
@@ -335,11 +333,6 @@ export function captainsMessage(duties: UmpireDuty[]): string {
     return c ? `${dutyLine(d)} ${umpireMark(c)}` : `${dutyLine(d)} ❓`;
   });
   return [HEADER, "", ...lines].join("\n");
-}
-
-/** Opens WhatsApp with the message ready to send; the group is chosen there. */
-export function whatsappShareUrl(message: string): string {
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
 
 // ── Outside umpires' names ─────────────────────────────────────────────
