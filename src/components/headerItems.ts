@@ -1,4 +1,5 @@
 import {
+  Activity,
   Ban,
   BookOpenCheck,
   CalendarCheck,
@@ -28,7 +29,7 @@ export interface MenuEntry {
   disabled?: boolean;
 }
 
-type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'umpiring'>>;
+type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'umpiring' | 'system'>>;
 
 /** The officers' screens a person may open, in a fixed order, from what the Worker says. */
 export function officerItems(p: MenuProfile): MenuEntry[] {
@@ -46,6 +47,7 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
     s.includes('people') && { to: '/people', label: 'People', icon: Contact },
     s.includes('club') && { to: '/club', label: 'Offices and teams', icon: Landmark },
     s.includes('dataChecks') && { to: '/data-checks', label: 'Data checks', icon: ListChecks },
+    p.system && { to: '/system', label: 'System', icon: Activity },
   ];
   return all.filter((i): i is MenuEntry => !!i);
 }

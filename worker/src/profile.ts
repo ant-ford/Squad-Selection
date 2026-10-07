@@ -5,6 +5,7 @@ import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
+import { canViewSystem } from "./systemHealth";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
 import { firstName } from "../../shared/personName";
 
@@ -88,6 +89,10 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
 
     // The umpiring duties: the club's umpires, and the Umpire Coordinator.
     umpiring,
+
+    // Whether the System screen is theirs: the owner (SYSTEM_OWNER_IDS) and
+    // the Section Captains. Not a section: the owner holds no office for it.
+    system: canViewSystem(env, authUser),
 
     captainTeams,
 

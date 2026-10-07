@@ -85,6 +85,10 @@ describe("burger menu", () => {
     const page = [{ label: "Active members CSV", icon: (() => null) as never }];
     expect(labels(mainMenuGroups({ sections: ["membership"] }, page))[0]).toEqual(["Active members CSV"]);
   });
+  it("lists System last among the officers' screens, only when the Worker says so", () => {
+    expect(labels(mainMenuGroups({ sections: ["club", "dataChecks"], system: true })).at(-1)).toEqual(["Offices and teams", "Data checks", "System"]);
+    expect(labels(mainMenuGroups({ sections: ["dataChecks"] })).flat()).not.toContain("System");
+  });
   it("still lists Stats and the quizzes before the profile has loaded", () => {
     expect(labels(mainMenuGroups(undefined))).toEqual([["Stats", "Hockey rules quizzes"]]);
   });

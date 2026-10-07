@@ -36,6 +36,8 @@ export function profile(p: Persona): ProfileData {
     volunteers: isCoach(p) || officer,
     events: isCaptain(p) || !!p.socialSecretaryOf?.length,
     umpiring: p.umpiring ?? (isCaptain(p) ? 'coordinator' : null),
+    // canViewSystem: the Section Captains (no persona is the owner).
+    system: isCaptain(p),
     captainTeams: [],
     coachTeams: coachTeamNames(p).map((teamName) => ({
       id: `demoTeam${teamName.slice(-1)}`,

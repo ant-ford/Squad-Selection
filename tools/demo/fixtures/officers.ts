@@ -9,6 +9,7 @@ import { APPROVABLE_STAGE, PARKED_STAGES, PIPELINE_STAGES, SUBMITTED_STAGES, col
 import { REVIEW_STAGES, reviewColumnFor, reviewWaitingOn } from '@shared/statementStages';
 import { PLAYING_PREFERENCES, type SeasonPlanAnswers, type SeasonPlanBoard, type SeasonPlanPlayer } from '@shared/seasonPlan';
 import { EMPTY_ROLES, type Volunteer, type VolunteerRoles, type VolunteersBoard } from '@shared/volunteering';
+import type { JobRow, SystemError, SystemView } from '@shared/systemHealth';
 import type { MessageTemplate } from '@/api/messages';
 import { reply, type Routes } from './routing';
 import { OTHERS, PERSONAS, SAT2, SEASON, SQUAD_PLAYERS, TEAMS, at, day, firstName, type Persona } from './data';
@@ -380,22 +381,10 @@ function volunteers(): VolunteersBoard {
 
 // ── System ──────────────────────────────────────────────────────────────
 
-/**
- * GET /api/system. SystemView (src/pages/System.tsx, mirroring
- * worker/src/systemHealth.ts) isn't exported, so the shape is spelled out here.
- */
-interface SystemView {
-  ok: boolean;
-  checks: { key: string; label: string; ok: boolean; note?: string }[];
-  jobs: { job: string; ran_at: string; ok: boolean; last_ok_at: string | null }[];
-  errors: { at: string; source: string; route: string | null; status: number | null; message: string | null; request_id: string | null }[];
-  serverErrors24h: number;
-  clientErrors24h: number;
-}
-
+/** GET /api/system. */
 function system(): SystemView {
-  const job = (name: string, h: number) => ({ job: name, ran_at: hoursAgo(h), ok: true, last_ok_at: hoursAgo(h) });
-  const err = (h: number, source: string, route: string, status: number | null, message: string) => ({
+  const job = (name: string, h: number): JobRow => ({ job: name, ran_at: hoursAgo(h), ok: true, detail: null, last_ok_at: hoursAgo(h) });
+  const err = (h: number, source: string, route: string, status: number | null, message: string): SystemError => ({
     at: hoursAgo(h), source, route, status, message, request_id: `demo-req-${h}`,
   });
   return {
