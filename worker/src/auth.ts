@@ -220,7 +220,7 @@ export function claimedEmail(request: Request): string | null {
 /**
  * Coach-only gate for coach operations. A legitimate application user
  * without coach privileges gets 403 COACH_ACCESS_REQUIRED (the frontend
- * keeps them logged in) â€” distinct from application-access denial.
+ * keeps them logged in) — distinct from application-access denial.
  */
 export async function requireCoach(request: Request, env: Env): Promise<AuthorizedUser> {
   const user = await requireAuthorizedUser(request, env);

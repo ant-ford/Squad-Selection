@@ -151,7 +151,7 @@ describe('fixtureLink', () => {
 describe('whatsAppLink', () => {
   it('percent-encodes the message so newlines survive', () => {
     const link = whatsAppLink('85291234567', 'Hi Sam\nBlue kit');
-    expect(link.startsWith('https://wa.me/85291234567?text=')).toBe(true);
+    expect(link.startsWith('https://api.whatsapp.com/send?phone=85291234567&text=')).toBe(true);
     expect(link).toContain('%0A'); // newline
     expect(link).not.toContain(' ');
   });
@@ -159,7 +159,19 @@ describe('whatsAppLink', () => {
 
 describe('whatsAppShareLink', () => {
   it('has no recipient and percent-encodes the message', () => {
-    expect(whatsAppShareLink('Umpires: A & B\nSat 🏑')).toBe('https://wa.me/?text=Umpires%3A%20A%20%26%20B%0ASat%20%F0%9F%8F%91');
+    expect(whatsAppShareLink('Umpires: A & B\nSat 🏑')).toBe('https://api.whatsapp.com/send?text=Umpires%3A%20A%20%26%20B%0ASat%20%F0%9F%8F%91');
+  });
+
+  // wa.me's redirect replaces every emoji with U+FFFD (curl, 8 Oct 2026:
+  // wa.me/?text=%E2%9C%85 -> api.whatsapp.com/send/?text=%EF%BF%BD), which
+  // garbled the umpiring messages' ✅ and 💰. api.whatsapp.com keeps them.
+  it('skips wa.me, whose redirect garbles emoji, and keeps every character', () => {
+    const message = '🏑Weekly Club Duties🥳\n11/10 0900 HKFC D ✅George\n11/10 1045 HKFC F 💰Pagey ❓';
+    for (const link of [whatsAppShareLink(message), sharedWhatsAppLink('85291234567', message)]) {
+      const url = new URL(link);
+      expect(url.host).toBe('api.whatsapp.com');
+      expect(url.searchParams.get('text')).toBe(message);
+    }
   });
 
   it('is the recipient link with no number', () => {
@@ -167,9 +179,9 @@ describe('whatsAppShareLink', () => {
   });
 });
 
-describe('one wa.me builder', () => {
+describe('one WhatsApp link builder', () => {
   it('the app re-exports the shared recipient link', () => {
     expect(whatsAppLink).toBe(sharedWhatsAppLink);
-    expect(whatsAppLink('85291234567', 'Hi Sam')).toBe('https://wa.me/85291234567?text=Hi%20Sam');
+    expect(whatsAppLink('85291234567', 'Hi Sam')).toBe('https://api.whatsapp.com/send?phone=85291234567&text=Hi%20Sam');
   });
 });
