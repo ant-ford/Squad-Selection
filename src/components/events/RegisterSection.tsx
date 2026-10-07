@@ -88,7 +88,7 @@ export default function RegisterSection({ event, responses }: { event: ManagedEv
                 onChange={(ev) => mark.mutate({ personId: r.personId, attended: ev.target.checked, guestsCame: ev.target.checked ? r.guests.length : undefined })}
               />
               <span className="truncate">{r.name}</span>
-              {r.checkedInAt && <span className="text-[11px] text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'HH:mm')}</span>}
+              {r.checkedInAt && <span className="text-xs text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'HH:mm')}</span>}
             </label>
             {r.guests.length > 0 && r.attended && (
               <select
