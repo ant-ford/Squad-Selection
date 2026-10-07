@@ -15,7 +15,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { activatePlayer, deactivatePlayer, reorderRanking, setAbilityGroupConfig } from "../worker/src/ranking";
 import { invalidateAll } from "../worker/src/cache";
-import type { AuthorizedUser } from "../worker/src/auth";
+import { coachesPlayer, type AuthorizedUser } from "../worker/src/auth";
+import type { Player } from "../shared/schema/domainTypes";
 import type { Env } from "../worker/src/env";
 import { SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { recId, signedIn } from "./helpers/factories";
@@ -152,6 +153,46 @@ describe("reorderRanking", () => {
       { id: A3, rank: 3 },
     ]);
     expect(db.pg.rpcCalls("update_people_ranks")).toEqual([]);
+  });
+
+  // Coaches act only on their own teams (owner decision, 7 Oct 2026). The
+  // ranking stays one section-wide list: a coach moves their own players,
+  // and the others may shift but keep their order among themselves.
+  describe("a coach of one team", () => {
+    const coachOfA = signedIn({ email: "coach@hkfc.com", personId: recId("CoachA"), role: "coach", coachTeams: ["HKFC A"], isSectionCaptain: false, officerRoles: [] });
+    const mayMove = (p: Player) => coachesPlayer(coachOfA, p);
+
+    beforeEach(() => {
+      Object.assign(db.people[0], { registered_team: "HKFC B" });
+      Object.assign(db.people[1], { registered_team: "HKFC B" });
+      Object.assign(db.people[2], { registered_team: "HKFC A" });
+    });
+
+    it("moves their own player past others, who shift but keep their order", async () => {
+      await reorderRanking(ENV, [A3, A1, A2], "coach@hkfc.com", undefined, mayMove);
+      expect(ranksOf().map((r) => r.id)).toEqual([A3, A1, A2]);
+    });
+
+    it("may not reorder another team's players: 403 NOT_YOUR_TEAM, nothing written", async () => {
+      await expect(reorderRanking(ENV, [A2, A1, A3], "coach@hkfc.com", undefined, mayMove)).rejects.toMatchObject({
+        status: 403,
+        code: "NOT_YOUR_TEAM",
+      });
+      expect(ranksOf().map((r) => r.id)).toEqual([A1, A2, A3]);
+      expect(db.pg.rpcCalls("update_people_ranks")).toEqual([]);
+    });
+
+    it("counts the team the app shows the player in, as well as the registered one", async () => {
+      Object.assign(db.people[1], { selected_team_eos: "HKFC A" });
+      await reorderRanking(ENV, [A2, A1, A3], "coach@hkfc.com", undefined, mayMove);
+      expect(ranksOf().map((r) => r.id)).toEqual([A2, A1, A3]);
+    });
+
+    it("may move a player who is in no team yet", async () => {
+      Object.assign(db.people[0], { registered_team: null });
+      await reorderRanking(ENV, [A2, A3, A1], "coach@hkfc.com", undefined, mayMove);
+      expect(ranksOf().map((r) => r.id)).toEqual([A2, A3, A1]);
+    });
   });
 });
 

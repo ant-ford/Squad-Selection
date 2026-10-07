@@ -21,6 +21,7 @@ import { API_ID_RE } from "./data/ids";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { fileLink } from "./data/supabase/files";
 import { MailerError, sendEmail } from "./mailer";
+import { officeAddress } from "./officeContacts";
 import { invalidateCommitments } from "./invalidation";
 import { draftNextStep } from "./reviewDrafts";
 import { savedSignature, signatureFor } from "./signatures";
@@ -400,7 +401,7 @@ async function notifyNext(env: Env, reviewApiId: string, next: NextStep | undefi
   if (!next) return false;
   // Written to as the office: its own mailbox (e.g. mensmembership@hkfchockey.com) when it has one, else their email.
   const mailbox = await officeMailbox(env, next.commitment_id, kind).catch(() => null);
-  const to = mailbox || next.email;
+  const to = officeAddress(mailbox, next.email);
   if (!to) return false;
   const year = next.year_no ? `Year ${next.year_no} ` : "";
   const who = next.member_name || "A member";

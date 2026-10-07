@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Smartphone } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { PRIVACY_URL } from '@/components/HelpLink';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -74,7 +75,7 @@ export default function AppFooter() {
     <footer className="border-t border-border bg-background py-1 mt-auto">
       <div className="container mx-auto px-1 flex flex-col md:flex-row justify-between items-center gap-2">
         <p className="text-xs text-muted-foreground flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-          <span>Powered by Eddy • HKFC Men's Hockey Squad Management</span>
+          <span>Eddy, HKFC men's hockey</span>
           {!isStandalone && (
             <button
               onClick={handleInstallTap}
@@ -85,6 +86,14 @@ export default function AppFooter() {
               Install app
             </button>
           )}
+          <a
+            href={PRIVACY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Privacy
+          </a>
         </p>
         <p className="text-xs text-muted-foreground">
           Questions? Contact us at{' '}

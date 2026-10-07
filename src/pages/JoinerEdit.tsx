@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check, Mail } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -81,7 +81,7 @@ function OfficePick({ value, options, onChange, placeholder = 'Choose…' }: { v
 /**
  * Propose a new joiner, or change one (Fillout forms 1 and 2), and send the
  * Section Captain's three emails: the invitation, the kit request and the
- * league registration request.
+ * HKHA registration request.
  */
 export default function JoinerEditPage() {
   const { id } = useParams();
@@ -211,7 +211,7 @@ function Editor({ view, options }: { view: JoinerView | null; options: JoinerOpt
           <Field label="Membership Officer" required>
             <OfficePick value={form.officerId} options={options.officers} onChange={set('officerId')} />
           </Field>
-          <Field label="Section Chair" required>
+          <Field label="Chairman" required>
             <OfficePick value={form.chairId} options={options.chairs} onChange={set('chairId')} />
           </Field>
         </div>
@@ -285,7 +285,7 @@ function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: J
         </div>
         <div className="sm:col-span-2">
           <dt className="text-xs uppercase tracking-wide text-muted-foreground">Trial sessions they can come to</dt>
-          <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, h:mm a')} (${s.place})`).join('; ') : 'None'}</dd>
+          <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, HH:mm')} (${s.place})`).join('; ') : 'None'}</dd>
         </div>
       </dl>
       <div className="space-y-2 pt-3 border-t border-border">
@@ -306,7 +306,7 @@ function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: J
           </select>
           <input
             className={`${fieldInput} sm:col-span-2`}
-            placeholder="When and where, e.g. Tuesday 7 Oct, 8pm, HKFC pitch"
+            placeholder="When and where, e.g. Tuesday 7 Oct, 20:00, HKFC pitch"
             value={where}
             onChange={(e) => setWhere(e.target.value)}
           />
@@ -374,7 +374,7 @@ function Actions({ view, options, onChanged }: { view: JoinerView; options: Join
   const confirmText: Record<'invite' | JoinerStepKey, [string, string]> = {
     invite: [view.invitedAt ? 'Send the invitation again?' : 'Send the invitation?', `${name} is emailed the link to their application.`],
     kit: ['Ask for kit?', `The Kit Convenor is emailed ${name}'s sizes, copied to ${name} and their sponsor.`],
-    registration: ['Ask for league registration?', `The Hockey Convenor is emailed ${name}'s details for HockeyHK, copied to ${name}.`],
+    registration: ['Ask for HKHA registration?', `The Men's Convenor is emailed ${name}'s details for HKHA, copied to ${name}.`],
   };
 
   return (
@@ -404,14 +404,14 @@ function Actions({ view, options, onChanged }: { view: JoinerView; options: Join
         <OfficePick value={kitConvenor} options={options.kitConvenors} onChange={setKitConvenor} placeholder="Kit Convenor…" />
       </Row>
       <Row
-        title="3. League registration"
+        title="3. HKHA registration"
         status={stepStatus(view.registration)}
         done={!!view.registration?.doneAt}
         button={view.registration ? 'Ask again' : 'Ask for registration'}
         busy={act.isPending || !hockeyConvenor}
         onClick={() => setConfirm('registration')}
       >
-        <OfficePick value={hockeyConvenor} options={options.hockeyConvenors} onChange={setHockeyConvenor} placeholder="Hockey Convenor…" />
+        <OfficePick value={hockeyConvenor} options={options.hockeyConvenors} onChange={setHockeyConvenor} placeholder="Men's Convenor…" />
       </Row>
       {problem && (
         <p role="alert" className="text-xs text-destructive">

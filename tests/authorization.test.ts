@@ -39,7 +39,6 @@ vi.mock("../worker/src/authContext", async (importOriginal) => {
 });
 
 import { claimedEmail, requireAuthorizedUser, requireCoach, requireSection, sectionsFor, normalizeEmail } from "../worker/src/auth";
-import { HttpError } from "../worker/src/http";
 import { invalidateAll } from "../worker/src/cache";
 
 const ENV = {

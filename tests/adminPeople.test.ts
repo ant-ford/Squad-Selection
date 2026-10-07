@@ -271,6 +271,27 @@ describe("change history access", () => {
     expect(entries).toEqual([expect.objectContaining({ summary: "Changed", fields: ["Opt-In Only: off → on"] })]);
   });
 
+  // Security review, 7 Oct 2026: the audit keeps values for membership
+  // columns and hkid_hidden too; a coach sees the hockey columns only.
+  it("shows a coach no membership or HKID-hidden values, even though the audit kept them", async () => {
+    fake({
+      ...history,
+      activity_log: (url: URL) =>
+        url.searchParams.get("entity")
+          ? [
+              { occurred_at: "2026-10-05T04:00:00Z", action: "row-update", fields: ["member_type", "hkid_hidden", "playing_position"], changes: { member_type: ["Adult", "Child"], hkid_hidden: [false, true], playing_position: ["Defender", "Midfielder"] }, actor: null },
+              { occurred_at: "2026-10-05T05:00:00Z", action: "row-update", fields: ["applicant_stage", "status"], changes: { applicant_stage: [null, "1. Trial Application"], status: ["Member", "Applicant"] }, actor: null },
+            ]
+          : [],
+    });
+    mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC C"));
+    const { entries } = (await (await get("/api/history?person=recP1")).json()) as { entries: { summary: string; fields: string[] }[] };
+    expect(entries).toHaveLength(1);
+    expect(entries[0].fields).toHaveLength(1);
+    expect(entries[0].fields[0]).toMatch(/Midfielder/);
+    expect(JSON.stringify(entries)).not.toMatch(/Child|Applicant|Trial|true|false/);
+  });
+
   it("refuses another team's coach", async () => {
     fake(history);
     mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC A"));

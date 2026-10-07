@@ -1,10 +1,32 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { NavigationType, useBlocker, type BlockerFunction } from 'react-router-dom';
 import { X } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { DialogLibContext, useDialogLib } from '@/components/ui/dialogLib';
+import { takeSheetClose } from '@/lib/sheetParam';
 
 /** How SheetHeader's close button reaches the open sheet's "ask first" check. */
 const SheetGuard = createContext<((close: () => void) => void) | null>(null);
+
+// The phone's Back, unless it's a sheet's own close (useSheetParam).
+const stopBack: BlockerFunction = ({ historyAction }) => historyAction === NavigationType.Pop && !takeSheetClose();
+
+/**
+ * Mounted while a sheet is open and dirty. Back stops (the router puts the
+ * entry back) and `onBack` runs instead. The router heeds only its newest
+ * blocker, so a page's useUnsavedChanges waits while this is mounted.
+ */
+function BackGuard({ onBack }: { onBack: () => void }) {
+  const blocker = useBlocker(stopBack);
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    blocker.reset();
+    onBackRef.current();
+  }, [blocker]);
+  return null;
+}
 
 /**
  * The one overlay primitive, on Radix Dialog: every bottom sheet, side panel
@@ -19,8 +41,11 @@ const SheetGuard = createContext<((close: () => void) => void) | null>(null);
  * Radix itself loads on first use (ui/dialogLib), not with the first page.
  *
  * `dirty`: the sheet holds something typed and not saved. The backdrop,
- * Escape and SheetHeader's close button then ask before closing; a Cancel
- * button the sheet draws itself can do the same with useSheetClose().
+ * Escape, the phone's Back and SheetHeader's close button then ask before
+ * closing; a Cancel button the sheet draws itself can do the same with
+ * useSheetClose(). Discard after Back closes the sheet the way its own
+ * close does (a sheet in the URL goes back over its entry), so the screen
+ * stays; Back again while the question is up is "Keep editing".
  */
 export function Sheet({
   children,
@@ -49,6 +74,9 @@ export function Sheet({
   if (!Dialog) return null;
   return (
     <SheetGuard.Provider value={guard}>
+      {open && dirty && (
+        <BackGuard onBack={() => setPending((asking) => (asking ? null : () => onOpenChange?.(false)))} />
+      )}
       <DialogLibContext.Provider value={Dialog}>
         <Dialog.Root open={open} onOpenChange={(next) => (next ? onOpenChange?.(true) : guard(() => onOpenChange?.(false)))}>
           <Dialog.Portal>

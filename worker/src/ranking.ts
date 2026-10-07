@@ -190,6 +190,11 @@ export async function reorderRanking(
   playerIds: string[],
   actingEmail?: string,
   justification?: string,
+  /**
+   * The players this coach may move; absent for Section Captains and the
+   * Assistant Director, who move anyone (owner decision, 2026-10-07).
+   */
+  mayMove?: (player: Player) => boolean,
 ): Promise<RankingList> {
   const note = validateJustification(justification);
   if (!Array.isArray(playerIds) || playerIds.length === 0) {
@@ -214,6 +219,7 @@ export async function reorderRanking(
   }
 
   const playerById = new Map(players.map((p) => [p.id, p]));
+  if (mayMove) requireOnlyOwnPlayersMoved(players, playerIds, playerById, mayMove);
   const updates: { id: string; rank: number; oldRank: number }[] = [];
   const updatedPlayers: Player[] = [];
   
@@ -228,6 +234,27 @@ export async function reorderRanking(
     await applySectionRankUpdates(env, updates, actingEmail, "reorder", note);
   }
   return recomputeDerivedFieldsFromList(env, updatedPlayers);
+}
+
+/**
+ * A coach's reorder may move only their own teams' players, and players
+ * not yet in any team (applicants on trial): everyone else must stay in the
+ * same order relative to each other. Their ranks can still shift as the
+ * coach's players move past them, as in any filtered view (spec "Critical
+ * Filter Behaviour"). 403 NOT_YOUR_TEAM otherwise.
+ */
+function requireOnlyOwnPlayersMoved(
+  current: Player[],
+  playerIds: string[],
+  playerById: Map<string, Player>,
+  mayMove: (player: Player) => boolean,
+): void {
+  const fixed = (p: Player | undefined) => !!p && !!selectedDisplayTeam(p) && !mayMove(p);
+  const before = current.filter(fixed).map((p) => p.id);
+  const after = playerIds.filter((id) => fixed(playerById.get(id)));
+  if (before.some((id, i) => after[i] !== id)) {
+    throw new HttpError("You can only move your own teams' players.", 403, "NOT_YOUR_TEAM");
+  }
 }
 
 export async function activatePlayer(env: Env, playerId: string, actingEmail?: string): Promise<RankingList> {

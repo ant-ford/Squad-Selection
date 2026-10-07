@@ -10,21 +10,24 @@ import { isChunkLoadError } from './staleDeploy';
 const MAX_PER_LOAD = 5;
 const sent = new Set<string>();
 
-function describe(error: unknown): { message: string; stack: string } {
+/**
+ * What a report says about the error. Anything that isn't an Error or a
+ * string is named by its type only: a rejected value can be a request body
+ * or an API answer with people's details in it (security review, 7 Oct 2026).
+ */
+export function describeError(error: unknown): { message: string; stack: string } {
   if (error instanceof Error) return { message: `${error.name}: ${error.message}`, stack: error.stack ?? '' };
   if (typeof error === 'string') return { message: error, stack: '' };
-  try {
-    return { message: JSON.stringify(error)?.slice(0, 300) ?? String(error), stack: '' };
-  } catch {
-    return { message: String(error), stack: '' };
-  }
+  if (error === null || error === undefined) return { message: String(error), stack: '' };
+  const type = typeof error === 'object' ? (Object.getPrototypeOf(error)?.constructor?.name ?? 'Object') : typeof error;
+  return { message: `Non-Error ${type}`, stack: '' };
 }
 
 export function reportClientError(kind: 'route' | 'error' | 'rejection', error: unknown): void {
   try {
     // A stale deploy reloads itself (staleDeploy.ts); a failed API call is the Worker's to log.
     if (isChunkLoadError(error) || (error instanceof Error && error.name === 'ApiError')) return;
-    const { message, stack } = describe(error);
+    const { message, stack } = describeError(error);
     const key = `${kind}|${message}`;
     if (sent.has(key) || sent.size >= MAX_PER_LOAD) return;
     sent.add(key);

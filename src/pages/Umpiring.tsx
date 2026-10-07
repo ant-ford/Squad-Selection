@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ChevronLeft, ChevronRight, Copy, Download, MessageCircle } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -683,7 +683,7 @@ export default function Umpiring() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Umpire view" />
+      <AppHeader title="Umpire view" guide="umpiring" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">
         {isLoading ? (
           <Skeleton className="h-96 w-full" />

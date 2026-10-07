@@ -11,6 +11,7 @@ import type { Office } from "./data/officers";
 import type { Player } from "../../shared/schema/domainTypes";
 import { parseCacheVersions, type CacheVersions } from "./cacheVersions";
 import { fileLink } from "./data/supabase/files";
+import { writesOff } from "./readOnly";
 
 /**
  * The signed-in person: the Player fields (without the signed photo link,
@@ -127,7 +128,10 @@ export interface AuthContextRepo {
 export function authContexts(env: Env): AuthContextRepo {
   return {
     async load(email) {
-      return parseAuthContext(await db(env).rpcRead<unknown>("auth_context", { p_email: email }));
+      // auth_context() also stamps people.last_seen_at once a day; while writes
+      // are off (readOnly.ts) the read-only half answers instead.
+      const fn = writesOff(env) ? "auth_context_read" : "auth_context";
+      return parseAuthContext(await db(env).rpcRead<unknown>(fn, { p_email: email }));
     },
   };
 }

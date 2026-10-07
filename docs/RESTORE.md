@@ -43,7 +43,7 @@ A small difference on one busy table in a production backup can be real: row cou
 
 For when eddy-production has lost data or is gone. **Decide first what the restore will overwrite:** anything written after the backup was made is lost.
 
-1. **Stop writes.** There is no read-only switch yet, so tell coaches and officers to stop saving. Anything saved during the restore may be overwritten.
+1. **Stop writes:** switch the Worker to read-only (see [The read-only switch](#the-read-only-switch)). If hkha-sync might run during the restore, disable its workflow too. Tell coaches and officers that saving is off for a while.
 2. **Pick the backup:** the newest `daily/eddy-production/...` before the problem, or a `monthly/` one.
 3. **Restore.** The script the drill uses restores into whatever database it is pointed at. On a machine with the PostgreSQL client tools matching the server's major version, `age` and the AWS CLI:
 
@@ -57,9 +57,26 @@ For when eddy-production has lost data or is gone. **Decide first what the resto
 
    If the project itself is gone, create a new Supabase project in Singapore. Point `PGURL` at it and restore. Then update `DATA_SUPABASE_URL` and the Worker's `DATA_SUPABASE_SECRET_KEY` secret, and the sign-in project settings if sign-in moved too.
 4. **Check** the row counts the script prints, then open the app and look at a few screens.
-5. **Re-enable writes.**
+5. **Re-enable writes:** set `WRITES` back to `"on"`, then re-enable hkha-sync if you disabled it.
 
 The restore leaves the `public` schema itself, its Supabase grants and default privileges alone, and replaces the objects in the backup. Tables created after the backup are not dropped.
+
+## The read-only switch
+
+`WRITES` is a var of the API Worker (`worker/src/readOnly.ts`). It is `"on"` in `worker/wrangler.toml`, for production and for preview. With `WRITES = "off"`:
+
+- every save (any request other than GET, HEAD or the CORS preflight) gets `503` with the code `READ_ONLY`, before sign-in. The app shows one toast, "Eddy is read-only for a short while. Your change wasn't saved.", and the screen treats it as not saved;
+- reads carry on, the `.ics` calendar feeds and signed file links included;
+- the daily jobs (review emails, retention, the health check) do nothing but log a line, and the Worker's 5xx answers aren't written to `error_log`;
+- `/health` answers `"writes": "off"`.
+
+Sign-in reads `auth_context_read()` instead of `auth_context()`, so it doesn't stamp `people.last_seen_at`. What it doesn't stop: anything that writes to Postgres directly (hkha-sync, the backup heartbeat, the Table Editor) is outside the Worker.
+
+**Switch it off, quickest:** Cloudflare dashboard, **Workers & Pages → hkfc-api → Settings → Variables and Secrets**, edit `WRITES` to `off` and deploy. It takes effect in seconds. The next `wrangler deploy` puts back the value in `wrangler.toml`, and CI deploys on every merge to `main`, so merge nothing while it's off. Switch it back the same way, to `on`.
+
+**Or through the repo:** set `WRITES = "off"` under `[vars]` in `worker/wrangler.toml` and merge; CI deploys it. Switch back with another PR setting `"on"`. Slower (a full CI run each way), but it survives other deploys.
+
+Check either way with `curl https://api.eddy.global/health`.
 
 ## Doing it by hand
 

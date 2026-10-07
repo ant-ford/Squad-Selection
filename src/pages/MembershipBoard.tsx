@@ -1,7 +1,7 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarDays, Download, Search, UserPlus, AlertTriangle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,10 +16,13 @@ import { NEEDS_FIXING } from '@shared/membershipStages';
 const MembershipInsights = lazy(() => import('@/components/membership/MembershipInsights'));
 // Likewise the commitment reviews, fetched only when their tab is opened.
 const StatementsBoard = lazy(() => import('@/components/membership/StatementsBoard'));
+// And the forms still owed this season, with their WhatsApp lists.
+const FormsDue = lazy(() => import('@/components/membership/FormsDue'));
 
 const TABS = [
   { key: 'board', label: 'New Joiner' },
   { key: 'statements', label: 'Statements' },
+  { key: 'forms', label: 'Forms' },
   { key: 'insights', label: 'Insights' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
@@ -101,7 +104,7 @@ export default function MembershipBoard() {
   if (!allowed) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader title="Membership" />
+        <AppHeader title="Membership" guide="membership" />
         <div className="flex items-center justify-center p-6 pt-16">
           <div className="text-center space-y-3">
             <p className="text-lg font-semibold text-foreground">Membership access required</p>
@@ -121,6 +124,7 @@ export default function MembershipBoard() {
     <div className="min-h-screen bg-background flex flex-col">
       <AppHeader
         title="Membership"
+        guide="membership"
         menuItems={[{ label: exporting ? 'Exporting…' : 'Active members CSV', icon: Download, onSelect: () => void exportCsv(), disabled: exporting }]}
       />
 
@@ -152,6 +156,10 @@ export default function MembershipBoard() {
           <Suspense fallback={<BoardColumnsSkeleton />}>
             <MembershipInsights />
           </Suspense>
+        ) : tab === 'forms' ? (
+          <Suspense fallback={<BoardColumnsSkeleton />}>
+            <FormsDue />
+          </Suspense>
         ) : tab === 'statements' ? (
           <Suspense fallback={<BoardColumnsSkeleton />}>
             <StatementsBoard />
@@ -164,7 +172,7 @@ export default function MembershipBoard() {
             <input
               value={query}
               onChange={(e) => setParam('q', e.target.value || null)}
-              placeholder="Search name or Membership No."
+              placeholder="Search name or membership number"
               className="w-full h-9 rounded-md border border-border bg-background pl-8 pr-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               aria-label="Search applicants"
             />
@@ -209,7 +217,7 @@ export default function MembershipBoard() {
 
         {board && !board.hasStageDates && (
           <p className="text-xs text-muted-foreground mb-3">
-            Days are counted from the application date until the base has a "Stage Updated At" field.
+            Days are counted from the application date until the base has a "Stage updated at" field.
           </p>
         )}
 
@@ -217,7 +225,7 @@ export default function MembershipBoard() {
           <div className="mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10">
             <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              {broken.length} {broken.length === 1 ? 'record has' : 'records have'} an Applicant Stage that needs fixing (ask the
+              {broken.length} {broken.length === 1 ? 'record has' : 'records have'} an applicant stage that needs fixing (ask the
               Section Captain)
             </p>
             <p className="text-xs text-muted-foreground mt-1">
