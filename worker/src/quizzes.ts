@@ -10,6 +10,7 @@ import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq } from "./data/supabase";
 import type { QuizResult, QuizScoreBoard, QuizSummary, QuizToTake } from "../../shared/quizzes";
+import { fullName } from "../../shared/personName";
 
 interface Question {
   id: string;
@@ -111,7 +112,7 @@ export async function quizScoreBoard(env: Env, user: AuthorizedUser): Promise<Qu
     if (!s.people) continue;
     const row = byPerson.get(s.people.api_id) ?? {
       id: s.people.api_id,
-      name: [s.people.preferred_name || s.people.given_names, s.people.surname].filter(Boolean).join(" ") || "?",
+      name: fullName(s.people) || "?",
       scores: {},
     };
     row.scores[s.quiz] = s.score === null ? null : Number(s.score);

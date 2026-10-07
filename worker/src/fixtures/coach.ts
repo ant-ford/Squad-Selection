@@ -5,6 +5,7 @@ import type { KitColour, Match, Player } from "../../../shared/schema/domainType
 import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
 import { fixtureChange } from "../../../shared/fixtureChange";
+import { firstName } from "../../../shared/personName";
 import type { AuthorizedUser } from "../auth";
 import { changedSinceNotice, noticesForMatches, type SquadNotice } from "../squadNotices";
 import { hkfcSides, type SideInfo } from "../match";
@@ -20,7 +21,7 @@ export async function getUpcomingFixtures(
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
   const playerById = new Map(ref.players.map((p) => [p.id, p]));
-  const nameOf = (p?: Player) => (p ? p.preferredName || p.givenNames || "Player" : "");
+  const nameOf = (p?: Player) => (p ? firstName(p) || "Player" : "");
   // coachTeams already includes every team name when the user is a Section
   // Captain (see auth.ts) - no separate derivation needed here.
   const coachedTeamNames = new Set(opts.user?.coachTeams ?? []);

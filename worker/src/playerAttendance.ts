@@ -8,6 +8,7 @@ import { effectiveAvailability, getRulesForPlayer, resolveRuleStatus, type Resol
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { linkId } from "../../shared/airtableValueUtils";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName } from "../../shared/personName";
 
 /**
  * One player's season as a grid: the teams they can play for down the side, match dates
@@ -315,6 +316,6 @@ export async function getPlayerAttendance(
 
   return {
     ...attendance,
-    playerName: player.preferredName || player.givenNames || "Player",
+    playerName: firstName(player) || "Player",
   };
 }

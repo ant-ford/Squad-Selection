@@ -29,6 +29,7 @@ import { documentFilename, fileAssets, renderPdf, storeDocument, templateAsset, 
 import { ASSET, applicationSpec, levySpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
 import { isUnderEighteen } from "../declarations";
 import { BANKS } from "../../../shared/profile";
+import { fullName } from "../../../shared/personName";
 
 const PERSON_COLUMNS = [
   "id", "api_id", "salutation", "surname", "given_names", "preferred_name", "chinese_name", "gender", "date_of_birth", "place_of_birth",
@@ -119,10 +120,8 @@ const familyPerson = (r: Row): FamilyPerson => ({
   mobileNo: str(r, "mobile_no"),
 });
 
-const holderName = (p: OfficeRow["people"]) => [p?.preferred_name || p?.given_names, p?.surname].filter(Boolean).join(" ");
-
 function signer(o: OfficeRow | undefined, fallback: string, signedAt: string | null): Signer {
-  return { name: holderName(o?.people ?? null), designation: o?.designation || fallback, membershipNo: o?.people?.membership_no ?? null, signedAt };
+  return { name: fullName(o?.people ?? null), designation: o?.designation || fallback, membershipNo: o?.people?.membership_no ?? null, signedAt };
 }
 
 /** Uploaded files the club gets as pages: images as they are, PDFs appended; anything else is left out. */
@@ -397,9 +396,9 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     "offices",
     `select=designation,office_email&person_id=${eq(me.id)}&role=eq.membership_officer&status=eq.Active&limit=1`,
   );
-  const officerName = holderName(me as OfficeRow["people"]);
+  const officerName = fullName(me as OfficeRow["people"]);
   const mailbox = officeAddress(myOffice?.office_email, me.email);
-  const name = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
+  const name = fullName(p);
   const file = await d.one<{ filename: string | null }>("files", `select=filename&id=${eq(app.pdf_file_id)}`);
 
   let body: string[];
@@ -411,7 +410,7 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     body = [
       `Please find attached ${name}'s application for Sports Associate Membership, with their Section Membership Application (Hockey), the Hockey Section Commitment Pledge, and their supporting documents.`,
       "",
-      `It has been signed by their sponsor${sponsor?.people ? ` (${holderName(sponsor.people)})` : ""}, the Hockey Section Chairman${chair?.people ? ` (${holderName(chair.people)})` : ""} and me as Membership Officer.`,
+      `It has been signed by their sponsor${sponsor?.people ? ` (${fullName(sponsor.people)})` : ""}, the Hockey Section Chairman${chair?.people ? ` (${fullName(chair.people)})` : ""} and me as Membership Officer.`,
     ];
   } else {
     body = [`Please find attached ${name}'s Section Membership Application to join the Hockey Section. They are an existing member of the Club; please apply the Hockey Section levy to their account.`];

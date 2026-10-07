@@ -8,6 +8,7 @@ import { cardSide, computePlayerAttendance, type AttendanceStatus, type Availabi
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { linkId } from "../../shared/airtableValueUtils";
+import { fullName } from "../../shared/personName";
 
 /**
  * Every squad's season as one grid, for the coach view: teams down the side,
@@ -101,7 +102,7 @@ function groupByPlayer<T extends { player?: string[] }>(rows: readonly T[]): Map
 
 /** First name and surname, as the app shows names everywhere: squads often have two of a first name. */
 function playerName(p: Player): string {
-  return [p.preferredName || p.givenNames, p.surname].filter(Boolean).join(" ") || "Player";
+  return fullName(p) || "Player";
 }
 
 /** Pure grid computation. Everything is passed in so it is testable without a database. */
