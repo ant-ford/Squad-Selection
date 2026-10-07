@@ -171,7 +171,7 @@ export default function FixtureCard({
       {nowUnavailable.length > 0 && (
         <p className="text-xs text-destructive font-semibold mt-2 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          {nowUnavailable.length} selected player{nowUnavailable.length > 1 ? 's' : ''} now unavailable
+          {nowUnavailable.length} selected player{nowUnavailable.length > 1 ? 's' : ''} changed to No
         </p>
       )}
       <div className="flex gap-4 mt-2 text-xs text-muted-foreground">

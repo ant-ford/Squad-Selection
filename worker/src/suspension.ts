@@ -38,7 +38,7 @@ import { isFriendly } from "./playUp";
  * does not need their own Match Card for a team fixture to count.
  *
  * Red cards (R1-R7) are DETECTED but deliberately NOT converted into automatic
- * suspensions: their serving team can differ between Club and HockeyHK
+ * suspensions: their serving team can differ between Club and HKHA
  * representative teams (Bye-Law 16.10) and their length can be modified by a
  * Disciplinary Committee investigation (Bye-Law 16.7). They remain manual:
  * the Men's Convenor records them as suspensions (public.suspensions; see

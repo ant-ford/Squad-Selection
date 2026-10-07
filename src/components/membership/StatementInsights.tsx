@@ -66,7 +66,7 @@ export default function StatementInsights() {
           <div className="grid gap-3 lg:grid-cols-2">
             <ChartCard
               title="Review emails coming up"
-              caption={`Automatic emails by month (60 days before Period End).${
+              caption={`Automatic emails by month (60 days before period end).${
                 view.ahead.dueNow > 0 ? ` ${view.ahead.dueNow} more ${view.ahead.dueNow === 1 ? 'is' : 'are'} due now.` : ''
               } Notify now on the Statements tab can spread a busy month.`}
               table={

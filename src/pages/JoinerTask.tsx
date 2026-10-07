@@ -8,12 +8,12 @@ import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { errorText, primary } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { completeJoinerTask, getJoinerTask } from '@/api/joiners';
 
 /**
- * A Section Captain's request to the Kit Convenor or the Hockey Convenor
- * for a new joiner: the details they need, the documents for HockeyHK, and
+ * A Section Captain's request to the Kit Convenor or the Men's Convenor
+ * for a new joiner: the details they need, the documents for HKHA, and
  * a Done button (there's nothing to fill in).
  */
 export default function JoinerTaskPage() {
@@ -45,11 +45,11 @@ export default function JoinerTaskPage() {
       );
     }
     const t = task.data;
-    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HockeyHK`;
+    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HKHA`;
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, 'd MMM yyyy')}</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, LONG_DATE)}</p>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -83,7 +83,7 @@ export default function JoinerTaskPage() {
         <div className="flex justify-end pt-4 border-t border-border">
           {t.doneAt ? (
             <p className="text-sm text-primary flex items-center gap-1">
-              <Check className="h-4 w-4" /> Done {safeFormat(t.doneAt, 'd MMM yyyy')}
+              <Check className="h-4 w-4" /> Done {safeFormat(t.doneAt, LONG_DATE)}
             </p>
           ) : (
             <button className={primary} onClick={() => setConfirming(true)} disabled={done.isPending}>

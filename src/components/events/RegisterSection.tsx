@@ -88,7 +88,7 @@ export default function RegisterSection({ event, responses }: { event: ManagedEv
                 onChange={(ev) => mark.mutate({ personId: r.personId, attended: ev.target.checked, guestsCame: ev.target.checked ? r.guests.length : undefined })}
               />
               <span className="truncate">{r.name}</span>
-              {r.checkedInAt && <span className="text-[11px] text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'h:mm a')}</span>}
+              {r.checkedInAt && <span className="text-[11px] text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'HH:mm')}</span>}
             </label>
             {r.guests.length > 0 && r.attended && (
               <select
@@ -144,7 +144,7 @@ export default function RegisterSection({ event, responses }: { event: ManagedEv
       <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
         {event.registerTakenAt ? (
           <>
-            <span className="text-xs text-muted-foreground">Register taken {safeFormat(event.registerTakenAt, 'EEE d MMM, h:mm a')}</span>
+            <span className="text-xs text-muted-foreground">Register taken {safeFormat(event.registerTakenAt, 'EEE d MMM, HH:mm')}</span>
             <button className="text-xs text-primary" disabled={taken.isPending} onClick={() => taken.mutate(false)}>
               Reopen
             </button>

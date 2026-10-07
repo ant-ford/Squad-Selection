@@ -120,7 +120,7 @@ function formatFormLines(record: TeamRecord | undefined): string[] {
   }
   const last = record.lastMeeting;
   if (last) {
-    const where = last.isHome ? "home" : `away at ${last.venue || "TBD"}`;
+    const where = last.isHome ? "home" : `away at ${last.venue || "TBC"}`;
     lines.push(
       `Last meeting: ${OUTCOME_WORD[last.outcome]} ${last.goalsFor}-${last.goalsAgainst}, ${formatDay(last.date)} (${where})`,
     );
@@ -236,7 +236,7 @@ function generateIcsPayload(events: string[]): string {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//HKFC Squad Selection//EN",
+    "PRODID:-//HKFC//Eddy//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "X-WR-CALNAME:HKFC Fixtures",
@@ -311,8 +311,8 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
 
   const matchSection = [
     ...(fixture.kit ? [`Kit: ${fixture.kit}`] : []),
-    `Venue: ${fixture.venue || "TBD"}`,
-    `Division: ${fixture.division || "TBD"}`,
+    `Venue: ${fixture.venue || "TBC"}`,
+    `Division: ${fixture.division || "TBC"}`,
   ];
 
   let description = "";
@@ -367,7 +367,7 @@ function formatVEvent(fixture: any, isPlayerFeed: boolean, teamSquad: SquadEntry
     ]);
   }
 
-  const location = escapeIcsText(fixture.venue || "TBD");
+  const location = escapeIcsText(fixture.venue || "TBC");
 
   const lines = [
     "BEGIN:VEVENT",

@@ -33,7 +33,7 @@ export function ErrorState({
   retryLabel?: string;
   /** Spinner on the retry button while a refetch runs. */
   retrying?: boolean;
-  /** Shows a "My page" link to "/". */
+  /** Shows a "Player view" link to "/". */
   homeLink?: boolean;
   variant?: 'box' | 'page' | 'inline';
   className?: string;
@@ -76,7 +76,7 @@ export function ErrorState({
               className="inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Home className="h-4 w-4" aria-hidden="true" />
-              My page
+              Player view
             </Link>
           )}
         </div>
