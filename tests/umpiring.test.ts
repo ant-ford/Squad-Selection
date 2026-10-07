@@ -219,7 +219,7 @@ describe("taking a duty", () => {
   it("reads a clash on the one-umpire index as someone getting there first", async () => {
     fake({
       ...base(),
-      umpire_assignments: (url: URL, method: string) =>
+      umpire_assignments: (_url: URL, method: string) =>
         method === "GET" ? [] : new Response(JSON.stringify({ code: "23505", message: "duplicate key" }), { status: 409 }),
     });
     await expect(takeDuty(env, user("recANN"), DUTY, {})).rejects.toThrow(/already taken/);
