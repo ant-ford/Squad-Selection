@@ -18,7 +18,7 @@ export function taskTitle(task: MyTask): string {
     case 'statement':
       return 'Complete your Player Statement';
     case 'waivers':
-      return "Complete this season's Waivers & Declarations";
+      return "Complete this season's waivers & declarations";
     case 'details':
       return `Check your details for ${hkSeasonLabel()}`;
     case 'application':
@@ -47,7 +47,7 @@ export function taskTitle(task: MyTask): string {
 }
 
 function noLinkHint(task: MyTask): string {
-  if (task.key === 'statement') return 'Use the Commitment Form link in your review email.';
+  if (task.key === 'statement') return 'Use the Player Statement link in your review email.';
   return 'Ask the Membership Officer for the form link.';
 }
 

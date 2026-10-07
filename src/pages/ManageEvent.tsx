@@ -460,7 +460,7 @@ function StatusAndPoster({ e, data, onDeleted }: { e: ManagedEvent; data: Respon
       </div>
       {e.includesMe === false && e.status !== 'cancelled' && (
         <p className="text-xs rounded-md bg-warning-soft text-warning-soft-foreground px-3 py-2">
-          You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” under Answers.
+          You're not in this invite list, so it won't show in your Player view. Edit who's invited, or use “Answer for someone” under Answers.
         </p>
       )}
       <FileUpload kind="document" label="Poster" hint="A picture: JPEG, PNG or WebP" hasFile={!!e.posterUrl} onUploaded={refresh} upload={(dataUrl) => uploadPoster(id, dataUrl)} />

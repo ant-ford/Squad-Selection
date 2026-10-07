@@ -92,7 +92,7 @@ export default function QuizzesPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Hockey Rules quizzes" />
+      <AppHeader title="Hockey rules quizzes" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

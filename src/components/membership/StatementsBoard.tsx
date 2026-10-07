@@ -46,7 +46,7 @@ export default function StatementsBoard() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name or Membership No."
+            placeholder="Search name or membership number"
             className="w-full h-9 rounded-md border border-border bg-background pl-8 pr-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             aria-label="Search reviews"
           />
@@ -55,7 +55,7 @@ export default function StatementsBoard() {
 
       {board && !board.hasStageDates && (
         <p className="text-xs text-muted-foreground mb-3">
-          Days in stage come from the submission dates until Commitments has a "Review Progress Updated At" field.
+          Days in stage come from the submission dates until Commitments has a "Review progress updated at" field.
         </p>
       )}
 
@@ -67,7 +67,7 @@ export default function StatementsBoard() {
           </p>
           {broken.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              No valid Review Progress, so the automation will never pick them up:{' '}
+              No valid review progress, so the automation will never pick them up:{' '}
               {broken.map((c) => `${c.name} (${c.stage || 'blank'})`).join(', ')}
             </p>
           )}
