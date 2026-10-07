@@ -1,11 +1,11 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, PartyPopper } from 'lucide-react';
 import { StatusChip } from '@/components/ui/status-chip';
 import { getMyEvents } from '@/api/events';
 import { RESPONSE_LABEL, type ResponseStatus } from '@shared/events';
 import type { StatusTone } from '@/lib/statusTone';
+import { useSheetParam } from '@/lib/useSheetParam';
 import { eventWhen } from './eventText';
 
 const ANSWER_TONE: Record<ResponseStatus, StatusTone> = { going: 'success', maybe: 'warning', not_going: 'neutral' };
@@ -19,23 +19,16 @@ const EventSheet = lazy(() => import('./EventSheet'));
  * ("Events (2)", with how many still need an answer) that opens the list; a
  * card opens the event, and so does a link with ?event=<id> (the My Tasks
  * line, or one a social secretary shared on WhatsApp) even while the list is
- * closed.
+ * closed. The open event stays in the URL, so Back closes it.
  */
 export default function EventsSection({ enabled }: { enabled: boolean }) {
-  const [params, setParams] = useSearchParams();
+  const sheet = useSheetParam('event');
   const [expanded, setExpanded] = useState(false);
   const { data } = useQuery({ queryKey: ['myEvents'], queryFn: getMyEvents, enabled });
   const events = data?.events ?? [];
-  const openId = params.get('event');
+  const openId = sheet.value;
   const open = openId ? events.find((e) => e.id === openId) : undefined;
-  const close = () =>
-    setParams(
-      (p) => {
-        p.delete('event');
-        return p;
-      },
-      { replace: true },
-    );
+  const close = sheet.close;
   // A link to an event they can't see (not invited, or long past) just drops the parameter.
   useEffect(() => {
     if (openId && data && !open) close();
@@ -64,7 +57,7 @@ export default function EventsSection({ enabled }: { enabled: boolean }) {
             return (
               <button
                 key={e.id}
-                onClick={() => setParams((p) => { p.set('event', e.id); return p; })}
+                onClick={() => sheet.open(e.id)}
                 className="w-full text-left bg-card border border-border rounded-xl p-3 flex items-center gap-3 hover:bg-muted/50"
               >
                 <div className="h-14 w-14 shrink-0 rounded-md bg-muted overflow-hidden flex items-center justify-center">

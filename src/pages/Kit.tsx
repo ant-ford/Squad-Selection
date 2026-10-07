@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import { PlaceBadge, inputClass, primaryButton, secondaryButton, sizesLine } fro
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
+import { useSheetParam } from '@/lib/useSheetParam';
 import { getKitBoard, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
@@ -63,7 +64,9 @@ export default function Kit() {
   };
 
   const [handingOut, setHandingOut] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The open set (?set=<id>): in the URL, so the phone's Back closes it.
+  const setSheet = useSheetParam('set');
+  const openId = setSheet.value;
   const [confirmArrived, setConfirmArrived] = useState(false);
   const arrived = useMutation({
     mutationFn: (on: string | null) => setOrderReceived(board!.order!.id, on),
@@ -92,6 +95,11 @@ export default function Kit() {
   const count = (key: string) => (board?.sets ?? []).filter(FILTERS.find((f) => f.key === key)!.test).length;
   const open = board?.sets.find((s) => s.id === openId) ?? null;
   const order = board?.order ?? null;
+  // A link to a set that isn't in this order just drops the parameter.
+  useEffect(() => {
+    if (board && openId && !open) setSheet.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board, openId, open]);
 
   const body = () => {
     if (profileLoading || (allowed && isLoading)) {
@@ -183,7 +191,7 @@ export default function Kit() {
         {view === 'insights' ? (
           <KitInsights
             board={board}
-            onOpenSet={setOpenId}
+            onOpenSet={setSheet.open}
             onShowSets={(show) => {
               // One update: two setParam calls would each start from the same old params.
               const next = new URLSearchParams(params);
@@ -226,7 +234,7 @@ export default function Kit() {
             <ul className="rounded-xl border border-border bg-card divide-y divide-border">
               {sets.map((s) => (
                 <li key={s.id}>
-                  <button className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setOpenId(s.id)}>
+                  <button className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setSheet.open(s.id)}>
                     <span className="w-9 text-right font-mono text-sm font-semibold">{s.shirtNo}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-foreground truncate">
@@ -254,7 +262,7 @@ export default function Kit() {
         )}
 
         {handingOut && <HandOutSheet board={board} onClose={() => setHandingOut(false)} onDone={changed} />}
-        {open && <SetSheet key={open.id} set={open} board={board} onClose={() => setOpenId(null)} onChanged={changed} />}
+        {open && <SetSheet key={open.id} set={open} board={board} onClose={setSheet.close} onChanged={changed} />}
         {confirmArrived && (
           <ConfirmDialog
             title="Has the kit arrived?"
