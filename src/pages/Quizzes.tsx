@@ -5,7 +5,7 @@ import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { errorText } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getQuizScores, listQuizzes } from '@/api/quizzes';
 
 /**
@@ -44,7 +44,7 @@ export default function QuizzesPage() {
                 <p className="text-xs text-muted-foreground">
                   {q.questions} questions
                   {q.myScore !== null
-                    ? ` · your score ${q.myScore}/${q.points}${q.takenAt ? ` (${safeFormat(q.takenAt, 'd MMM yyyy')})` : ''}`
+                    ? ` · your score ${q.myScore}/${q.points}${q.takenAt ? ` (${safeFormat(q.takenAt, LONG_DATE)})` : ''}`
                     : ' · not taken yet'}
                 </p>
               </div>

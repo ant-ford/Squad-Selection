@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download } from 'lucide-react';
 import { errorText, secondary } from '@/components/profile/steps';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { saveCsv } from '@/lib/saveCsv';
 import { confirmPayment, getCharges, markChargesSent } from '@/api/events';
 import { READ_STATUS_LABEL, chargesCsv, priceText, type ManagedEvent, type ReadStatus } from '@shared/events';
@@ -55,7 +55,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
         <button
           className="text-xs text-primary inline-flex items-center gap-1 disabled:opacity-50"
           disabled={!owing.length}
-          onClick={() => saveCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, 'd MMM yyyy'), list.payers))}
+          onClick={() => saveCsv(csvName, chargesCsv(event.title, safeFormat(event.startsAt, LONG_DATE), list.payers))}
         >
           <Download className="h-3.5 w-3.5" /> Download list
         </button>

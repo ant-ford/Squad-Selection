@@ -16,7 +16,7 @@ import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { DRAFT_KEPT_MESSAGE, UNSAVED_MESSAGE } from '@/lib/unsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { confirmDetails, readIdDocument, saveDetailsSection, saveKitSizes } from '@/api/details';
 import { submitSeasonPlan } from '@/api/seasonPlan';
 import { saveVolunteering } from '@/api/volunteering';
@@ -124,8 +124,8 @@ export function MembershipStep({ details, ...nav }: StepProps) {
     ['Member type', m.memberType],
     ['Category', m.categoryType],
     ['Player or coach', m.playerCoach.join(', ') || null],
-    ['Joined', m.joinDate ? safeFormat(m.joinDate, 'd MMM yyyy') : null],
-    ['Commitment ends', m.commitmentEndDate ? safeFormat(m.commitmentEndDate, 'd MMM yyyy') : null],
+    ['Joined', m.joinDate ? safeFormat(m.joinDate, LONG_DATE) : null],
+    ['Commitment ends', m.commitmentEndDate ? safeFormat(m.commitmentEndDate, LONG_DATE) : null],
   ];
   return (
     <StepShell title="Your membership" {...nav} onNext={nav.onDone} nextLabel="Next">
