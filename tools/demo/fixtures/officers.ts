@@ -9,6 +9,7 @@ import { APPROVABLE_STAGE, PARKED_STAGES, PIPELINE_STAGES, SUBMITTED_STAGES, col
 import { REVIEW_STAGES, reviewColumnFor, reviewWaitingOn } from '@shared/statementStages';
 import { PLAYING_PREFERENCES, type SeasonPlanAnswers, type SeasonPlanBoard, type SeasonPlanPlayer } from '@shared/seasonPlan';
 import { EMPTY_ROLES, type Volunteer, type VolunteerRoles, type VolunteersBoard } from '@shared/volunteering';
+import type { MessageTemplate } from '@/api/messages';
 import { reply, type Routes } from './routing';
 import { OTHERS, PERSONAS, SAT2, SEASON, SQUAD_PLAYERS, TEAMS, at, day, firstName, type Persona } from './data';
 
@@ -420,7 +421,15 @@ function system(): SystemView {
   };
 }
 
+// The WhatsApp list sheet's saved messages (Email lists, and the other lists that use it).
+const TEMPLATES: MessageTemplate[] = [
+  { id: 'demoTpl1', name: 'Details reminder', body: 'Hi {{Preferred Name}}, a reminder to check your details in Eddy before the season starts. Thanks!' },
+  { id: 'demoTpl2', name: 'Kit to collect', body: 'Hi {{Preferred Name}}, your kit is ready to collect from the Kit Convenor.' },
+];
+
 export const routes: Routes = {
+  'GET /api/messages/templates': () => ({ templates: TEMPLATES }),
+  'POST /api/messages/log': () => ({ ok: true }),
   'GET /api/membership/board': () => membershipBoard(),
   'GET /api/membership/statements': () => statementBoard(),
   'GET /api/membership/insights': () => insights(),
