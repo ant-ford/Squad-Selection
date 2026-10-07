@@ -23,7 +23,7 @@
  *  - system: the app owner only, while a system health check fails
  *    (systemHealth.ts); opens /system.
  *  - kit / registration: a Section Captain's request to the Kit Convenor or
- *    the Hockey Convenor for a new joiner, until they mark it done
+ *    the Men's Convenor for a new joiner, until they mark it done
  *    (joiners.ts).
  */
 import type { Env } from "./env";

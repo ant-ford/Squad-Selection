@@ -6,7 +6,7 @@ export interface ProfileData {
   isCoach: boolean;
 
   isSectionCaptain: boolean;
-  /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
+  /** Active Membership Officer / Chairman / Section Captain rows. Empty for almost everyone. */
   officerRoles: {
     office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor' | 'assistantDirector' | 'umpireCoordinator';
     designation: string;

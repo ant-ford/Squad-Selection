@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AlertTriangle, PackageOpen, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -13,7 +13,7 @@ import NeedsKit from '@/components/kit/NeedsKit';
 import KitInsights from '@/components/kit/KitInsights';
 import { PlaceBadge, inputClass, primaryButton, secondaryButton, sizesLine } from '@/components/kit/kitUi';
 import { ApiError } from '@/lib/apiClient';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
 import { useSheetParam } from '@/lib/useSheetParam';
 import { getKitBoard, setOrderExpected, setOrderReceived } from '@/api/kit';
@@ -139,8 +139,8 @@ export default function Kit() {
               <p className="text-sm font-semibold text-foreground">{order.name}</p>
             )}
             <p className="text-xs text-muted-foreground">
-              {order.orderedOn ? `Ordered ${safeFormat(order.orderedOn, 'd MMM yyyy')} · ` : ''}
-              {order.receivedOn ? `Arrived ${safeFormat(order.receivedOn, 'd MMM yyyy')}` : 'Not arrived yet'}
+              {order.orderedOn ? `Ordered ${safeFormat(order.orderedOn, LONG_DATE)} · ` : ''}
+              {order.receivedOn ? `Arrived ${safeFormat(order.receivedOn, LONG_DATE)}` : 'Not arrived yet'}
             </p>
             {!order.receivedOn && (
               <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">

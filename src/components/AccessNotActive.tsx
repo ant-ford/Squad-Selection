@@ -105,7 +105,7 @@ export default function AccessNotActive({ message }: { message: string }) {
             onClick={() => void signOut()}
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            Sign out
+            Log out
           </button>
         </div>
       </div>

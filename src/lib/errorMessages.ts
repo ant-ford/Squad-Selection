@@ -47,6 +47,7 @@ const BY_CODE: Record<string, string> = {
   AI_UNAVAILABLE: "the suggestion service isn't working right now. Please try again later.",
   AI_FAILED: "the suggestion service isn't working right now. Please try again later.",
   TOO_LARGE: 'the file is too big. Try a smaller photo or PDF.',
+  READ_ONLY: 'Eddy is read-only for a short while. Try again later.',
 };
 
 const BY_STATUS: Record<number, string> = {

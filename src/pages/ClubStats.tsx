@@ -300,7 +300,7 @@ function CompetitionCard({
       <div className="space-y-3">
         {groups.map((g) => (
           <section key={g.key} aria-label={g.label}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
             <HBars
               rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${gamesText(games(t))}` }))}
               unit="won"
@@ -334,11 +334,11 @@ function PlayerDataNote({ stats }: { stats: PeriodStats }) {
   if (stats.seasonsWithoutPlayers.length === 0) return null;
   const withPlayers = stats.seasons.filter((s) => !stats.seasonsWithoutPlayers.includes(s));
   if (withPlayers.length === 0) {
-    return <p className="text-xs text-muted-foreground">No Match Cards were recorded this season, so there are results but no player figures.</p>;
+    return <p className="text-xs text-muted-foreground">No match cards were recorded this season, so there are results but no player figures.</p>;
   }
   return (
     <p className="text-xs text-muted-foreground">
-      Appearances and goals are recorded from {shortSeason(withPlayers[0])}, the first season with Match Cards; earlier
+      Appearances and goals are recorded from {shortSeason(withPlayers[0])}, the first season with match cards; earlier
       seasons have results only.
     </p>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -10,7 +10,7 @@ import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary } from '@/components/profile/steps';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { Skeleton } from '@/components/ui/skeleton';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getSigningView, getSponsorDrafts, remakeApplicationPdf, sendApplication, signApplication } from '@/api/signing';
 import { JOINER_POSITIONS, JOINER_TEAMS } from '@shared/joiners';
 import { ROLE_LABEL, SIGN_ROLES, SPONSOR_LEVELS, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from '@shared/signing';
@@ -86,7 +86,7 @@ function Application({ v }: { v: SigningView }) {
           <h2 className="text-lg font-semibold text-foreground">{v.name}</h2>
           <p className="text-xs text-muted-foreground">
             {v.applicationType}
-            {v.categoryType ? ` · ${v.categoryType}` : ''} · submitted {safeFormat(v.submittedAt, 'd MMM yyyy')}
+            {v.categoryType ? ` · ${v.categoryType}` : ''} · submitted {safeFormat(v.submittedAt, LONG_DATE)}
           </p>
           <p className="text-xs text-muted-foreground">{v.stage}</p>
         </div>
@@ -106,7 +106,7 @@ function Application({ v }: { v: SigningView }) {
             <Fact
               label="Trials"
               value={a.trials
-                .map((t) => [t.date ? safeFormat(t.date, 'd MMM yyyy') : 'Undated', t.types.join(', '), t.highestDivision].filter(Boolean).join(' · '))
+                .map((t) => [t.date ? safeFormat(t.date, LONG_DATE) : 'Undated', t.types.join(', '), t.highestDivision].filter(Boolean).join(' · '))
                 .join('\n')}
             />
           )}
@@ -139,7 +139,7 @@ function Application({ v }: { v: SigningView }) {
                   <p className={`text-xs flex items-center gap-1 ${s.signedAt ? 'text-primary' : 'text-muted-foreground'}`}>
                     {s.signedAt ? (
                       <>
-                        <Check className="h-3.5 w-3.5" /> Signed {safeFormat(s.signedAt, 'd MMM yyyy')}
+                        <Check className="h-3.5 w-3.5" /> Signed {safeFormat(s.signedAt, LONG_DATE)}
                       </>
                     ) : (
                       'Not signed yet'
@@ -211,7 +211,7 @@ function SendBlock({ v, sending }: { v: SigningView; sending: NonNullable<Signin
       )}
       {sending.sentAt ? (
         <p className="text-xs flex items-center gap-1 text-primary">
-          <Check className="h-3.5 w-3.5" /> Sent to {sending.recipient} ({sending.sentTo}) on {safeFormat(sending.sentAt, 'd MMM yyyy')}
+          <Check className="h-3.5 w-3.5" /> Sent to {sending.recipient} ({sending.sentTo}) on {safeFormat(sending.sentAt, LONG_DATE)}
           {sending.sentBy ? ` by ${sending.sentBy}` : ''}
         </p>
       ) : (

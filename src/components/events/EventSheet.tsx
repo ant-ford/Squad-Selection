@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CalendarDays, ExternalLink, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { fieldInput } from '@/components/profile/ProfileFields';
@@ -248,7 +248,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">Are you coming?</h3>
                   <p className="text-xs text-muted-foreground">
-                    {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
+                    {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, HH:mm')}` : 'Answers have closed'}
                   </p>
                 </div>
                 {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}

@@ -1,7 +1,7 @@
 /**
- * The Hockey Convenor's HKHA registration screen: every
+ * The Men's Convenor's HKHA registration screen: every
  * Active player's registration details grouped by registered team, who
- * still needs registering with HockeyHK this season and why, and a CSV of
+ * still needs registering with HKHA this season and why, and a CSV of
  * the details. See shared/registration.ts for the rules.
  *
  * Gated on the "registration" section (auth.ts), which only the Hockey
@@ -173,7 +173,7 @@ async function log(env: Env, actorId: string | null, action: string, entityIds: 
 }
 
 /**
- * The details as a CSV for HockeyHK's registration spreadsheet: everyone,
+ * The details as a CSV for HKHA's registration spreadsheet: everyone,
  * or only those who still need registering, optionally for one team. The
  * file leaves the app with ID numbers in it, so the download is logged.
  */
@@ -193,7 +193,7 @@ export async function registrationCsv(
 }
 
 /**
- * Records that a player was registered with HockeyHK this season for the
+ * Records that a player was registered with HKHA this season for the
  * team they're registered to now. Already recorded is fine (nothing
  * changes). Used by the screen and by a new joiner's registration task.
  */

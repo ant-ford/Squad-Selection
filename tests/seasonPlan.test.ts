@@ -76,7 +76,8 @@ describe("season plan", () => {
     expect(all.teams.map((t) => [t.team, t.players.map((p) => p.name)])).toEqual([
       ["HKFC C", ["Al One"]], ["HKFC D", ["Bo Two"]], ["No team yet", ["Cy Three"]],
     ]);
-    expect(all.teams[0].players[0].plan).toEqual({ availabilityLevel: "most", availabilityHalf: "second", playingPreference: DOWN, captaincyInterest: "Maybe" });
+    expect(all.teams[0].players[0].plan).toEqual({ availabilityLevel: "most", availabilityHalf: "second", playingPreference: DOWN });
+    expect(all.teams[0].players[0].plan).not.toHaveProperty("captaincyInterest");
     expect(all.teams[2].players[0].plan).toBeNull();
 
     const own = await getSeasonPlanBoard(env, coach);
