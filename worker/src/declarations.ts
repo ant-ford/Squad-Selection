@@ -113,7 +113,7 @@ export async function submitDeclarations(env: Env, user: AuthorizedUser, body: R
   }
   // My Tasks reads waivers_signed_at through the People caches.
   await invalidatePeople(env);
-  // HockeyHK's under-18 form, to the Hockey Convenor: after the response.
+  // HKHA's under-18 form, to the Men's Convenor: after the response.
   if (minor && pdfsEnabled(env)) void inBackground(() => makeU18Registration(env, p.id));
   return { ok: true, underEighteen: minor };
 }

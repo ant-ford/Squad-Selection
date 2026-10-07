@@ -12,8 +12,8 @@ import { safeFormat } from '@/lib/dateUtils';
 import { completeJoinerTask, getJoinerTask } from '@/api/joiners';
 
 /**
- * A Section Captain's request to the Kit Convenor or the Hockey Convenor
- * for a new joiner: the details they need, the documents for HockeyHK, and
+ * A Section Captain's request to the Kit Convenor or the Men's Convenor
+ * for a new joiner: the details they need, the documents for HKHA, and
  * a Done button (there's nothing to fill in).
  */
 export default function JoinerTaskPage() {
@@ -45,7 +45,7 @@ export default function JoinerTaskPage() {
       );
     }
     const t = task.data;
-    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HockeyHK`;
+    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HKHA`;
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
