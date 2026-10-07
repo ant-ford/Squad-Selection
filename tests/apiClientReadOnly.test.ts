@@ -19,7 +19,7 @@ vi.mock("../src/lib/toast", () => ({ toast }));
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const readOnly = () => json(503, { error: "READ_ONLY", message: "Eddy is read-only for a short while. Your change wasn't saved." });
+const readOnly = () => json(503, { error: "READ_ONLY", message: "Saving is paused for a short while. Your change wasn't saved." });
 
 const fetchMock = vi.fn();
 

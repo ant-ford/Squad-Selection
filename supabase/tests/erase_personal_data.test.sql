@@ -62,10 +62,10 @@ select is((select count(*) from erased_fks e
           0::bigint, 'every listed column is a foreign key to people');
 
 -- ── The person, someone else, and one row for every listed column ──
+insert into public.teams (airtable_id, team_name, team_rank, active) values ('recErTeam', 'HKFC D', 4, true);
 insert into public.people (airtable_id, given_names, surname, email, mobile_no, active, registered_team, section_rank, opt_in_only)
 values ('recErP', 'Leaving', 'Member', 'leaving.member@example.com', '+852 5555 0000', true, 'HKFC D', 12, true),
        ('recErQ', 'Staying', 'Member', 'staying.member@example.com', null, true, 'HKFC D', null, false);
-insert into public.teams (airtable_id, team_name, team_rank, active) values ('recErTeam', 'HKFC D', 4, true);
 insert into public.matches (airtable_id, match_date, home_team, away_team, match_status)
 values ('recErMatch', now() + interval '3 days', 'HKFC D', 'Other', 'Scheduled');
 insert into public.events (event_type, title, starts_at) values ('team_social', 'Erase test social', now() + interval '10 days');

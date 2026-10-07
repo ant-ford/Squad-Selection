@@ -117,6 +117,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - stamping `inactive_since` and the membership stage;
   - commitment periods;
   - removing a person's push devices when `erase_personal_data()` stamps `personal_data_removed_at` (`people_erase_push_subscriptions`).
+- **Constraints.** `people.status` is Member, Applicant or Resigned, and `people.applicant_stage` one of the stages in `shared/membershipStages.ts` (CHECKs). The team columns Eddy writes (people's registered and selected teams, `hkha_registrations`, `season_rollover_people`, `shirt_numbers`, `suspensions`) reference `teams.team_name`, `ON UPDATE CASCADE`. Columns hkha-sync fills (opponents, `match_cards`, `umpire_duties`, `registration_events`) stay free text, so a sync never fails on a name. Renaming a team also needs `hkfc_team_level()` and hkha-sync changed.
 - **Squad changes.** Every squad write goes through `on_squad_changed()`. It stores who was added or removed, by whom and by which path, in `match_selection_changes`, and bumps that side's version.
 - **Files.**
   - Stored in R2 (binding `FILES`) and referenced from `files`. The browser only ever gets signed links (`worker/src/files.ts`), which expire within two hours, or two days for photos and posters.
@@ -192,9 +193,9 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - Resend's free plan allows 100 emails a day and 3,000 a month, and Supabase sign-in codes share that allowance.
   - Eddy caps itself at 70 recipients a day (`DAILY_LIMIT`) and logs every send in `email_log`.
   - Preview sends everything to `MAIL_REDIRECT_TO`.
+  - Officers are written to at their office's mailbox (`offices.office_email`), else their own email, and an officer's email goes out from that mailbox when it is on hkfchockey.com, else from `REVIEW_EMAIL_FROM`. The rule and the office-holder reads are in `worker/src/officeContacts.ts`; the Assistant Director of Hockey is the Active `assistant_director` office.
 - **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied, 25 s timeout) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
-<<<<<<< HEAD
 - **Web Push:** `worker/src/push.ts`, with VAPID signing and aes128gcm encryption in WebCrypto (`worker/src/webPush.ts`). Personal alerts only:
   - a selected player answers No → that team's coaches (`/coach/match/:id`);
   - the Umpire Coordinator takes someone off a duty → that umpire (`/umpiring`);
@@ -202,9 +203,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - "Send to Eddy app" in Notify → the saved squad (`POST /api/push/squad`, that side's coaches only).
 
   It is off unless `PUSH="on"` and the `VAPID_PRIVATE_KEY` secret (a P-256 private JWK) is set. Alerts go out after the response (`waitUntil`), within at most 40 device sends per request and the subrequests the request has left. A device the push service answers 404 or 410 for is deleted. `push_subscriptions` is read fresh, never cached.
-=======
 - **Read-only switch:** `WRITES="off"` (`worker/src/readOnly.ts`), for a restore. Every non-GET request gets `503 READ_ONLY` before sign-in, the crons and the error log stop, and `/health` says `"writes": "off"`. The app shows one toast (`src/lib/apiClient.ts`). How to switch it: [docs/RESTORE.md](docs/RESTORE.md#the-read-only-switch).
->>>>>>> origin/main
 
 ---
 
@@ -229,6 +228,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `useDraft` keeps drafts of long forms.
   - `useFormGaps` lists what's missing next to the submit button.
 - **Sheets in the URL:** `useSheetParam` (`src/lib/useSheetParam.ts`) keeps the weekly sheets in a search parameter, so a phone's Back closes the sheet rather than the screen, and a shared link opens it. Player view: `?fixture=`, `?note=` (match id), `?stats=`, `?preferences=1`, `?calendar=1`, `?event=`. Kit: `?set=`. Ranking: `?stats=`, `?attendance=`, `?history=` (player id). Squad: `?history=1`. A Sheet with unsaved changes asks before Back closes it. Confirm dialogs, menus and popovers stay out of the URL.
+- **Product name:** on screen, the product name is `<EddyWordmark />` (`src/components/brand/EddyWordmark.tsx`: the logo's Fairwater Script lettering as one inline SVG path, 1.2em tall on the text baseline); plain "Eddy" only where the device draws the text (tab title, manifest, push, emails, WhatsApp, calendar, CSV, PDF, `alt` and `aria-label`). `tests/brandWordmark.test.ts` enforces it. Never add the font file: the repo is public and the font is licensed.
 - **Words:** `docs/glossary.md`. Weekly screens carry almost no explanatory text: rules are enforced by which options are shown.
 - **PWA** (`vite.config.ts`, Workbox):
   - Only sign-in and Player view are precached: the entry chunk, the vendor chunks, and the sheets and menus the player page opens. `scripts/precache-set.ts` works the list out from the bundle at build time.
@@ -262,24 +262,16 @@ The owner (Anthony) does these, and Claude asks first:
 - anything that writes to production (migrations, data fixes, scripts with `--target=production`);
 - GitHub secrets and environments; Cloudflare, Supabase and Resend settings, including Supabase Auth's CAPTCHA and email rate limit;
 - approving preview deploys and merging PRs;
-<<<<<<< HEAD
-- flipping `RETENTION_MODE`; running the July season rollover;
-- Web Push: making each environment's `VAPID_PRIVATE_KEY` with `node scripts/vapid-keys.mjs --env preview|production`, then setting `PUSH = "on"`;
-=======
 - flipping `RETENTION_MODE` or `WRITES`; running the July season rollover;
->>>>>>> origin/main
+- Web Push: making each environment's `VAPID_PRIVATE_KEY` with `node scripts/vapid-keys.mjs --env preview|production`, then setting `PUSH = "on"`;
 - setting `hkid_hidden`; who is in `SYSTEM_OWNER_IDS`.
 
 Live scripts:
 - `scripts/migration/`: `import-kit-order`, `load-quizzes`, `upload-club-doc`, `upload-pdf-template`, `backfill-photo-thumbnails`.
 - `scripts/`:
   - `check-migrations.mjs` and `worker-secrets.mjs`, both used by CI;
-<<<<<<< HEAD
   - `vapid-keys.mjs`, the owner's Web Push key maker;
-  - `availability-rule-checks.mjs`, the SQL half of the availability rule cases;
-=======
   - `availability-rule-checks.mjs`, the SQL half of the availability rule cases (CI runs it through `sql-tests.yml`);
->>>>>>> origin/main
   - `backup/`: dump, restore and heartbeat.
 
 ### Branches and PRs

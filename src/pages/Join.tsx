@@ -6,6 +6,7 @@ import { setAccessDenied } from '@/lib/accessDenied';
 import { ApiError } from '@/lib/apiClient';
 import { registerInterest } from '@/api/trials';
 import Login from '@/pages/Login';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 
 const REF_KEY = 'join:ref';
 const PENDING_KEY = 'join:pending';
@@ -117,7 +118,7 @@ export default function JoinPage() {
       <div className="max-w-md w-full bg-card p-6 rounded-lg border border-border shadow-lg space-y-3 text-center">
         {done === 'member' ? (
           <>
-            <p className="text-sm text-foreground">You're already in Eddy, so there's nothing to register.</p>
+            <p className="text-sm text-foreground">You're already in <EddyWordmark />, so there's nothing to register.</p>
             <button className="text-sm text-primary underline" onClick={() => navigate('/', { replace: true })}>
               Go to the app
             </button>

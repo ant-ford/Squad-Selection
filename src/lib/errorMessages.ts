@@ -43,11 +43,11 @@ const BY_CODE: Record<string, string> = {
   DB_ERROR: "the database didn't answer. Please try again.",
   UPSTREAM_ERROR: "the database didn't answer. Please try again.",
   INTERNAL_ERROR: 'something went wrong on our side. Please try again.',
-  SERVER_MISCONFIGURED: 'Eddy is not set up properly. Please tell the Men\'s Convenor.',
+  SERVER_MISCONFIGURED: "a setting is missing on our side. Please tell the Men's Convenor.",
   AI_UNAVAILABLE: "the suggestion service isn't working right now. Please try again later.",
   AI_FAILED: "the suggestion service isn't working right now. Please try again later.",
   TOO_LARGE: 'the file is too big. Try a smaller photo or PDF.',
-  READ_ONLY: 'Eddy is read-only for a short while. Try again later.',
+  READ_ONLY: 'saving is paused for a short while. Try again later.',
 };
 
 const BY_STATUS: Record<number, string> = {

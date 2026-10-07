@@ -35,8 +35,8 @@ describe('errorMessage', () => {
   });
 
   it('says Eddy is read-only, not that something broke', () => {
-    expect(errorMessage(api(503, 'READ_ONLY', "Eddy is read-only for a short while. Your change wasn't saved."))).toBe(
-      'Not saved: Eddy is read-only for a short while. Try again later.',
+    expect(errorMessage(api(503, 'READ_ONLY', "Saving is paused for a short while. Your change wasn't saved."))).toBe(
+      'Not saved: saving is paused for a short while. Try again later.',
     );
   });
 
