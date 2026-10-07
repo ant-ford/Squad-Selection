@@ -8,14 +8,14 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import type { StatementCard } from '@/api/membership';
 import { ApiError } from '@/lib/apiClient';
 import { useRequestReviewEmail } from '@/lib/queries';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { AUTO_NOTICE_DAYS, NOT_STARTED, SPONSOR_SUBMITTED } from '@shared/statementStages';
 import { Fact, TextBlock, sheetLinkClass as linkClass } from './ApplicantSheet';
 import { Avatar } from './ApplicantCard';
 import { memberWhatsApp, periodLabel, sponsorWhatsApp, statementStatus } from './StatementCard';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 /** Rich-text fields arrive as Markdown; the sheet shows them as plain text. */
 const plain = (s?: string) => s?.replace(/\*\*|__/g, '').replace(/\\([*_#\-.])/g, '$1').trim() || undefined;
