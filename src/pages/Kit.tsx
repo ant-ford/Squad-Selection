@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
-import { AlertTriangle, PackageOpen, Search } from 'lucide-react';
+import { AlertTriangle, MessageCircle, PackageOpen, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import WhatsAppListSheet from '@/components/WhatsAppListSheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import HandOutSheet from '@/components/kit/HandOutSheet';
 import SetSheet from '@/components/kit/SetSheet';
@@ -16,7 +17,7 @@ import { ApiError } from '@/lib/apiClient';
 import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
 import { useSheetParam } from '@/lib/useSheetParam';
-import { getKitBoard, setOrderExpected, setOrderReceived } from '@/api/kit';
+import { getKitBoard, getUncollectedKit, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
 
@@ -57,10 +58,14 @@ export default function Kit() {
     enabled: allowed,
     refetchInterval: 20_000,
   });
+  // Every order's kit left in the store for more than 14 days, with the owners' mobiles.
+  const uncollected = useQuery({ queryKey: ['kitUncollected'], queryFn: getUncollectedKit, enabled: allowed, staleTime: 60_000 });
+  const [chasing, setChasing] = useState(false);
   const changed = () => {
     void queryClient.invalidateQueries({ queryKey: ['kitBoard'] });
     void queryClient.invalidateQueries({ queryKey: ['kitHistory'] });
     void queryClient.invalidateQueries({ queryKey: ['myKit'] });
+    void queryClient.invalidateQueries({ queryKey: ['kitUncollected'] });
   };
 
   const [handingOut, setHandingOut] = useState(false);
@@ -215,6 +220,15 @@ export default function Kit() {
                   {f.label} {count(f.key)}
                 </button>
               ))}
+              {(uncollected.data?.people.length ?? 0) > 0 && (
+                <button
+                  onClick={() => setChasing(true)}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border text-foreground"
+                  title="WhatsApp the owners of kit waiting in the store for more than 14 days"
+                >
+                  <MessageCircle className="h-3 w-3" aria-hidden /> Not collected {uncollected.data!.people.length}
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
@@ -261,6 +275,14 @@ export default function Kit() {
           </>
         )}
 
+        {chasing && uncollected.data && (
+          <WhatsAppListSheet
+            title="Kit not collected"
+            people={uncollected.data.people.map((p) => ({ id: p.id, name: `${p.name} (${p.shirtNo}, since ${safeFormat(p.since, 'd MMM')})`, firstName: p.firstName, mobile: p.mobile }))}
+            defaultMessage="Hi {first name}, your kit is in the kit store waiting for you. When can you collect it?"
+            onClose={() => setChasing(false)}
+          />
+        )}
         {handingOut && <HandOutSheet board={board} onClose={() => setHandingOut(false)} onDone={changed} />}
         {open && <SetSheet key={open.id} set={open} board={board} onClose={setSheet.close} onChanged={changed} />}
         {confirmArrived && (
