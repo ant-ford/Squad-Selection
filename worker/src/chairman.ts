@@ -4,7 +4,8 @@
  *
  * The whole directory is sent once and the app filters it, so building a
  * list is instant and costs no request per click. It is still only names,
- * group values and email addresses: reads pass CHAIRMAN_FIELDS (through
+ * group values, email addresses and mobiles (for the WhatsApp list; the
+ * owner confirmed 7 Oct 2026): reads pass CHAIRMAN_FIELDS (through
  * data/people.ts), so no HKID, bank or home-address field is ever requested.
  */
 import type { Env } from "./env";

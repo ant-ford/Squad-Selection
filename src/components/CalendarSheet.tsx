@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from '@/lib/toast';
 import { Copy, Check, Calendar, Mail, Smartphone, ChevronDown, ChevronUp } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -26,7 +26,7 @@ interface CalendarSheetProps {
 export default function CalendarSheet({
   fetchLink,
   title = "Sync to calendar",
-  description = "Get automatic updates for your fixtures, selection, and availability status.",
+  description = "Get automatic updates for your fixtures, selection and availability.",
   generateLabel = "Get calendar link",
   onClose,
 }: CalendarSheetProps) {
@@ -109,7 +109,7 @@ export default function CalendarSheet({
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center justify-between w-full min-h-10 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              <span>Using Outlook Desktop or another app?</span>
+              <span>Using Outlook desktop or another app?</span>
               {showAdvanced ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             {showAdvanced && (

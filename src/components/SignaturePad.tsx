@@ -83,7 +83,7 @@ export default function SignaturePad({ onChange }: { onChange: (png: string | nu
         onPointerCancel={end}
       />
       <div className="flex justify-between items-center mt-1">
-        <span className="text-[11px] text-muted-foreground">{empty ? 'Sign in the box' : 'Signed'}</span>
+        <span className="text-xs text-muted-foreground">{empty ? 'Sign in the box' : 'Signed'}</span>
         <button type="button" className="text-xs text-primary hover:underline disabled:opacity-40" onClick={clear} disabled={empty}>
           Clear
         </button>

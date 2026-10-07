@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The Registered Name / visiting save goes through the router's registration
-// gate (Hockey Convenor only), with the actor taken from the session, never
+// gate (Men's Convenor only), with the actor taken from the session, never
 // from the body.
 
 const mocks = vi.hoisted(() => ({
