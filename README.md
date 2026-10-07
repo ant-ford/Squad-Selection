@@ -246,7 +246,7 @@ Live scripts:
 - `scripts/migration/`: `import-kit-order`, `load-quizzes`, `upload-club-doc`, `upload-pdf-template`, `backfill-photo-thumbnails`.
 - `scripts/`:
   - `check-migrations.mjs` and `worker-secrets.mjs`, both used by CI;
-  - `availability-rule-checks.mjs`, the SQL half of the availability rule cases;
+  - `availability-rule-checks.mjs`, the SQL half of the availability rule cases (CI runs it through `sql-tests.yml`);
   - `backup/`: dump, restore and heartbeat.
 
 ### Branches and PRs
@@ -304,13 +304,21 @@ npx vitest run tests/golden-eligibility.test.ts
 - The data layer is faked in two ways, both explained in `tests/helpers/README.md`:
   - the repositories in `worker/src/data/` are replaced by in-memory fakes (`tests/helpers/fakeRepos.ts`);
   - direct PostgREST calls go to one shared fetch fake (`tests/helpers/postgrest.ts`), which fails a test on any query it doesn't understand.
-- SQL functions don't run in the tests. When you change one, test it on eddy-preview inside a transaction that is rolled back. For the availability rules, `scripts/availability-rule-checks.mjs` prints that SQL.
+- **SQL tests.** The SQL functions and triggers run in CI (`.github/workflows/sql-tests.yml`, a few minutes, on every PR and push to main):
+  - a throwaway local Supabase database (Docker) applies every migration in order, so a migration that fails to apply fails the PR;
+  - then the pgTAP files in `supabase/tests/` run, each in its own transaction that is rolled back. They cover `apply_squad_changes` / `on_squad_changed`, `admin_update_person`, the season rollover and its undo, the `cache_versions` triggers and `erase_personal_data`;
+  - the availability rule cases run from the same JSON as the TypeScript test: `scripts/availability-rule-checks.mjs --tap` writes `supabase/tests/availability_rule_cases.test.sql` (generated, not committed);
+  - `erase_personal_data.test.sql` lists every foreign key `retentionCoverage` classifies as erased, and that vitest test fails until the two lists match.
+- **Adding a SQL test:** a new `supabase/tests/<name>.test.sql` that starts `begin; select plan(n);` and ends `select * from finish(); rollback;`. The database starts empty, so insert only the rows the test needs (teams, people, matches...), with `airtable_id`s like `recXyz` so their `api_id`s are readable. Assertions are pgTAP's (`is`, `results_eq`, `throws_ok`, ...).
+- **Running them locally** (needs Docker Desktop): `npx supabase@2.118.0 db start` once (`db reset` after adding a migration), then `npm run test:sql`. Or push and read the workflow's log.
+- To check a changed function against real data, run it on eddy-preview inside a transaction that is rolled back. For the availability rules, `node scripts/availability-rule-checks.mjs` prints that SQL.
 - Must-run tests by module:
   - `eligibility.ts`: `eligibility`, `golden-eligibility` and `recommendations`;
   - `ranking.ts`: `ranking`, `abilityGroup` and `abilityRank`;
   - anything touching availability: the `availability*` and `sameDay*` files, including `availabilityRuleCases`;
   - `auth.ts` or any route: `authorization-routes`; sign-in on the app: `authClientOptions`;
-  - retention or any new table that refers to a person: `retentionCoverage`.
+  - retention or any new table that refers to a person: `retentionCoverage`, and the SQL test `erase_personal_data`;
+  - a SQL function or trigger: its file in `supabase/tests/` (CI runs them all).
 
 ---
 

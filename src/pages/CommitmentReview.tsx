@@ -18,7 +18,7 @@ import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
   belowAttendance,
@@ -37,7 +37,7 @@ import {
 const area = `${inputClass} h-auto min-h-[84px] py-2`;
 const shortArea = `${inputClass} h-auto py-2 resize-none`;
 
-const day = (d: string | null | undefined) => safeFormat(d, 'd MMM yyyy');
+const day = (d: string | null | undefined) => safeFormat(d, LONG_DATE);
 
 function Card({ title, children, note }: { title: string; children: ReactNode; note?: string }) {
   return (

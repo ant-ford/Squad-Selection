@@ -49,7 +49,7 @@ async function parseResponse(response: Response) {
     // session really is over - see there. Nothing more to do but report it.
     if (response.status === 401) {
       throw new ApiError(
-        data?.message || 'Session expired. Please log in again.',
+        data?.message || 'Session expired. Please sign in again.',
         401,
         data?.error,
       );
