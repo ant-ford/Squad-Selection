@@ -18,7 +18,7 @@ import { saveRefusal } from '@/lib/peopleAdmin';
 import { closedHow, leftLabel, queueLabel, queuePositions } from '@/lib/suspensions';
 import { hkDateKey } from '@shared/hkDateKey';
 import { getPersonAdmin } from '@/api/adminPeople';
-import { clearSuspension, getSuspensions, type SuspensionRow } from '@/api/suspensions';
+import { clearSuspension, clearSuspensionFlag, getSuspensions, type LegacySuspensionRow, type SuspensionRow } from '@/api/suspensions';
 
 type Tab = 'open' | 'cleared' | 'cards' | 'legacy';
 const KEY = ['suspensions'] as const;
@@ -39,8 +39,11 @@ export default function Suspensions() {
   const allowed = profile?.sections?.includes('discipline') ?? false;
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>('open');
-  const [sheet, setSheet] = useState<{ row?: SuspensionRow; person?: { id: string; name: string } | null } | null>(null);
+  const [sheet, setSheet] = useState<{ row?: SuspensionRow; person?: { id: string; name: string } | null; flag?: LegacySuspensionRow } | null>(
+    null,
+  );
   const [clearing, setClearing] = useState<SuspensionRow | null>(null);
+  const [clearingFlag, setClearingFlag] = useState<LegacySuspensionRow | null>(null);
   const today = hkDateKey(new Date().toISOString());
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -78,6 +81,15 @@ export default function Suspensions() {
     },
     onError: (err) => toast.error(saveRefusal(err).message),
   });
+  const clearFlag = useMutation({
+    mutationFn: (playerId: string) => clearSuspensionFlag(playerId),
+    onSuccess: () => {
+      toast.success('Cleared');
+      changed();
+    },
+    onError: (err) => toast.error(saveRefusal(err).message),
+  });
+  const flagLabel = (l: LegacySuspensionRow) => (l.matchesToServe ? `${l.matchesToServe} to serve` : 'Suspended');
 
   const body = () => {
     if (profileLoading || (allowed && isLoading)) return <Skeleton className="h-96 w-full" />;
@@ -182,12 +194,20 @@ export default function Suspensions() {
           {shown === 'legacy' && (
             <ul className={listClass}>
               {data.legacy.map((l) => (
-                <li key={l.player} className="px-3 py-2">
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {personLink(l.player, l.name)}
-                    <StatusChip tone="warning">{l.matchesToServe ? `${l.matchesToServe} to serve` : 'Suspended'}</StatusChip>
-                  </span>
-                  <span className="block text-xs text-muted-foreground mt-0.5">{l.team ?? 'No registered team'}</span>
+                <li key={l.player} className="flex items-start gap-2 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {personLink(l.player, l.name)}
+                      <StatusChip tone="warning">{flagLabel(l)}</StatusChip>
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">{l.team ?? 'No registered team'}</span>
+                  </div>
+                  <ActionButton variant="outline" onClick={() => setSheet({ flag: l })}>
+                    Suspend
+                  </ActionButton>
+                  <ActionButton variant="outline" onClick={() => setClearingFlag(l)}>
+                    Clear
+                  </ActionButton>
                 </li>
               ))}
             </ul>
@@ -197,6 +217,8 @@ export default function Suspensions() {
           <SuspensionSheet
             row={sheet.row}
             person={sheet.person}
+            flag={sheet.flag}
+            teams={data.teams}
             today={today}
             onClose={() => setSheet(null)}
             onSaved={() => {
@@ -214,6 +236,18 @@ export default function Suspensions() {
             onConfirm={() => {
               clear.mutate(clearing.id);
               setClearing(null);
+            }}
+          />
+        )}
+        {clearingFlag && (
+          <ConfirmDialog
+            title={`Clear ${clearingFlag.name}'s old flag?`}
+            message="They can be selected again."
+            confirmLabel="Clear"
+            onCancel={() => setClearingFlag(null)}
+            onConfirm={() => {
+              clearFlag.mutate(clearingFlag.player);
+              setClearingFlag(null);
             }}
           />
         )}
