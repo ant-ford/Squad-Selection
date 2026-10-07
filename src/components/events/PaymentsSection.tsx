@@ -67,7 +67,7 @@ export default function PaymentsSection({ event }: { event: ManagedEvent }) {
       {account && (
         <div className="rounded-md bg-muted p-2 space-y-1">
           {list.sentAt ? (
-            <p className="text-xs text-foreground">Sent to the treasurer on {safeFormat(list.sentAt, 'EEE d MMM, h:mm a')}.</p>
+            <p className="text-xs text-foreground">Sent to the treasurer on {safeFormat(list.sentAt, 'EEE d MMM, HH:mm')}.</p>
           ) : (
             <p className="text-xs text-foreground">Download the list, send it to the treasurer, then mark it sent.</p>
           )}
