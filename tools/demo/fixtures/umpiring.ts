@@ -10,6 +10,7 @@
 // screenshot starts from the same board.
 import type { DutyAssignment, DutyOutcome, ReportDuty, TeamTally, UmpireDuty, UmpireOption, UmpireTally, UmpiringBoard, UmpiringReport } from '@shared/umpiring';
 import { weekOf } from '@shared/umpiring';
+import { byKickOff } from '@shared/kickOff';
 import { canonicalKey } from '@shared/umpires';
 import type { Persona } from '../personas.mjs';
 import type { Routes } from './routing';
@@ -103,6 +104,7 @@ function mainWeek(coordinator: boolean, forUmpire: boolean): UmpireDuty[] {
       mine: true, theirs: { [RAVI]: '14:30', [umpire('Jamie Wong').personId]: '14:30' } },
     { ...duty('f06', { days: SAT1, hh: 14, mm: 15, venue: 'Happy Valley 3', homeTeam: 'Punjab B', awayTeam: 'Tigers B', dutyTeam: 'HKFC F',
       assignments: [club('Karan Shah', 'confirmed')] }), theirs: { [umpire('Karan Shah').personId]: '13:00' } },
+    duty('f11', { days: SUN1, hh: 0, venue: null, timeTbc: true, homeTeam: 'Khalsa B', awayTeam: 'Valley C', dutyTeam: 'HKFC B' }),
     duty('f07', { days: SUN1, hh: 10, venue: 'King’s Park', division: '2', homeTeam: 'Dragons', awayTeam: 'Punjab', dutyTeam: 'HKFC A',
       status: 'cancelled', assignments: [club('Victor Kwok', 'confirmed', false, -5)] }),
     duty('f08', { days: SUN1, hh: 10, mm: 45, division: '4', homeTeam: 'Tigers', awayTeam: 'Shaheen B', dutyTeam: 'HKFC G' }),
@@ -111,7 +113,6 @@ function mainWeek(coordinator: boolean, forUmpire: boolean): UmpireDuty[] {
       assignments: [club('Ravi Patel', 'offered', true, -1)] }),
     duty('f10', { days: SUN1, hh: 12, mm: 30, homeTeam: 'Shaheen', awayTeam: 'Valley A', dutyTeam: 'HKFC E', status: 'rescheduled',
       assignments: [club('Pete Summers', 'confirmed', false, -6)] }),
-    duty('f11', { days: SUN1, hh: 0, venue: null, timeTbc: true, homeTeam: 'Khalsa B', awayTeam: 'Valley C', dutyTeam: 'HKFC B' }),
   ];
   return list.map(({ mine, theirs, ...d }) => ({
     ...d,
@@ -200,7 +201,8 @@ function board(p: Persona, weekParam: string | null): UmpiringBoard {
     access: coordinator ? 'coordinator' : 'umpire',
     week,
     weeks: [...new Set([...[-4, -3, -2, -1, 0, 1, 2, 3, 4].map(mondayOfK).filter((w) => coordinator || w >= thisWeek), week])].sort(),
-    duties: k === 0 ? mainWeek(coordinator, isUmpire) : patternWeek(k, coordinator),
+    // In the Worker's order: a TBC time after the day's timed games.
+    duties: (k === 0 ? mainWeek(coordinator, isUmpire) : patternWeek(k, coordinator)).sort((a, b) => byKickOff(a.matchDate, b.matchDate)),
     me: {
       personId: p.id,
       isUmpire,
@@ -226,7 +228,7 @@ function tally(duties: UmpireDuty[], season: string): UmpiringReport {
   const byTeam = new Map<string, TeamTally>();
   const report: UmpiringReport = { season, duties: 0, coveredFree: 0, coveredPaidMembers: 0, coveredExternal: 0, noShows: 0, uncovered: 0, umpires: [], byTeam: [], rows: [] };
   const fullName = (a: DutyAssignment) => UMPIRES.find((u) => u.personId === a.personId)?.fullName ?? a.name;
-  for (const d of [...duties].sort((x, y) => x.matchDate.localeCompare(y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
+  for (const d of [...duties].sort((x, y) => byKickOff(x.matchDate, y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
     if (d.status === 'cancelled') continue;
     report.duties++;
     const team = byTeam.get(d.dutyTeam) ?? { team: d.dutyTeam, duties: 0, free: 0, paidMembers: 0, outside: 0, uncovered: 0 };

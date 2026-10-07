@@ -13,6 +13,7 @@ import { getCached, invalidateCache } from "./cache";
 import { inBackground } from "./requestContext";
 import { alertDutyRemoved } from "./push";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { byKickOff } from "../../shared/kickOff";
 import { buildNameDictionary, canonicalKey, parseUmpire } from "../../shared/umpires";
 import { NO_QUALIFICATION } from "../../shared/volunteering";
 import { fullName } from "../../shared/personName";
@@ -265,11 +266,14 @@ async function dutiesBetween(env: Env, from: string, to: string): Promise<Umpire
       `&match_date=gte.${encodeURIComponent(start)}&match_date=lt.${encodeURIComponent(end)}` +
       `&umpire_assignments.status=neq.withdrawn&order=match_date,id`,
   );
-  return rows.map(({ umpire_assignments: embedded, ...d }) => {
-    const live = [...(embedded ?? [])].sort(byCreated);
-    const people = new Map(live.flatMap((a) => (a.person ? [[a.person.id, a.person] as [string, PersonRow]] : [])));
-    return toDuty(d, live.map(({ person: _person, ...a }) => toAssignment(a, people)));
-  });
+  return rows
+    .map(({ umpire_assignments: embedded, ...d }) => {
+      const live = [...(embedded ?? [])].sort(byCreated);
+      const people = new Map(live.flatMap((a) => (a.person ? [[a.person.id, a.person] as [string, PersonRow]] : [])));
+      return toDuty(d, live.map(({ person: _person, ...a }) => toAssignment(a, people)));
+    })
+    // A TBC time (midnight) after the day's timed games.
+    .sort((a, b) => byKickOff(a.matchDate, b.matchDate));
 }
 
 /**
@@ -592,7 +596,7 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
   const tallies = new Map<string, UmpireTally>();
   const byTeam = new Map<string, TeamTally>();
   const report: UmpiringReport = { season, duties: 0, coveredFree: 0, coveredPaidMembers: 0, coveredExternal: 0, noShows: 0, uncovered: 0, umpires: [], byTeam: [], rows: [] };
-  for (const d of [...duties].sort((x, y) => x.matchDate.localeCompare(y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
+  for (const d of [...duties].sort((x, y) => byKickOff(x.matchDate, y.matchDate) || x.dutyTeam.localeCompare(y.dutyTeam))) {
     if (d.status === "cancelled") continue;
     // A walk-over: listed, not counted.
     if (d.notNeeded) {

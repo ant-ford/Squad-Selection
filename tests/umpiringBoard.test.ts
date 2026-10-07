@@ -87,6 +87,13 @@ describe("the umpiring board's reads", () => {
     expect(pg.problems).toEqual([]);
   });
 
+  it("lists a TBC time (stored as midnight) after the day's timed games", async () => {
+    const TBC = "33333333-3333-3333-3333-333333333333";
+    pg.tables.umpire_duties.push(dutyRow(TBC, "00:00", { time_tbc: true, venue: null }));
+    const board = await getUmpiringBoard(env, umpire("recAnn00000000000"), WEEK);
+    expect(board.duties.map((d) => d.id)).toEqual([D1, D2, TBC]);
+  });
+
   it("sends the reads that don't wait on each other together", async () => {
     pg.tables.matches.push({ id: "m1", match_date: sunday("12:30"), venue: "HKFC", home_team: "HKFC E", away_team: "Valley B", match_status: "Scheduled" });
     // Every answer takes a moment; count the rounds of reads, one after another.

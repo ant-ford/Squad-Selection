@@ -15,6 +15,7 @@
  *  - Paid is a flag only: no fee is recorded.
  */
 import { addDays, hkDateKey } from "./hkDateKey";
+import { byKickOff, isTbcKickOff } from "./kickOff";
 import { canonicalKey, tidy } from "./umpires";
 
 export type DutyStatus = "scheduled" | "rescheduled" | "cancelled";
@@ -69,7 +70,7 @@ const SAME_GROUND_MS = 105 * 60 * 1000;
 const OTHER_GROUND_MS = 120 * 60 * 1000;
 
 /** A TBC kick-off is stored as midnight HK time. */
-const isTbc = (iso: string) => hkTime(iso) === "00:00";
+const isTbc = isTbcKickOff;
 
 /**
  * The umpire's game a duty clashes with: kick-offs too close for the ground,
@@ -315,8 +316,9 @@ export function umpireMark(a: Pick<DutyAssignment, "paid" | "name">): string {
 
 const HEADER = "🏑Weekly Club Duties🥳";
 
-const inOrder = <T extends Pick<UmpireDuty, "matchDate" | "slot" | "venue">>(duties: T[]) =>
-  [...duties].sort((a, b) => a.matchDate.localeCompare(b.matchDate) || (a.venue ?? "").localeCompare(b.venue ?? "") || a.slot - b.slot);
+/** Kick-off order (a TBC time after the day's timed games), then venue and slot. */
+const inOrder =<T extends Pick<UmpireDuty, "matchDate" | "slot" | "venue">>(duties: T[]) =>
+  [...duties].sort((a, b) => byKickOff(a.matchDate, b.matchDate) || (a.venue ?? "").localeCompare(b.venue ?? "") || a.slot - b.slot);
 
 /**
  * The first message, to the umpires group: every duty of the week, the
