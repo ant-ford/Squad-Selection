@@ -81,6 +81,8 @@ export interface Env {
   SYSTEM_OWNER_IDS?: string;
   /** Where the system health alert goes (src/systemHealth.ts). */
   SYSTEM_ALERT_EMAIL?: string;
+  /** "off": the read-only switch for a restore (src/readOnly.ts). Anything else, or unset: writes on. */
+  WRITES?: string;
   /** "on" sends Web Push alerts (src/push.ts), once VAPID_PRIVATE_KEY is set. Anything else: none, and the app hides the switch. */
   PUSH?: string;
   /** The VAPID signing key, as a Worker secret: the JWK JSON of a P-256 private key (scripts/vapid-keys.mjs). */

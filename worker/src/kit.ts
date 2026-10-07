@@ -13,6 +13,7 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { invalidatePeople } from "./invalidation";
 import { alertKitOffered } from "./push";
 import { toCsv } from "../../shared/csv";
+import { hkDateKey } from "../../shared/hkDateKey";
 import {
   KIT_ITEMS,
   SWAPPABLE,
@@ -207,6 +208,58 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return { orders, order, sets, people, teams };
+}
+
+/** A set waiting in the store for its owner (Kit screen, "Not collected"). */
+export interface UncollectedKit {
+  /** The owner's person id. */
+  id: string;
+  name: string;
+  firstName: string;
+  mobile: string;
+  shirtNo: number;
+  /** The day the set arrived (YYYY-MM-DD). */
+  since: string;
+}
+
+/** How long kit can sit in the store before the owner is chased. */
+export const UNCOLLECTED_AFTER_DAYS = 14;
+
+/**
+ * Owners whose set arrived more than 14 days ago and is still in the store,
+ * with no hand-over under way, oldest first (review item D3: the kit
+ * officers WhatsApp them). Two reads.
+ */
+export async function getUncollectedKit(env: Env, now = new Date()): Promise<{ people: UncollectedKit[] }> {
+  const d = db(env);
+  const cutoff = hkDateKey(new Date(now.getTime() - UNCOLLECTED_AFTER_DAYS * 86_400_000).toISOString());
+  const sets = await d.select<{ id: string; owner_id: string; shirt_no: number; received_on: string }>(
+    "kit_sets_v",
+    `select=id,owner_id,shirt_no,received_on&holder_id=is.null&pending_to_id=is.null&owner_id=not.is.null&received_on=lt.${cutoff}&order=received_on,shirt_no`,
+  );
+  if (!sets.length) return { people: [] };
+  const ids = [...new Set(sets.map((s) => s.owner_id))];
+  const owners = await d.select<PersonRow & { mobile_no: string | null }>(
+    "people",
+    `select=id,api_id,preferred_name,given_names,surname,mobile_no&api_id=in.(${ids.map((i) => `"${encodeURIComponent(i)}"`).join(",")})`,
+  );
+  const byApiId = new Map(owners.map((p) => [p.api_id, p]));
+  const seen = new Set<string>();
+  const people: UncollectedKit[] = [];
+  for (const s of sets) {
+    const p = byApiId.get(s.owner_id);
+    if (!p || seen.has(s.owner_id)) continue;
+    seen.add(s.owner_id);
+    people.push({
+      id: p.api_id,
+      name: personName(p),
+      firstName: (p.preferred_name || p.given_names || "").split(" ")[0],
+      mobile: p.mobile_no ?? "",
+      shirtNo: s.shirt_no,
+      since: s.received_on,
+    });
+  }
+  return { people };
 }
 
 export async function getMyKit(env: Env, user: AuthorizedUser): Promise<MyKit> {

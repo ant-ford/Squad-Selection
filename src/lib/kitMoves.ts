@@ -1,4 +1,4 @@
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import type { KitMoveResult } from '@shared/kit';
 
 /** "Handed 20 to Ben. Not moved: #12 already with Sam, #40 still on order." */

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { FileText, Mail, MessageCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -8,7 +8,7 @@ import { getNumberHolders, type ApplicantCard, type NumberHolder } from '@/api/m
 import { ApiError } from '@/lib/apiClient';
 import { Link } from 'react-router-dom';
 import { useApproveApplicant, useMyProfile } from '@/lib/queries';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Avatar, ageLabel, ageTone, applicantWhatsApp, chaseWhatsApp } from './ApplicantCard';
@@ -16,7 +16,7 @@ import { Avatar, ageLabel, ageTone, applicantWhatsApp, chaseWhatsApp } from './A
 export const sheetLinkClass =
   'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 const describeHolders = (holders: NumberHolder[]) =>
   holders.map((h) => (h.status ? `${h.name} (${h.status})` : h.name)).join(', ');
@@ -25,7 +25,7 @@ export function Fact({ label, value }: { label: string; value?: ReactNode }) {
   if (value === undefined || value === null || value === '') return null;
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground">{value}</dd>
     </div>
   );
@@ -104,26 +104,26 @@ export default function ApplicantSheet({ card, onClose }: { card: ApplicantCard;
           </div>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
-            <Fact label="Membership No." value={card.membershipNo} />
+            <Fact label="Membership no." value={card.membershipNo} />
             <Fact label="Status" value={card.status} />
-            <Fact label="Join Date" value={date(card.joinDate)} />
-            <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
+            <Fact label="Join date" value={date(card.joinDate)} />
+            <Fact label="Commitment end" value={date(card.commitmentEndDate)} />
             <Fact label="Applied" value={date(card.appliedOn)} />
-            <Fact label="Applicant Type" value={card.applicantType} />
-            <Fact label="Category" value={card.categoryType} />
+            <Fact label="Type of application" value={card.applicantType} />
+            <Fact label="Membership category" value={card.categoryType} />
             <Fact label="Team" value={card.team} />
             <Fact label="Position" value={card.playingPosition} />
             <Fact label="Sponsor" value={card.sponsor} />
-            <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
-            <Fact label="Qualified Coach" value={card.qualifiedCoach} />
-            <Fact label="Playing Level" value={card.playingLevel.join(', ')} />
-            <Fact label="Tour Interest" value={card.tourInterest.join(', ')} />
+            <Fact label="Qualified umpire" value={card.qualifiedUmpire} />
+            <Fact label="Qualified coach" value={card.qualifiedCoach} />
+            <Fact label="Playing level" value={card.playingLevel.join(', ')} />
+            <Fact label="Tour interest" value={card.tourInterest.join(', ')} />
           </dl>
 
           <div className="space-y-4">
-            <TextBlock label="Sports Background / Involvement" text={card.sportsBackground} />
-            <TextBlock label="Personal / Family Interest" text={card.personalInterest} />
-            <TextBlock label="Selection Comments / Coach Requests" text={card.selectionComments} />
+            <TextBlock label="Sports background / involvement" text={card.sportsBackground} />
+            <TextBlock label="Personal / family interest" text={card.personalInterest} />
+            <TextBlock label="Selection comments / coach requests" text={card.selectionComments} />
           </div>
 
           {canPropose && (
@@ -180,7 +180,7 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
     try {
       setHolders(await getNumberHolders(membershipNo.trim(), card.id));
     } catch {
-      toast.error('Could not check the Membership No. Please try again.');
+      toast.error('Could not check the membership number. Please try again.');
     } finally {
       setChecking(false);
     }
@@ -215,11 +215,11 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
       <p className="text-xs text-muted-foreground mb-3">Once the club has confirmed:</p>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs text-muted-foreground">
-          Join Date
+          Join date
           <input type="date" className={input} value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
         </label>
         <label className="text-xs text-muted-foreground">
-          Commitment End Date
+          Commitment end date
           <input
             type="date"
             className={input}
@@ -228,11 +228,11 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
             onChange={(e) => setCommitmentEndDate(e.target.value)}
           />
           {commitmentEndDate && commitmentEndDate === card.turns28On && (
-            <span className="block mt-1 text-[11px]">28th birthday</span>
+            <span className="block mt-1 text-xs">28th birthday</span>
           )}
         </label>
         <label className="text-xs text-muted-foreground col-span-2">
-          Membership No.
+          Membership no.
           <input
             className={input}
             value={membershipNo}
@@ -242,7 +242,7 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
           />
         </label>
       </div>
-      {datesWrong && <p className="text-xs text-destructive mt-2">Commitment End Date must be after the Join Date.</p>}
+      {datesWrong && <p className="text-xs text-destructive mt-2">Commitment end date must be after the join date.</p>}
       <ActionButton
         fullWidth
         className="mt-3"
@@ -255,11 +255,11 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
         <ConfirmDialog
           title={`Approve ${card.name}?`}
           message={
-            `Status → Member, stage → Accepted, Active, Join Date ${date(joinDate)}, Commitment End Date ${date(
+            `Status → Member, stage → Accepted, Active, join date ${date(joinDate)}, commitment end date ${date(
               commitmentEndDate,
-            )}, Membership No. ${membershipNo.trim()}.` +
+            )}, membership no. ${membershipNo.trim()}.` +
             (holders.length > 0
-              ? ` Note: this Membership No. is also used by ${describeHolders(holders)}. Spouses and children share a number; check this is meant to be shared.`
+              ? ` Note: this membership number is also used by ${describeHolders(holders)}. Spouses and children share a number; check this is meant to be shared.`
               : '')
           }
           confirmLabel={holders.length > 0 ? 'Approve anyway' : 'Approve'}

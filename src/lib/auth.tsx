@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/auth-js';
 import { supabase } from './supabase';
-import { queryClient } from './queryClient';
+import { queryClient, queryPersister } from './queryClient';
 import { setAccessDenied } from './accessDenied';
 import { clearAllDrafts } from './drafts';
 
@@ -33,8 +33,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * late 401 on a laptop, or pressing Log out on a shared machine, signed them
  * out of the app on every device (2026-09-23). Signing out here should never
  * cost them anything anywhere else.
+ *
+ * The copy of their profile, fixtures and tasks kept on the phone goes first,
+ * whatever Supabase answers (Log out, a refused refresh, Delete my profile).
  */
 export async function signOut(): Promise<void> {
+  void queryPersister.clear();
   await supabase.auth.signOut({ scope: 'local' });
   queryClient.clear();
   // A denial belongs to the session that earned it. Left set, the next
@@ -51,8 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     // 1. Initial load: getSession() parses the magic link hash and establishes the session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!isMounted) return;
+      // No session and no error: signed out (a refused refresh while starting
+      // up lands here, not in the listener), so the kept copy goes. An error
+      // (no connection) only pauses it.
+      if (!session && !error) void queryPersister.clear();
+      else queryPersister.setOwner(session?.user?.id ?? null);
       setUser(session?.user ?? null);
       setLoading(false);
 
@@ -63,8 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     // 2. Auth state listener
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
+      // What's kept on the phone belongs to whoever is signed in. A lapsed
+      // session (Supabase refused the refresh) wipes it like Log out does; a
+      // different person signing in wipes the last one's.
+      if (event === 'SIGNED_OUT') void queryPersister.clear();
+      else queryPersister.setOwner(session?.user?.id ?? null);
       // Whoever just arrived deserves a clean slate; the refusal that was on
       // screen was about the previous session.
       setAccessDenied(null);

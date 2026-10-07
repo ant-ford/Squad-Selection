@@ -32,7 +32,7 @@ export const GROUPS: readonly GroupDef[] = [
   { key: "active", label: "Playing", order: ["Active player", "Not an active player"], primary: true },
   { key: "team", label: "Team", primary: true },
   { key: "memberType", label: "Member type", order: ["Main", "Spouse", "Partner", "Child"], primary: true },
-  { key: "category", label: "Category", primary: true },
+  { key: "category", label: "Membership category", primary: true },
   { key: "playerCoach", label: "Player / coach", primary: true },
   {
     key: "ageBand",

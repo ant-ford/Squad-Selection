@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { setMatchKit, type KitColour, type MatchInfo } from '@/api/getPlayersForMatch';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { History } from 'lucide-react';
 import HistorySheet from '@/components/HistorySheet';
+import { useSheetParam } from '@/lib/useSheetParam';
 
 const KIT_SWATCH: Record<Exclude<KitColour, ''>, string> = {
   Blue: 'bg-blue-600 border-blue-700',
@@ -63,7 +64,8 @@ function KitToggle({ matchId, side, kit }: { matchId: string; side: 'home' | 'aw
  * The large stat boxes and progress bar were removed for space.
  */
 export default function MatchHeader({ match, matchId }: { match: MatchInfo; matchId?: string }) {
-  const [showHistory, setShowHistory] = useState(false);
+  // The fixture's history (?history=1): in the URL, so the phone's Back closes it.
+  const history = useSheetParam('history');
   return (
     <div className="border-b border-border bg-card">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -90,7 +92,7 @@ export default function MatchHeader({ match, matchId }: { match: MatchInfo; matc
           {matchId && (
             <button
               type="button"
-              onClick={() => setShowHistory(true)}
+              onClick={() => history.open()}
               className="h-9 w-9 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
               aria-label="History"
               title="History"
@@ -100,8 +102,8 @@ export default function MatchHeader({ match, matchId }: { match: MatchInfo; matc
           )}
         </div>
       </div>
-      {showHistory && matchId && (
-        <HistorySheet title={`${match.homeTeam} vs ${match.awayTeam}`} matchId={matchId} onClose={() => setShowHistory(false)} />
+      {history.value && matchId && (
+        <HistorySheet title={`${match.homeTeam} vs ${match.awayTeam}`} matchId={matchId} onClose={history.close} />
       )}
     </div>
   );

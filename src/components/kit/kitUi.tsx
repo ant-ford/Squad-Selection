@@ -31,7 +31,7 @@ const PLACE_TONE: Record<KitPlace, string> = {
 
 export function PlaceBadge({ set }: { set: Pick<KitSet, 'place' | 'holder'> & { pendingTo?: KitSet['pendingTo'] } }) {
   return (
-    <span className={`shrink-0 max-w-[9rem] truncate text-[11px] font-medium px-2 py-0.5 rounded-full ${PLACE_TONE[set.place]}`}>
+    <span className={`shrink-0 max-w-[9rem] truncate text-xs font-medium px-1.5 py-0.5 rounded-full ${PLACE_TONE[set.place]}`}>
       {describePlace(set)}
     </span>
   );

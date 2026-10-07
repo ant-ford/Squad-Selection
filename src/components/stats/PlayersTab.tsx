@@ -117,7 +117,7 @@ function PlayerList({
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[1fr_repeat(3,3.25rem)] sm:grid-cols-[1fr_repeat(4,4rem)] gap-2 px-3 py-2 text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border">
+        <div className="grid grid-cols-[1fr_repeat(3,3.25rem)] sm:grid-cols-[1fr_repeat(4,4rem)] gap-2 px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
           <span>Player</span>
           <span className="text-right">Apps</span>
           <span className="text-right">Goals</span>
@@ -138,7 +138,7 @@ function PlayerList({
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-foreground">{r.name}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
+                    <span className="block truncate text-xs text-muted-foreground">
                       {r.byTeam.map(([t, n]) => `${t.replace(/^HKFC /, '')} ${n}`).join(' · ')}
                     </span>
                   </span>

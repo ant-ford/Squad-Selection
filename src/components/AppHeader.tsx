@@ -1,8 +1,9 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bell, IdCard } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useMyProfile, usePushConfig } from '@/lib/queries';
+import { useSheetParam } from '@/lib/useSheetParam';
 import { coachDashboardPath } from '@/lib/scrollMemory';
 import { backTarget, currentView, documentTitle, switchViews, type View } from '@/lib/header';
 import { MainMenu, ProfileMenu } from '@/components/HeaderMenus';
@@ -46,8 +47,9 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
   const titleGivesWay = canSwitch && !back && view !== null;
   // Notifications: only once the Worker says it sends them.
   const { data: push } = usePushConfig(!!profile && !applicant && typeof navigator !== 'undefined' && 'serviceWorker' in navigator);
-  const [showPush, setShowPush] = useState(false);
-  const pushItems = push?.enabled && !applicant ? [{ label: 'Notifications', icon: Bell, onSelect: () => setShowPush(true) }] : [];
+  // ?notifications=1, so Back closes the sheet.
+  const pushSheet = useSheetParam('notifications');
+  const pushItems = push?.enabled && !applicant ? [{ label: 'Notifications', icon: Bell, onSelect: () => pushSheet.open() }] : [];
 
   useEffect(() => {
     document.title = documentTitle(title);
@@ -111,9 +113,9 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
           entries={applicant ? profileItems : [{ to: '/my-details', label: 'My details', icon: IdCard }, ...profileItems, ...pushItems]}
         />
       </div>
-      {showPush && push?.publicKey && (
+      {pushSheet.value && push?.enabled && push.publicKey && (
         <Suspense fallback={null}>
-          <NotificationsSheet publicKey={push.publicKey} onClose={() => setShowPush(false)} />
+          <NotificationsSheet publicKey={push.publicKey} onClose={pushSheet.close} />
         </Suspense>
       )}
     </header>

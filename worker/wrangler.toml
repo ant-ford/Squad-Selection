@@ -84,6 +84,11 @@ RETENTION_MODE = "report"
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
 
+# The read-only switch for a restore (src/readOnly.ts, docs/RESTORE.md).
+# "off": every save gets 503 READ_ONLY and the daily jobs are skipped;
+# reads carry on. "on" otherwise.
+WRITES = "on"
+
 # Web Push (src/push.ts): personal alerts on devices that said yes. "on"
 # sends them once the VAPID_PRIVATE_KEY secret is set (the owner makes it
 # with scripts/vapid-keys.mjs); anything else sends nothing and the app
@@ -161,6 +166,8 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # The owner's People row in eddy-preview has the same api_id.
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
+# The read-only switch (src/readOnly.ts): "off" turns every save away.
+WRITES = "on"
 # Web Push (src/push.ts), as above, with preview's own VAPID key.
 PUSH = "off"
 VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"

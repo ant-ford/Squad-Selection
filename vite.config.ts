@@ -1,8 +1,12 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, normalizePath, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
+import { filterPrecacheManifest, precacheSet, type PrecacheChunk } from "./scripts/precache-set";
+
+// Decides what the service worker precaches; see precachePlayerView below.
+const precache = precachePlayerView();
 
 /**
  * The cloudflare() plugin is applied to BUILDS ONLY.
@@ -27,6 +31,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     preloadFont(),
+    precache.plugin,
     ...(command === "build" ? [cloudflare()] : []),
     VitePWA({
       registerType: "autoUpdate",
@@ -62,6 +67,23 @@ export default defineConfig(({ command }) => ({
         navigateFallback: null,
         runtimeCaching: [
           {
+            // Built files outside the precache: every screen other than
+            // sign-in and Player view, and the Latin Extended font. Names are
+            // content-hashed, so a cached copy is never stale. Only a 200 is
+            // kept: a file from an old deploy is a 404 (web-shell/index.ts),
+            // which must reach the import as a failure so that
+            // src/lib/staleDeploy.ts can reload onto the new deploy. Precached
+            // files never get here: the precache route is checked first.
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /^\/assets\/[^/]+-[\w-]{8}\.(?:js|css|woff2)$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "eddy-assets",
+              expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 60 * 60, purgeOnQuotaError: true },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             urlPattern: ({ request }) => request.mode === "navigate",
             handler: "NetworkFirst",
             options: {
@@ -95,17 +117,22 @@ export default defineConfig(({ command }) => ({
             },
           },
         ],
-        // The default plus the self-hosted font.
+        // The default plus the self-hosted font...
         globPatterns: ["**/*.{js,css,html,woff2}"],
-        // Fetched on demand (unicode-range), only for names that need it.
+        // ...but not the Latin Extended font: fetched on demand
+        // (unicode-range), only for names that need it.
         globIgnores: ["**/open-sans-latin-ext-*.woff2"],
+        // ...and of the built JS and CSS, only what sign-in and Player view
+        // load. Officer and coach screens go through the "eddy-assets" rule
+        // above, the first time they are opened.
+        manifestTransforms: [precache.manifestTransform],
         // Web Push: shows Eddy's alerts and opens them (public/push-sw.js).
         importScripts: ["push-sw.js"],
       },
       manifest: {
-        name: "HKFC Squad Selection",
-        short_name: "HKFC Squad",
-        description: "HKFC Men's Hockey squad selection, availability and ranking",
+        name: "Eddy",
+        short_name: "Eddy",
+        description: "HKFC men's hockey: availability, squads and the section's admin",
         start_url: "/",
         display: "standalone",
         background_color: "#ffffff",
@@ -123,6 +150,8 @@ export default defineConfig(({ command }) => ({
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  // A new id per build: data kept on the phone by an older build is dropped (src/lib/queryClient.ts).
+  define: { __EDDY_BUILD__: JSON.stringify(Date.now().toString(36)) },
   build: {
     rollupOptions: {
       output: {
@@ -180,4 +209,60 @@ function preloadFont(): Plugin {
       },
     },
   };
+}
+
+/**
+ * Works out which built JS and CSS the service worker precaches: sign-in and
+ * Player view, and nothing an officer or coach screen alone needs. The walk
+ * itself is scripts/precache-set.ts; this feeds it the bundle and hands the
+ * result to Workbox, which runs after the bundle is written.
+ *
+ * The roots are the player-view screens. They are listed by module, not by
+ * how App.tsx imports them, so making one of them lazy keeps it precached.
+ * Every other import() in App.tsx is a screen the precache leaves out.
+ */
+function precachePlayerView() {
+  const src = (file: string) => normalizePath(path.resolve(__dirname, "src", file));
+  const rules = {
+    roots: [src("pages/Login.tsx"), src("pages/PlayerDashboard.tsx"), src("components/AccessNotActive.tsx")],
+    routeTable: src("App.tsx"),
+  };
+  let keep: Set<string> | undefined;
+  let entryFile: string | undefined;
+
+  const plugin: Plugin = {
+    name: "precache-player-view",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      // The browser build only, not the Worker's (cloudflare plugin).
+      if (this.environment.name !== "client") return;
+      const chunks: PrecacheChunk[] = [];
+      const dynamicImports = new Map<string, readonly string[]>();
+      for (const file of Object.values(bundle)) {
+        if (file.type !== "chunk") continue;
+        chunks.push({
+          fileName: file.fileName,
+          isEntry: file.isEntry,
+          moduleIds: file.moduleIds,
+          imports: file.imports,
+          css: [...(file.viteMetadata?.importedCss ?? [])],
+        });
+        if (file.isEntry) entryFile = file.fileName;
+      }
+      for (const id of this.getModuleIds()) {
+        const info = this.getModuleInfo(id);
+        if (info?.dynamicallyImportedIds.length) dynamicImports.set(id, info.dynamicallyImportedIds);
+      }
+      keep = precacheSet({ chunks, dynamicImports }, rules);
+    },
+  };
+
+  // Workbox runs once the browser bundle is written, so the set is known by
+  // then; filterPrecacheManifest fails the build if it is not.
+  const manifestTransform = <T extends { url: string }>(manifest: T[]) => ({
+    manifest: filterPrecacheManifest(manifest, keep, entryFile),
+    warnings: [] as string[],
+  });
+
+  return { plugin, manifestTransform };
 }
