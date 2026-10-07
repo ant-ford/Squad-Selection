@@ -1,6 +1,6 @@
 // Officers' screens: Membership (board, statements, insights), Email lists,
 // Season plans, Trial sessions, Volunteers and System. Fictional people only.
-import type { ApplicantCard, Chase, MembershipBoard, MembershipInsightsData, StatementBoard, StatementCard } from '@/api/membership';
+import type { ApplicantCard, Chase, FormsDuePerson, MembershipBoard, MembershipInsightsData, StatementBoard, StatementCard } from '@/api/membership';
 import type { ChairmanDirectory } from '@/api/chairman';
 import type { TrialSession } from '@shared/trials';
 import type { DirectoryPerson } from '@shared/emailLists';
@@ -431,6 +431,15 @@ export const routes: Routes = {
   'GET /api/messages/templates': () => ({ templates: TEMPLATES }),
   'POST /api/messages/log': () => ({ ok: true }),
   'GET /api/membership/board': () => membershipBoard(),
+  // Who still owes this season's forms (Membership, Forms tab).
+  'GET /api/membership/forms-due': (): { waivers: FormsDuePerson[]; details: FormsDuePerson[] } => {
+    const p = (name: string, mobile = `+852 5550 ${String(3000 + name.length * 7).slice(-4)}`): FormsDuePerson =>
+      ({ id: `demo${name.replace(/\W/g, '')}`, name, firstName: name.split(' ')[0], mobile });
+    return {
+      waivers: [p('Ben Hughes'), p('Harry Lam'), p('Priya Nair', '')],
+      details: [p('Felix Moreau'), p('Kenji Tanaka'), p('Oliver Grant'), p('Tom Fletcher'), p('Jamie Wong')],
+    };
+  },
   'GET /api/membership/statements': () => statementBoard(),
   'GET /api/membership/insights': () => insights(),
   'GET /api/membership/number-holders': () => ({ holders: [] }),
