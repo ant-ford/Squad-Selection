@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Copy } from 'lucide-react';
 import FileUpload from '@/components/profile/FileUpload';
 import { safeFormat } from '@/lib/dateUtils';

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ChevronDown, Copy, Download, Mail, MessageCircle, Plus, Search, X } from 'lucide-react';
 import WhatsAppListSheet from '@/components/WhatsAppListSheet';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';

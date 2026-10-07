@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Download } from 'lucide-react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { allocateSpare, downloadTopUp, giveNewNumber } from '@/api/kit';

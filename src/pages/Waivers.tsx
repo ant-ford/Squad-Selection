@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import SignaturePad from '@/components/SignaturePad';

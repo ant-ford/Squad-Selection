@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { FileText, Mail, MessageCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';

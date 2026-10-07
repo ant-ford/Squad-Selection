@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CheckCheck, Plus, QrCode, Search } from 'lucide-react';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
