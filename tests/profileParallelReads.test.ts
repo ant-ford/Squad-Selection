@@ -63,6 +63,13 @@ describe("my profile's reads", () => {
 
   it("shows a plain player none of the officer screens", async () => {
     const p = await getMyProfile(ENV, player);
-    expect(p).toMatchObject({ volunteers: false, events: false, umpiring: null, captainTeams: [] });
+    expect(p).toMatchObject({ volunteers: false, events: false, umpiring: null, system: false, captainTeams: [] });
+  });
+
+  it("offers System to the Section Captains and the owner, not to other officers", async () => {
+    const officer = (office: "sectionCaptain" | "hockeyConvenor") => ({ ...player, officerRoles: [{ office, designation: "" }] });
+    expect((await getMyProfile(ENV, officer("sectionCaptain"))).system).toBe(true);
+    expect((await getMyProfile(ENV, officer("hockeyConvenor"))).system).toBe(false);
+    expect((await getMyProfile({ SYSTEM_OWNER_IDS: "recAda" } as any, player)).system).toBe(true);
   });
 });

@@ -5,30 +5,26 @@ import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, apiGet } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
-
-/** Mirrors worker/src/systemHealth.ts SystemView. */
-interface SystemView {
-  ok: boolean;
-  checks: { key: string; label: string; ok: boolean; note?: string }[];
-  jobs: { job: string; ran_at: string; ok: boolean; last_ok_at: string | null }[];
-  errors: { at: string; source: string; route: string | null; status: number | null; message: string | null; request_id: string | null }[];
-  serverErrors24h: number;
-  clientErrors24h: number;
-}
+import { useMyProfile } from '@/lib/queries';
+import type { SystemView } from '@shared/systemHealth';
 
 const when = (iso: string | null) => safeFormat(iso, 'd MMM HH:mm');
 const card = 'rounded-xl border border-border bg-card';
 
 /** System health: the owner and the Section Captains (worker/src/systemHealth.ts). */
 export default function System() {
+  const { data: profile, isLoading: profileLoading } = useMyProfile();
+  const allowed = profile?.system ?? false;
   const { data, isLoading, error } = useQuery({
     queryKey: ['system'],
     queryFn: () => apiGet<SystemView>('/api/system'),
+    enabled: allowed,
     retry: false,
   });
 
   const body = () => {
-    if (isLoading) return <Skeleton className="h-40 w-full" />;
+    if (profileLoading || (allowed && isLoading)) return <Skeleton className="h-40 w-full" />;
+    if (!allowed) return <p className="text-sm text-muted-foreground">Not available.</p>;
     if (error || !data)
       return <p className="text-sm text-muted-foreground">{error instanceof ApiError && error.status === 403 ? 'Not available.' : "Couldn't load. Try again."}</p>;
     return (

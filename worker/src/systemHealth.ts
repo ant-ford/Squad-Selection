@@ -28,6 +28,9 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { HttpError } from "./http";
 import { DAILY_LIMIT, sendEmail } from "./mailer";
 import { getCached } from "./cache";
+import type { HealthCheck, JobRow, SystemError, SystemView } from "../../shared/systemHealth";
+
+export type { HealthCheck, JobRow, SystemView } from "../../shared/systemHealth";
 
 /** The health check's own cron (worker/wrangler.toml [triggers]): after the review emails (03:00) and retention (03:30). */
 export const HEALTH_CRON = "0 4 * * *";
@@ -59,14 +62,6 @@ const SERVER_ERRORS_PER_MINUTE = 20;
 
 const HOUR = 60 * 60 * 1000;
 
-export interface JobRow {
-  job: string;
-  ran_at: string;
-  ok: boolean;
-  detail: unknown;
-  last_ok_at: string | null;
-}
-
 /** public.system_health_snapshot(). */
 export interface HealthSnapshot {
   now: string;
@@ -75,13 +70,6 @@ export interface HealthSnapshot {
   client_errors_24h: number;
   sync_errors: number;
   last_match_at: string | null;
-}
-
-export interface HealthCheck {
-  key: string;
-  label: string;
-  ok: boolean;
-  note?: string;
 }
 
 const hoursAgo = (iso: string, now: Date) => (now.getTime() - new Date(iso).getTime()) / HOUR;
@@ -350,22 +338,13 @@ async function snapshot(env: Env): Promise<HealthSnapshot> {
   return db(env).rpc<HealthSnapshot>("system_health_snapshot", {});
 }
 
-export interface SystemView {
-  ok: boolean;
-  checks: HealthCheck[];
-  jobs: JobRow[];
-  errors: { at: string; source: string; route: string | null; status: number | null; message: string | null; request_id: string | null }[];
-  serverErrors24h: number;
-  clientErrors24h: number;
-}
-
 /** GET /api/system: the owner and the Section Captains. */
 export async function getSystemView(env: Env, user: AuthorizedUser): Promise<SystemView> {
   if (!canViewSystem(env, user)) throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
   const d = db(env);
   const [snap, errors] = await Promise.all([
     snapshot(env),
-    d.select<SystemView["errors"][number]>("error_log", "select=id,at,source,route,status,message,request_id&order=at.desc&limit=50"),
+    d.select<SystemError>("error_log", "select=id,at,source,route,status,message,request_id&order=at.desc&limit=50"),
   ]);
   const { ok, checks } = evaluateHealth(snap, { now: new Date() });
   return {
