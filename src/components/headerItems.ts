@@ -66,7 +66,7 @@ export function viewItems(p: MenuProfile): MenuEntry[] {
 export function everyoneItems(): MenuEntry[] {
   return [
     { to: '/stats', label: 'Stats', icon: Trophy },
-    { to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck },
+    { to: '/quizzes', label: 'Hockey rules quizzes', icon: BookOpenCheck },
   ];
 }
 

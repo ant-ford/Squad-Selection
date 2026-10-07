@@ -1,7 +1,7 @@
 /**
  * The consolidated membership application, as one PDF: the Club's Sports
  * Associate Membership Application (12 pages), the Section Membership
- * (levy) Application, the Hockey Commitment Pledge, HockeyHK's under-18
+ * (levy) Application, the Hockey Commitment Pledge, HKHA's under-18
  * form when the applicant is under 18, and the supporting documents. It
  * replaces the four Fillout PDFs, SPAM Page 7 and the Make scenario's
  * iLovePDF merge and "Supporting Documents" zip.

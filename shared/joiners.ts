@@ -8,8 +8,8 @@
  *    inbox, and to the sponsor for a new HKFC member;
  *  - kit: the Kit Convenor is asked for kit, copied to the applicant and
  *    sponsor;
- *  - registration: the Hockey Convenor is asked to register them with
- *    HockeyHK, copied to the applicant.
+ *  - registration: the Men's Convenor is asked to register them with
+ *    HKHA, copied to the applicant.
  *
  * Kit and registration each open a My Tasks line for the convenor, with a
  * Done button (nothing to fill in), until it's done. No reminder emails
@@ -120,6 +120,6 @@ export function joinerProblem(f: JoinerForm): string | null {
   if (!(JOINER_POSITIONS as readonly string[]).includes(f.playingPosition)) return "Choose their playing position.";
   if (!f.sponsorId) return "Choose the application sponsor.";
   if (!f.officerId) return "Choose the Membership Officer.";
-  if (!f.chairId) return "Choose the Section Chair.";
+  if (!f.chairId) return "Choose the Chairman.";
   return null;
 }

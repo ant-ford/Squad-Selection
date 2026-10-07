@@ -40,7 +40,7 @@ export default function KanbanColumns<T extends { id: string }>({
           <button
             key={column}
             onClick={() => jumpTo(column)}
-            className="shrink-0 text-[11px] px-2 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="shrink-0 text-xs px-1.5 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
           >
             {chipLabel(column)} · {itemsFor(column).length}
           </button>

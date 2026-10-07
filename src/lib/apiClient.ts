@@ -6,7 +6,7 @@ import { isAuthRetryableFetchError } from '@supabase/auth-js';
 import { supabase } from './supabase';
 import { signOut } from './auth';
 import { setAccessDenied } from './accessDenied';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { FRESH_HEADER, FRESH_WINDOW_MS } from '@shared/freshHeader';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -30,6 +30,9 @@ export class ApiError extends Error {
     this.code = code;
   }
 }
+
+const READ_ONLY = 'READ_ONLY';
+export const READ_ONLY_TOAST = "Eddy is read-only for a short while. Your change wasn't saved.";
 
 async function parseResponse(response: Response) {
   const text = await response.text();
@@ -76,6 +79,15 @@ async function parseResponse(response: Response) {
         toast.error(data.message || 'You do not have coach permissions for this action.');
         throw new ApiError(data.message || 'Coach access required.', 403, data.error);
       }
+    }
+
+    // 503 READ_ONLY: the Worker's read-only switch is on, for a restore
+    // (worker/src/readOnly.ts). One toast however many saves fail at once,
+    // and the save still rejects, so the screen doesn't think it worked.
+    // An ApiError is never reported as a crash (clientErrors.ts).
+    if (response.status === 503 && data?.error === READ_ONLY) {
+      toast.error(READ_ONLY_TOAST, { id: READ_ONLY });
+      throw new ApiError(data.message || READ_ONLY_TOAST, 503, READ_ONLY);
     }
 
     const message = data?.message || data?.error || `Request failed (${response.status})`;

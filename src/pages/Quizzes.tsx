@@ -5,7 +5,7 @@ import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { errorText } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getQuizScores, listQuizzes } from '@/api/quizzes';
 
 /**
@@ -44,7 +44,7 @@ export default function QuizzesPage() {
                 <p className="text-xs text-muted-foreground">
                   {q.questions} questions
                   {q.myScore !== null
-                    ? ` · your score ${q.myScore}/${q.points}${q.takenAt ? ` (${safeFormat(q.takenAt, 'd MMM yyyy')})` : ''}`
+                    ? ` · your score ${q.myScore}/${q.points}${q.takenAt ? ` (${safeFormat(q.takenAt, LONG_DATE)})` : ''}`
                     : ' · not taken yet'}
                 </p>
               </div>
@@ -92,7 +92,7 @@ export default function QuizzesPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Hockey Rules quizzes" />
+      <AppHeader title="Hockey rules quizzes" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

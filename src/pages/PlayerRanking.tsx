@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { useSheetParam } from '@/lib/useSheetParam';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors,
@@ -9,7 +10,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Settings2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Lightbox } from '@/components/ui/lightbox';
@@ -72,9 +73,14 @@ export default function PlayerRanking() {
   const [confirmInactive, setConfirmInactive] = useState<{ playerId: string; label: string } | null>(null);
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
-  const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
-  const [attendancePlayerId, setAttendancePlayerId] = useState<string | null>(null);
-  const [historyPlayerId, setHistoryPlayerId] = useState<string | null>(null);
+  // A player's sheets live in the URL (?stats=, ?attendance=, ?history=
+  // <player id>), so the phone's Back closes them.
+  const statsSheet = useSheetParam('stats');
+  const attendanceSheet = useSheetParam('attendance');
+  const historySheet = useSheetParam('history');
+  const statsPlayerId = statsSheet.value;
+  const attendancePlayerId = attendanceSheet.value;
+  const historyPlayerId = historySheet.value;
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const [justification, setJustification] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -337,9 +343,9 @@ export default function PlayerRanking() {
                             onMenuOpenChange={(v) => setOpenMenuPlayerId(v ? p.id : null)}
                             onMoveStep={moveStep}
                             onOpenMoveToRank={handleOpenMoveToRank}
-                            onViewStats={setStatsPlayerId}
-                            onViewAttendance={setAttendancePlayerId}
-                            onViewHistory={setHistoryPlayerId}
+                            onViewStats={statsSheet.open}
+                            onViewAttendance={attendanceSheet.open}
+                            onViewHistory={historySheet.open}
                             onPhotoClick={setExpandedPhoto}
                             onMakeInactive={canSetActive ? handleMakeInactive : undefined}
                           />
@@ -429,7 +435,7 @@ export default function PlayerRanking() {
       <SeasonStatsSheet
         playerId={statsPlayerId}
         playerName={statsPlayerId ? nameOf(playersById.get(statsPlayerId) ?? {}) : undefined}
-        onClose={() => setStatsPlayerId(null)}
+        onClose={statsSheet.close}
       />
 
       {/* Past attendance and upcoming availability, fixture by fixture. */}
@@ -437,13 +443,13 @@ export default function PlayerRanking() {
         <HistorySheet
           title={nameOf(playersById.get(historyPlayerId) ?? {})}
           personId={historyPlayerId}
-          onClose={() => setHistoryPlayerId(null)}
+          onClose={historySheet.close}
         />
       )}
       <AttendanceSheet
         playerId={attendancePlayerId}
         playerName={attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? {}) : undefined}
-        onClose={() => setAttendancePlayerId(null)}
+        onClose={attendanceSheet.close}
       />
 
       <Lightbox src={expandedPhoto} alt="Player photo" onClose={() => setExpandedPhoto(null)} />

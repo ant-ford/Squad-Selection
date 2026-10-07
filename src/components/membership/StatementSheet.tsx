@@ -1,21 +1,21 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { ExternalLink, FileText, MessageCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import type { StatementCard } from '@/api/membership';
 import { ApiError } from '@/lib/apiClient';
 import { useRequestReviewEmail } from '@/lib/queries';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { AUTO_NOTICE_DAYS, NOT_STARTED, SPONSOR_SUBMITTED } from '@shared/statementStages';
 import { Fact, TextBlock, sheetLinkClass as linkClass } from './ApplicantSheet';
 import { Avatar } from './ApplicantCard';
 import { memberWhatsApp, periodLabel, sponsorWhatsApp, statementStatus } from './StatementCard';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 /** Rich-text fields arrive as Markdown; the sheet shows them as plain text. */
 const plain = (s?: string) => s?.replace(/\*\*|__/g, '').replace(/\\([*_#\-.])/g, '$1').trim() || undefined;
@@ -45,7 +45,7 @@ export default function StatementSheet({
             <Avatar card={card} size="h-12 w-12" />
             <div className="min-w-0">
               <SheetTitle>{card.name}</SheetTitle>
-              <p className="text-xs text-muted-foreground">{card.stage || 'No Review Progress'}</p>
+              <p className="text-xs text-muted-foreground">{card.stage || 'No review progress'}</p>
             </div>
           </div>
         </SheetHeader>
@@ -91,35 +91,35 @@ export default function StatementSheet({
           {card.stage === NOT_STARTED && <NotifySection card={card} today={today} onDone={onClose} />}
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
-            <Fact label="Membership No." value={card.membershipNo} />
+            <Fact label="Membership no." value={card.membershipNo} />
             <Fact label="Period" value={periodLabel(card)} />
-            <Fact label="Join Date" value={date(card.joinDate)} />
-            <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
+            <Fact label="Join date" value={date(card.joinDate)} />
+            <Fact label="Commitment end" value={date(card.commitmentEndDate)} />
             <Fact label="Team" value={card.team} />
             <Fact label="Sponsor" value={card.sponsor} />
-            <Fact label="Matches Played" value={count(card.matchesPlayed)} />
-            <Fact label="Team Played" value={count(card.matchesTeamPlayed)} />
-            <Fact label="Available, Did Not Play" value={count(card.matchesAvailable)} />
-            <Fact label="Not Available" value={count(card.matchesNotAvailable)} />
-            <Fact label="Teams Played" value={card.teamsPlayed.join(', ')} />
+            <Fact label="Matches played" value={count(card.matchesPlayed)} />
+            <Fact label="Team played" value={count(card.matchesTeamPlayed)} />
+            <Fact label="Available, did not play" value={count(card.matchesAvailable)} />
+            <Fact label="No" value={count(card.matchesNotAvailable)} />
+            <Fact label="Teams played" value={card.teamsPlayed.join(', ')} />
             <Fact label="Practices" value={card.practices} />
-            <Fact label="Social Functions" value={card.socialFunctions.join(', ')} />
-            <Fact label="Games Umpired" value={card.gamesUmpired} />
-            <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
-            <Fact label="Recommended Reduction" value={card.recommendedReduction} />
-            <Fact label="Member Submitted" value={date(card.memberSubmittedOn)} />
-            <Fact label="Sponsor Submitted" value={date(card.sponsorSubmittedOn)} />
-            <Fact label="Officer Submitted" value={date(card.officerSubmittedOn)} />
+            <Fact label="Social functions" value={card.socialFunctions.join(', ')} />
+            <Fact label="Games umpired" value={card.gamesUmpired} />
+            <Fact label="Qualified umpire" value={card.qualifiedUmpire} />
+            <Fact label="Recommended reduction" value={card.recommendedReduction} />
+            <Fact label="Member submitted" value={date(card.memberSubmittedOn)} />
+            <Fact label="Sponsor submitted" value={date(card.sponsorSubmittedOn)} />
+            <Fact label="Officer submitted" value={date(card.officerSubmittedOn)} />
           </dl>
 
           <div className="space-y-4">
-            <TextBlock label="Reason for Low Participation (Member)" text={plain(card.lowParticipationReason)} />
-            <TextBlock label="Other Contributions (Member)" text={plain(card.otherContributions)} />
-            <TextBlock label="Section Service and Involvement (Member)" text={plain(card.sectionServiceMember)} />
-            <TextBlock label="HKFC Service and Involvement (Member)" text={plain(card.hkfcServiceMember)} />
+            <TextBlock label="Reason for low participation (member)" text={plain(card.lowParticipationReason)} />
+            <TextBlock label="Other contributions (member)" text={plain(card.otherContributions)} />
+            <TextBlock label="Section service and involvement (member)" text={plain(card.sectionServiceMember)} />
+            <TextBlock label="HKFC service and involvement (member)" text={plain(card.hkfcServiceMember)} />
             <TextBlock label="Recommendation (Sponsor)" text={plain(card.sponsorRecommendation)} />
-            <TextBlock label="Section Service and Involvement (Sponsor)" text={plain(card.sectionServiceSponsor)} />
-            <TextBlock label="HKFC Service and Involvement (Sponsor)" text={plain(card.hkfcServiceSponsor)} />
+            <TextBlock label="Section service and involvement (sponsor)" text={plain(card.sectionServiceSponsor)} />
+            <TextBlock label="HKFC service and involvement (sponsor)" text={plain(card.hkfcServiceSponsor)} />
           </div>
         </SheetBody>
       </SheetContent>
@@ -181,7 +181,7 @@ function NotifySection({ card, today, onDone }: { card: StatementCard; today: st
       {confirming && (
         <ConfirmDialog
           title={`Email ${card.name} now?`}
-          message={`${first} is sent the Commitment Review email, and this review moves to Notified Member.`}
+          message={`${first} is sent the commitment review email, and this review moves to Notified Member.`}
           confirmLabel="Send email"
           onConfirm={submit}
           onCancel={() => setConfirming(false)}

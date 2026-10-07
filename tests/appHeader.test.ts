@@ -86,7 +86,7 @@ describe("burger menu", () => {
     expect(labels(mainMenuGroups({ sections: ["membership"] }, page))[0]).toEqual(["Active members CSV"]);
   });
   it("still lists Stats and the quizzes before the profile has loaded", () => {
-    expect(labels(mainMenuGroups(undefined))).toEqual([["Stats", "Hockey Rules quizzes"]]);
+    expect(labels(mainMenuGroups(undefined))).toEqual([["Stats", "Hockey rules quizzes"]]);
   });
 });
 
