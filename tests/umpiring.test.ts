@@ -19,6 +19,10 @@ import {
   type UmpireDuty,
 } from "../shared/umpiring";
 import { gamesUmpiredChoice } from "../shared/commitmentReview";
+import { alertDutyRemoved } from "../worker/src/push";
+
+// The taken-off push, recorded rather than sent.
+vi.mock("../worker/src/push", async (original) => ({ ...(await original<typeof import("../worker/src/push")>()), alertDutyRemoved: vi.fn(() => Promise.resolve()) }));
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 /** Who auth_context says is in the umpire pool: the qualified (George, Ann) and Bob, from a match card. */
@@ -64,7 +68,10 @@ const byApiId = (url: URL) => {
   return id ? people().filter((p) => p.api_id === id).map((p) => ({ ...p, active: true })) : people();
 };
 
-beforeEach(() => invalidateAll());
+beforeEach(() => {
+  invalidateAll();
+  vi.mocked(alertDutyRemoved).mockClear();
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   invalidateAll();
@@ -199,10 +206,21 @@ describe("taking a duty", () => {
     expect(writes(calls)[0].body[0]).toMatchObject({ paid: true, status: "offered", confirmed_at: null });
   });
 
-  it("lets a free umpire take a game a paid offer is waiting on", async () => {
+  it("lets a free umpire take a game a paid offer is waiting on, closing the offer", async () => {
     const calls = fake(base([{ id: PAID, duty_id: DUTY, person_id: "u-george", paid: true, status: "offered" }]));
     await takeDuty(env, user("recANN"), DUTY, {});
-    expect(writes(calls)[0].body[0]).toMatchObject({ person_id: "u-ann", status: "confirmed" });
+    const [taking, closing] = writes(calls);
+    expect(taking.body[0]).toMatchObject({ person_id: "u-ann", status: "confirmed" });
+    expect(closing.url.searchParams.get("id")).toBe(`in.("${PAID}")`);
+    expect(closing.body).toEqual({ status: "withdrawn" });
+    expect(alertDutyRemoved).toHaveBeenCalledWith(env, "u-george", DUTY);
+  });
+
+  it("leaves other offers waiting beside a paid offer", async () => {
+    const calls = fake(base([{ id: PAID, duty_id: DUTY, person_id: "u-george", paid: true, status: "offered" }]));
+    await takeDuty(env, user("recBOB"), DUTY, { paid: true });
+    expect(writes(calls)).toHaveLength(1);
+    expect(alertDutyRemoved).not.toHaveBeenCalled();
   });
 
   it("turns their own paid offer into a free confirmation", async () => {
@@ -238,8 +256,10 @@ describe("taking a duty", () => {
 });
 
 describe("the coordinator", () => {
-  const live = [{ id: PAID, duty_id: DUTY, person_id: "u-bob", paid: true, status: "offered" }];
-  const base = () => ({
+  const OTHER = "33333333-3333-3333-3333-333333333333";
+  const bobsOffer = { id: PAID, duty_id: DUTY, person_id: "u-bob", paid: true, status: "offered" };
+  const georgesOffer = { id: OTHER, duty_id: DUTY, person_id: "u-george", paid: true, status: "offered" };
+  const base = (live: Record<string, unknown>[] = [bobsOffer]) => ({
     people: byApiId,
     matches: [],
     umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled" }],
@@ -254,6 +274,44 @@ describe("the coordinator", () => {
     const calls = fake(base());
     await confirmAssignment(env, george, PAID);
     expect(writes(calls)[0].body).toMatchObject({ status: "confirmed" });
+    expect(writes(calls)).toHaveLength(1);
+  });
+
+  it("won't confirm an offer once the game is someone else's: a 409, and nothing written", async () => {
+    const calls = fake(base([bobsOffer, { id: "a-ann", duty_id: DUTY, person_id: "u-ann", paid: false, status: "confirmed" }]));
+    await expect(confirmAssignment(env, george, PAID)).rejects.toMatchObject({ status: 409, code: "DUTY_TAKEN", message: "Someone has already taken this game." });
+    expect(writes(calls)).toHaveLength(0);
+    // A no-show still holds the slot.
+    const later = fake(base([bobsOffer, { id: "a-ann", duty_id: DUTY, person_id: "u-ann", paid: false, status: "no_show" }]));
+    await expect(confirmAssignment(env, george, PAID)).rejects.toMatchObject({ status: 409, code: "DUTY_TAKEN" });
+    expect(writes(later)).toHaveLength(0);
+  });
+
+  it("closes the other offers on the duty when it confirms one, and tells those umpires", async () => {
+    const calls = fake(base([bobsOffer, georgesOffer]));
+    await confirmAssignment(env, george, PAID);
+    const [confirming, closing] = writes(calls);
+    expect(confirming.url.searchParams.get("id")).toBe(`eq.${PAID}`);
+    expect(confirming.body).toMatchObject({ status: "confirmed" });
+    // Only offers still waiting, so an umpire who pulled out meanwhile stays out.
+    expect(closing.url.searchParams.get("id")).toBe(`in.("${OTHER}")`);
+    expect(closing.url.searchParams.get("status")).toBe("eq.offered");
+    expect(closing.body).toEqual({ status: "withdrawn" });
+    expect(vi.mocked(alertDutyRemoved).mock.calls).toEqual([[env, "u-george", DUTY]]);
+  });
+
+  it("closes waiting offers when it puts someone down, club or outside", async () => {
+    let calls = fake(base([bobsOffer, georgesOffer]));
+    // Bob's own offer becomes his confirmed duty; George's is closed.
+    await assignDuty(env, george, DUTY, { personId: "recBOB", paid: true });
+    expect(writes(calls).map((w) => [w.url.searchParams.get("id"), w.body.status])).toEqual([
+      [`eq.${PAID}`, "confirmed"],
+      [`in.("${OTHER}")`, "withdrawn"],
+    ]);
+    calls = fake(base([bobsOffer]));
+    await assignDuty(env, george, DUTY, { externalName: "Pagey" });
+    expect(writes(calls)[1].url.searchParams.get("id")).toBe(`in.("${PAID}")`);
+    expect(vi.mocked(alertDutyRemoved).mock.calls.map((c) => c[1])).toEqual(["u-george", "u-bob"]);
   });
 
   it("puts an outside umpire down, always paid", async () => {
