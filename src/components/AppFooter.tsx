@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Smartphone } from 'lucide-react';
 import EddyWordmark from '@/components/brand/EddyWordmark';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { PRIVACY_URL } from '@/components/HelpLink';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -86,6 +87,14 @@ export default function AppFooter() {
               Install app
             </button>
           )}
+          <a
+            href={PRIVACY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Privacy
+          </a>
         </p>
         <p className="text-xs text-muted-foreground">
           Questions? Contact us at{' '}

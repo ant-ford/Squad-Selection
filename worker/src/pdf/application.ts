@@ -24,6 +24,7 @@ import { ACCEPTED_STAGE } from "../../../shared/membershipStages";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
+import { officeAddress, senderFor } from "../officeContacts";
 import { documentFilename, fileAssets, renderPdf, storeDocument, templateAsset, type Asset } from "./render";
 import { ASSET, applicationSpec, levySpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
 import { isUnderEighteen } from "../declarations";
@@ -397,7 +398,7 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     `select=designation,office_email&person_id=${eq(me.id)}&role=eq.membership_officer&status=eq.Active&limit=1`,
   );
   const officerName = holderName(me as OfficeRow["people"]);
-  const mailbox = myOffice?.office_email || me.email;
+  const mailbox = officeAddress(myOffice?.office_email, me.email);
   const name = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
   const file = await d.one<{ filename: string | null }>("files", `select=filename&id=${eq(app.pdf_file_id)}`);
 
@@ -424,7 +425,9 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     // An existing member's levy form copies them and any parent or guardian (owner, 2 Oct 2026).
     cc: which === "levy" ? [...new Set([p.email, p.guardian_email].filter((e): e is string => !!e && e.includes("@")))] : undefined,
     // In the officer's name; replies go to them.
-    from: mailbox ? `${officerName} <${mailbox}>` : env.REVIEW_EMAIL_FROM || undefined,
+    // The shared From rule (officeContacts.ts): only an hkfchockey.com mailbox
+    // can be the sender; anything else sends as REVIEW_EMAIL_FROM.
+    from: senderFor(env, officerName, mailbox),
     replyTo: mailbox ?? undefined,
     attachments: [{ filename: file?.filename || "Application.pdf", path: await fileLink(env, app.pdf_file_id) }],
   });
