@@ -115,6 +115,18 @@ jobs:
           fi
           printf '%s' "$OPENROUTER_API_KEY" | npx wrangler secret put OPENROUTER_API_KEY --config worker/wrangler.toml --env preview
 
+      # Web Push's signing key (scripts/vapid-keys.mjs). Without it, no push.
+      - name: Set VAPID key
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        run: |
+          if [ -z "$VAPID_PRIVATE_KEY" ]; then
+            echo "::warning::VAPID_PRIVATE_KEY is not in the preview environment; no push notifications."
+            exit 0
+          fi
+          printf '%s' "$VAPID_PRIVATE_KEY" | npx wrangler secret put VAPID_PRIVATE_KEY --config worker/wrangler.toml --env preview
+
       # The render-pdf Edge Function (supabase/functions) on eddy-preview,
       # which fills PDF templates for the Worker. It checks callers with the
       # project's own secret key, so it needs no secret of its own. Skipped

@@ -52,6 +52,16 @@ export function useMyProfile() {
   });
 }
 
+/** Whether Eddy sends push alerts, and the key to subscribe with (worker/src/push.ts). */
+export function usePushConfig(enabled = true) {
+  return useQuery({
+    queryKey: ['pushConfig'],
+    queryFn: () => apiGet<{ enabled: boolean; publicKey: string | null }>('/api/push/config'),
+    staleTime: Infinity,
+    enabled,
+  });
+}
+
 // ── Stats page ───────────────────────────────────────────────────────────
 
 /** Summaries change only when a result or card does; the Worker keeps past seasons for a month. */

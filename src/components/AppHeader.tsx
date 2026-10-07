@@ -1,13 +1,16 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, IdCard } from 'lucide-react';
+import { ArrowLeft, Bell, IdCard } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
-import { useMyProfile } from '@/lib/queries';
+import { useMyProfile, usePushConfig } from '@/lib/queries';
 import { coachDashboardPath } from '@/lib/scrollMemory';
 import { backTarget, currentView, documentTitle, switchViews, type View } from '@/lib/header';
 import { MainMenu, ProfileMenu } from '@/components/HeaderMenus';
 import { headerIconClass, type MenuEntry } from '@/components/headerItems';
 import type { GUIDE_URLS } from '@/components/HelpLink';
+
+// Loaded when opened (Web Push, src/lib/push.ts).
+const NotificationsSheet = lazy(() => import('@/components/NotificationsSheet'));
 
 export interface AppHeaderProps {
   /** The screen's name: shown in the bar on every width, the page's h1 and the tab title ("Kit · Eddy"). */
@@ -41,6 +44,10 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
   // On a phone the switch already says which of its views this is, so the
   // title gives way to it there (still the page's h1 for screen readers).
   const titleGivesWay = canSwitch && !back && view !== null;
+  // Notifications: only once the Worker says it sends them.
+  const { data: push } = usePushConfig(!!profile && !applicant && typeof navigator !== 'undefined' && 'serviceWorker' in navigator);
+  const [showPush, setShowPush] = useState(false);
+  const pushItems = push?.enabled && !applicant ? [{ label: 'Notifications', icon: Bell, onSelect: () => setShowPush(true) }] : [];
 
   useEffect(() => {
     document.title = documentTitle(title);
@@ -101,9 +108,14 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
         <ProfileMenu
           guide={guide ?? (view === 'coach' || location.pathname.startsWith('/coach') ? 'coach' : 'player')}
           onLogout={() => void signOut()}
-          entries={applicant ? profileItems : [{ to: '/my-details', label: 'My details', icon: IdCard }, ...profileItems]}
+          entries={applicant ? profileItems : [{ to: '/my-details', label: 'My details', icon: IdCard }, ...profileItems, ...pushItems]}
         />
       </div>
+      {showPush && push?.publicKey && (
+        <Suspense fallback={null}>
+          <NotificationsSheet publicKey={push.publicKey} onClose={() => setShowPush(false)} />
+        </Suspense>
+      )}
     </header>
   );
 }

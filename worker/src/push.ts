@@ -26,7 +26,7 @@ import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, inList } from "./data/supabase";
 import { currentRequestContext, inBackground, type RequestContext } from "./requestContext";
-import { importVapidKey, pushRequest, type VapidKey } from "./webPush";
+import { importVapidKey, pushRequest, vapidAuthorization, type VapidKey } from "./webPush";
 
 /** Device sends per request or cron run, whatever else it does. */
 export const MAX_SENDS_PER_INVOCATION = 40;
@@ -168,6 +168,13 @@ export async function send(env: Env, recipients: Recipients, message: PushMessag
   const payload = JSON.stringify(message);
   const gone: string[] = [];
   const reached = new Set<string>();
+  // One VAPID signature per push service (FCM, Mozilla, Apple...), not per device: CPU is 10 ms a run.
+  const signed = new Map<string, Promise<string>>();
+  const authorization = (endpoint: string) => {
+    const origin = new URL(endpoint).origin;
+    if (!signed.has(origin)) signed.set(origin, vapidAuthorization(key, endpoint, subject));
+    return signed.get(origin)!;
+  };
   await Promise.all(
     devices.map(async (d) => {
       try {
@@ -175,6 +182,7 @@ export async function send(env: Env, recipients: Recipients, message: PushMessag
           ttlSeconds: TTL_SECONDS,
           urgency: "normal",
           topic: message.tag,
+          authorization: authorization(d.endpoint),
         });
         const res = await fetch(url, { ...init, signal: AbortSignal.timeout(SEND_TIMEOUT_MS) });
         if (res.status === 404 || res.status === 410) gone.push(d.id);

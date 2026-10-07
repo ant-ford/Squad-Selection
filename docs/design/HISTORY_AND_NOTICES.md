@@ -219,6 +219,35 @@ indexed read per changed row.
   invocation. A Notify send covers one squad.
 - iOS needs 16.4 or later and the app on the Home Screen, so reach will be
   partial.
+- **Built (7 Oct 2026, ships dark behind `PUSH`):**
+  - `push_subscriptions` (migration `20261007180005`): one row per device
+    endpoint, one person per device (a device signed in by someone else
+    moves to them). A trigger removes a person's devices when
+    `erase_personal_data()` stamps `personal_data_removed_at`.
+  - `worker/src/webPush.ts`: VAPID (ES256 JWT) and aes128gcm, pinned to the
+    RFC 8291 test vector. The key is the `VAPID_PRIVATE_KEY` secret, a P-256
+    private JWK, which also gives the public key the app subscribes with.
+  - `worker/src/push.ts`: `GET /api/push/config`, `POST /api/push/subscribe`,
+    `/unsubscribe` and `/squad`. Sends go out in `waitUntil`, 40 devices per
+    request at most and never past the subrequests left, with 404/410
+    devices deleted in one call. `last_used_at` is not stamped per send (it
+    would cost a call).
+  - Hooks: `availability.ts` (an answer turning No, for a player in that
+    fixture's squad: the team's coaches, not the player or whoever answered),
+    `umpiring.ts` `withdrawAssignment` (the coordinator taking someone off),
+    `kit.ts` `moveKit` (a set offered, waiting for the receiver).
+  - App: `public/push-sw.js` through Workbox `importScripts`; profile menu →
+    Notifications (lazy sheet, hidden while push is off); Log out
+    unsubscribes the device; "Send to Eddy app" in Notify, shown when the
+    squad is saved.
+- **Left:**
+  - HKHA's own fixture moves reach `umpire_duties` through hkha-sync, which
+    the Worker never sees, so those duty moves aren't pushed; the umpire
+    still gets the My Tasks line (D1). A cheap later hook: the daily 04:00
+    run could push confirmed assignments whose duty `changed_at` is in the
+    last day and after `seen_change_at`, within the same budget.
+  - The owner makes each environment's key (`scripts/vapid-keys.mjs`) and
+    sets `PUSH = "on"`.
 
 ### D8 Training check-in (optional)
 

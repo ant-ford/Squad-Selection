@@ -99,6 +99,8 @@ export default defineConfig(({ command }) => ({
         globPatterns: ["**/*.{js,css,html,woff2}"],
         // Fetched on demand (unicode-range), only for names that need it.
         globIgnores: ["**/open-sans-latin-ext-*.woff2"],
+        // Web Push: shows Eddy's alerts and opens them (public/push-sw.js).
+        importScripts: ["push-sw.js"],
       },
       manifest: {
         name: "HKFC Squad Selection",

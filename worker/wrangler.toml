@@ -84,6 +84,14 @@ RETENTION_MODE = "report"
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
 
+# Web Push (src/push.ts): personal alerts on devices that said yes. "on"
+# sends them once the VAPID_PRIVATE_KEY secret is set (the owner makes it
+# with scripts/vapid-keys.mjs); anything else sends nothing and the app
+# hides the Notifications switch. VAPID_SUBJECT is who push services can
+# contact about Eddy's pushes.
+PUSH = "off"
+VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"
+
 # The first sends the commitment review emails that are due
 # (src/reviewEmails.ts); the second runs the data retention job
 # (src/retention.ts RETENTION_CRON); the third the system health check
@@ -153,6 +161,9 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 # The owner's People row in eddy-preview has the same api_id.
 SYSTEM_OWNER_IDS = "recAfcgxZQ3GWcu3I"
 SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
+# Web Push (src/push.ts), as above, with preview's own VAPID key.
+PUSH = "off"
+VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"
 
 [env.preview.triggers]
 crons = []

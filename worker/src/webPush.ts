@@ -145,17 +145,21 @@ export async function encryptPayload(
   return concat(header, record);
 }
 
-/** What a push service is sent: headers and the encrypted body. */
+/**
+ * What a push service is sent: headers and the encrypted body. Pass
+ * `authorization` to reuse one VAPID header for every device on the same
+ * push service (it depends only on the service's origin).
+ */
 export async function pushRequest(
   key: VapidKey,
   subject: string,
   target: PushTarget,
   payload: string,
-  opts: { ttlSeconds: number; urgency: "very-low" | "low" | "normal" | "high"; topic?: string },
+  opts: { ttlSeconds: number; urgency: "very-low" | "low" | "normal" | "high"; topic?: string; authorization?: Promise<string> },
 ): Promise<{ url: string; init: RequestInit }> {
   const body = await encryptPayload(target, enc.encode(payload));
   const headers: Record<string, string> = {
-    Authorization: await vapidAuthorization(key, target.endpoint, subject),
+    Authorization: await (opts.authorization ?? vapidAuthorization(key, target.endpoint, subject)),
     "Content-Encoding": "aes128gcm",
     "Content-Type": "application/octet-stream",
     TTL: String(opts.ttlSeconds),
