@@ -8,7 +8,7 @@ import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq } from "./data/supabase";
-import { fileLink } from "./data/supabase/files";
+import { photoLink, thumbKey } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
 import { isUnderEighteen } from "./declarations";
 import { hkDateKey } from "../../shared/hkDateKey";
@@ -142,7 +142,7 @@ export async function getMyDetails(env: Env, user: AuthorizedUser): Promise<MyDe
       joinDate: (p.join_date as string) ?? null,
       commitmentEndDate: (p.commitment_end_date as string) ?? null,
     },
-    photoUrl: photo ? await fileLink(env, photo.id) : null,
+    photoUrl: photo ? await photoLink(env, photo.id) : null,
     hasHkidCopy: !p.hkid_hidden && files.some((f) => f.kind === "hkid"),
     hasPassportCopy: !p.hkid_hidden && files.some((f) => f.kind === "passport"),
     idHidden: p.hkid_hidden,
@@ -281,9 +281,30 @@ export function uploadBytes(kind: keyof typeof UPLOAD_KINDS, dataUrl: unknown): 
   return { bytes, type: m[1] };
 }
 
+/** A photo's thumbnail is small: 128 px on the shorter side, made by the app. */
+const THUMB_MAX_BYTES = 64 * 1024;
+
+/**
+ * The thumbnail the app made of a photo (FileUpload.tsx), as bytes; null
+ * when there isn't one or it isn't a small WebP or JPEG - the photo is
+ * stored either way, and /api/files then serves the photo for ?v=thumb
+ * until the backfill (scripts/migration/backfill-photo-thumbnails.mjs)
+ * makes one.
+ */
+export function thumbnailBytes(dataUrl: unknown): { bytes: Uint8Array<ArrayBuffer>; type: string } | null {
+  const m = typeof dataUrl === "string" ? /^data:(image\/(?:webp|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl) : null;
+  if (!m) return null;
+  const bin = atob(m[2]);
+  if (bin.length === 0 || bin.length > THUMB_MAX_BYTES) return null;
+  const bytes = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { bytes, type: m[1] };
+}
+
 /**
  * Replaces their photo, HKID or passport copy: the new file is stored and the old one
- * removed, as re-uploading on the Fillout form did.
+ * removed, as re-uploading on the Fillout form did. A photo comes with the
+ * app's 128 px thumbnail (body.thumbDataUrl), kept next to it (thumbKey).
  */
 export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, body: Record<string, unknown>) {
   if (kind !== "photo" && kind !== "hkid" && kind !== "passport") throw new HttpError("Unknown upload.", 404, "NOT_FOUND");
@@ -296,14 +317,19 @@ export async function uploadFile(env: Env, user: AuthorizedUser, kind: string, b
   const old = await d.select<{ id: string; r2_key: string }>("files", `select=id,r2_key&person_id=${eq(p.id)}&kind=${eq(kind)}`);
   const key = `people/${p.id}/${kind}/${crypto.randomUUID()}.${EXT[type]}`;
   const sha256 = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  await env.FILES.put(key, bytes, { httpMetadata: { contentType: type }, customMetadata: { sha256 } });
+  const thumb = kind === "photo" ? thumbnailBytes(body.thumbDataUrl) : null;
+  await Promise.all([
+    env.FILES.put(key, bytes, { httpMetadata: { contentType: type }, customMetadata: { sha256 } }),
+    thumb ? env.FILES.put(thumbKey(key), thumb.bytes, { httpMetadata: { contentType: thumb.type } }) : null,
+  ]);
   const [file] = await d.insert<{ id: string }>("files", [
     { r2_key: key, kind, person_id: p.id, filename: `${UPLOAD_KINDS[kind].name}.${EXT[type]}`, content_type: type, bytes: bytes.length, sha256 },
   ]);
   if (old.length) {
     await d.remove("files", `id=in.(${old.map((o) => o.id).join(",")})`);
-    await Promise.all(old.map((o) => env.FILES!.delete(o.r2_key)));
+    // A photo's thumbnail goes with it (deleting a key R2 doesn't have is fine).
+    await env.FILES!.delete(old.flatMap((o) => (kind === "photo" ? [o.r2_key, thumbKey(o.r2_key)] : [o.r2_key])));
   }
   await invalidatePeople(env);
-  return { ok: true, url: kind === "photo" ? await fileLink(env, file.id) : null };
+  return { ok: true, url: kind === "photo" ? await photoLink(env, file.id) : null };
 }

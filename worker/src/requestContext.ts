@@ -37,6 +37,11 @@ export interface RequestContext {
   /** The error behind a 5xx answer, and who was signed in, for error_log (systemHealth.ts). */
   error?: unknown;
   personId?: string;
+  /**
+   * Their People uuid: sent with every database write as x-eddy-actor, so
+   * the change history knows who made the change (data/supabase.ts).
+   */
+  personUuid?: string;
   /** The signed-in email (auth.ts): whose reused sign-in answer a write drops. */
   email?: string;
   /** The database's cache versions, once this request has read them (auth.ts). */
@@ -76,11 +81,12 @@ export function noteRequestError(err: unknown): void {
 }
 
 /** Remembers who is signed in (auth.ts), for error_log. */
-export function noteRequestPerson(personId: string, email?: string): void {
+export function noteRequestPerson(personId: string, email?: string, personUuid?: string): void {
   const context = storage.getStore();
   if (!context) return;
   context.personId = personId;
   if (email) context.email = email;
+  if (personUuid) context.personUuid = personUuid;
 }
 
 /** Remembers the cache versions read with the person (auth.ts), for the caches later in the request. */

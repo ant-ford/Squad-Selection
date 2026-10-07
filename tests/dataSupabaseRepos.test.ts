@@ -37,12 +37,13 @@ const playerRow = {
 };
 
 describe("Supabase repositories", () => {
-  it("maps api_players rows as the Airtable mapper does, with a signed photo link", async () => {
+  it("maps api_players rows as the Airtable mapper does, with the photo's file id (signed only where shown)", async () => {
     const calls = postgrest(() => [playerRow]);
     const p = (await people(env).getById("recP1"))!;
     expect(calls[0].url.pathname).toBe("/rest/v1/api_players");
     expect(p).toMatchObject({ id: "recP1", preferredName: "Al", shirtNoValue: "7", sectionRank: 12, playingAbility: undefined, birthday: "05-17" });
-    expect(p.photo).toMatch(/^https:\/\/api\.test\/api\/files\/11111111-2222-3333-4444-555555555555\?exp=\d+&sig=[0-9a-f]{64}$/);
+    expect(p.photoFileId).toBe("11111111-2222-3333-4444-555555555555");
+    expect(p.photo).toBeUndefined();
     expect(p.teamRank).toBeUndefined();
   });
 

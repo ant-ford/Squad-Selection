@@ -4,6 +4,7 @@
 import type { Env } from "./env";
 import { HttpError } from "./http";
 import { people, type PersonPatch } from "./data/people";
+import { photoLink } from "./data/supabase/files";
 import { abilityGroups } from "./data/abilityGroups";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
@@ -64,7 +65,12 @@ async function invalidateRankingCaches(env: Env): Promise<void> {
 
 async function fetchActiveRanking(env: Env): Promise<Player[]> {
   const players = await people(env).listRankingPool();
-  return players.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
+  // The ranking shows each player's photo: signed here, a day's link
+  // (photoLink), so the list stays cacheable and the pictures are fetched once.
+  const shown = await Promise.all(
+    players.map(async ({ photoFileId, ...p }) => (photoFileId ? { ...p, photo: await photoLink(env, photoFileId) } : p)),
+  );
+  return shown.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
 }
 
 async function fetchInactiveRanking(

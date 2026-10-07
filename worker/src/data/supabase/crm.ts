@@ -16,7 +16,7 @@ import { API_ID_RE } from "../ids";
 import type { MembershipEventsRepo } from "../membershipEvents";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../../../shared/schema/fieldMaps";
 import { REVIEWS_FROM } from "../../../../shared/statementStages";
-import { fileLink } from "./files";
+import { fileLink, photoLink } from "./files";
 import { startReview } from "../../reviewEmails";
 
 /** Attachment columns, turned into signed links on the way out. */
@@ -32,7 +32,11 @@ async function signAttachments(env: Env, row: Record<string, unknown>) {
     const refs = row[key];
     if (!Array.isArray(refs)) continue;
     row[key] = await Promise.all(
-      refs.map(async (r: { fileId: string; filename: string | null }) => ({ url: await fileLink(env, r.fileId), filename: r.filename ?? "Attachment" })),
+      refs.map(async (r: { fileId: string; filename: string | null }) => ({
+        // A photo shows on the boards (a day's link, photoLink); documents get the short one.
+        url: key === "photo" ? await photoLink(env, r.fileId) : await fileLink(env, r.fileId),
+        filename: r.filename ?? "Attachment",
+      })),
     );
   }
   return row;

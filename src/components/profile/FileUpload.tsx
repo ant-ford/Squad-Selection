@@ -7,23 +7,38 @@ import { uploadDetailsFile } from '@/api/details';
 /** Images are shrunk to at most this many pixels on the longer side before upload. */
 const MAX_SIDE = 1600;
 
-/** Reads a file as a data URL; images are shrunk and sent as JPEG, PDFs as they are. */
-async function prepare(file: File): Promise<string> {
+/** A photo's thumbnail is this many pixels on the shorter side: the lists' avatars (36-48 px) at 2-3x. */
+const THUMB_SIDE = 128;
+
+/** The bitmap drawn at `scale`, as a data URL of `type`. */
+function drawn(bitmap: ImageBitmap, scale: number, type: string, quality: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL(type, quality);
+}
+
+/**
+ * Reads a file as a data URL; images are shrunk and sent as JPEG, PDFs as
+ * they are. With `thumb`, also a 128 px WebP thumbnail (JPEG where the
+ * browser can't write WebP), which the Worker keeps for the avatars.
+ */
+async function prepare(file: File, thumb = false): Promise<{ dataUrl: string; thumbDataUrl?: string }> {
   if (file.type === 'application/pdf') {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
+      r.onload = () => resolve({ dataUrl: String(r.result) });
       r.onerror = () => reject(r.error);
       r.readAsDataURL(file);
     });
   }
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.85);
+  const dataUrl = drawn(bitmap, Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height)), 'image/jpeg', 0.85);
+  if (!thumb) return { dataUrl };
+  const small = Math.min(1, THUMB_SIDE / Math.min(bitmap.width, bitmap.height));
+  const webp = drawn(bitmap, small, 'image/webp', 0.8);
+  return { dataUrl, thumbDataUrl: webp.startsWith('data:image/webp') ? webp : drawn(bitmap, small, 'image/jpeg', 0.8) };
 }
 
 /**
@@ -60,13 +75,14 @@ export default function FileUpload({
     if (!file) return;
     setBusy(true);
     try {
-      const dataUrl = await prepare(file);
+      // Their own photo goes with a thumbnail for the lists (ranking, membership boards).
+      const { dataUrl, thumbDataUrl } = await prepare(file, kind === 'photo' && !upload);
       setPicked({ thumb: dataUrl.startsWith('data:image/') ? dataUrl : null, name: file.name, saved: false });
       if (upload) {
         await upload(dataUrl);
         onUploaded(null);
       } else {
-        const { url } = await uploadDetailsFile(kind === 'document' ? 'hkid' : kind, dataUrl);
+        const { url } = await uploadDetailsFile(kind === 'document' ? 'hkid' : kind, dataUrl, thumbDataUrl);
         onUploaded(url);
       }
       onSaved?.(dataUrl);

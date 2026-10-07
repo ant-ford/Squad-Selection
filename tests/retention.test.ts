@@ -5,7 +5,7 @@ import { MAX_PER_RUN, R2_BATCH, deleteQueuedFiles, runRetention } from "../worke
 type Call = { url: URL; method: string; body: any };
 
 /** A fake PostgREST: the due list, which removals succeed, and the R2 queue. */
-function fakeDb(opts: { due?: string[]; failFor?: string[]; notDue?: string[]; queue?: string[] } = {}) {
+function fakeDb(opts: { due?: string[]; failFor?: string[]; notDue?: string[]; queue?: string[]; pruneFails?: boolean } = {}) {
   const calls: Call[] = [];
   let queue = [...(opts.queue ?? [])];
   vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -14,6 +14,7 @@ function fakeDb(opts: { due?: string[]; failFor?: string[]; notDue?: string[]; q
     calls.push(c);
     const reply = (body: unknown, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), { status });
     if (url.pathname.endsWith("/rpc/retention_stamp")) return reply(2);
+    if (url.pathname.endsWith("/rpc/prune_history")) return reply(opts.pruneFails ? { message: "boom" } : 7, opts.pruneFails ? 500 : 200);
     if (url.pathname.endsWith("/rpc/remove_personal_data")) {
       if (opts.failFor?.includes(c.body.p_person)) return reply({ message: "boom" }, 400);
       return reply(!opts.notDue?.includes(c.body.p_person));
@@ -45,7 +46,10 @@ const base = {
 
 const removals = (calls: Call[]) => calls.filter((c) => c.url.pathname.endsWith("/rpc/remove_personal_data")).map((c) => c.body.p_person);
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("data retention job", () => {
   it("in report mode stamps and counts, but removes nothing", async () => {
@@ -53,6 +57,18 @@ describe("data retention job", () => {
     const result = await runRetention({ ...base, RETENTION_MODE: "report" });
     expect(result).toMatchObject({ stamped: 2, due: 2, removed: 0 });
     expect(removals(calls)).toEqual([]);
+  });
+
+  it("prunes change history older than two seasons, in either mode", async () => {
+    fakeDb();
+    expect((await runRetention(base)).historyPruned).toBe(7);
+  });
+
+  it("a failed history prune doesn't fail the run", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fakeDb({ due: ["p1"], pruneFails: true });
+    const result = await runRetention({ ...base, RETENTION_MODE: "report" });
+    expect(result).toMatchObject({ due: 1, historyPruned: 0 });
   });
 
   it("with no mode set, removes nothing", async () => {
@@ -84,8 +100,9 @@ describe("data retention job", () => {
     const calls = fakeDb({ queue });
     const { bucket, deleted } = fakeBucket();
     const result = await runRetention({ ...base, FILES: bucket });
-    expect(deleted.map((b) => b.length)).toEqual([R2_BATCH, 3]);
-    expect(deleted.flat()).toEqual(queue);
+    // Each object with the photo thumbnail that may sit next to it (thumbKey).
+    expect(deleted.map((b) => b.length)).toEqual([R2_BATCH * 2, 6]);
+    expect(deleted.flat()).toEqual(queue.flatMap((k) => [k, `${k}.thumb`]));
     expect(result.filesDeleted).toBe(queue.length);
     expect(calls.filter((c) => c.url.pathname.endsWith("/r2_deletions") && c.method === "DELETE")).toHaveLength(2);
   });
