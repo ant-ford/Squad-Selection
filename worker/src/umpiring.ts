@@ -437,6 +437,20 @@ function afterChange(): void {
   invalidateCache(POOL_KEY);
 }
 
+const isTaken = (a: AssignmentRow) => a.status === "confirmed" || a.status === "no_show";
+
+/**
+ * Once a duty is confirmed, the other paid offers on it (read before the
+ * write) are closed as withdrawn, so none is left waiting unseen; each of
+ * those umpires gets the taken-off push.
+ */
+async function closeOtherOffers(env: Env, dutyId: string, live: AssignmentRow[], confirmedId?: string): Promise<void> {
+  const offers = live.filter((a) => a.status === "offered" && a.id !== confirmedId);
+  if (offers.length === 0) return;
+  await db(env).update("umpire_assignments", `id=${inList(offers.map((a) => a.id))}&status=eq.offered`, { status: "withdrawn" });
+  for (const o of offers) void alertDutyRemoved(env, o.person_id, dutyId);
+}
+
 /**
  * An umpire puts their own name down. Unpaid is confirmed at once; paid
  * (only once their commitment has ended) is an offer for the coordinator.
@@ -450,7 +464,7 @@ export async function takeDuty(env: Env, user: AuthorizedUser, dutyId: string, b
   const d = await dutyRow(env, dutyId);
   requireUpcoming(d);
   const live = await liveAssignments(env, d.id);
-  if (live.some((a) => a.status === "confirmed" || a.status === "no_show")) throw taken();
+  if (live.some(isTaken)) throw taken();
   const mine = live.find((a) => a.person_id === me.id);
   const now = new Date().toISOString();
   await writing(async () => {
@@ -463,6 +477,7 @@ export async function takeDuty(env: Env, user: AuthorizedUser, dutyId: string, b
       ]);
     }
   });
+  if (!paid) await closeOtherOffers(env, d.id, live, mine?.id);
   afterChange();
   return { ok: true, status: paid ? "offered" : "confirmed" };
 }
@@ -487,7 +502,11 @@ export async function withdrawAssignment(env: Env, user: AuthorizedUser, id: str
   return { ok: true };
 }
 
-/** The coordinator confirms an offer (a paid one, usually). */
+/**
+ * The coordinator confirms an offer (a paid one, usually). Not once the slot
+ * is someone else's (a board loaded before they took it): a 409, not the
+ * unique index's error.
+ */
 export async function confirmAssignment(env: Env, user: AuthorizedUser, id: string) {
   await requireAccess(env, user);
   requireCoordinator(user);
@@ -496,7 +515,10 @@ export async function confirmAssignment(env: Env, user: AuthorizedUser, id: stri
   const d = await dutyRow(env, a.duty_id);
   if (d.status === "cancelled") throw new HttpError("HKHA has taken this game off the list.", 409, "DUTY_CANCELLED");
   if (d.not_needed) throw notNeeded();
+  const live = await liveAssignments(env, d.id);
+  if (live.some(isTaken)) throw taken();
   await writing(() => db(env).update("umpire_assignments", `id=${eq(a.id)}`, { status: "confirmed", confirmed_at: new Date().toISOString() }));
+  await closeOtherOffers(env, d.id, live, a.id);
   afterChange();
   return { ok: true };
 }
@@ -518,7 +540,7 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   if (externalName.length > 60) throw new HttpError("That name is too long.", 400, "INVALID_INPUT");
 
   const live = await liveAssignments(env, d.id);
-  if (live.some((a) => a.status === "confirmed" || a.status === "no_show")) throw taken();
+  if (live.some(isTaken)) throw taken();
   const now = new Date().toISOString();
 
   if (externalName) {
@@ -529,6 +551,7 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
         { duty_id: d.id, external_name: name, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
       ]),
     );
+    await closeOtherOffers(env, d.id, live);
     return { ok: true };
   }
 
@@ -543,6 +566,7 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
     if (theirs) await db(env).update("umpire_assignments", `id=${eq(theirs.id)}`, { paid, status: "confirmed", confirmed_at: now });
     else await db(env).insert("umpire_assignments", [{ duty_id: d.id, person_id: person.id, paid, status: "confirmed", confirmed_at: now, created_by: me.id }]);
   });
+  await closeOtherOffers(env, d.id, live, theirs?.id);
   afterChange();
   return { ok: true };
 }
@@ -559,7 +583,7 @@ export async function setNotNeeded(env: Env, user: AuthorizedUser, dutyId: strin
   const value = body.notNeeded === true;
   if (value) {
     const live = await liveAssignments(env, d.id);
-    if (live.some((a) => a.status === "confirmed" || a.status === "no_show")) {
+    if (live.some(isTaken)) {
       throw new HttpError("Remove the umpire first.", 409, "DUTY_TAKEN");
     }
   }

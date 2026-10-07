@@ -198,7 +198,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
 - **Web Push:** `worker/src/push.ts`, with VAPID signing and aes128gcm encryption in WebCrypto (`worker/src/webPush.ts`). Personal alerts only:
   - a selected player answers No → that team's coaches (`/coach/match/:id`);
-  - the Umpire Coordinator takes someone off a duty → that umpire (`/umpiring`);
+  - the Umpire Coordinator takes someone off a duty, or the duty goes to someone else while their paid offer waits (the offer is closed) → that umpire (`/umpiring`);
   - kit passed on → the receiver, who confirms it on Player view (`/`);
   - "Send to Eddy app" in Notify → the saved squad (`POST /api/push/squad`, that side's coaches only).
 
