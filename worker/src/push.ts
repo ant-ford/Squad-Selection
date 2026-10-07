@@ -3,7 +3,8 @@
  * approved). Eddy never pushes a half-built squad on its own.
  *
  *  - a selected player says No → that team's coaches (availability.ts);
- *  - the Umpire Coordinator takes someone off a duty → that umpire (umpiring.ts);
+ *  - the Umpire Coordinator takes someone off a duty → that umpire (umpiring.ts;
+ *    HKHA's own moves reach the umpire through My Tasks, not push);
  *  - a holder passes kit on → the receiver, who must confirm it (kit.ts);
  *  - "Send to Eddy app" in Notify → the squad (POST /api/push/squad).
  *
@@ -283,21 +284,45 @@ export function alertPlayerOut(env: Env, playerApiId: string, matchApiIds: strin
   });
 }
 
+/**
+ * The hook in availability.ts: after an answer is saved, alerts the coaches
+ * for the fixtures it turned to No (the stored answer before wasn't No).
+ */
+export function alertIfNowOut(
+  env: Env,
+  playerApiId: string,
+  status: string,
+  matchApiIds: string[],
+  before: readonly { matchId: string; status: string }[],
+): Promise<void> {
+  if (status !== "Unavailable") return Promise.resolve();
+  const wasOut = new Set(before.filter((b) => b.status === "Unavailable").map((b) => b.matchId));
+  return alertPlayerOut(env, playerApiId, matchApiIds.filter((id) => !wasOut.has(id)));
+}
+
 // ── Alert: taken off a duty ──────────────────────────────────────────────
 
-/** The Umpire Coordinator took this person (a People uuid) off a duty (umpiring.ts). */
-export function alertDutyRemoved(
-  env: Env,
-  personUuid: string | null,
-  duty: { id: string; match_date: string; time_tbc?: boolean | null; home_team: string; away_team: string },
-): Promise<void> {
-  if (!personUuid) return Promise.resolve();
-  const at = duty.time_tbc ? HK_DAY.format(new Date(duty.match_date)) : when(duty.match_date);
-  return notifyLater(env, { uuids: [personUuid] }, {
-    title: "Umpiring duty cancelled",
-    body: `${duty.home_team} vs ${duty.away_team} · ${at}`,
-    url: "/umpiring",
-    tag: `duty-${duty.id}`,
+/**
+ * The Umpire Coordinator took this person (a People uuid) off a duty they
+ * held or offered for (umpiring.ts). The duty is read after the response.
+ */
+export function alertDutyRemoved(env: Env, personUuid: string | null, dutyId: string): Promise<void> {
+  if (!pushEnabled(env) || !personUuid) return Promise.resolve();
+  const context = currentRequestContext();
+  if (personUuid === context?.personUuid) return Promise.resolve();
+  return inBackground(async () => {
+    const duty = await db(env).one<{ id: string; match_date: string; time_tbc: boolean | null; home_team: string; away_team: string }>(
+      "umpire_duties",
+      `select=id,match_date,time_tbc,home_team,away_team&id=${eq(dutyId)}`,
+    );
+    if (!duty) return;
+    const at = duty.time_tbc ? HK_DAY.format(new Date(duty.match_date)) : when(duty.match_date);
+    await send(env, { uuids: [personUuid] }, {
+      title: "Taken off an umpiring duty",
+      body: `${duty.home_team} vs ${duty.away_team} · ${at}`,
+      url: "/umpiring",
+      tag: `duty-${duty.id}`,
+    });
   });
 }
 

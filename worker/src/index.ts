@@ -15,6 +15,7 @@ import {
 } from "./http";
 import { listTemplates, logMessage } from "./messages";
 import { noteSquadNotified } from "./squadNotices";
+import { isPushPath, pushRoute } from "./push";
 import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
@@ -920,6 +921,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const task = pathname.match(/^\/api\/joiner-tasks\/([0-9a-f-]{36})(\/done)?$/);
       if (task && method === "GET" && !task[2]) return json(await getJoinerTask(env, user, task[1]), 200, origin);
       if (task && method === "POST" && task[2]) return json(await completeJoinerTask(env, user, task[1]), 200, origin);
+    }
+
+    // Web Push (push.ts): the app's switch, this device, and Notify's "Send to Eddy app".
+    if (isPushPath(pathname)) {
+      const user = await requireAuthorizedUser(request, env);
+      const result = await pushRoute(env, user, method, pathname, () => readJsonBody(request), request.headers.get("User-Agent"));
+      if (result !== undefined) return json(result, 200, origin);
     }
 
     // ── Officers' admin screens (src/admin/) ──────────────────────────────

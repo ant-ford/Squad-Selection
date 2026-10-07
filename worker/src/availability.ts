@@ -4,6 +4,7 @@ import { SupabaseError } from "./data/supabase";
 import type { Env } from "./env";
 import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
+import { alertIfNowOut } from "./push";
 
 type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
 type AvailabilityStatus = ExceptionStatus;
@@ -106,6 +107,8 @@ export async function setAvailability(env: Env, input: SetAvailabilityInput) {
     throw notFound(err);
   }
   logWrite(input, outcome);
+  // A selected player now out: their coaches get a push, after the response.
+  void alertIfNowOut(env, input.playerId, input.status, input.matchIds, outcome.before);
   return { success: true, updated: outcome.updated, results: outcome.results };
 }
 
@@ -216,6 +219,7 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
   }
   const matchIds = outcome.results.map((r) => r.matchId);
   if (matchIds.length > 0) logWrite({ playerId: user.id, matchIds, status: input.status }, outcome);
+  void alertIfNowOut(env, user.id, input.status, matchIds, outcome.before);
   return { success: true, updated: outcome.results.length, results: outcome.results };
 }
 // ---------------------------------------------------------------------

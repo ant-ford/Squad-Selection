@@ -203,9 +203,15 @@ describe("alertPlayerOut", () => {
 
 describe("alertDutyRemoved and alertKitOffered", () => {
   it("tells the umpire taken off a duty", async () => {
-    install({ push_subscriptions: [device(1, "u1"), device(2, "u2")] });
-    await alertDutyRemoved(env(), "u1", { id: "duty1", match_date: "2026-10-17T01:30:00Z", home_team: "Pak A", away_team: "Valley B" });
+    install({
+      push_subscriptions: [device(1, "u1"), device(2, "u2")],
+      umpire_duties: [{ id: "duty1", match_date: "2026-10-16T16:00:00Z", time_tbc: true, home_team: "Pak A", away_team: "Valley B" }],
+    });
+    await alertDutyRemoved(env(), "u1", "duty1");
     expect(sent.map((s) => s.url)).toEqual(["https://push.example/1"]);
+    await alertDutyRemoved(env(), null, "duty1");
+    await alertDutyRemoved(env(), "u1", "no-such-duty");
+    expect(sent).toHaveLength(1);
   });
 
   it("tells the receiver of offered kit, never the giver", async () => {
