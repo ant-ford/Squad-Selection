@@ -9,7 +9,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Settings2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Lightbox } from '@/components/ui/lightbox';

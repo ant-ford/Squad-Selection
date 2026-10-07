@@ -86,9 +86,15 @@ export function safeFormat(dateStr: string | undefined | null, fmt: string, fall
   return isValid(d) ? format(asHongKongWallClock(d), fmt) : fallback;
 }
 
+/**
+ * How a date with the year reads everywhere: "6 Oct 2026". The fixture form
+ * without the year is FIXTURE_DATE in components/shared/DateHeading.tsx.
+ */
+export const LONG_DATE = 'd MMM yyyy';
+
 /** A date with the full year, in Hong Kong: "6 Oct 2026" (the glossary's date form). */
 export function formatFullDate(dateStr: string | undefined | null, fallback = '—'): string {
-  return safeFormat(dateStr, 'd MMM yyyy', fallback);
+  return safeFormat(dateStr, LONG_DATE, fallback);
 }
 
 /** A date and 24-hour time with the full year, in Hong Kong: "6 Oct 2026, 14:57". */

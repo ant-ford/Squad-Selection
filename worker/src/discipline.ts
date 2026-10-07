@@ -2,7 +2,7 @@
  * The Men's Convenor's suspensions: red cards and
  * Disciplinary Committee decisions, which suspension.ts deliberately leaves
  * manual. Gated on the "discipline" section (auth.ts), which only the
- * Hockey Convenor office opens (owner, 6 Oct 2026).
+ * Men's Convenor office opens (owner, 6 Oct 2026).
  *
  * Each write is one SQL function (admin_save_suspension,
  * admin_clear_suspension) that also writes its activity_log row, field
