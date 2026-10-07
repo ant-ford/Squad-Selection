@@ -72,6 +72,8 @@ export interface HistoryEntry {
   /** ISO timestamp. */
   at: string;
   actor: string | null;
+  /** When no person did it: the activity log's label ("eddy" shows the wordmark). */
+  actorLabel?: string;
   action: string;
   /** Short label, e.g. "Membership details changed". */
   summary: string;

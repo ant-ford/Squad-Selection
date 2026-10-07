@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Smartphone } from 'lucide-react';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -74,7 +75,7 @@ export default function AppFooter() {
     <footer className="border-t border-border bg-background py-1 mt-auto">
       <div className="container mx-auto px-1 flex flex-col md:flex-row justify-between items-center gap-2">
         <p className="text-xs text-muted-foreground flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-          <span>Eddy, HKFC men's hockey</span>
+          <span><EddyWordmark size={1.5} />, HKFC men's hockey</span>
           {!isStandalone && (
             <button
               onClick={handleInstallTap}

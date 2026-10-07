@@ -8,6 +8,7 @@ import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
 import { reportClientError } from '@/lib/clientErrors';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 
 // Only signed-out people see Login, and only someone without access sees
 // AccessNotActive, so a signed-in player never downloads either.
@@ -233,7 +234,7 @@ function AppLoading() {
         />
         <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary-tint/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
         <div className="relative mt-10 text-center">
-          <p className={`font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground ${textIn}`}>Eddy</p>
+          <p className={`text-[40px] leading-none text-foreground ${textIn}`}><EddyWordmark /></p>
           <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>HKFC men's hockey</p>
           <p className={`mt-6 font-mono text-xs tracking-widest text-muted-foreground ${textIn} [animation-delay:240ms]`}>warming up…</p>
         </div>
