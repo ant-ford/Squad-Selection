@@ -367,7 +367,7 @@ function endpointOf(v: unknown): string {
 }
 
 /** POST /api/push/subscribe {endpoint, keys: {p256dh, auth}}: this device, for the signed-in person (one device, one person). */
-async function subscribe(env: Env, user: AuthorizedUser, body: Record<string, unknown>, userAgent: string | null) {
+export async function pushSubscribe(env: Env, user: AuthorizedUser, body: Record<string, unknown>, userAgent: string | null) {
   if (!pushEnabled(env)) throw new HttpError("Notifications are off.", 409, "PUSH_DISABLED");
   const endpoint = endpointOf(body.endpoint);
   const keys = (body.keys ?? {}) as Record<string, unknown>;
@@ -383,7 +383,7 @@ async function subscribe(env: Env, user: AuthorizedUser, body: Record<string, un
 }
 
 /** POST /api/push/unsubscribe {endpoint}: this device stops (only the signed-in person's own). */
-async function unsubscribe(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+export async function pushUnsubscribe(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
   const endpoint = endpointOf(body.endpoint);
   await db(env).remove("push_subscriptions", `endpoint=${eq(endpoint)}&person_id=${eq(user.personUuid)}`);
   return { ok: true };
@@ -394,7 +394,7 @@ async function unsubscribe(env: Env, user: AuthorizedUser, body: Record<string, 
  * that side's coaches (Section Captains and the Assistant Director coach
  * every team). Sent now, so the coach sees how many it reached.
  */
-async function sendSquad(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+export async function pushSquad(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
   if (user.role !== "coach") throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
   const matchId = typeof body.matchId === "string" ? body.matchId : "";
   const side = typeof body.side === "string" ? body.side : "";
@@ -422,17 +422,4 @@ async function sendSquad(env: Env, user: AuthorizedUser, body: Record<string, un
     tag: `squad-${match.api_id}-${side}`,
   });
   return { players: players.length, reached: result.reached, devices: result.devices };
-}
-
-/** Whether a path is one of these routes. */
-export const isPushPath = (pathname: string) => pathname.startsWith("/api/push/");
-
-/** The /api/push/* routes, once the caller is signed in. Undefined: no such route. */
-export async function pushRoute(env: Env, user: AuthorizedUser, method: string, pathname: string, body: () => Promise<unknown>, userAgent: string | null) {
-  const input = async () => ((await body()) ?? {}) as Record<string, unknown>;
-  if (method === "GET" && pathname === "/api/push/config") return pushConfig(env);
-  if (method === "POST" && pathname === "/api/push/subscribe") return subscribe(env, user, await input(), userAgent);
-  if (method === "POST" && pathname === "/api/push/unsubscribe") return unsubscribe(env, user, await input());
-  if (method === "POST" && pathname === "/api/push/squad") return sendSquad(env, user, await input());
-  return undefined;
 }

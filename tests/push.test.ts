@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { fakePostgrest, SUPABASE_TEST_ENV, type FakePostgrest, type PgRow } from "./helpers/postgrest";
-import { alertDutyRemoved, alertKitOffered, alertPlayerOut, MAX_SENDS_PER_INVOCATION, pushConfig, pushRoute, send, when, type PushMessage } from "../worker/src/push";
+import { alertDutyRemoved, alertKitOffered, alertPlayerOut, MAX_SENDS_PER_INVOCATION, pushConfig, pushSquad, pushSubscribe, pushUnsubscribe, send, when, type PushMessage } from "../worker/src/push";
 import { importVapidKey } from "../worker/src/webPush";
 import { newRequestStats, runWithRequestContext, type RequestContext } from "../worker/src/requestContext";
 import type { AuthorizedUser } from "../worker/src/auth";
@@ -231,27 +231,25 @@ const coachUser = (over: Partial<AuthorizedUser> = {}) =>
   ({ personId: "recCoach000000001", personUuid: COACH, role: "coach", coachTeams: ["HKFC C"], ...over }) as AuthorizedUser;
 
 describe("push routes", () => {
-  const body = (b: unknown) => () => Promise.resolve(b);
-
   it("subscribes this device for the signed-in person, moving it from anyone else", async () => {
     install({ push_subscriptions: [device(1, "someone-else")] });
-    const r = await pushRoute(env(), coachUser(), "POST", "/api/push/subscribe", body({ endpoint: "https://push.example/1", keys: { p256dh: P256DH, auth: AUTH } }), "UA");
+    const r = await pushSubscribe(env(), coachUser(), { endpoint: "https://push.example/1", keys: { p256dh: P256DH, auth: AUTH } }, "UA");
     expect(r).toEqual({ ok: true });
     expect(pg.tables.push_subscriptions).toHaveLength(1);
     expect(pg.tables.push_subscriptions[0]).toMatchObject({ person_id: COACH, endpoint: "https://push.example/1", user_agent: "UA" });
   });
 
   it("refuses a malformed subscription, and subscribing while push is off", async () => {
-    await expect(pushRoute(env(), coachUser(), "POST", "/api/push/subscribe", body({ endpoint: "http://x/1", keys: { p256dh: P256DH, auth: AUTH } }), null)).rejects.toMatchObject({ status: 400 });
-    await expect(pushRoute(env(), coachUser(), "POST", "/api/push/subscribe", body({ endpoint: "https://x/1", keys: {} }), null)).rejects.toMatchObject({ status: 400 });
-    await expect(pushRoute(env({ PUSH: undefined }), coachUser(), "POST", "/api/push/subscribe", body({ endpoint: "https://x/1", keys: { p256dh: P256DH, auth: AUTH } }), null)).rejects.toMatchObject({ status: 409 });
+    await expect(pushSubscribe(env(), coachUser(), { endpoint: "http://x/1", keys: { p256dh: P256DH, auth: AUTH } }, null)).rejects.toMatchObject({ status: 400 });
+    await expect(pushSubscribe(env(), coachUser(), { endpoint: "https://x/1", keys: {} }, null)).rejects.toMatchObject({ status: 400 });
+    await expect(pushSubscribe(env({ PUSH: undefined }), coachUser(), { endpoint: "https://x/1", keys: { p256dh: P256DH, auth: AUTH } }, null)).rejects.toMatchObject({ status: 409 });
   });
 
   it("unsubscribes only the person's own device", async () => {
     install({ push_subscriptions: [device(1, COACH), device(2, "other")] });
-    await pushRoute(env(), coachUser(), "POST", "/api/push/unsubscribe", body({ endpoint: "https://push.example/2" }), null);
+    await pushUnsubscribe(env(), coachUser(), { endpoint: "https://push.example/2" });
     expect(pg.tables.push_subscriptions).toHaveLength(2);
-    await pushRoute(env(), coachUser(), "POST", "/api/push/unsubscribe", body({ endpoint: "https://push.example/1" }), null);
+    await pushUnsubscribe(env(), coachUser(), { endpoint: "https://push.example/1" });
     expect(pg.tables.push_subscriptions.map((d) => d.id)).toEqual(["d2"]);
   });
 
@@ -270,20 +268,16 @@ describe("push routes", () => {
 
   it("sends the squad to that side's selected players and says how many it reached", async () => {
     squadTables();
-    const r = await pushRoute(env(), coachUser(), "POST", "/api/push/squad", body({ matchId: "recMatch000000001", side: "home" }), null);
+    const r = await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" });
     expect(r).toEqual({ players: 2, reached: 2, devices: 3 });
     expect(sent.map((s) => s.url).sort()).toEqual(["https://push.example/1", "https://push.example/2", "https://push.example/3"]);
   });
 
   it("is only for that team's coaches", async () => {
     squadTables();
-    await expect(pushRoute(env(), coachUser(), "POST", "/api/push/squad", body({ matchId: "recMatch000000001", side: "away" }), null)).rejects.toMatchObject({ status: 403 });
-    await expect(pushRoute(env(), coachUser({ coachTeams: ["HKFC D"] }), "POST", "/api/push/squad", body({ matchId: "recMatch000000001", side: "home" }), null)).rejects.toMatchObject({ status: 403 });
-    await expect(pushRoute(env(), coachUser({ role: "player", coachTeams: [] }), "POST", "/api/push/squad", body({ matchId: "recMatch000000001", side: "home" }), null)).rejects.toMatchObject({ status: 403 });
+    await expect(pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "away" })).rejects.toMatchObject({ status: 403 });
+    await expect(pushSquad(env(), coachUser({ coachTeams: ["HKFC D"] }), { matchId: "recMatch000000001", side: "home" })).rejects.toMatchObject({ status: 403 });
+    await expect(pushSquad(env(), coachUser({ role: "player", coachTeams: [] }), { matchId: "recMatch000000001", side: "home" })).rejects.toMatchObject({ status: 403 });
     expect(sent).toHaveLength(0);
-  });
-
-  it("answers no such route with undefined", async () => {
-    expect(await pushRoute(env(), coachUser(), "GET", "/api/push/nope", body({}), null)).toBeUndefined();
   });
 });

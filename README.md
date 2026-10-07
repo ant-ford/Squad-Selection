@@ -124,7 +124,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - An object released by a removal is deleted 35 days later (`r2_deletions`), to match backup retention.
   - Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
 
-The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events.ts`, `apply.ts`, `admin/*`, …).
+The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
 
 ---
 
@@ -168,7 +168,12 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 ## Worker internals
 
-- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`. Coach routes also check that the match, team or player is the coach's own (`coachAccess.ts`). Registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
+- **Routing:** one route table, `worker/src/routes.ts`, with the officer admin routes in `worker/src/admin/routes.ts` spliced into it. `worker/src/router.ts` dispatches; `index.ts` keeps CORS preflight, the read-only switch, error mapping and request stats.
+  - Each entry is a method, a path (exact, or a pattern like `/api/events/:id([0-9a-f-]{36})/respond`), a named guard and a handler. The first entry that matches wins, so a specific path goes above a pattern that also fits it. A known path with the wrong method is a 404, as before; there is no 405.
+  - The guard is checked before the handler runs: `public`, `signed-file`, `calendar-hmac`, `verified-email`, `signed-in`, `self-or-coach`, `coach`, `coach-of-match`, `section-captain` or `section:<name>` (router.ts says what each means). Coach routes whose match, side or team is in the body name that extra check (`+coach-of-match-side`, `+coach-of-team`, `+coach-of-player`); the handler makes it (`coachAccess.ts`).
+  - `GUARDED_SCOPES` keeps the old 401 / 403 for an unknown path under a group that used to sign in first (`/api/kit/*` and others).
+  - **Adding a route:** one `route(...)` line in its section of `routes.ts`, and the same line in the expected list in `tests/routeTable.test.ts`, which fails on any new, moved or re-guarded route until the list is updated.
+  - Every `/api` route needs a verified Supabase session, except registering to join and asking to be reactivated, which need only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` checks the guards hold.
 - **Sign-in:** each request checks the JWT with Supabase (`/auth/v1/user`; an isolate remembers a checked token for 60 s) and, in parallel, reads `auth_context()`. An isolate reuses that answer for 10 s. For 10 s after a write the app sends `X-Eddy-Fresh`, so a person always reads their own change, whichever isolate answers (`shared/freshHeader.ts`).
 - **Caching:**
   - `worker/src/cache.ts` keeps reads in each isolate's memory, under keys that carry the cache versions of the tables they're built from (`getVersioned`), so a write anywhere moves the key.
@@ -345,7 +350,7 @@ npx vitest run tests/golden-eligibility.test.ts
   - `eligibility.ts`: `eligibility`, `golden-eligibility` and `recommendations`;
   - `ranking.ts`: `ranking`, `abilityGroup` and `abilityRank`;
   - anything touching availability: the `availability*` and `sameDay*` files, including `availabilityRuleCases`;
-  - `auth.ts` or any route: `authorization-routes`; sign-in on the app: `authClientOptions`;
+  - `auth.ts` or any route: `authorization-routes` and `routeTable`; sign-in on the app: `authClientOptions`;
   - retention or any new table that refers to a person: `retentionCoverage`, and the SQL test `erase_personal_data`;
   - a SQL function or trigger: its file in `supabase/tests/` (CI runs them all).
 
