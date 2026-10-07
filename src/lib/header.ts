@@ -57,6 +57,18 @@ export function phoneControls({ back, canSwitch, applicant }: { back: boolean; c
   return out;
 }
 
+/**
+ * What else shows beside the switch on a phone, where the bar is too narrow
+ * for the logo, the title and the switch together. On the switch's own
+ * screens the switch names the view, so the title gives way (still the h1).
+ * On any other screen the logo gives way (the switch's Player button goes
+ * home too), so the title keeps its room. Without the switch, both show.
+ */
+export function phoneTitleRoom({ back, canSwitch, view }: { back: boolean; canSwitch: boolean; view: View | null }): { title: boolean; logo: boolean } {
+  if (!phoneControls({ back, canSwitch }).includes('switch')) return { title: true, logo: true };
+  return view ? { title: false, logo: true } : { title: true, logo: false };
+}
+
 /** The coach area's screens share one layout (CoachLayout), so their header comes from the path. */
 export function coachScreen(pathname: string): { title: string; child: boolean } {
   if (pathname.startsWith('/coach/match/')) return { title: 'Squad selection', child: true };
