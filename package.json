@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:sql": "node scripts/availability-rule-checks.mjs --tap supabase/tests/availability_rule_cases.test.sql && npx --yes supabase@2.118.0 test db",
     "typecheck": "tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p worker/tsconfig.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",

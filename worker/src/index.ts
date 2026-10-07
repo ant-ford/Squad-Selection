@@ -137,6 +137,7 @@ import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
 import { getTeamAttendance } from "./teamAttendance";
 import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
+import { READ_ONLY_CODE, READ_ONLY_MESSAGE, writesOff } from "./readOnly";
 import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
 export type { Env };
@@ -180,8 +181,9 @@ export default {
       }
       const totalMs = Date.now() - startedAt;
       const { pathname } = new URL(request.url);
-      // Every 5xx goes into error_log after the response (systemHealth.ts).
-      if (response.status >= 500 && waitUntil) {
+      // Every 5xx goes into error_log after the response (systemHealth.ts),
+      // except while writes are off (readOnly.ts): that log is a write too.
+      if (response.status >= 500 && waitUntil && !writesOff(env)) {
         const { error, personId } = context;
         const copy = error === undefined ? response.clone() : null;
         waitUntil(logServerError(env, { route: pathname, status: response.status, requestId: request.headers.get("cf-ray"), error, personId, response: copy }));
@@ -216,6 +218,12 @@ export default {
    * (retention.ts), on its own so it has a run's outside calls to itself.
    */
   async scheduled(event: { cron: string }, env: Env): Promise<void> {
+    // Every job writes (heartbeats, emails, retention), so while writes are
+    // off (readOnly.ts) none of them runs, the health check included.
+    if (writesOff(env)) {
+      console.log(`cron ${event.cron} skipped: WRITES is off`);
+      return;
+    }
     // HEALTH_CRON: the daily system health check (systemHealth.ts). Each job
     // records a heartbeat, which is what that check reads.
     if (event.cron === HEALTH_CRON) {
@@ -244,10 +252,18 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const method = request.method;
 
   if (method === "OPTIONS") return handleOptions(origin);
+  // The read-only switch (readOnly.ts): every save is turned away here,
+  // before sign-in, so it costs no subrequests. GETs carry on, the calendar
+  // feeds and signed file links among them.
+  if (method !== "GET" && method !== "HEAD" && writesOff(env)) {
+    return errorJson(READ_ONLY_MESSAGE, 503, origin, READ_ONLY_CODE);
+  }
 
   try {
     // ── Health Check (Public) ──────────────────────────────────────────────
     if (method === "GET" && pathname === "/health") {
+      // writes: "off" while the read-only switch is on; absent otherwise.
+      const writes = writesOff(env) ? { writes: "off" } : {};
       // ?deep=1 additionally reports whether the Worker's own credentials
       // still work: the Supabase data project, once one is configured. Plain
       // /health only proves the Worker is running, which is exactly why a
@@ -276,9 +292,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
               )
             ).data
           : undefined;
-        return json({ status: "ok", ...(supabase ? { supabase } : {}), timestamp: new Date().toISOString() }, 200, origin);
+        return json({ status: "ok", ...(supabase ? { supabase } : {}), ...writes, timestamp: new Date().toISOString() }, 200, origin);
       }
-      return json({ status: "ok", timestamp: new Date().toISOString() }, 200, origin);
+      return json({ status: "ok", ...writes, timestamp: new Date().toISOString() }, 200, origin);
     }
 
     // ── Stored files (signed link, no session - see files.ts) ─────────────

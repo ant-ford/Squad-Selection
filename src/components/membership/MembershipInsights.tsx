@@ -31,7 +31,7 @@ const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward', 'Flexible/
 export default function MembershipInsights() {
   return (
     <div className="space-y-6">
-      <InsightsGroup id="new-joiners" title="New Joiners">
+      <InsightsGroup id="new-joiners" title="New joiners">
         <NewJoinerInsights />
       </InsightsGroup>
       <InsightsGroup id="commitment-reviews" title="Commitment reviews">
@@ -164,7 +164,7 @@ function NewJoinerInsights() {
 
           <ChartCard
             title="Squad sizes"
-            caption="Active players per Selected Team, with the applicants heading for each."
+            caption="Active players per selected team, with the applicants heading for each."
             table={
               <DataTable
                 head={['Team', 'Active', 'Pipeline', 'Matchday squad']}
@@ -261,7 +261,7 @@ function NewJoinerInsights() {
           </ChartCard>
           <ChartCard
             title="New members per month"
-            caption="By Join Date."
+            caption="By join date."
             table={
               <DataTable
                 head={['Month', 'New members']}

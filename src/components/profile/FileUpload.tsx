@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check, FileText, Upload } from 'lucide-react';
 import { ApiError } from '@/lib/apiClient';
 import { uploadDetailsFile } from '@/api/details';

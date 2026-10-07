@@ -128,9 +128,9 @@ export default defineConfig(({ command }) => ({
         manifestTransforms: [precache.manifestTransform],
       },
       manifest: {
-        name: "HKFC Squad Selection",
-        short_name: "HKFC Squad",
-        description: "HKFC Men's Hockey squad selection, availability and ranking",
+        name: "Eddy",
+        short_name: "Eddy",
+        description: "HKFC men's hockey: availability, squads and the section's admin",
         start_url: "/",
         display: "standalone",
         background_color: "#ffffff",
