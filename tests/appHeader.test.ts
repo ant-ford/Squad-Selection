@@ -85,8 +85,8 @@ describe("burger menu", () => {
     const page = [{ label: "Active members CSV", icon: (() => null) as never }];
     expect(labels(mainMenuGroups({ sections: ["membership"] }, page))[0]).toEqual(["Active members CSV"]);
   });
-  it("still lists Stats before the profile has loaded", () => {
-    expect(labels(mainMenuGroups(undefined))).toEqual([["Stats"]]);
+  it("still lists Stats and the quizzes before the profile has loaded", () => {
+    expect(labels(mainMenuGroups(undefined))).toEqual([["Stats", "Hockey rules quizzes"]]);
   });
 });
 

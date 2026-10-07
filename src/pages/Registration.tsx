@@ -168,8 +168,8 @@ function PlayerItem({
               <Field label="Date of birth" value={p.dateOfBirth} />
               <Field label="Nationality" value={p.nationality} />
               <Field label="HKID No." value={p.hkidNo} />
-              <Field label="Passport No." value={p.passportNo} />
-              <Field label="Shirt No" value={p.shirtNo?.toString() ?? null} />
+              <Field label="Passport no." value={p.passportNo} />
+              <Field label="Shirt no." value={p.shirtNo?.toString() ?? null} />
               <Field label="Mobile" value={p.mobileNo} />
               <Field label="Email" value={p.email} />
               <Field label="Previous EOS" value={p.previousEos} />

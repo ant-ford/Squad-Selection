@@ -28,7 +28,7 @@ export interface MenuEntry {
   disabled?: boolean;
 }
 
-type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'umpiring' | 'quizzes'>>;
+type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'umpiring'>>;
 
 /** The officers' screens a person may open, in a fixed order, from what the Worker says. */
 export function officerItems(p: MenuProfile): MenuEntry[] {
@@ -63,10 +63,10 @@ export function viewItems(p: MenuProfile): MenuEntry[] {
 }
 
 /** Screens that aren't an office: the club stats and the quizzes. */
-export function everyoneItems(p?: MenuProfile): MenuEntry[] {
+export function everyoneItems(): MenuEntry[] {
   return [
     { to: '/stats', label: 'Stats', icon: Trophy },
-    ...(p?.quizzes ? [{ to: '/quizzes', label: 'Hockey Rules quizzes', icon: BookOpenCheck }] : []),
+    { to: '/quizzes', label: 'Hockey rules quizzes', icon: BookOpenCheck },
   ];
 }
 
@@ -76,7 +76,7 @@ export function everyoneItems(p?: MenuProfile): MenuEntry[] {
  * Inviting someone is added by the menu itself.
  */
 export function mainMenuGroups(p: MenuProfile | undefined, page: MenuEntry[] = []): MenuEntry[][] {
-  return [page, viewItems(p ?? {}), everyoneItems(p), officerItems(p ?? {})].filter((g) => g.length > 0);
+  return [page, viewItems(p ?? {}), everyoneItems(), officerItems(p ?? {})].filter((g) => g.length > 0);
 }
 
 /** An icon-only header button: a 40 px square. */

@@ -8,7 +8,7 @@ import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { errorText, primary } from '@/components/profile/steps';
 import { Skeleton } from '@/components/ui/skeleton';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { completeJoinerTask, getJoinerTask } from '@/api/joiners';
 
 /**
@@ -49,7 +49,7 @@ export default function JoinerTaskPage() {
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, 'd MMM yyyy')}</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, LONG_DATE)}</p>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -83,7 +83,7 @@ export default function JoinerTaskPage() {
         <div className="flex justify-end pt-4 border-t border-border">
           {t.doneAt ? (
             <p className="text-sm text-primary flex items-center gap-1">
-              <Check className="h-4 w-4" /> Done {safeFormat(t.doneAt, 'd MMM yyyy')}
+              <Check className="h-4 w-4" /> Done {safeFormat(t.doneAt, LONG_DATE)}
             </p>
           ) : (
             <button className={primary} onClick={() => setConfirming(true)} disabled={done.isPending}>
