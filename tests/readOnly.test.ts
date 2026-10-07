@@ -134,7 +134,7 @@ describe("WRITES = off", () => {
     // point is that it got past the switch and tried.
     const res = await worker.fetch(request("GET", "/api/my-profile"), OFF, ctx());
     expect(res.status).not.toBe(404);
-    expect((await res.json()).error).not.toBe("READ_ONLY");
+    expect(((await res.json()) as { error?: string }).error).not.toBe("READ_ONLY");
     expect(outside).toHaveBeenCalled();
   });
 
@@ -158,7 +158,7 @@ describe("WRITES unset or on (the default)", () => {
     // No Authorization header: sign-in refuses it, which shows it passed the switch.
     const res = await worker.fetch(request("POST", "/api/set-my-availability", { headers: { Origin: ORIGIN } }), env, ctx());
     expect(res.status).toBe(401);
-    expect((await res.json()).error).toBe("UNAUTHORIZED");
+    expect(((await res.json()) as { error?: string }).error).toBe("UNAUTHORIZED");
   });
 
   it("does not mention writes on /health", async () => {
