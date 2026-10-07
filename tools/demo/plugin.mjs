@@ -1,9 +1,11 @@
 // The Vite plugin behind the demo harness (see README.md here).
 //  - Swaps src/lib/supabase.ts for fakeSupabase.ts: always signed in, as a persona.
+//  - Serves /demo-assets/* (fictional posters) from assets/.
 //  - Answers /demo-api/* from the fixtures in fixtures/, loaded through Vite,
 //    so editing a fixture takes effect on the next request (no restart).
 // A request no fixture answers gets a 404 with the X-Demo-Missing header and a
 // "MISSING" line in the server log; the smoke test fails on it.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +13,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url)).replace(/\\/g, '/');
 const FAKE_SUPABASE = `${HERE}/fakeSupabase.ts`;
 const FIXTURES = `${HERE}/fixtures/index.ts`;
 export const API_PREFIX = '/demo-api';
+/** Fictional images the fixtures use (event posters), from assets/. */
+export const ASSET_PREFIX = '/demo-assets';
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -40,6 +44,13 @@ export function demoPlugin({ log = (line) => console.log(line) } = {}) {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
+        if (url.pathname.startsWith(`${ASSET_PREFIX}/`)) {
+          const file = path.join(HERE, 'assets', path.basename(url.pathname));
+          if (!fs.existsSync(file)) return next();
+          res.setHeader('Content-Type', file.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+          res.end(fs.readFileSync(file));
+          return;
+        }
         if (!url.pathname.startsWith(`${API_PREFIX}/`)) return next();
         const apiPath = url.pathname.slice(API_PREFIX.length);
         const method = req.method ?? 'GET';
