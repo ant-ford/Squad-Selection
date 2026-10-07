@@ -14,38 +14,16 @@ import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import { previousSquad, squadNotice } from "./squadNotices";
-import { hkfcSides } from "./match";
+import { resolveHkfcSide as resolveSide } from "./match";
+import { getMatchRecord } from "./coachAccess";
 import { notSeenWeeks } from "./lastSeen";
 
 import { fixtureChange } from "../../shared/fixtureChange";
 type MatchSide = "home" | "away";
 
-// ── Cached match-record fetch ───────────────────────────────────────────
-//
-// The raw match record, for READ endpoints (getPlayersForMatch); write
-// paths read it fresh. Kept under the matches and match_selections cache
-// versions (cache.ts getVersioned), which every squad save moves, so a
-// coach is never served the selections their save replaced, on any isolate.
-
-async function getMatchRecord(env: Env, matchId: string): Promise<Match> {
-  return getVersioned<Match>(env, `match:${matchId}`, ["matches", "match_selections"], async () => {
-    const match = await matches(env).getById(matchId);
-    if (!match) throw new HttpError("Match not found", 404);
-    return match;
-  });
-}
-
 // ── HKFC side resolution ────────────────────────────────────────────────
 function resolveHkfcSide(match: Match, rankMap: Record<string, number>, side?: MatchSide): MatchSide {
-  const sides = hkfcSides(match, new Set(Object.keys(rankMap)));
-  if (side === "home" && sides.home) return "home";
-  if (side === "away" && sides.away) return "away";
-  if (sides.home && !sides.away) return "home";
-  if (sides.away && !sides.home) return "away";
-  if (sides.home && sides.away) return side ?? "home";
-  // Fallback for derby/edge cases: trust the URL side or default home
-  if (side) return side;
-  return "home";
+  return resolveSide(match, new Set(Object.keys(rankMap)), side);
 }
 
 function hkfcTeamName(match: Match, rankMap: Record<string, number>, side?: MatchSide): string {
