@@ -312,7 +312,8 @@ const DEFAULT_RPC: Record<string, (args: any, db: FakePostgrest) => unknown> = {
 };
 
 export function fakePostgrest(opts: PostgrestOptions = {}): FakePostgrest {
-  const tables: Record<string, PgRow[]> = opts.tables ?? {};
+  // Views a test that isn't about them needn't list: the squads last sent from Notify.
+  const tables: Record<string, PgRow[]> = { api_squad_notices: [], ...(opts.tables ?? {}) };
   const calls: PgCall[] = [];
   const problems: string[] = [];
 

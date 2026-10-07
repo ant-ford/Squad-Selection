@@ -96,6 +96,11 @@ function fixtureLine(f: FixtureBrief): string {
   return `${f.hkfcTeam} vs ${f.opponent}, ${when}${where}`;
 }
 
+/** Message for a player taken out of the squad after it was sent. */
+export function buildDroppedMessage(playerName: string, f: FixtureBrief): string {
+  return `Hi ${playerName}, the squad for ${fixtureLine(f)} has changed and you're not in it this time. Thanks for being available.`;
+}
+
 /**
  * The team-group message about a fixture that moved or was called off
  * (NotifySquadSheet), or null when nothing changed.

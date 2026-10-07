@@ -194,6 +194,10 @@ export default function FixtureCard({
               <span className={`relative inline-flex items-center px-2 py-1 rounded-md text-sm font-medium ${isFull ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
                 {fixture.selectedCount} / {fixture.targetSquadSize}
                 {conflicts.length > 0 && <ClashIndicator conflicts={conflicts} hkfcTeam={fixture.hkfcTeam} />}
+                {/* The squad changed since it was sent from Notify. */}
+                {fixture.unsentChanges && (
+                  <span className="ml-1 h-2 w-2 rounded-full bg-primary" role="img" aria-label="Squad changed since you notified" title="Squad changed since you notified" />
+                )}
               </span>
               {(shortNow || fixture.maybeCount > 0) && (
                 <p className="mt-1 flex items-center justify-end gap-2 text-xs font-medium">
