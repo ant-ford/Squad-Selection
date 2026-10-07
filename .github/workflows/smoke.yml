@@ -1,0 +1,51 @@
+name: Screen smoke test
+
+# Opens every screen in README's "Screens and who opens them" table, as each
+# persona that can open it, on the demo harness's fictional data
+# (tools/demo/README.md). It fails on a console error, a request no fixture
+# answers, the error screen or an error box. It catches a screen broken by
+# another PR merged alongside, and a fixture left behind when an endpoint
+# changed shape. Nothing here reaches a real API, database or secret.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fixtures match the app's types
+        run: npx tsc -p tools/demo
+
+      # GitHub's Ubuntu runners come with Chrome.
+      - name: Open every screen
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/smoke.mjs --out smoke-failures
+
+      - name: Keep screenshots of failing screens
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failures
+          path: smoke-failures
+          if-no-files-found: ignore
+          retention-days: 7

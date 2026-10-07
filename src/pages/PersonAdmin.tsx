@@ -13,6 +13,7 @@ import ActiveBlock from '@/components/admin/ActiveBlock';
 import SquadBlock from '@/components/admin/SquadBlock';
 import HistoryList, { historyKey } from '@/components/admin/HistoryList';
 import { useMyProfile } from '@/lib/queries';
+import { officerGuide } from '@/components/HelpLink';
 import { isApiError, personChip } from '@/lib/peopleAdmin';
 import { getPersonAdmin } from '@/api/adminPeople';
 
@@ -102,7 +103,7 @@ export default function PersonAdmin() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title={person?.name ?? 'Person'} back="/people" />
+      <AppHeader title={person?.name ?? 'Person'} back="/people" guide={officerGuide(profile, 'membership')} />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

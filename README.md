@@ -52,7 +52,7 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Screen | Route | Who |
 |---|---|---|
 | Player view | `/` | Everyone signed in. Applicants at stages 1–2 go to `/apply` instead. |
-| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. Only Section Captains make players inactive. |
+| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
 | Umpire view | `/umpiring` | The club's umpires. The Umpire Coordinator and Section Captains run the duties. |
 | Membership | `/membership` | Membership Officer, Section Captains |
 | Email lists | `/chairman` | Chairman, Section Captains |
@@ -70,6 +70,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Stats, quizzes | `/stats`, `/quizzes` | Everyone |
 
 "Men's Convenor" is the `hockeyConvenor` office, and "Chairman" is `sectionChair` (see the glossary).
+
+A new screen here also needs a line in `tools/demo/screens.mjs`, and fixtures for the calls it makes, so the screen smoke test opens it ([Testing](#testing)).
 
 ---
 
@@ -121,7 +123,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - An object released by a removal is deleted 35 days later (`r2_deletions`), to match backup retention.
   - Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
 
-The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events.ts`, `apply.ts`, `admin/*`, …).
+The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
 
 ---
 
@@ -137,6 +139,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 | Squad saves: a save sends only adds and removes; changes merge unless a change since the loaded version touched the same player (`409`); derby safety; higher-team priority | `worker/src/squad.ts`, `src/lib/squadDelta.ts`, SQL `apply_squad_changes()` / `on_squad_changed()` |
 | Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts`, SQL `set_availability()` / `availability_rule_status()`. The rule cases are pinned on both sides: `tests/availabilityRuleCases.test.ts` and `scripts/availability-rule-checks.mjs` |
 | Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` (`SECTION_OFFICES`), `worker/src/authContext.ts`, SQL `auth_context()` |
+| Coaches act only on their own teams (a match's HKFC side, a derby's written side, a team, a player's shown or registered team); Section Captains and the Assistant Director on every team; `403 NOT_YOUR_TEAM` | `worker/src/coachAccess.ts` (`requireCoachOfMatch`, `requireCoachOfMatchSide`), `worker/src/auth.ts` (`coachesEveryTeam`, `requireCoachOfTeam`, `coachesPlayer`) |
 | Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name (`worker/src/registration.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
 | Data checks (unlinked cards, shared Registered Names, re-registrations to review, incomplete players, likely duplicates) | `worker/src/dataChecks.ts`, `shared/dataChecks.ts` |
 | Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`); granting or ending a Men's Convenor, Section Captain, Membership Officer or Chairman office, or giving yourself any office, emails `SYSTEM_ALERT_EMAIL` | `worker/src/admin/*` (the alert: `officeAlert.ts`), SQL `admin_*()`; a person's history: `GET /api/history` |
@@ -164,7 +167,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 ## Worker internals
 
-- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`, and registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
+- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`. Coach routes also check that the match, team or player is the coach's own (`coachAccess.ts`). Registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
 - **Sign-in:** each request checks the JWT with Supabase (`/auth/v1/user`; an isolate remembers a checked token for 60 s) and, in parallel, reads `auth_context()`. An isolate reuses that answer for 10 s. For 10 s after a write the app sends `X-Eddy-Fresh`, so a person always reads their own change, whichever isolate answers (`shared/freshHeader.ts`).
 - **Caching:**
   - `worker/src/cache.ts` keeps reads in each isolate's memory, under keys that carry the cache versions of the tables they're built from (`getVersioned`), so a write anywhere moves the key.
@@ -307,6 +310,7 @@ npx vitest run tests/golden-eligibility.test.ts
 - The data layer is faked in two ways, both explained in `tests/helpers/README.md`:
   - the repositories in `worker/src/data/` are replaced by in-memory fakes (`tests/helpers/fakeRepos.ts`);
   - direct PostgREST calls go to one shared fetch fake (`tests/helpers/postgrest.ts`), which fails a test on any query it doesn't understand.
+- **Screens on fictional data:** `node tools/demo/serve.mjs` runs the real app on the demo harness's fixtures, as any persona (`?as=coach`, `?as=mens-convenor`, …). `node tools/demo/smoke.mjs` opens every screen in the table above, as each persona that can open it, and fails on a console error, a request with no fixture, or the error screen. The fixtures are typed against `src/api`, so `npx tsc -p tools/demo` catches a changed response shape. CI runs both on every pull request (`.github/workflows/smoke.yml`). **An endpoint that changes shape needs its fixture changed in the same PR.** See `tools/demo/README.md`.
 - **SQL tests.** The SQL functions and triggers run in CI (`.github/workflows/sql-tests.yml`, a few minutes, on every PR and push to main):
   - a throwaway local Supabase database (Docker) applies every migration in order, so a migration that fails to apply fails the PR;
   - then the pgTAP files in `supabase/tests/` run, each in its own transaction that is rolled back. They cover `apply_squad_changes` / `on_squad_changed`, `admin_update_person`, the season rollover and its undo, the `cache_versions` triggers and `erase_personal_data`;
@@ -338,6 +342,7 @@ npx vitest run tests/golden-eligibility.test.ts
 | [docs/SEASON_ROLLOVER.md](docs/SEASON_ROLLOVER.md) | The July checklist: dry run, apply, undo |
 | [docs/design/HISTORY_AND_NOTICES.md](docs/design/HISTORY_AND_NOTICES.md) | Design and owner decisions for change history and notices |
 | [tests/helpers/README.md](tests/helpers/README.md) | How to use the test fakes |
+| [tools/demo/README.md](tools/demo/README.md) | The demo harness: the app on fictional data, personas, the screen smoke test, guide screenshots |
 | [scripts/migration/README.md](scripts/migration/README.md) | The live data scripts (kit order, quizzes, club docs, PDF templates, photo thumbnails) |
 | [docs/supabase-magic-link-email.html](docs/supabase-magic-link-email.html) | The sign-in email template set in Supabase Auth. It deliberately has no link, because mail scanners that follow one burn the code. |
 | [docs/CUTOVER.md](docs/CUTOVER.md) | The 2 Oct 2026 Airtable → Supabase switch-over runbook (record) |

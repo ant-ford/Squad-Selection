@@ -29,3 +29,25 @@ export function hkfcSides(
   }
   return result;
 }
+
+/**
+ * Which side of a match a coach's screen or write is about: the side asked
+ * for when it is an HKFC team, else the HKFC one. In a derby with no side
+ * given, home. Shared by the squad reads and writes (squad.ts) and the
+ * coach access check (coachAccess.ts), so the two can never disagree.
+ */
+export function resolveHkfcSide(
+  match: Match,
+  hkfcTeamNames: ReadonlySet<string | undefined>,
+  side?: "home" | "away",
+): "home" | "away" {
+  const sides = hkfcSides(match, hkfcTeamNames);
+  if (side === "home" && sides.home) return "home";
+  if (side === "away" && sides.away) return "away";
+  if (sides.home && !sides.away) return "home";
+  if (sides.away && !sides.home) return "away";
+  if (sides.home && sides.away) return side ?? "home";
+  // Fallback for derby/edge cases: trust the URL side or default home
+  if (side) return side;
+  return "home";
+}

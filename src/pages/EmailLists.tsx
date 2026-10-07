@@ -130,7 +130,7 @@ export default function EmailLists() {
   if (!allowed) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader title="Email lists" />
+        <AppHeader title="Email lists" guide="captains" />
         <div className="flex items-center justify-center p-6 pt-16">
           <div className="text-center space-y-3">
             <p className="text-lg font-semibold text-foreground">Chairman's access required</p>
@@ -175,7 +175,7 @@ export default function EmailLists() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <AppHeader title="Email lists" />
+      <AppHeader title="Email lists" guide="captains" />
 
       <main className="flex-1 container mx-auto px-4 py-4">
         {isLoading ? (
