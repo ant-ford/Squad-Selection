@@ -73,8 +73,8 @@ AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
 
 # The data retention job (src/retention.ts): "remove" removes the personal
 # details of people inactive for 13 months; "report" only counts them (the
-# list is the retention_due_v view). Report until the first list is checked.
-RETENTION_MODE = "report"
+# list is the retention_due_v view). Switched to remove on 7 Oct 2026 (owner).
+RETENTION_MODE = "remove"
 
 # The app's owner (src/systemHealth.ts): People api_ids, comma-separated,
 # not emails (this file is public). They open /system and get the System
