@@ -73,6 +73,7 @@ function duty(key: string, d: DutyIn): UmpireDuty {
     venue: 'HKFC',
     slot: 1,
     status: 'scheduled',
+    notNeeded: false,
     assignments: [],
     ...rest,
   };
