@@ -31,6 +31,9 @@ export class ApiError extends Error {
   }
 }
 
+const READ_ONLY = 'READ_ONLY';
+export const READ_ONLY_TOAST = "Eddy is read-only for a short while. Your change wasn't saved.";
+
 async function parseResponse(response: Response) {
   const text = await response.text();
   let data: { error?: string; message?: string } | null = null;
@@ -46,7 +49,7 @@ async function parseResponse(response: Response) {
     // session really is over - see there. Nothing more to do but report it.
     if (response.status === 401) {
       throw new ApiError(
-        data?.message || 'Session expired. Please log in again.',
+        data?.message || 'Session expired. Please sign in again.',
         401,
         data?.error,
       );
@@ -76,6 +79,15 @@ async function parseResponse(response: Response) {
         toast.error(data.message || 'You do not have coach permissions for this action.');
         throw new ApiError(data.message || 'Coach access required.', 403, data.error);
       }
+    }
+
+    // 503 READ_ONLY: the Worker's read-only switch is on, for a restore
+    // (worker/src/readOnly.ts). One toast however many saves fail at once,
+    // and the save still rejects, so the screen doesn't think it worked.
+    // An ApiError is never reported as a crash (clientErrors.ts).
+    if (response.status === 503 && data?.error === READ_ONLY) {
+      toast.error(READ_ONLY_TOAST, { id: READ_ONLY });
+      throw new ApiError(data.message || READ_ONLY_TOAST, 503, READ_ONLY);
     }
 
     const message = data?.message || data?.error || `Request failed (${response.status})`;

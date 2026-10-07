@@ -58,7 +58,7 @@ export function invitationEmail(f: InvitationFacts): { subject: string; text: st
         apply,
         ...(f.infoSheetUrl ? ["", "Our New Members Info Sheet:", f.infoSheetUrl] : []),
         "",
-        "Once we receive it, we'll arrange your kit and your HockeyHK registration.",
+        "Once we receive it, we'll arrange your kit and your HKHA registration.",
         "",
         "If you have any questions, just get in touch. We're glad to have you with us for the season ahead.",
         "",
@@ -133,15 +133,15 @@ export interface RegistrationFacts {
   sender: Sender;
 }
 
-/** The Hockey Convenor is asked to register them with HockeyHK. */
+/** The Men's Convenor is asked to register them with HKHA. */
 export function registrationEmail(f: RegistrationFacts): { subject: string; text: string } {
   const width = Math.max(...f.rows.map(([k]) => k.length));
   return {
-    subject: `League Registration for ${f.preferredName}`,
+    subject: `HKHA registration for ${f.preferredName}`,
     text: [
-      `Dear ${f.convenorName ?? "Hockey Convenor"},`,
+      `Dear ${f.convenorName ?? "Men's Convenor"},`,
       "",
-      `I've copied ${f.preferredName}, who we'd like to register in the league. Their details are below. Their photo and ID documents are in your tasks in Eddy, where you can mark it done once they're registered: ${f.taskUrl}`,
+      `I've copied ${f.preferredName}, who we'd like to register with HKHA. Their details are below. Their photo and ID documents are in your tasks in Eddy, where you can mark it done once they're registered: ${f.taskUrl}`,
       "",
       ...f.rows.map(([k, v]) => `${k.padEnd(width)}  ${v ?? "–"}`),
       "",

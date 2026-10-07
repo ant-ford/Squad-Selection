@@ -1,7 +1,7 @@
 /**
  * Volunteering: each person's roles and coaching and
  * umpiring levels, which they can change any time, and the Volunteers view
- * for every officer (sponsors and the Hockey Convenor included), coach and
+ * for every officer (sponsors and the Men's Convenor included), coach and
  * team captain. See shared/volunteering.ts.
  */
 import type { Env } from "./env";
