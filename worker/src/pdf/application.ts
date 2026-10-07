@@ -24,6 +24,7 @@ import { ACCEPTED_STAGE } from "../../../shared/membershipStages";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
+import { officeAddress } from "../officeContacts";
 import { documentFilename, fileAssets, renderPdf, storeDocument, templateAsset, type Asset } from "./render";
 import { ASSET, applicationSpec, levySpec, type Address, type ApplicationFacts, type FamilyPerson, type Signer, type SupportingDocument, type Work } from "./applicationSpec";
 import { isUnderEighteen } from "../declarations";
@@ -397,7 +398,7 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
     `select=designation,office_email&person_id=${eq(me.id)}&role=eq.membership_officer&status=eq.Active&limit=1`,
   );
   const officerName = holderName(me as OfficeRow["people"]);
-  const mailbox = myOffice?.office_email || me.email;
+  const mailbox = officeAddress(myOffice?.office_email, me.email);
   const name = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
   const file = await d.one<{ filename: string | null }>("files", `select=filename&id=${eq(app.pdf_file_id)}`);
 

@@ -16,6 +16,7 @@ import { documentFilename, fileAsset, renderPdf, storeDocument, templateAsset, t
 import { db, eq, inList } from "../data/supabase";
 import { fileLink } from "../data/supabase/files";
 import { sendEmail } from "../mailer";
+import { contactOf } from "../officeContacts";
 import { PDF_TEMPLATES } from "./templates";
 import { PRACTICES } from "../../../shared/commitmentReview";
 
@@ -207,14 +208,15 @@ export async function makePlayerStatement(env: Env, reviewApiId: string): Promis
   const filename = documentFilename(`Player Statement${c.year_no ? ` Year ${c.year_no}` : ""}`, facts.candidateName);
   const fileId = await storeDocument(env, rendered.pdf, { kind: "player_statement", filename, personId: c.person_id, commitmentId: c.id });
 
-  const to = officerOffice?.office_email || officerOffice?.people?.email;
+  const officer = contactOf(officerOffice);
+  const to = officer.email;
   if (to && officerOffice?.people) {
     await sendEmail(env, {
       toPersonId: officerOffice.people.id,
       to,
       subject: `Player Statement (Complete): ${facts.candidateName}`,
       text: [
-        `Hi ${officerOffice.people.preferred_name || officerOffice.people.given_names || "there"},`,
+        `Hi ${officer.firstName ?? "there"},`,
         "",
         `${facts.candidateName}'s ${c.year_no ? `Year ${c.year_no} ` : ""}Player Statement is complete. The signed statement is attached, and it is also in Eddy:`,
         `${appOrigin(env)}/review/${reviewApiId}`,

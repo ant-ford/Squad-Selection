@@ -67,7 +67,6 @@ MAIL_FROM = "Eddy <notifications@eddy.global>"
 APP_ORIGIN = "https://app.eddy.global"
 # The review request goes in the captain's name, copied to the membership inbox.
 REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
-ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
@@ -151,7 +150,6 @@ MAIL_FROM = "Eddy <notifications@eddy.global>"
 MAIL_REDIRECT_TO = "menscaptain@hkfchockey.com"
 APP_ORIGIN = "http://localhost:5173"
 REVIEW_EMAIL_FROM = "Anthony Ford <menscaptain@hkfchockey.com>"
-ASSISTANT_DIRECTOR = "Shirndre-Lee Simmons <lee_simmons@hkfc.com>"
 # The model the commitment review drafts come from (src/reviewDrafts.ts), through
 # OpenRouter. The key is the OPENROUTER_API_KEY secret; without it nothing is drafted.
 AI_DRAFT_MODEL = "qwen/qwen3.8-27b"
