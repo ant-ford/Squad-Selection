@@ -44,6 +44,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "registration_events.person_id": { kept: "playing record: team moves after play-ups" },
   "hkha_registrations.person_id": { kept: "playing record: the team they were registered with HKHA for" },
   "umpire_assignments.person_id": { kept: "umpiring record, like match cards; holds no contact details" },
+  "umpire_pool.person_id": { kept: "who sees the umpiring screen, rebuilt daily from Active people; holds nothing else" },
   "season_rollover_people.person_id": { kept: "playing record: their teams before a season rollover, for its undo" },
   "offices.person_id": { kept: "who held which office stays on record; delete_own_profile retires their offices" },
 
@@ -51,6 +52,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "availability_exceptions.updated_by_id": { kept: "who changed another player's availability" },
   "ranking_events.actor_id": { kept: "who ranked another player" },
   "match_selection_changes.actor_person_id": { kept: "which coach changed a squad; the added/removed ids are playing record like match_selections" },
+  "squad_notices.notified_by": { kept: "which coach last sent a squad; the squad ids are playing record like match_selections" },
   "activity_log.actor_person_id": { kept: "audit trail of field names only, never values" },
   "email_log.to_person_id": { kept: "delivery log by record id: no address or content" },
   "steps.waiting_on_person_id": { kept: "an officer's step on someone else's process (open ones keep them off the due list)" },

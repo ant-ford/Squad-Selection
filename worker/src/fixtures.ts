@@ -1,22 +1,25 @@
 import { linkId } from "../../shared/airtableValueUtils";
 import { matches } from "./data/matches";
-import { people } from "./data/people";
 import type { Env } from "./env";
-import { getReferenceData, getPlayerByEmail, getExceptionsForSeasons, UNRANKED_TEAM_RANK } from "./reference";
-import { getCached, getShared } from "./cache";
+import { getReferenceData, getExceptionsForMatches, UNRANKED_TEAM_RANK } from "./reference";
+import { personAsPlayer } from "./authContext";
+import { getVersioned } from "./cache";
 import { HttpError } from "./http";
 import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/domainTypes";
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { fixtureChange, FIXTURE_CHANGE_DAYS } from "../../shared/fixtureChange";
 import { isBirthdayOn } from "../../shared/birthday";
 import { buildEvaluationContext, getSeasonContext, currentSeason, previousSeason } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
-import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
+import { effectiveAvailability, getAllAvailabilityRules, getRulesForPlayer } from "./availabilityRules";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
+import { changedSinceNotice, noticesForMatches, type SquadNotice } from "./squadNotices";
+import { nextDutyLine } from "./myDuties";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
@@ -24,14 +27,12 @@ import { outcomeOf } from "./teamRecord";
 const POS_KEY: Record<string, string> = { Goalkeeper: "GK", Defender: "DEF", Midfielder: "MID", Forward: "FWD" };
 
 /**
- * All Scheduled matches, cached 10 minutes. Selections live inside match
- * records (Selected Players Home/Away), so syncSquad invalidates this cache
- * after every write.
- *
- * Never stretched to hours: selections change constantly, and on
- * 2026-09-23, when a failed invalidation left a six-hour copy, the coach
- * dashboard showed 0/14 for a squad saved hours earlier. (Each isolate now
- * holds any such read for 30 s at most; cache.ts getShared.)
+ * All Scheduled matches, with their selections, kept under the matches and
+ * match_selections versions (cache.ts getVersioned): a squad save or an
+ * hkha-sync result moves them, so no isolate shows an old squad. (On
+ * 2026-09-23 a failed invalidation left a six-hour copy and the coach
+ * dashboard showed 0/14 for a squad saved hours earlier; nothing needs
+ * invalidating now.)
  */
 const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 
@@ -42,9 +43,26 @@ const SCHEDULED_MATCHES_TTL_MS = 10 * 60 * 1000;
 export const SCHEDULED_MATCHES_KEY = "scheduled-matches:v2";
 
 export async function getScheduledMatches(env: Env): Promise<Match[]> {
-  return getShared<Match[]>(env, SCHEDULED_MATCHES_KEY, async () => {
+  return getVersioned<Match[]>(env, SCHEDULED_MATCHES_KEY, ["matches", "match_selections"], async () => {
     return matches(env).listScheduled();
   }, SCHEDULED_MATCHES_TTL_MS);
+}
+
+export const CALLED_OFF_MATCHES_KEY = "called-off-matches:v1";
+
+/**
+ * Fixtures called off (postponed or cancelled) in the last 7 days, still
+ * dated today or later. Only Scheduled matches are listed otherwise, so these
+ * would vanish; the cards show them as "Postponed" for a week instead
+ * (shared/fixtureChange.ts, migration 20261007160204).
+ */
+export async function getCalledOffMatches(env: Env): Promise<Match[]> {
+  const all = await getVersioned<Match[]>(env, CALLED_OFF_MATCHES_KEY, ["matches"], async () => {
+    const since = new Date(Date.now() - FIXTURE_CHANGE_DAYS * 86_400_000).toISOString();
+    return matches(env).listCalledOffSince(since);
+  }, SCHEDULED_MATCHES_TTL_MS);
+  const today = hkDateKey(new Date().toISOString());
+  return all.filter((m) => m.matchDate && hkDateKey(m.matchDate) >= today && fixtureChange(m) !== null);
 }
 
 /** How far back "show past" reaches on the coach fixture list. */
@@ -83,9 +101,20 @@ export async function getPlayedMatchesForSeasons(env: Env, seasons: string[]): P
   const unique = [...new Set(seasons.filter(Boolean))].sort();
   if (unique.length === 0) return [];
   const key = `played-matches:${unique.join(",")}`;
-  return getShared<Match[]>(env, key, async () => {
+  return getVersioned<Match[]>(env, key, ["matches", "match_selections"], async () => {
     return matches(env).listPlayedForSeasons(unique);
   }, SCHEDULED_MATCHES_TTL_MS);
+}
+
+/**
+ * Played matches for two seasons with only what a team record reads, for
+ * the calendar feeds' form lines (about half the bytes of
+ * getPlayedMatchesForSeasons: no selections, kit or umpires).
+ */
+export async function getResultsForSeasons(env: Env, seasons: string[]): Promise<Match[]> {
+  const unique = [...new Set(seasons.filter(Boolean))].sort();
+  if (unique.length === 0) return [];
+  return getVersioned<Match[]>(env, `results:${unique.join(",")}`, ["matches"], () => matches(env).listResultsForSeasons(unique));
 }
 
 // ---------------------------------------------------------------------------
@@ -153,14 +182,18 @@ export async function getMyFixtures(
   authUser: AuthorizedUser,
   opts: { includePast?: boolean } = {},
 ) {
-  const user = await getPlayerByEmail(env, authUser.email);
-  if (!user) throw new HttpError("Player record not found for this email", 404);
+  // The person came with sign-in (auth_context): no read.
+  const user = await personAsPlayer(env, authUser.person);
   const teamName = user.registeredTeam || "";
   const displayTeam = selectedDisplayTeam(user) || teamName;
-  const ref = await getReferenceData(env);
+  // The view starts every read it needs at once; the reference data here is
+  // the same read (joined in flight), so this adds no round trip.
+  // Started with the rest: the umpire's next duty is one read of its own.
+  const duty = authUser.umpire ? nextDutyLine(env, authUser.personId).catch(() => null) : Promise.resolve(null);
+  const [ref, view] = await Promise.all([getReferenceData(env), buildPlayerFixtureView(env, user, { calledOff: true })]);
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
-  const captainTeams = ref.teams.filter((t) => (t.teamCaptain || []).includes(user.id)).map((t) => t.teamName || "");
+  const captainTeams = authUser.captainTeams;
   const today = hkDateKey(new Date().toISOString());
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
@@ -181,6 +214,8 @@ export async function getMyFixtures(
     volunteers: await canSeeVolunteers(env, authUser),
     events: await canManageEvents(env, authUser),
     umpiring: await umpiringAccess(env, authUser),
+    // The umpire's next duty within two weeks: the "Your duty" line (myDuties.ts).
+    duty: await duty,
     // Their details are Eddy's own screens on Supabase ("My details").
     eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
@@ -188,7 +223,6 @@ export async function getMyFixtures(
     isBirthday: isBirthdayOn(user.birthday, today),
     teamBirthdays: teamBirthdaysOn(ref.players, user, displayTeam, today),
   };
-  const view = await buildPlayerFixtureView(env, user);
 
   // Results are read from the cached season context, so asking for them
   // costs no extra Airtable call. Still gated on the toggle: it is a
@@ -196,7 +230,7 @@ export async function getMyFixtures(
   // an upcoming fixture, not to read last month's scores.
   let pastFixtures: PastFixture[] = [];
   if (opts.includePast) {
-    const ctx = await getSeasonContext(env, currentSeason());
+    const ctx = await getSeasonContext(env, currentSeason(), user.id);
     pastFixtures = buildPastFixtures({
       playerId: user.id,
       teams: [view.displayTeam, user.registeredTeam || ""],
@@ -240,7 +274,7 @@ export interface PlayerFixtureView {
 export async function buildPlayerFixtureView(
   env: Env,
   user: Player,
-  opts: { freshAvailability?: boolean; withSquad?: boolean } = {},
+  opts: { withSquad?: boolean; calledOff?: boolean } = {},
 ): Promise<PlayerFixtureView> {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
@@ -248,12 +282,23 @@ export async function buildPlayerFixtureView(
   // player experiences THIS team as "My Team"; every business rule (play-up
   // legality, same-day priority, suspension) keeps using the true team.
   const displayTeam = selectedDisplayTeam(user) || teamName;
-  const ref = await getReferenceData(env);
+  // Everything this view reads, asked for at once (one round trip on a cold
+  // isolate instead of one after another): the players and teams, the
+  // scheduled matches, the player's own season context (the eligibility
+  // gate, their answers and the squad's) and the availability rules. The
+  // later reads of each are cache hits, or join these in flight.
+  const [ref, allMatches, calledOff] = await Promise.all([
+    getReferenceData(env),
+    getScheduledMatches(env),
+    // The dashboard shows a called-off game for a week; the calendar doesn't.
+    opts.calledOff ? getCalledOffMatches(env) : Promise.resolve([] as Match[]),
+    getSeasonContext(env, currentSeason(), playerId),
+    getAllAvailabilityRules(env),
+  ]);
   const teamNames = new Set(ref.teams.map((t) => t.teamName));
   const rankMap = ref.teamRankMap;
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
 
-  const allMatches = await getScheduledMatches(env);
   const now = new Date().toISOString();
   const upcoming = allMatches.filter((m) => m.matchDate && m.matchDate >= now)
     .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
@@ -375,7 +420,7 @@ export async function buildPlayerFixtureView(
     const key = `${side.match.id}:${side.team}`;
     const cached = gateCache.get(key);
     if (cached !== undefined) return cached;
-    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team);
+    const { ctx } = await buildEvaluationContext(env, side.match, rankMap, teamMap, ref.players, side.team, playerId);
     // Portal gate = the engine itself (no neutralisation): mere availability
     // for a higher team no longer blocks (product decision 2026-09-03),
     // while an actual selection for a higher team still does.
@@ -393,30 +438,26 @@ export async function buildPlayerFixtureView(
   const ownCards = categorized.filter((x) => x.category === "own");
   const relevantCategorized = [...ownCards, ...gated];
   const relevantMatchIds = relevantCategorized.map((x) => x.side.match.id);
-  // Read past the cache for the dashboard. That is the player looking at
-  // their own answer, so it has to reflect the tap they just made: the cache
-  // is per-isolate, so a write only clears it where it happened, and landing
-  // on another isolate put a five-minute-old copy of the old status straight
-  // back - which is what "I can't change my availability" actually was.
-  //
-  // The calendar feed is the opposite case. Its own output is cached for five
-  // minutes and no calendar client refreshes faster than hourly, so paying
-  // for an uncached scan of the whole season's exceptions there bought
-  // nothing at all - and it is the single most expensive read on the path.
-  const allExceptions = await getExceptionsForSeasons(
-    env,
-    relevantCategorized.map((x) => x.side.match.season || ""),
-    { fresh: opts.freshAvailability ?? true },
-  );
-  const playerExceptions = allExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
+  // The player's own answers (with note and id) and, for the calendar, the
+  // selected squad's: both are in the player's own season context, read
+  // above, so no read of their own. The context is kept under the
+  // availability_exceptions version, which a tap moves, so the player sees
+  // the tap they just made in every isolate.
+  const relevantSeasons = [...new Set(relevantCategorized.map((x) => x.side.match.season || "").filter(Boolean))];
+  const [contexts, playerRules] = await Promise.all([
+    Promise.all(relevantSeasons.map((s) => getSeasonContext(env, s, playerId))),
+    getRulesForPlayer(env, playerId),
+  ]);
+  const relevantIds = new Set(relevantMatchIds);
+  const matchExceptions = contexts.flatMap((c) => c.exceptionsRaw).filter((e) => relevantIds.has(linkId(e.match) || ""));
+  const playerExceptions = matchExceptions.filter((e) => linkId(e.player) === playerId && relevantMatchIds.includes(linkId(e.match) || ""));
   const exceptionByMatch = new Map(playerExceptions.map((e) => [linkId(e.match) || "", e]));
-  const playerRules = await getRulesForPlayer(env, playerId);
   // Everyone's answer, per match, so a calendar event can say who else is in
   // the squad and which of them are only a Maybe. The dashboard never shows
   // the squad, so only the calendar feed builds it.
   const squadStatus = new Map<string, string>();
   if (opts.withSquad) {
-    for (const e of allExceptions) {
+    for (const e of matchExceptions) {
       const mId = linkId(e.match);
       const pId = linkId(e.player);
       if (mId && pId) squadStatus.set(`${mId}:${pId}`, e.availabilityStatus || "");
@@ -461,12 +502,22 @@ export async function buildPlayerFixtureView(
       fixtureCategory: x.category,
       isPlayUp: x.category === "play-up",
       selectionTeam: x.category !== "own" ? s.team : undefined,
+      /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+      change: fixtureChange(s.match) ?? undefined,
     };
   };
+  // Called-off games of the player's own team, shown (without answers) for a week.
+  const ownTeams = new Set([teamName, displayTeam].filter(Boolean));
+  const calledOffCards = calledOff.flatMap((m) => {
+    const sides = hkfcSides(m, teamNames);
+    const side = [sides.home, sides.away].find((x) => x && ownTeams.has(x.team));
+    return side ? [{ side: { match: m, ...side, dateKey: hkDateKey(m.matchDate) }, category: "own" as const }] : [];
+  });
+  const byDate = <T extends { date: string }>(cards: T[]) => cards.sort((a, b) => a.date.localeCompare(b.date));
   return {
     displayTeam,
     specialGoalkeeperView: specialGoalkeeperView || undefined,
-    myTeam: ownCards.map(buildCard),
+    myTeam: byDate([...ownCards, ...calledOffCards].map(buildCard)),
     playUpOpportunities: gated.filter((x) => x.category === "play-up").map(buildCard),
     supportFixtures: gated.filter((x) => x.category === "support").map(buildCard),
   };
@@ -478,9 +529,19 @@ export async function buildPlayerFixtureView(
  * Identity comes from the signed calendar token's player id.
  */
 export async function getPlayerFixtures(env: Env, playerId: string) {
-  const player = await people(env).getById(playerId);
+  // The player comes from the Active list the view reads anyway, and the
+  // view's other reads start alongside it: one round trip, not a lookup of
+  // the person first. (Their season context is asked for on trust; for an
+  // id that is no Active player, the 404 below is what answers.)
+  const [ref] = await Promise.all([
+    getReferenceData(env),
+    getScheduledMatches(env),
+    getSeasonContext(env, currentSeason(), playerId).catch(() => null),
+    getAllAvailabilityRules(env),
+  ]);
+  const player = ref.players.find((p) => p.id === playerId);
   if (!player || !player.active) throw new HttpError("Player not found or inactive", 404);
-  const view = await buildPlayerFixtureView(env, player, { freshAvailability: false, withSquad: true });
+  const view = await buildPlayerFixtureView(env, player, { withSquad: true });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
     playerName: player.preferredName || player.givenNames || "Player",
@@ -492,7 +553,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
 
 export async function getUpcomingFixtures(
   env: Env,
-  opts: { user?: AuthorizedUser; team?: string; includePast?: boolean },
+  opts: { user?: AuthorizedUser; team?: string; includePast?: boolean; calledOff?: boolean },
 ) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
@@ -510,12 +571,16 @@ export async function getUpcomingFixtures(
   const cutoff = new Date(Date.now() - PAST_FIXTURE_WINDOW_DAYS * 86_400_000);
   const pastCutoffKey = hkDateKey(cutoff.toISOString());
 
-  const scheduled = await getScheduledMatches(env);
+  const [scheduled, calledOff] = await Promise.all([
+    getScheduledMatches(env),
+    // The coach list shows a called-off game for a week; the team feed doesn't.
+    opts.calledOff ? getCalledOffMatches(env) : Promise.resolve([] as Match[]),
+  ]);
   // Played matches are only fetched when asked for, so the common case costs
   // nothing extra. They are a separate status, hence a separate read.
   const played = opts.includePast ? await getPlayedMatches(env) : [];
   const seen = new Set<string>();
-  const allMatches = [...scheduled, ...played].filter((m) => {
+  const allMatches = [...scheduled, ...calledOff, ...played].filter((m) => {
     if (!m.id || seen.has(m.id)) return false;
     seen.add(m.id);
     return true;
@@ -542,9 +607,17 @@ export async function getUpcomingFixtures(
   });
   if (relevant.length === 0) return { fixtures: [] };
   const matchIds = relevant.map((m) => m.id);
-  const allExceptions = await getExceptionsForSeasons(env, relevant.map((m) => m.season || ""));
+  // The answers for these fixtures only (match=in, narrow columns), not the
+  // whole season's: ~5 KB a team on preview against ~177 KB. Kept under the
+  // availability_exceptions version (reference.ts getExceptionsForMatches).
+  const [listedExceptions, notices] = await Promise.all([
+    getExceptionsForMatches(env, matchIds),
+    // The squads last sent from Notify: a dot on the card when the squad has
+    // changed since (squadNotices.ts). The team feed has no use for it.
+    opts.user ? noticesForMatches(env, matchIds).catch(() => new Map<string, SquadNotice>()) : Promise.resolve(new Map<string, SquadNotice>()),
+  ]);
   const exceptionsByMatch = new Map<string, any[]>();
-  for (const exc of allExceptions) {
+  for (const exc of listedExceptions) {
     const mId = linkId(exc.match);
     if (!mId || !matchIds.includes(mId)) continue;
     exceptionsByMatch.set(mId, [...(exceptionsByMatch.get(mId) || []), exc]);
@@ -600,9 +673,13 @@ export async function getUpcomingFixtures(
         division: m.division || "",
         venue: m.venue || "",
         kit: ((isHome ? m.homeKit : m.awayKit) || "") as KitColour,
+        /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+        change: fixtureChange(m) ?? undefined,
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount: selectedIds.length,
         selectedIds,
+        /** The squad differs from the one last sent from Notify. */
+        unsentChanges: changedSinceNotice(notices.get(`${m.id}:${isHome ? "home" : "away"}`), selectedIds),
         selectedPlayers,
         selectedPositionSummary,
         hasGoalkeeperSelected: (selectedPositionSummary.GK ?? 0) > 0,

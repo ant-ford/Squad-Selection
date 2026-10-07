@@ -1,6 +1,5 @@
 import type { Env } from "./env";
-import { getPlayerByEmail, getReferenceData, UNRANKED_TEAM_RANK } from "./reference";
-import { HttpError } from "./http";
+import { getActiveTeams, UNRANKED_TEAM_RANK } from "./reference";
 import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
@@ -22,19 +21,16 @@ export function landsOnApplication(status: string | undefined, stage: string | u
 }
 
 export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
-  const user = await getPlayerByEmail(env, authUser.email);
-
-  if (!user) {
-    throw new HttpError("Player record not found for this email", 404);
-  }
-
-  const ref = await getReferenceData(env);
+  // The person came with sign-in (auth_context). The Active teams alone
+  // (~3 KB): the players list (~150 KB) isn't needed here.
+  const user = authUser.person;
+  const teams = await getActiveTeams(env);
 
   // coachTeams/isSectionCaptain come from the single authorization derivation
   // (auth.ts) - Section Captains already see every team name there, so the
   // frontend gates and team-scoped calendar operations treat them equally.
   const coachTeamSet = new Set(authUser.coachTeams);
-  const coachTeams = ref.teams
+  const coachTeams = teams
     .filter((t) => coachTeamSet.has(t.teamName || ""))
     .map((t) => ({
       id: t.id,
@@ -44,11 +40,8 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     }))
     .sort((a, b) => a.teamRank - b.teamRank);
 
-  const captainTeams = ref.teams
-    .filter((t) => (t.teamCaptain || []).includes(user.id))
-    .map((t) => t.teamName || "");
-
-  // Separate reads, asked together rather than one after another.
+  // From auth_context, like the header flags below: no reads.
+  const captainTeams = authUser.captainTeams;
   const [volunteers, events, umpiring] = await Promise.all([
     canSeeVolunteers(env, authUser),
     canManageEvents(env, authUser),

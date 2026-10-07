@@ -13,6 +13,9 @@ import {
   parseAllowedOrigins,
   resolveOrigin,
 } from "./http";
+import { listTemplates, logMessage } from "./messages";
+import { noteSquadNotified } from "./squadNotices";
+import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
 import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
@@ -20,7 +23,8 @@ import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview
 import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
-import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
+import { ackDutyChanges } from "./myDuties";
+import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, refreshUmpirePool, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
@@ -112,7 +116,7 @@ import {
 import type { SquadChangesBody } from "./squad";
 import { setMyAvailability, setMyAvailabilityForDate, setPlayerAvailability, setPlayerOptInOnly } from "./availability";
 import { createAvailabilityRule, deleteAvailabilityRule, getRulesForPlayer } from "./availabilityRules";
-import { getRecommendationsForMatch, getTeamAvailabilityForMatch } from "./recommendations";
+import { getRecommendationsForMatch, getTeamAvailabilityForMatch, recommendationOrder } from "./recommendations";
 import {
   handleGetCalendarLink,
   handlePlayerCalendarFeed,
@@ -131,6 +135,7 @@ import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
+import { getTeamAttendance } from "./teamAttendance";
 import { newRequestStats, noteRequestError, runWithRequestContext, serverTimingHeader, type RequestContext } from "./requestContext";
 import { getSystemView, HEALTH_CRON, logClientError, logServerError, readClientError, runHealthCron, withHeartbeat } from "./systemHealth";
 
@@ -215,6 +220,13 @@ export default {
     // records a heartbeat, which is what that check reads.
     if (event.cron === HEALTH_CRON) {
       await runHealthCron(env);
+      // The umpire pool auth_context reads: someone known only by their
+      // name on a match card sees the umpiring screen within a day.
+      try {
+        await refreshUmpirePool(env);
+      } catch (err) {
+        console.error("Umpire pool not refreshed:", err instanceof Error ? err.message : err);
+      }
       return;
     }
     if (event.cron === RETENTION_CRON) {
@@ -289,11 +301,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "GET" && matchPlayersMatch) {
       await requireCoach(request, env);
       const side = url.searchParams.get("side") as "home" | "away" | null;
-      return json(
-        await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined),
-        200,
-        origin,
-      );
+      const data = await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined);
+      // ?recommendations=1: the squad screen's ranking with the players, in
+      // the same request (it used to ask /recommendations, which built the
+      // whole players-for-match again).
+      if (url.searchParams.get("recommendations") === "1") {
+        return json({ ...data, recommendationOrder: await recommendationOrder(env, data) }, 200, origin);
+      }
+      return json(data, 200, origin);
     }
 
     const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
@@ -475,6 +490,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await getPlayerAttendance(env, playerAttendanceMatch[1]), 200, origin);
     }
 
+    // ── Team Availability Dashboard (Read - Coach) ─────────────────────────
+    // Every squad's grid at once: names and statuses only, no notes.
+    if (method === "GET" && pathname === "/api/team-attendance") {
+      await requireCoach(request, env);
+      return json(await getTeamAttendance(env), 200, origin);
+    }
+
     // Player-facing routes: identity always comes from the verified Supabase
     // session, never from client-supplied email query parameters.
     if (method === "GET" && pathname === "/api/my-profile") {
@@ -514,7 +536,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       // Recently played matches cost an extra Airtable read, so the coach
       // list asks for them only while "Show past" is on.
       const includePast = url.searchParams.get("past") === "1";
-      return json(await getUpcomingFixtures(env, { user, team, includePast }), 200, origin);
+      return json(await getUpcomingFixtures(env, { user, team, includePast, calledOff: true }), 200, origin);
     }
 
     // Dashboard metrics (Coach) - expose every player's rank moves / play-up counts.
@@ -582,6 +604,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       };
       const { displaced } = await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
       return json({ success: true, displaced }, 200, origin);
+    }
+
+    // Notify was used: the squad as it stands is what the players were told (squadNotices.ts).
+    if (method === "POST" && pathname === "/api/squad/notified") {
+      const user = await requireCoach(request, env);
+      return json(await noteSquadNotified(env, user.personId, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>), 200, origin);
     }
 
     // A squad save as changes: only who was added and removed, merged with
@@ -874,6 +902,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       await requireAuthorizedUser(request, env);
       return await serveClubDoc(env, clubDoc[1], origin);
     }
+    // Ask to be reactivated (reactivation.ts): the asker has no access yet,
+    // so only their email is checked; a captain's view and answer need sign-in.
+    if (pathname === "/api/reactivation") {
+      const email = await requireVerifiedEmail(request, env);
+      if (method === "GET") return json(await reactivationStatus(env, email), 200, origin);
+      if (method === "POST") return json(await askToBeReactivated(env, email), 200, origin);
+    }
+    const reactivation = pathname.match(/^\/api\/reactivation\/([0-9a-f-]{36})$/);
+    if (reactivation) {
+      const user = await requireAuthorizedUser(request, env);
+      if (method === "GET") return json(await getReactivationRequest(env, user, reactivation[1]), 200, origin);
+      if (method === "POST") return json(await answerReactivation(env, user, reactivation[1], await readJsonBody(request)), 200, origin);
+    }
     if (pathname.startsWith("/api/joiner-tasks/")) {
       const user = await requireAuthorizedUser(request, env);
       const task = pathname.match(/^\/api\/joiner-tasks\/([0-9a-f-]{36})(\/done)?$/);
@@ -966,6 +1007,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if (method === "GET" && pathname === "/api/umpiring") {
         return json(await getUmpiringBoard(env, user, url.searchParams.get("week")), 200, origin);
       }
+      // Opened from My Tasks: the umpire has seen their duties' changes (myDuties.ts).
+      if (method === "POST" && pathname === "/api/umpiring/seen") {
+        return json(await ackDutyChanges(env, user), 200, origin);
+      }
       if (method === "GET" && pathname === "/api/umpiring/report") {
         return json(await getUmpiringReport(env, user, url.searchParams.get("season")), 200, origin);
       }
@@ -1042,6 +1087,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Chairman's section (Section Chairs + Section Captains table) ──────
     // The directory carries every member's email address, so it is gated on
     // the section like the membership routes.
+    // "WhatsApp these people": templates and the message log (messages.ts).
+    if (method === "GET" && pathname === "/api/messages/templates") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await listTemplates(env, user), 200, origin);
+    }
+    if (method === "POST" && pathname === "/api/messages/log") {
+      const user = await requireAuthorizedUser(request, env);
+      return json(await logMessage(env, user, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>), 200, origin);
+    }
     if (method === "GET" && pathname === "/api/chairman/directory") {
       await requireSection(request, env, "chairman");
       return json(await getChairmanDirectory(env), 200, origin);
@@ -1064,10 +1118,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     // ── Calendar (Link generation uses email param, Feeds are public signed URLs) ──
     if (method === "GET" && pathname === "/api/calendar/link") {
       const user = await requireAuthorizedUser(request, env);
-      return json(await handleGetCalendarLink(env, user.email, url.origin), 200, origin);
+      return json(await handleGetCalendarLink(env, user.personId, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/feed.ics") {
-      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"));
+      return handlePlayerCalendarFeed(env, url.searchParams.get("id"), url.searchParams.get("sig"), url.origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-link") {
       const user = await requireAuthorizedUser(request, env);
@@ -1075,7 +1129,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await handleGetTeamCalendarLink(env, user, team, url.origin), 200, origin);
     }
     if (method === "GET" && pathname === "/api/calendar/team-feed.ics") {
-      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"));
+      return handleTeamCalendarFeed(env, url.searchParams.get("team"), url.searchParams.get("sig"), url.origin);
     }
 
     return errorJson("Not Found", 404, origin, "NOT_FOUND");

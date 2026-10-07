@@ -14,7 +14,7 @@
 import { people } from "./data/people";
 import { rankingEvents, type RankingEventRow } from "./data/rankingEvents";
 import type { Env } from "./env";
-import { getReferenceData, getPlayerByEmail } from "./reference";
+import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
 import { getCached, invalidateCachePrefix } from "./cache";
 
@@ -211,11 +211,40 @@ export function withoutKnockOnShifts<T extends RankedEvent>(rows: T[]): T[] {
   return rows.filter((r) => !shifted.has(r));
 }
 
+/** The changes a history list shows. */
+const RECENT_CHANGES = 20;
+/** Events read per page, newest first: a save records every player it shifted. */
+const EVENTS_PAGE = 250;
+/** Pages at most: enough for 20 moves even in a month of long reorders. */
+const MAX_EVENT_PAGES = 6;
+
+/**
+ * The newest events since `since`, in whole saves, until they hold
+ * RECENT_CHANGES moves once knock-on shifts are dropped: usually one read.
+ * A full page's oldest timestamp may be a save cut in two, so it is read
+ * again, whole, on the next page.
+ */
+async function recentSaves(env: Env, since: string): Promise<RankingEventRow[]> {
+  const rows: RankingEventRow[] = [];
+  let upTo: string | undefined;
+  for (let page = 0; page < MAX_EVENT_PAGES; page++) {
+    const batch = await rankingEvents(env).listRecent(since, EVENTS_PAGE, upTo);
+    if (batch.length < EVENTS_PAGE) return [...rows, ...batch];
+    const oldest = batch[batch.length - 1].timestamp;
+    const whole = batch.filter((r) => r.timestamp !== oldest);
+    // One save bigger than a page: keep what was read.
+    if (whole.length === 0) return [...rows, ...batch];
+    rows.push(...whole);
+    upTo = oldest;
+    if (withoutKnockOnShifts(rows).length >= RECENT_CHANGES) break;
+  }
+  return rows;
+}
+
 /**
  * Most recent ranking events within `days`, newest first, capped at the 20
- * newest. Names are joined from the club reference; players no longer in the
- * active reference are resolved individually (bounded - only the returned
- * slice needs names). Returns [] when the table does not exist yet.
+ * newest. Only the window is read (not the whole table), and the names of
+ * the players and coaches in the returned slice come from one lookup.
  */
 export async function getRankingEvents(env: Env, days = 7): Promise<RankingChange[]> {
   const { data } = await getCached<RankingChange[]>(
@@ -223,36 +252,32 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
     async () => {
       try {
         const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        const rows = await rankingEvents(env).listNewestFirst();
+        const rows = await recentSaves(env, since);
         // Knock-on shifts come out before the cap, or one long move would
         // fill the 20 slots on its own.
-        const fresh = withoutKnockOnShifts(rows.filter((r) => r.timestamp !== "" && r.timestamp >= since));
-        const ref = await getReferenceData(env);
-        const playerById = new Map(ref.players.map((p) => [p.id, p]));
+        const shown = withoutKnockOnShifts(rows.filter((r) => r.timestamp !== "" && r.timestamp >= since)).slice(0, RECENT_CHANGES);
+        if (shown.length === 0) return [];
+        const actorEmailOf = (r: RankingEventRow) => r.actorEmail.trim().toLowerCase();
+        const names = await people(env)
+          .listNamesFor(
+            shown.flatMap((r) => [r.playerId, ...(r.actorId ? [r.actorId] : [])]),
+            shown.filter((r) => !r.actorId).map(actorEmailOf),
+          )
+          .catch((err) => {
+            // Names are best-effort: the changes still show, as "Player" / "Coach".
+            console.error("[RankingEvents] names not read:", err instanceof Error ? err.message : err);
+            return [];
+          });
+        const byId = new Map(names.map((n) => [n.id, n]));
         const actorIdByEmail = new Map<string, string>();
-        for (const p of ref.players) {
-          if (p.email) actorIdByEmail.set(p.email.trim().toLowerCase(), p.id);
-        }
-        const missingIds = new Set<string>();
-        for (const r of fresh) {
-          if (r.playerId && !playerById.has(r.playerId)) missingIds.add(r.playerId);
-        }
-        for (const pid of missingIds) {
-          try {
-            const found = await people(env).getById(pid);
-            if (found) playerById.set(pid, found);
-          } catch {
-            /* name resolution is best-effort */
-          }
-        }
+        for (const n of names) if (n.email) actorIdByEmail.set(n.email, n.id);
         const nameOf = (id: string) => {
-          const p = playerById.get(id);
+          const p = byId.get(id);
           if (!p) return "";
           return p.preferredName || p.givenNames || "Player";
         };
-        return fresh.slice(0, 20).map((r) => {
-          const actorEmail = r.actorEmail.trim().toLowerCase();
-          const actorId = r.actorId ?? actorIdByEmail.get(actorEmail) ?? "";
+        return shown.map((r) => {
+          const actorId = r.actorId ?? actorIdByEmail.get(actorEmailOf(r)) ?? "";
           return {
             id: r.id,
             playerId: r.playerId,

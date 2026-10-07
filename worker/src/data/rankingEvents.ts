@@ -20,7 +20,11 @@ export type NewRankingEvent = Omit<RankingEventRow, "id">;
 
 export interface RankingEventsRepo {
   create(events: NewRankingEvent[]): Promise<void>;
-  listNewestFirst(): Promise<RankingEventRow[]>;
+  /**
+   * Up to `limit` events stamped at or after `since` (and at or before `upTo`,
+   * when given), newest first (ties by id, as select() adds it). ISO timestamps.
+   */
+  listRecent(since: string, limit: number, upTo?: string): Promise<RankingEventRow[]>;
 }
 
 export function rankingEvents(env: Env): RankingEventsRepo {

@@ -1,19 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../worker/src/reference", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../worker/src/reference")>()),
-  getReferenceData: vi.fn(async () => ({ teams: [{ teamName: "HKFC C", teamCaptain: ["recCAPTAIN"] }] })),
-}));
-
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { canSeeVolunteers } from "../worker/src/volunteerAccess";
 import { getMyVolunteering, getVolunteersBoard, parseVolunteering, rolesOf, saveVolunteering } from "../worker/src/volunteering";
 import { invalidateAll } from "../worker/src/cache";
 import { EMPTY_ROLES, VOLUNTEER_GROUPS } from "../shared/volunteering";
+import { signedIn } from "./helpers/factories";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
-const player = { email: "p@x.com", personId: "recME", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
+const player = signedIn({ email: "p@x.com", personId: "recME" });
 
 type Call = { url: URL; method: string; body: any };
 function fake(tables: Record<string, unknown>) {
@@ -66,12 +61,14 @@ describe("volunteering", () => {
   });
 
   it("is for officers (sponsors included), coaches and team captains", async () => {
-    fake({ api_offices: [{ id: "o1", member: "recSPONSOR" }] });
+    const calls = fake({});
     expect(await canSeeVolunteers(env, { ...player, role: "coach" } as AuthorizedUser)).toBe(true);
     expect(await canSeeVolunteers(env, { ...player, officerRoles: [{ office: "membershipOfficer", designation: "" }] } as AuthorizedUser)).toBe(true);
-    expect(await canSeeVolunteers(env, { ...player, personId: "recCAPTAIN" })).toBe(true);
-    expect(await canSeeVolunteers(env, { ...player, personId: "recSPONSOR" })).toBe(true);
+    expect(await canSeeVolunteers(env, { ...player, captainTeams: ["HKFC C"] })).toBe(true);
+    expect(await canSeeVolunteers(env, { ...player, offices: [{ role: "sponsor", office: null, designation: "" }] })).toBe(true);
     expect(await canSeeVolunteers(env, player)).toBe(false);
+    // Decided from sign-in (auth_context): no reads.
+    expect(calls).toHaveLength(0);
   });
 
   it("lists everyone who offered a role or holds a level", async () => {

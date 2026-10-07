@@ -22,7 +22,7 @@ import type { AuthorizedUser } from "./auth";
 import type { MyTask, TaskRole } from "./myTasks";
 import { HttpError } from "./http";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
-import { fileLink } from "./data/supabase/files";
+import { fileLink, photoLink } from "./data/supabase/files";
 import { invalidatePeople } from "./invalidation";
 import { sendEmail } from "./mailer";
 import { cleanDraft, complete } from "./reviewDrafts";
@@ -172,7 +172,7 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
     const file = signatureFile(app, r);
     signatures[r] = { name: holderOf(r)?.name ?? null, signedAt: signedAt(app, r), signatureUrl: file ? await fileLink(env, file) : null };
   }
-  const saved = myRoles.length ? await savedSignature(env, user.personId) : null;
+  const saved = myRoles.length ? await savedSignature(env, user.personUuid) : null;
   let sending: SigningView["sending"];
   if (readyToSend(app)) {
     const { to, label } = recipientFor(env, app.application_type);
@@ -191,7 +191,7 @@ export async function getSigningView(env: Env, user: AuthorizedUser, apiId: stri
   return {
     id: p.api_id,
     name: nameOf(p),
-    photoUrl: photo ? await fileLink(env, photo.id) : null,
+    photoUrl: photo ? await photoLink(env, photo.id) : null,
     applicationType: app.application_type,
     categoryType: p.category_type,
     submittedAt: app.submitted_at,

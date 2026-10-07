@@ -6,6 +6,11 @@ export function getUmpiringBoard(week: string | null): Promise<UmpiringBoard> {
   return apiGet<UmpiringBoard>('/api/umpiring', week ? { week } : undefined);
 }
 
+/** Opened from My Tasks: the changes to their duties are seen (worker/src/myDuties.ts). */
+export function markDutyChangesSeen(): Promise<{ seen: number }> {
+  return apiPost('/api/umpiring/seen', {});
+}
+
 export function getUmpiringReport(season: string | null): Promise<UmpiringReport> {
   return apiGet<UmpiringReport>('/api/umpiring/report', season ? { season } : undefined);
 }

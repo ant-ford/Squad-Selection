@@ -4,10 +4,10 @@
 import type { Env } from "./env";
 import { HttpError } from "./http";
 import { people, type PersonPatch } from "./data/people";
+import { photoLink } from "./data/supabase/files";
 import { abilityGroups } from "./data/abilityGroups";
 import { computeAbilityAssignment, emptyConfig, validateConfig } from "../../shared/abilityGroup";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
-import { invalidatePlayerByEmail, invalidateReferenceData } from "./reference";
 import type { AuthorizedUser } from "./auth";
 import {
   validateJustification,
@@ -65,7 +65,12 @@ async function invalidateRankingCaches(env: Env): Promise<void> {
 
 async function fetchActiveRanking(env: Env): Promise<Player[]> {
   const players = await people(env).listRankingPool();
-  return players.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
+  // The ranking shows each player's photo: signed here, a day's link
+  // (photoLink), so the list stays cacheable and the pictures are fetched once.
+  const shown = await Promise.all(
+    players.map(async ({ photoFileId, ...p }) => (photoFileId ? { ...p, photo: await photoLink(env, photoFileId) } : p)),
+  );
+  return shown.sort((a, b) => (a.sectionRank ?? 0) - (b.sectionRank ?? 0));
 }
 
 async function fetchInactiveRanking(
@@ -246,8 +251,6 @@ export async function activatePlayer(env: Env, playerId: string, actingEmail?: s
       sectionRank: newRank,
       rankUpdatedAt: new Date().toISOString(),
     });
-    const targetEmail = player.email;
-    if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
     invalidateRankingEventsCache();
     await recordRankingEvents(env, [
       { playerId, actorEmail: actingEmail, kind: "activate", oldRank: hasExistingRank ? newRank : null, newRank },
@@ -306,8 +309,6 @@ export async function deactivatePlayer(env: Env, playerId: string, actingEmail?:
     rankUpdatedAt: new Date().toISOString(),
   });
 
-  const targetEmail = player.email;
-  if (typeof targetEmail === "string") invalidatePlayerByEmail(targetEmail, env);
   invalidateRankingEventsCache();
   await recordRankingEvents(env, [
     { playerId, actorEmail: actingEmail, kind: "deactivate", oldRank, newRank: null },
@@ -365,7 +366,6 @@ async function recomputeDerivedFieldsFromList(
 
   await batchUpdatePlayers(env, fieldUpdates);
   await invalidateRankingCaches(env);
-  await invalidateReferenceData(env);
 
   return forClients({ players: updatedPlayers, activeCount: n, lastUpdated: now, config, version: Date.now() });
 }

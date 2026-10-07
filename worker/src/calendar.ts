@@ -1,12 +1,13 @@
+import { getMyDuties, type MyDuty } from "./myDuties";
 import type { Env } from "./env";
-import { getPlayerByEmail, getReferenceData } from "./reference";
-import { getPlayerFixtures, getUpcomingFixtures, getPlayedMatchesForSeasons } from "./fixtures";
-import { getCached } from "./cache";
+import { requestVersions } from "./cache";
+import { inBackground, recordCacheHit, recordCacheMiss } from "./requestContext";
+import type { CacheVersionKey } from "./cacheVersions";
+import { getPlayerFixtures, getUpcomingFixtures, getResultsForSeasons } from "./fixtures";
 import { HttpError } from "./http";
 import type { AuthorizedUser } from "./auth";
-import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { availableLabel } from "../../shared/availableLabel";
-import { currentSeason, previousSeason } from "./seasonContext";
+import { currentSeason, previousSeason, SEASON_INDEX_DEPS } from "./seasonContext";
 import { buildTeamRecord, type Outcome, type TeamRecord } from "./teamRecord";
 import { calendarEventsFor, type CalendarEvent } from "./events";
 import { EVENT_TYPE_LABEL, PAYMENT_LABEL, billed, priceText } from "../../shared/events";
@@ -49,7 +50,7 @@ export function sortSquadForSheet<T extends { playingPosition?: string }>(squad:
 async function withTeamRecords(env: Env, fixtures: any[]): Promise<any[]> {
   const season = currentSeason();
   try {
-    const played = await getPlayedMatchesForSeasons(env, [season, previousSeason(season) || ""]);
+    const played = await getResultsForSeasons(env, [season, previousSeason(season) || ""]);
     return fixtures.map((f) => ({
       ...f,
       record: buildTeamRecord(played, f.hkfcTeam || "", f.opponent, season),
@@ -427,6 +428,37 @@ export function formatEventVEvent(e: CalendarEvent, appOrigin: string, now = new
   return lines.map(foldLine).join("\r\n");
 }
 
+/** How long a duty blocks out in the calendar: the game, with time to get ready. */
+const DUTY_MINUTES = 90;
+
+/**
+ * One of the umpire's own duties (myDuties.ts). A called-off one stays for
+ * two weeks as CANCELLED, so calendars drop it rather than keep the old slot.
+ */
+export function formatDutyVEvent(d: MyDuty, appOrigin: string, now = new Date()): string {
+  const start = new Date(d.matchDate);
+  const end = new Date(start.getTime() + DUTY_MINUTES * 60_000);
+  const off = d.status !== "scheduled";
+  const summary = `${off ? "CANCELLED: " : ""}Umpiring: ${d.homeTeam} vs ${d.awayTeam}`;
+  const description = buildDescription([
+    { lines: [`Umpire ${d.slot} · ${d.dutyTeam} duty${d.timeTbc ? " · time TBC" : ""}`] },
+    { lines: [`The duties: ${appOrigin}/umpiring`] },
+  ]);
+  const lines = [
+    "BEGIN:VEVENT",
+    `UID:duty-${d.assignmentId}@hkfc-squad-selection`,
+    `DTSTAMP:${formatIcsUtcTime(now)}`,
+    `DTSTART;TZID=Asia/Hong_Kong:${formatIcsLocalTime(start)}`,
+    `DTEND;TZID=Asia/Hong_Kong:${formatIcsLocalTime(end)}`,
+    `SUMMARY:${escapeIcsText(summary)}`,
+    `LOCATION:${escapeIcsText(d.venue || "TBC")}`,
+    `DESCRIPTION:${escapeIcsText(description)}`,
+    `STATUS:${off ? "CANCELLED" : "CONFIRMED"}`,
+    "END:VEVENT",
+  ];
+  return lines.map(foldLine).join("\r\n");
+}
+
 /**
  * Which of the dashboard's fixtures belong in a player's calendar.
  *
@@ -441,34 +473,86 @@ export function calendarWorthy<T extends { fixtureCategory?: string; selectionSt
   return fixtures.filter((f) => f.fixtureCategory !== "play-up" || f.selectionStatus === "Selected");
 }
 
-// --- Route Handlers ---
+// --- Feed caching at the edge ---
+//
+// Calendar apps poll from anywhere, so a feed request almost always lands on
+// an isolate that has none of its caches: before this, every poll rebuilt
+// the feed (13 database calls, ~0.7 MB, ~870 ms on preview). The finished
+// ICS is now kept in Cloudflare's cache for this data centre (caches.default,
+// no write quota), under the cache versions of every table the feed reads.
+// A repeat poll is one small read (the versions) and a cache hit; any change
+// to those tables, the Worker's or hkha-sync's, moves the key, so a feed is
+// never older than its data. 15 minutes bounds how long an unused copy stays.
+//
+// caches.default exists only on the Workers runtime, and does nothing on a
+// workers.dev hostname (the preview Worker); there, and when the versions
+// can't be read, the feed is simply built.
 
-export async function handleGetCalendarLink(env: Env, email: string, apiOrigin: string) {
-  const player = await getPlayerByEmail(env, email);
-  if (!player) throw new HttpError("Player not found", 404);
+/** Every table the player's feed reads: their fixtures and eligibility, the rules, their events. */
+const PLAYER_FEED_DEPS = [...SEASON_INDEX_DEPS, "availability_rules", "events", "event_responses"] as const satisfies readonly CacheVersionKey[];
+/** Every table a team's feed reads. */
+const TEAM_FEED_DEPS = [...SEASON_INDEX_DEPS, "availability_rules"] as const satisfies readonly CacheVersionKey[];
+const FEED_EDGE_MAX_AGE_S = 15 * 60;
+const FEED_HEADERS = {
+  "Content-Type": "text/calendar; charset=utf-8",
+  "Cache-Control": "public, max-age=300, stale-while-revalidate=900",
+};
 
-  const payload = `player:${player.id}`;
-  const sig = await hmacSign(env.CALENDAR_SECRET, payload);
-  return { url: `${apiOrigin}/api/calendar/feed.ics?id=${player.id}&sig=${sig}` };
+function edgeCache(): Cache | null {
+  const store = (globalThis as { caches?: { default?: Cache } }).caches;
+  return store?.default ?? null;
 }
 
-export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig: string | null) {
+/** The edge cache key for a feed: a URL on this Worker's own host, carrying the versions. */
+async function feedCacheUrl(env: Env, origin: string, path: string, deps: readonly CacheVersionKey[]): Promise<string | null> {
+  const versions = await requestVersions(env);
+  if (!versions) return null;
+  return `${origin.replace(/\/+$/, "")}/api/calendar/__feed-cache/${path}?v=${deps.map((d) => versions[d]).join(".")}`;
+}
+
+/** The feed from the edge cache, or built and stored there after the response. */
+async function cachedFeed(cacheUrl: string | null, build: () => Promise<string>): Promise<Response> {
+  const cache = cacheUrl ? edgeCache() : null;
+  if (cache && cacheUrl) {
+    const hit = await cache.match(cacheUrl).catch(() => undefined);
+    if (hit) {
+      recordCacheHit();
+      return new Response(hit.body, { headers: FEED_HEADERS });
+    }
+    recordCacheMiss();
+  }
+  const ics = await build();
+  if (cache && cacheUrl) {
+    const stored = new Response(ics, { headers: { ...FEED_HEADERS, "Cache-Control": `public, max-age=${FEED_EDGE_MAX_AGE_S}` } });
+    void inBackground(() => cache.put(cacheUrl, stored));
+  }
+  return new Response(ics, { headers: FEED_HEADERS });
+}
+
+// --- Route Handlers ---
+
+/** The signed-in player's own feed link; their id came with sign-in, so no read. */
+export async function handleGetCalendarLink(env: Env, personId: string, apiOrigin: string) {
+  if (!personId) throw new HttpError("Player not found", 404);
+  const payload = `player:${personId}`;
+  const sig = await hmacSign(env.CALENDAR_SECRET, payload);
+  return { url: `${apiOrigin}/api/calendar/feed.ics?id=${personId}&sig=${sig}` };
+}
+
+/**
+ * A player's feed. `origin` is the host the request came to: the edge
+ * cache keys live under it.
+ */
+export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig: string | null, origin = env.API_ORIGIN ?? "") {
   if (!id || !sig) return new Response("Unauthorized", { status: 401 });
 
   const expectedSig = await hmacSign(env.CALENDAR_SECRET, `player:${id}`);
   if (!timingSafeEqualHex(sig, expectedSig)) return new Response("Unauthorized", { status: 401 });
 
-  // Cache key includes the player's display team: changing Selected Team
-  // EOS/SOS in Airtable rotates the key (once the 10-minute reference cache
-  // refreshes), so a subscribed calendar always reflects the current
-  // dashboard fixture view. Read from the already-cached reference data, not
-  // a fresh Airtable lookup, so a feed poll that hits cache makes zero
-  // Airtable calls.
-  const ref = await getReferenceData(env);
-  const player = ref.players.find((p) => p.id === id);
-  const displayTeam = player ? selectedDisplayTeam(player) || player.registeredTeam || "" : "";
-  const cacheKey = `calendar:player:${id}:${displayTeam}`;
-  const { data: icsString } = await getCached(cacheKey, async () => {
+  // Their display team, fixtures and answers are all People / Matches /
+  // availability data, so the versions in the key cover a team change too.
+  const cacheUrl = await feedCacheUrl(env, origin, `player/${encodeURIComponent(id)}`, PLAYER_FEED_DEPS);
+  return cachedFeed(cacheUrl, async () => {
     const { fixtures } = await getPlayerFixtures(env, id);
     const events = (await withTeamRecords(env, calendarWorthy(fixtures))).map((f: any) => formatVEvent(f, true));
     // Special events they're Going or Maybe to; the fixtures still come if this fails.
@@ -477,14 +561,18 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
       console.error("Calendar events not added:", err instanceof Error ? err.message : err);
       return [] as CalendarEvent[];
     });
-    return generateIcsPayload([...events, ...specials.map((e) => formatEventVEvent(e, appOrigin))]);
-  }, 5 * 60 * 1000);
-
-  return new Response(icsString, {
-    headers: {
-      "Content-Type": "text/calendar; charset=utf-8",
-      "Cache-Control": "public, max-age=300, stale-while-revalidate=900",
-    },
+    // Their umpiring duties (myDuties.ts); the fixtures still come if this fails.
+    // Duties aren't in the cache versions, so a change shows within the edge
+    // copy's 15 minutes.
+    const duties = await getMyDuties(env, id).catch((err) => {
+      console.error("Calendar duties not added:", err instanceof Error ? err.message : err);
+      return [] as MyDuty[];
+    });
+    return generateIcsPayload([
+      ...events,
+      ...specials.map((e) => formatEventVEvent(e, appOrigin)),
+      ...duties.map((d) => formatDutyVEvent(d, appOrigin)),
+    ]);
   });
 }
 
@@ -496,25 +584,18 @@ export async function handleGetTeamCalendarLink(env: Env, user: AuthorizedUser, 
   return { url: `${apiOrigin}/api/calendar/team-feed.ics?team=${encodeURIComponent(team)}&sig=${sig}` };
 }
 
-export async function handleTeamCalendarFeed(env: Env, team: string | null, sig: string | null) {
+export async function handleTeamCalendarFeed(env: Env, team: string | null, sig: string | null, origin = env.API_ORIGIN ?? "") {
   if (!team || !sig) return new Response("Unauthorized", { status: 401 });
 
   const expectedSig = await hmacSign(env.CALENDAR_SECRET, `team:${team}`);
   if (!timingSafeEqualHex(sig, expectedSig)) return new Response("Unauthorized", { status: 401 });
 
-  const cacheKey = `calendar:team:${team}`;
-  const { data: icsString } = await getCached(cacheKey, async () => {
+  const cacheUrl = await feedCacheUrl(env, origin, `team/${encodeURIComponent(team)}`, TEAM_FEED_DEPS);
+  return cachedFeed(cacheUrl, async () => {
     const { fixtures } = await getUpcomingFixtures(env, { team });
     const events = (await withTeamRecords(env, fixtures)).map((f: any) =>
       formatVEvent(f, false, f.selectedPlayers ?? []),
     );
     return generateIcsPayload(events);
-  }, 5 * 60 * 1000);
-
-  return new Response(icsString, {
-    headers: {
-      "Content-Type": "text/calendar; charset=utf-8",
-      "Cache-Control": "public, max-age=300, stale-while-revalidate=900",
-    },
   });
 }

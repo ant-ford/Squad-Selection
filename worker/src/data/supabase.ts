@@ -13,7 +13,7 @@
  * policies, so nothing else can read them.
  */
 import type { Env } from "../env";
-import { recordDbCall } from "../requestContext";
+import { currentRequestContext, noteRequestWrite, recordDbCall } from "../requestContext";
 
 export class SupabaseError extends Error {
   status: number;
@@ -68,6 +68,11 @@ export interface Db {
   remove(table: string, filter: string): Promise<void>;
   /** Calls a SQL function (one transaction). */
   rpc<T>(fn: string, args: object): Promise<T>;
+  /**
+   * Calls a SQL function that only reads (declared stable), retried like a
+   * GET when it fails in transit: repeating it cannot apply anything twice.
+   */
+  rpcRead<T>(fn: string, args: object): Promise<T>;
 }
 
 /** A value for a PostgREST eq/neq filter, safe for the query string. */
@@ -100,11 +105,18 @@ export function db(env: Env): Db {
   }
   const root = `${base.replace(/\/+$/, "")}/rest/v1`;
 
-  async function call(path: string, init: RequestInit & { headers?: Record<string, string> } = {}): Promise<{ body: any; response: Response }> {
+  async function call(
+    path: string,
+    init: RequestInit & { headers?: Record<string, string> } = {},
+    readOnly = (init.method ?? "GET") === "GET",
+  ): Promise<{ body: any; response: Response }> {
     // A read that fails in transit (a network error, or a gateway 502/503/504)
     // is tried once more. Writes are not: a write that timed out may have
     // landed, and repeating it could apply it twice.
-    const attempts = (init.method ?? "GET") === "GET" ? 2 : 1;
+    const attempts = readOnly ? 2 : 1;
+    // Who is making a write: the change history's triggers read it from the
+    // request headers (migration 20261007160004_change_history).
+    const actor = readOnly ? undefined : currentRequestContext()?.personUuid;
     let response!: Response;
     let text!: string;
     let tokenRetries = 0;
@@ -117,6 +129,7 @@ export function db(env: Env): Db {
             apikey: key!,
             "Content-Type": "application/json",
             Accept: "application/json",
+            ...(actor ? { "x-eddy-actor": actor } : {}),
             ...(init.headers ?? {}),
           },
         });
@@ -159,6 +172,8 @@ export function db(env: Env): Db {
         typeof body === "object" && body ? body.code : undefined,
       );
     }
+    // A write moves the cache versions this request read at its start.
+    if (!readOnly) noteRequestWrite();
     return { body, response };
   }
 
@@ -214,6 +229,11 @@ export function db(env: Env): Db {
 
     async rpc<T>(fn: string, args: object) {
       const { body } = await call(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
+      return body as T;
+    },
+
+    async rpcRead<T>(fn: string, args: object) {
+      const { body } = await call(`rpc/${fn}`, { method: "POST", body: JSON.stringify(args) }, true);
       return body as T;
     },
   };

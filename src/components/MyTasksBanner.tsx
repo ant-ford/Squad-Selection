@@ -35,6 +35,10 @@ export function taskTitle(task: MyTask): string {
       return `Kit for ${task.subject ?? 'a new joiner'}`;
     case 'registration':
       return `Register ${task.subject ?? 'a new joiner'} with HockeyHK`;
+    case 'reactivate':
+      return `${task.subject ?? 'A member'} asks to be reactivated`;
+    case 'duty':
+      return task.subject ?? 'One of your umpiring duties changed';
     case 'event':
       return `${task.subject ?? 'An event'}: are you coming?`;
     case 'register':

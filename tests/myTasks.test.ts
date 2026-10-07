@@ -66,10 +66,15 @@ const uuid = (apiId: string) => `uuid-${apiId}`;
 // ── The repositories ─────────────────────────────────────────────────────
 
 function member(id: string, email: string, first: string, crm: FakePerson["crm"] = {}): FakePerson {
-  return personRow({
-    id, preferredName: first, surname: "Test", email, active: true, status: "Member",
-    crm: { waiversSubmittedAt: SIGNED, ...crm },
-  });
+  return {
+    ...personRow({
+      id, preferredName: first, surname: "Test", email, active: true, status: "Member",
+      // Everyone confirmed their details this season: no "details" line.
+      crm: { waiversSubmittedAt: SIGNED, ...({ profileUpdatedAt: SIGNED } as FakePerson["crm"]), ...crm },
+    }),
+    // Sign-in (auth_context) gives the same uuid the PostgREST rows have.
+    uuid: uuid(id),
+  } as FakePerson;
 }
 
 function applicant(id: string, first: string, stage: string, overrides: Partial<FakePerson> = {}, crm: FakePerson["crm"] = {}): FakePerson {
@@ -298,6 +303,28 @@ describe("what the processes are waiting on someone for", () => {
     const selects = pg.reads("people").map((c) => c.params.get("select") ?? "*");
     expect(selects.filter((s) => s === "*" || s.includes("hkid"))).toEqual([]);
     expect(await res.text()).not.toContain("A123456");
+  });
+
+  it("asks for every part at once, not one after another", async () => {
+    // Each PostgREST answer takes a moment; note when each read starts and ends.
+    const inner = globalThis.fetch;
+    const span: Record<string, { start: number; end: number }> = {};
+    let tick = 0;
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      const table = new URL(input).pathname.split("/").pop()!;
+      const s = (span[table] ??= { start: ++tick, end: 0 });
+      await new Promise((r) => setTimeout(r, 5));
+      const res = await inner(input, init);
+      s.end = ++tick;
+      return res;
+    });
+    await tasksFor("pat@hkfc.com");
+    // The joiner requests (steps), the events and the signing lines (applications) overlap.
+    for (const [a, b] of [["steps", "events"], ["steps", "applications"], ["events", "applications"]]) {
+      expect(span[a], a).toBeDefined();
+      expect(span[b], b).toBeDefined();
+      expect(span[a].start < span[b].end && span[b].start < span[a].end, `${a} and ${b} overlap`).toBe(true);
+    }
   });
 });
 

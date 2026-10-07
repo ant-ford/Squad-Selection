@@ -16,6 +16,7 @@ import { Lightbox } from '@/components/ui/lightbox';
 import { Tabs, TabPanel } from '@/components/ui/tabs';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
+import HistorySheet from '@/components/HistorySheet';
 import {
   useActivatePlayer, useDeactivatePlayer, useInactiveRanking,
   useRanking, useReorderRanking, useUpdateAbilityConfig, useRecentChanges,
@@ -73,6 +74,7 @@ export default function PlayerRanking() {
   const [openMenuPlayerId, setOpenMenuPlayerId] = useState<string | null>(null);
   const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
   const [attendancePlayerId, setAttendancePlayerId] = useState<string | null>(null);
+  const [historyPlayerId, setHistoryPlayerId] = useState<string | null>(null);
   const [mutatingPlayerId, setMutatingPlayerId] = useState<string | null>(null);
   const [justification, setJustification] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -338,6 +340,7 @@ export default function PlayerRanking() {
                             onOpenMoveToRank={handleOpenMoveToRank}
                             onViewStats={setStatsPlayerId}
                             onViewAttendance={setAttendancePlayerId}
+                            onViewHistory={setHistoryPlayerId}
                             onPhotoClick={setExpandedPhoto}
                             onMakeInactive={canSetActive ? handleMakeInactive : undefined}
                           />
@@ -431,6 +434,13 @@ export default function PlayerRanking() {
       />
 
       {/* Past attendance and upcoming availability, fixture by fixture. */}
+      {historyPlayerId && (
+        <HistorySheet
+          title={nameOf(playersById.get(historyPlayerId) ?? {})}
+          personId={historyPlayerId}
+          onClose={() => setHistoryPlayerId(null)}
+        />
+      )}
       <AttendanceSheet
         playerId={attendancePlayerId}
         playerName={attendancePlayerId ? nameOf(playersById.get(attendancePlayerId) ?? {}) : undefined}

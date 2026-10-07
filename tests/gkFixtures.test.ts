@@ -17,7 +17,7 @@ import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { exception, match, person, recId, team } from "./helpers/factories";
 
 function authUser(email: string): AuthorizedUser {
-  return { email, personId: "", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] };
+  return db.signedIn(email);
 }
 
 const ENV = {
@@ -207,9 +207,14 @@ describe("getMyFixtures - special goalkeeper view", () => {
     expect(m4.availabilityExceptionId).toBe(E1);
   });
 
-  it("fetches exceptions in bulk by season - never once per fixture", async () => {
+  it("takes the player's own answers from their season context - never once per fixture, no read of their own", async () => {
     await getMyFixtures(ENV, authUser("bob@hkfc.com"));
-    expect(exceptionFetches()).toBe(1);
+    expect(db.callsTo("availabilityExceptions", "listForPlayer")).toHaveLength(0);
+    // One season_context call per season, not per fixture (the fakes answer it
+    // through the season's answers): the current season, read up front, and
+    // the season these test fixtures carry.
+    expect(exceptionFetches()).toBe(2);
+    expect(db.callsTo("availabilityExceptions", "listForMatches")).toHaveLength(0);
   });
 
   it("does not change the normal player experience", async () => {

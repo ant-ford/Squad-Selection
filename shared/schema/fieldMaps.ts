@@ -68,6 +68,7 @@ export const CHAIRMAN_FIELDS = [
   "preferredName",
   "givenNames",
   "surname",
+  "mobileNo",
   "status",
   "active",
   "applicantStage",

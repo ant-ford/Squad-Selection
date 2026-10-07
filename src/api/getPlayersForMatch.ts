@@ -1,3 +1,4 @@
+import type { FixtureChange } from '@shared/fixtureChange';
 import { apiGet, apiPost } from '@/lib/apiClient';
 
 export interface EligibilityIssue {
@@ -23,6 +24,8 @@ export interface MatchPlayer {
    * they have not answered counts as Unavailable.
    */
   optInOnly?: boolean;
+  /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture. */
+  notSeenWeeks?: number | null;
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';
@@ -60,6 +63,12 @@ export interface MatchInfo {
    *  back so the server can tell whether someone else changed the squad
    *  since (POST /api/squad/changes). 0 before the first change. */
   selectionVersion?: number;
+  /** The squad as last sent from Notify (worker/src/squadNotices.ts). */
+  notice?: { at: string; squad: string[] } | null;
+  /** The team's last squad this season, for "Start from last squad". */
+  lastSquad?: { matchId: string; date: string; players: string[] } | null;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
 }
 
 /** Shirt colour options. '' means not yet decided. */
@@ -77,8 +86,19 @@ export async function setMatchKit(
 export interface GetPlayersForMatchOutput {
   match: MatchInfo;
   players: MatchPlayer[];
+  /**
+   * With ?recommendations=1: every candidate's id, best first (the coach's
+   * recommendation ranking, current squad included). Absent from a Worker
+   * older than this field.
+   */
+  recommendationOrder?: string[];
 }
 
 export async function getPlayersForMatch(matchId: string): Promise<GetPlayersForMatchOutput> {
   return apiGet<GetPlayersForMatchOutput>(`/api/match/${encodeURIComponent(matchId)}/players`);
+}
+
+/** Notify was used: the squad as it stands is what the players were told. */
+export function noteSquadNotified(matchId: string, side: 'home' | 'away'): Promise<{ at: string; squad: string[] }> {
+  return apiPost('/api/squad/notified', { matchId, side });
 }

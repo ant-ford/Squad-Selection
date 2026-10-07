@@ -16,6 +16,7 @@
  */
 import type { Env } from "./env";
 import { db, inList } from "./data/supabase";
+import { thumbKey } from "./data/supabase/files";
 
 /** The cron expression (worker/wrangler.toml [triggers]) that runs this job. */
 export const RETENTION_CRON = "30 3 * * *";
@@ -38,6 +39,8 @@ export interface RetentionResult {
   removed: number;
   failed: number;
   filesDeleted: number;
+  /** Change history rows older than two seasons, removed (prune_history). */
+  historyPruned: number;
 }
 
 export async function runRetention(env: Env): Promise<RetentionResult> {
@@ -59,7 +62,13 @@ export async function runRetention(env: Env): Promise<RetentionResult> {
   }
 
   const filesDeleted = await deleteQueuedFiles(env);
-  const result = { stamped, due: due.length, removed, failed, filesDeleted };
+  // Two seasons of change history (owner, 6 Oct 2026). A failure waits for
+  // tomorrow's run rather than failing this one.
+  const historyPruned = await d.rpc<number>("prune_history", {}).catch((err) => {
+    console.error("Change history not pruned:", err instanceof Error ? err.message : err);
+    return 0;
+  });
+  const result = { stamped, due: due.length, removed, failed, filesDeleted, historyPruned };
   console.log("retention " + JSON.stringify({ mode: env.RETENTION_MODE === "remove" ? "remove" : "report", ...result }));
   return result;
 }
@@ -79,7 +88,8 @@ export async function deleteQueuedFiles(env: Env, now = new Date()): Promise<num
     const queued = await d.select<{ r2_key: string }>("r2_deletions", `select=r2_key&${due}&order=delete_after,r2_key&limit=${R2_BATCH}`, "r2_key");
     if (queued.length === 0) break;
     const keys = queued.map((q) => q.r2_key);
-    await env.FILES.delete(keys);
+    // With any photo thumbnail kept next to the object (thumbKey); R2 ignores a key it hasn't got.
+    await env.FILES.delete(keys.flatMap((k) => [k, thumbKey(k)]));
     await d.remove("r2_deletions", `r2_key=${inList(keys)}`);
     deleted += keys.length;
     if (queued.length < R2_BATCH) break;

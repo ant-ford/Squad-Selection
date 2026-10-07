@@ -279,7 +279,7 @@ export async function getPlayerSeasonStats(
 
   const season = currentSeason();
   const [ctx, rules] = await Promise.all([
-    getSeasonContext(env, season),
+    getSeasonContext(env, season, player.id),
     getRulesForPlayer(env, player.id),
   ]);
 

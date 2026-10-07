@@ -27,8 +27,13 @@ export interface Player {
   rankUpdatedAt?: string;
   status?: string;
   applicantStage?: string;
-  /** People.Photo — first attachment URL. */
+  /**
+   * People.Photo - a signed link, set only by a screen that shows it (the
+   * ranking). The repositories return photoFileId instead.
+   */
   photo?: string;
+  /** The photo's files.id, for signing a link where it's shown (Worker only). */
+  photoFileId?: string;
   /** People."Sports Background / Involvement" — applicant Hockey CV. */
   sportsBackground?: string;
   /** People."Selection Comments/Coach Requests" — free-text coach notes. */
@@ -45,6 +50,8 @@ export interface Player {
   optInOnly?: boolean;
   /** People."Date of Birth" as "MM-DD". The year is dropped on purpose (shared/birthday.ts). */
   birthday?: string;
+  /** When they last opened Eddy (stamped at most once a day at sign-in); unset if not since stamping began. */
+  lastSeenAt?: string;
 }
 
 export interface Team {
@@ -88,6 +95,11 @@ export interface Match {
    *  the page loaded. Supabase only; 0 before the first change. */
   selectionVersionHome?: number;
   selectionVersionAway?: number;
+  /** Before the last change (migration 20261007160204): kick-off, venue, status; and when it changed. */
+  previousMatchDate?: string;
+  previousVenue?: string;
+  previousStatus?: string;
+  changedAt?: string;
 }
 
 /** Shirt colour options on Matches.Home Kit / Away Kit. "" = not yet set. */

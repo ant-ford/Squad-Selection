@@ -10,7 +10,16 @@ import * as abilityGroupsModule from "../../worker/src/data/abilityGroups";
 import * as rankingEventsModule from "../../worker/src/data/rankingEvents";
 import * as membershipEventsModule from "../../worker/src/data/membershipEvents";
 import * as suspensionsModule from "../../worker/src/data/suspensions";
+import * as seasonDataModule from "../../worker/src/data/seasonData";
+import type { SeasonData } from "../../worker/src/data/seasonData";
 import * as commitmentsModule from "../../worker/src/data/commitments";
+import * as authContextModule from "../../worker/src/authContext";
+import * as cacheVersionsModule from "../../worker/src/cacheVersions";
+import { noteRequestWrite } from "../../worker/src/requestContext";
+import type { AuthContext } from "../../worker/src/authContext";
+import type { AuthorizedUser } from "../../worker/src/auth";
+import { signedIn } from "./factories";
+import { CACHE_VERSION_KEYS, parseCacheVersions, type CacheVersions } from "../../worker/src/cacheVersions";
 import type { PeopleRepo, PersonPatch } from "../../worker/src/data/people";
 import {
   APPLICANT_STAGE_FIELDS, APPLICANT_TASK_FIELDS, CONTACT_FIELDS, EXPORT_FIELDS, MY_TASK_FIELDS, NAME_FIELDS, NUMBER_HOLDER_FIELDS,
@@ -19,7 +28,11 @@ import type { TeamsRepo } from "../../worker/src/data/teams";
 import type { Office, OfficersRepo } from "../../worker/src/data/officers";
 import type { MatchesRepo } from "../../worker/src/data/matches";
 import type { MatchCardsRepo } from "../../worker/src/data/matchCards";
-import type { AvailabilityExceptionsRepo, ExceptionWrite } from "../../worker/src/data/availabilityExceptions";
+import type { AvailabilityExceptionsRepo, AvailabilityOutcome } from "../../worker/src/data/availabilityExceptions";
+import { SupabaseError } from "../../worker/src/data/supabase";
+import { needsExplicitAvailable } from "../../worker/src/availabilityRules";
+import { UNRANKED_TEAM_RANK } from "../../worker/src/reference";
+import { hkDateKey } from "../../shared/hkDateKey";
 import type { AvailabilityRulesRepo } from "../../worker/src/data/availabilityRules";
 import type { AbilityGroupsRepo } from "../../worker/src/data/abilityGroups";
 import type { RankingEventRow, RankingEventsRepo } from "../../worker/src/data/rankingEvents";
@@ -142,6 +155,12 @@ export interface FakeReposHandle {
   reset(seed?: Partial<FakeState>): void;
   /** Puts the real accessors back. */
   restore(): void;
+  /**
+   * The signed-in user auth.ts would build for this email from the seeded
+   * state (auth_context's person, captaincies, offices, umpire flag), with
+   * `overrides` on top. Unlike requireAuthorizedUser it never refuses.
+   */
+  signedIn(email: string, overrides?: Partial<AuthorizedUser>): AuthorizedUser;
 }
 
 export function emptyState(): FakeState {
@@ -179,7 +198,7 @@ const PLAYER_KEYS: (keyof Player)[] = [
   "id", "preferredName", "givenNames", "surname", "shirtNoValue", "email", "mobileNo", "active", "registeredTeam",
   "selectedTeamSos", "selectedTeamEos", "playingPosition", "playingAbility", "isVisitingPlayer", "isSuspended",
   "matchesToServe", "everRegisteredToPremier", "u21Eligible", "playerCoach", "sectionRank",
-  "rankUpdatedAt", "status", "applicantStage", "photo", "sportsBackground", "selectionComments", "optInOnly", "birthday",
+  "rankUpdatedAt", "status", "applicantStage", "photoFileId", "sportsBackground", "selectionComments", "optInOnly", "birthday",
 ];
 const PLAYER_KEY_SET = new Set<string>(PLAYER_KEYS);
 
@@ -246,7 +265,11 @@ function buildRepos(s: FakeState): FakeRepos {
 
   const people: PeopleRepo = {
     async listActive() {
-      return s.people.filter((p) => p.active === true).map(toPlayer);
+      // api_players_lite: no photo, CV, coach notes, Player/Coach or rank date.
+      return s.people.filter((p) => p.active === true).map((p) => {
+        const { photo: _photo, sportsBackground: _cv, selectionComments: _notes, playerCoach: _pc, rankUpdatedAt: _rank, ...lite } = toPlayer(p);
+        return lite;
+      });
     },
     async findByEmail(email) {
       const want = normalizeEmail(email);
@@ -298,12 +321,23 @@ function buildRepos(s: FakeState): FakeRepos {
     async listDirectory() {
       return s.people.filter((p) => differs(personValue(p, "status"), "Resigned")).map((p) => personRow(p, CHAIRMAN_FIELDS));
     },
+    async getDirectoryRow(id) {
+      const p = findPerson(id);
+      return p ? personRow(p, CHAIRMAN_FIELDS) : null;
+    },
     async listContactsByIds(ids) {
       const wanted = new Set([...ids].filter((id) => API_ID_RE.test(id)));
       return s.people.filter((p) => wanted.has(p.id)).map((p) => personRow(p, CONTACT_FIELDS));
     },
     async listNames() {
       return s.people.map((p) => personRow(p, NAME_FIELDS));
+    },
+    async listNamesFor(ids, emails) {
+      const wantedIds = new Set([...ids].filter((id) => API_ID_RE.test(id)));
+      const wantedEmails = new Set([...emails].map((e) => e.trim().toLowerCase()).filter(Boolean));
+      return s.people
+        .filter((p) => wantedIds.has(p.id) || (!!p.email && wantedEmails.has(p.email.trim().toLowerCase())))
+        .map((p) => ({ id: p.id, preferredName: p.preferredName || null, givenNames: p.givenNames || null, email: p.email ? p.email.trim().toLowerCase() : null }));
     },
     async getMyTaskFields(id) {
       const p = findPerson(id);
@@ -389,8 +423,22 @@ function buildRepos(s: FakeState): FakeRepos {
     async listScheduled() {
       return s.matches.filter((m) => m.matchStatus === "Scheduled").map(clone);
     },
+    async listCalledOffSince(sinceIso) {
+      return s.matches
+        .filter((m) => ["Rescheduled", "Cancelled", "Postponed"].includes(m.matchStatus) && (m.changedAt ?? "") >= sinceIso)
+        .map(clone);
+    },
     async listPlayedForSeasons(seasons) {
       return s.matches.filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? "")).map(clone);
+    },
+    async listResultsForSeasons(seasons) {
+      return s.matches
+        .filter((m) => m.matchStatus === "Played" && seasons.includes(m.season ?? ""))
+        .map((m) => ({
+          id: m.id, matchDate: m.matchDate, season: m.season, competitionType: m.competitionType,
+          homeTeam: m.homeTeam, homeTeamScore: m.homeTeamScore, awayTeam: m.awayTeam, awayTeamScore: m.awayTeamScore,
+          venue: m.venue, matchStatus: m.matchStatus,
+        }) as Match);
     },
   };
 
@@ -402,35 +450,105 @@ function buildRepos(s: FakeState): FakeRepos {
     },
   };
 
-  const seasonOf = (matchId: string) => s.matches.find((m) => m.id === matchId)?.season ?? "";
-  const toException = (id: string, w: ExceptionWrite): FakeException => ({
+  const toException = (id: string, m: Match, playerId: string, status: string, notes: string | undefined, by: string): FakeException => ({
     id,
-    player: [w.playerId],
-    match: [w.matchId],
-    availabilityStatus: w.status,
-    note: w.notes ?? "",
+    player: [playerId],
+    match: [m.id],
+    availabilityStatus: status as FakeException["availabilityStatus"],
+    note: notes ?? "",
     // The view reads the season from the match.
-    season: seasonOf(w.matchId),
+    season: m.season ?? "",
     updatedAt: new Date().toISOString(),
-    updatedBy: w.updatedById,
+    updatedBy: by,
   });
+  /** set_availability's errors, as PostgREST reports them. */
+  const pgError = (status: number, code: string, message: string) =>
+    new SupabaseError(`Supabase POST rpc/set_availability failed (${status}): ${message}`, status, code);
+  /** A team's rank as set_availability reads it: Active teams only, a blank or 0 rank is 99. */
+  const activeRank = (name: string | undefined) => {
+    const t = s.teams.find((x) => x.active === true && !!name && x.teamName === name);
+    return t ? t.teamRank || UNRANKED_TEAM_RANK : undefined;
+  };
+  /**
+   * set_availability (migration 20261007141003), in memory: the same checks,
+   * the same store-or-delete decision through the TypeScript rule engine
+   * (needsExplicitAvailable), all or nothing.
+   */
+  const setAnswer: AvailabilityExceptionsRepo["set"] = async ({ playerId, matchIds, status, notes, updatedById }) => {
+    if (!["Available", "Maybe", "Unavailable"].includes(status)) throw pgError(400, "22023", "status must be Available, Maybe or Unavailable");
+    if (matchIds.some((id) => !id)) throw pgError(400, "22023", "matchIds[] must be record ids");
+    const p = findPerson(playerId);
+    if (!p || p.active !== true) throw pgError(404, "P0002", "Player not found or inactive");
+    const by = updatedById || playerId;
+    if (!findPerson(by)) throw pgError(404, "P0002", `No person ${by}`);
+    const playerRank = activeRank(p.registeredTeam) ?? UNRANKED_TEAM_RANK;
+    // In api_id order, as availability_rule_status breaks its last ties.
+    const rules = s.availabilityRules.filter((r) => (r.player ?? []).includes(playerId)).sort((a, b) => a.id.localeCompare(b.id));
+
+    const rows = [...s.availabilityExceptions];
+    const kept: AvailabilityOutcome["results"] = [];
+    const created: AvailabilityOutcome["results"] = [];
+    const before: AvailabilityOutcome["before"] = [];
+    const seasons: string[] = [];
+    for (const matchId of [...new Set(matchIds)]) {
+      const m = s.matches.find((x) => x.id === matchId);
+      if (m?.season && !seasons.includes(m.season)) seasons.push(m.season);
+      const i = m ? rows.findIndex((e) => e.player?.[0] === playerId && e.match?.[0] === matchId) : -1;
+      if (i >= 0) before.push({ matchId, exceptionId: rows[i].id, status: rows[i].availabilityStatus ?? "" });
+      let needed = false;
+      if (status === "Available" && m && m.matchStatus === "Scheduled") {
+        const sides = [m.homeTeam, m.awayTeam].map(activeRank).filter((r): r is number => r !== undefined);
+        const fixtureRank = sides.length ? Math.min(...sides) : UNRANKED_TEAM_RANK;
+        needed = needsExplicitAvailable(
+          rules,
+          { date: hkDateKey(m.matchDate), isPlayUp: fixtureRank < playerRank, isSupport: fixtureRank > playerRank },
+          { optInOnly: p.optInOnly === true },
+        );
+      }
+      if (status === "Available" && !needed) {
+        if (i >= 0) rows.splice(i, 1);
+        kept.push({ matchId, exceptionId: null });
+      } else if (!m) {
+        throw pgError(404, "P0002", `No match ${matchId}`);
+      } else if (i >= 0) {
+        rows[i] = toException(rows[i].id, m, playerId, status, notes, by);
+        kept.push({ matchId, exceptionId: rows[i].id });
+      } else {
+        const id = fakeUuid();
+        rows.push(toException(id, m, playerId, status, notes, by));
+        created.push({ matchId, exceptionId: id });
+      }
+    }
+    // One transaction: nothing changes unless every answer went through.
+    s.availabilityExceptions.splice(0, s.availabilityExceptions.length, ...rows);
+    return { updated: kept.length + created.length, results: [...kept, ...created], before, seasons };
+  };
   const availabilityExceptions: AvailabilityExceptionsRepo = {
+    // The targeted reads select id, player, match, status and note only.
+    async listForMatches(matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
+    async listForPlayer(playerId, matchIds) {
+      return s.availabilityExceptions
+        .filter((e) => e.player?.[0] === playerId && matchIds.includes(e.match?.[0] ?? ""))
+        .map(({ id, player, match, availabilityStatus, note }) => clone({ id, player, match, availabilityStatus, note, season: "", updatedAt: "" }));
+    },
     async listForSeasons(seasons) {
       return s.availabilityExceptions
         .filter((e) => seasons.includes(e.season ?? ""))
         .map(({ updatedBy: _by, ...e }) => clone(e));
     },
-    async apply({ deleteIds, updates, creates }) {
-      // One transaction on Supabase (apply_availability_changes).
-      for (const { id } of updates) if (!s.availabilityExceptions.some((e) => e.id === id)) throw new Error(`No exception ${id}`);
-      removeWhere(s.availabilityExceptions, (e) => deleteIds.includes(e.id));
-      for (const { id, write } of updates) {
-        const i = s.availabilityExceptions.findIndex((e) => e.id === id);
-        s.availabilityExceptions[i] = toException(id, write);
-      }
-      const createdIds = creates.map(() => fakeUuid());
-      creates.forEach((w, i) => s.availabilityExceptions.push(toException(createdIds[i], w)));
-      return { createdIds };
+    set: setAnswer,
+    async setForDate({ playerId, date, status, notes }) {
+      const ids = s.matches
+        .filter((m) => m.matchStatus === "Scheduled" && hkDateKey(m.matchDate) === date)
+        .filter((m) => activeRank(m.homeTeam) !== undefined || activeRank(m.awayTeam) !== undefined)
+        .map((m) => m.id)
+        .sort();
+      if (ids.length === 0) return { updated: 0, results: [], before: [], seasons: [] };
+      return setAnswer({ playerId, matchIds: ids, status, notes });
     },
   };
 
@@ -475,9 +593,11 @@ function buildRepos(s: FakeState): FakeRepos {
     async create(events) {
       for (const e of events) s.rankingEvents.push({ id: fakeUuid(), ...clone(e) });
     },
-    async listNewestFirst() {
-      return [...s.rankingEvents]
+    async listRecent(since, limit, upTo) {
+      return s.rankingEvents
+        .filter((e) => e.timestamp !== "" && e.timestamp >= since && (upTo === undefined || e.timestamp <= upTo))
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp) || a.id.localeCompare(b.id))
+        .slice(0, limit)
         .map(clone);
     },
   };
@@ -531,7 +651,24 @@ function buildRepos(s: FakeState): FakeRepos {
 }
 
 /** Wraps every method so the call is logged. */
-function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]): T {
+/** A repository method that only reads; anything else is a write. */
+const READ_METHOD = /^(get|list|find|count|read|search|load|has|is)/;
+
+/**
+ * The fakes' cache versions (cache_versions): one counter for every table,
+ * moved by every repository write, as the database's triggers move theirs.
+ * So a value cached under the versions is rebuilt after any write.
+ */
+let fakeVersion = 1;
+export function fakeVersions(): CacheVersions {
+  return parseCacheVersions(Object.fromEntries(CACHE_VERSION_KEYS.map((k) => [k, fakeVersion])));
+}
+function onWrite(): void {
+  fakeVersion++;
+  noteRequestWrite();
+}
+
+function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[], written?: () => void): T {
   const out: Record<string, unknown> = {};
   for (const [method, fn] of Object.entries(target)) {
     out[method] = (...raw: unknown[]) => {
@@ -546,7 +683,15 @@ function recorded<T extends object>(repo: RepoName, target: T, calls: RepoCall[]
         logged = args;
       }
       calls.push({ repo, method, args: logged });
-      return (fn as (...a: unknown[]) => unknown)(...args);
+      const result = (fn as (...a: unknown[]) => unknown)(...args);
+      if (written && !READ_METHOD.test(method)) {
+        // After the write lands, as a database write would.
+        return Promise.resolve(result).then((value) => {
+          written();
+          return value;
+        });
+      }
+      return result;
     };
   }
   return out as T;
@@ -567,7 +712,7 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
   // swap the arrays without re-installing.
   const live = buildRepos(state);
   const repos = Object.fromEntries(
-    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls)]),
+    Object.entries(live).map(([name, repo]) => [name, recorded(name as RepoName, repo as object, calls, onWrite)]),
   ) as unknown as FakeRepos;
 
   const spies = [
@@ -583,6 +728,12 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     vi.spyOn(membershipEventsModule, "membershipEvents").mockImplementation(() => repos.membershipEvents),
     vi.spyOn(commitmentsModule, "commitments").mockImplementation(() => repos.commitments),
     vi.spyOn(suspensionsModule, "suspensions").mockImplementation(() => repos.suspensions),
+    // season_context: assembled from the same repositories, so their call logs still show the reads.
+    vi.spyOn(seasonDataModule, "seasonData").mockImplementation(() => ({ load: (season: string, player?: string) => fakeSeasonData(repos, season, player) })),
+    // auth.ts reads the signed-in person through auth_context: answered from the same state.
+    vi.spyOn(authContextModule, "authContexts").mockImplementation(() => ({ load: async (email: string) => authContextFrom(state, email) })),
+    // A request without sign-in reads the versions: the fakes' counter.
+    vi.spyOn(cacheVersionsModule, "readCacheVersions").mockImplementation(async () => fakeVersions()),
   ];
 
   const handle: FakeReposHandle = {
@@ -600,6 +751,21 @@ export function installFakeRepos(seed: Partial<FakeState> = {}): FakeReposHandle
     },
     restore() {
       for (const spy of spies) spy.mockRestore();
+    },
+    signedIn(email, overrides = {}) {
+      const ctx = authContextFrom(state, email);
+      const person = ctx.person ?? { id: "", uuid: "", email };
+      return signedIn({
+        email,
+        personId: person.id,
+        personUuid: person.uuid,
+        person,
+        captainTeams: ctx.captainTeams,
+        socialSecretaryTeams: ctx.socialSecretaryTeams,
+        offices: ctx.offices,
+        umpire: ctx.umpire,
+        ...overrides,
+      });
     },
   };
   handle.reset(seed);
@@ -623,7 +789,7 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
         return current[key];
       },
     });
-  (["state", "repos", "calls", "callsTo", "reset", "restore"] as const).forEach(forward);
+  (["state", "repos", "calls", "callsTo", "reset", "restore", "signedIn"] as const).forEach(forward);
   beforeEach(() => {
     current = installFakeRepos(seed?.());
   });
@@ -632,4 +798,112 @@ export function useFakeRepos(seed?: () => Partial<FakeState>): FakeReposHandle {
     current = null;
   });
   return proxy;
+}
+
+// ── auth_context ─────────────────────────────────────────────────────────
+
+const OFFICE_ROLES: Record<Office, string> = {
+  membershipOfficer: "membership_officer",
+  sectionChair: "section_chair",
+  sectionCaptain: "section_captain",
+  sponsor: "sponsor",
+  kitConvenor: "kit_convenor",
+  hockeyConvenor: "hockey_convenor",
+  assistantDirector: "assistant_director",
+  umpireCoordinator: "umpire_coordinator",
+};
+const OFFICE_ORDER: Office[] = [
+  "membershipOfficer", "sectionChair", "sectionCaptain", "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator", "sponsor",
+];
+
+/**
+ * What auth_context(p_email) returns for the seeded state, by the SQL's
+ * rules (supabase/migrations/*_auth_context.sql): the person by email
+ * (Active first), Teams links over ALL teams in id order, captaincies of
+ * Active teams, Active offices in office order. A seeded person's `uuid`
+ * defaults to their id; `umpire` is read from the row (default false).
+ */
+export function authContextFrom(s: FakeState, email: string): AuthContext {
+  const want = normalizeEmail(email);
+  const rows = s.people.filter((p) => typeof p.email === "string" && normalizeEmail(p.email) === want);
+  const p = rows.find((r) => r.active) ?? rows[0];
+  const versions = fakeVersions();
+  if (!p) {
+    return {
+      person: null, isTeamCoach: false, coachTeams: [], teamSectionCaptain: false, allTeamNames: [], captainTeams: [],
+      socialSecretaryTeams: [], offices: [], umpire: false, versions,
+    };
+  }
+  const teams = [...s.teams].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const offices = s.officers
+    .filter((o) => o.status === "Active" && o.member === p.id)
+    .sort((a, b) => OFFICE_ORDER.indexOf(a.office) - OFFICE_ORDER.indexOf(b.office) || (a.id < b.id ? -1 : 1))
+    .map((o) => ({ role: OFFICE_ROLES[o.office], office: o.office === "sponsor" ? null : o.office, designation: o.designation ?? "" }));
+  const teamSectionCaptain = teams.some((t) => (t.sectionCaptain ?? []).includes(p.id));
+  const { crm: _crm, ...player } = p;
+  const extra = p as FakePerson & { uuid?: string; umpire?: boolean };
+  const profileUpdatedAt = (p.crm as Record<string, unknown> | undefined)?.profileUpdatedAt;
+  return {
+    person: {
+      ...player,
+      uuid: extra.uuid ?? p.id,
+      ...(typeof profileUpdatedAt === "string" ? { profileUpdatedAt } : {}),
+    },
+    isTeamCoach: teams.some((t) => (t.coach ?? []).includes(p.id)),
+    coachTeams: teams.filter((t) => (t.coach ?? []).includes(p.id) && t.teamName).map((t) => t.teamName!),
+    teamSectionCaptain,
+    allTeamNames:
+      teamSectionCaptain || offices.some((o) => o.office === "assistantDirector")
+        ? teams.filter((t) => t.teamName).map((t) => t.teamName!)
+        : [],
+    captainTeams: teams.filter((t) => t.active && (t.teamCaptain ?? []).includes(p.id)).map((t) => t.teamName || ""),
+    socialSecretaryTeams: [],
+    offices,
+    umpire: extra.umpire === true,
+    versions,
+  };
+}
+
+// ── season_context ───────────────────────────────────────────────────────
+
+/**
+ * What season_context(p_season, p_player) returns for the seeded state, by
+ * the SQL's rules (supabase/migrations/*_season_context.sql): the season's
+ * matches, cards and answers; last season's Played or carded matches and
+ * carded cards; the open suspensions; a per-match summary of the teams on
+ * its cards. For a player: their cards plus every card with a goal or a
+ * card, their answers (with note and id) plus those of anyone selected (without).
+ */
+export async function fakeSeasonData(repos: FakeRepos, season: string, player?: string): Promise<SeasonData> {
+  const m = /^(\d{4})-(\d{4})$/.exec(season);
+  const prev = m ? `${Number(m[1]) - 1}-${m[1]}` : "";
+  const [matches, allCards, allExceptions, prevCards, prevAll, suspensions] = await Promise.all([
+    repos.matches.listForSeason(season),
+    repos.matchCards.listForSeason(season),
+    repos.availabilityExceptions.listForSeasons([season]),
+    prev ? repos.matchCards.listForSeason(prev, { cardedOnly: true }) : Promise.resolve([] as MatchCard[]),
+    prev ? repos.matches.listForSeason(prev) : Promise.resolve([] as Match[]),
+    repos.suspensions.listOpen(),
+  ]);
+  const cardedPrev = new Set(prevCards.map((c) => c.match?.[0]));
+  const previousMatches = prevAll.filter((x) => (x.matchStatus || "").toLowerCase() === "played" || cardedPrev.has(x.id));
+  const selected = new Set(matches.flatMap((x) => [...(x.selectedPlayersHome ?? []), ...(x.selectedPlayersAway ?? [])].map((p) => `${p}:${x.id}`)));
+  const cardSummary = new Map<string, { teams: string[]; count: number }>();
+  for (const c of allCards) {
+    const id = c.match?.[0];
+    if (!id) continue;
+    const entry = cardSummary.get(id) ?? { teams: [], count: 0 };
+    entry.count++;
+    if (c.team && !entry.teams.includes(c.team)) entry.teams.push(c.team);
+    cardSummary.set(id, entry);
+  }
+  const cards = player
+    ? allCards.filter((c) => c.player?.[0] === player || (c.goals ?? 0) > 0 || (c.cards?.length ?? 0) > 0)
+    : allCards;
+  const exceptions = player
+    ? allExceptions
+        .filter((e) => e.player?.[0] === player || selected.has(`${e.player?.[0]}:${e.match?.[0]}`))
+        .map((e) => (e.player?.[0] === player ? e : { ...e, id: "", note: "" }))
+    : allExceptions;
+  return { matches, cards, exceptions, previousMatches, previousCards: prevCards, suspensions, cardSummary };
 }
