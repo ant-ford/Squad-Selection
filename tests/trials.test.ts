@@ -11,7 +11,6 @@ const env = {
   MAIL_FROM: "Eddy <notifications@eddy.global>",
   APP_ORIGIN: "https://app.eddy.global",
   REVIEW_EMAIL_FROM: "Anthony Ford <menscaptain@hkfchockey.com>",
-  ASSISTANT_DIRECTOR: "Lee Simmons <adh@example.com>",
 } as Env;
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -93,23 +92,36 @@ describe("the Section Captains' practice trial", () => {
   const teams = [{ id: U(400), team_name: "HKFC A" }];
   const coaches = [{ people: { id: U(60), email: "coach@x.com", preferred_name: "Coachie", given_names: null } }];
   const captainRow = [{ preferred_name: "Ant", given_names: null, surname: "Ford", offices: [{ office_email: "menscaptain@hkfchockey.com", designation: "Men's Captain", role: "section_captain" }] }];
+  /** The Active Assistant Director of Hockey office, with its holder. */
+  const adhOffice = (mailbox: string | null) => ({
+    id: U(500), role: "assistant_director", designation: "Assistant Director of Hockey", office_email: mailbox, person_id: U(70),
+    people: { id: U(70), api_id: "recADH", preferred_name: "Lee", given_names: "Shirndre-Lee", surname: "Simmons", email: "lee@x.com" },
+  });
 
-  it("emails the ADH and the team's coach the hockey CV, and tells the player when to come", async () => {
-    const calls = fake({ people: [trialist], teams, team_people: coaches });
-    // The captain lookup shares the people table: answer it with the captain once the trialist has been read.
-    let n = 0;
+  /** The fake, with the captain lookup (it shares the people table) answered with the captain. */
+  function fakeWithCaptain(tables: Record<string, unknown[]>) {
+    const calls = fake(tables);
     const base = (globalThis.fetch as any).getMockImplementation();
     (globalThis.fetch as any).mockImplementation(async (input: string, init: RequestInit = {}) => {
       const url = new URL(input);
       if (url.pathname.endsWith("/people") && url.searchParams.get("select")?.includes("offices")) {
         calls.push({ url, method: "GET", body: undefined });
-        n++;
         return new Response(JSON.stringify(captainRow), { status: 200 });
       }
       return base(input, init);
     });
+    return calls;
+  }
+
+  it("emails the ADH and the team's coach the hockey CV, and tells the player when to come", async () => {
+    const calls = fakeWithCaptain({ people: [trialist], teams, team_people: coaches, offices: [adhOffice("adh@example.com")] });
     await invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "Tue 7 Oct, 20:00, HKFC" });
-    expect(n).toBe(1);
+    expect(calls.filter((c) => c.url.pathname.endsWith("/people") && c.url.searchParams.get("select")?.includes("offices"))).toHaveLength(1);
+    // The ADH comes from the offices table: the Active assistant_director, in one read.
+    const officeReads = calls.filter((c) => c.url.pathname.endsWith("/offices"));
+    expect(officeReads).toHaveLength(1);
+    expect(officeReads[0].url.searchParams.get("role")).toBe("eq.assistant_director");
+    expect(officeReads[0].url.searchParams.get("status")).toBe("eq.Active");
     const [coach, player] = resend(calls);
     expect(coach.to).toEqual(["adh@example.com"]);
     expect(coach.cc).toEqual(["coach@x.com"]);
@@ -120,6 +132,23 @@ describe("the Section Captains' practice trial", () => {
     expect(coach.text).toContain("HKFC A practice: Tue 7 Oct, 20:00, HKFC");
     expect(player.to).toEqual(["sam@x.com"]);
     expect(player.text).toContain("Tue 7 Oct, 20:00, HKFC");
+  });
+
+  it("writes to the ADH's own email when the office has no mailbox, and to the coach alone when nobody holds it", async () => {
+    let calls = fakeWithCaptain({ people: [trialist], teams, team_people: coaches, offices: [adhOffice(null)] });
+    await invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "Tue 7 Oct, 20:00, HKFC" });
+    expect(resend(calls)[0].to).toEqual(["lee@x.com"]);
+    expect(resend(calls)[0].cc).toEqual(["coach@x.com"]);
+
+    calls = fakeWithCaptain({ people: [trialist], teams, team_people: coaches, offices: [] });
+    await invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "Tue 7 Oct, 20:00, HKFC" });
+    const [coach] = resend(calls);
+    expect(coach.to).toEqual(["coach@x.com"]);
+    expect(coach.cc).toBeUndefined();
+    expect(coach.text).toContain("Dear Coachie,");
+
+    fakeWithCaptain({ people: [trialist], teams, team_people: [], offices: [] });
+    await expect(invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "x" })).rejects.toThrow(/Neither the Assistant Director/);
   });
 
   it("is for Section Captains, needs a team and when, and only for stage 1", async () => {

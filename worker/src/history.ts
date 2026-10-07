@@ -87,7 +87,7 @@ export function activityEntry(
   opts: { names?: Map<string, string>; matches?: Map<string, string>; forCoach?: boolean } = {},
 ): HistoryEntry | null {
   const changes = (r.changes ?? {}) as Record<string, unknown>;
-  const base = { at: iso(r.occurred_at), actor: actorName(r), action: r.action };
+  const base = { at: iso(r.occurred_at), actor: actorName(r), ...(!r.actor && r.actor_label ? { actorLabel: r.actor_label } : {}), action: r.action };
 
   if (r.action === "row-availability") {
     const status = changes.status as [string, string] | undefined;

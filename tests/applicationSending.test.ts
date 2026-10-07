@@ -33,7 +33,7 @@ const application = (over: object = {}) => ({
 });
 
 type Call = { url: URL; method: string; body: any };
-function fake(opts: { app?: object; person?: object } = {}) {
+function fake(opts: { app?: object; person?: object; officeEmail?: string | null } = {}) {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: string, init: RequestInit = {}) => {
     const url = new URL(input);
@@ -49,7 +49,9 @@ function fake(opts: { app?: object; person?: object } = {}) {
     }
     if (table === "people") return reply([{ ...applicant, ...opts.person }]);
     if (table === "applications") return reply([opts.app ?? application()]);
-    if (table === "offices" && url.searchParams.get("role")) return reply([{ designation: "Membership Officer", office_email: "mensmembership@hkfchockey.com" }]);
+    if (table === "offices" && url.searchParams.get("role")) {
+      return reply([{ designation: "Membership Officer", office_email: opts.officeEmail === undefined ? "mensmembership@hkfchockey.com" : opts.officeEmail }]);
+    }
     if (table === "offices") {
       return reply([
         { id: U(101), people: { id: U(11), preferred_name: "Chris", given_names: null, surname: "S", email: null, membership_no: null } },
@@ -88,6 +90,14 @@ describe("sending an application on", () => {
     expect(patches(calls, "applications")).toEqual([{ sent_at: sent.sentAt, sent_by: U(13), sent_to: "membership_dept@hkfc.com" }]);
     // A new member is accepted later, once the Club confirms their number.
     expect(patches(calls, "people")).toEqual([]);
+  });
+
+  it("sends as Eddy when the officer has no hkfchockey.com mailbox, with replies to them", async () => {
+    const calls = fake({ officeEmail: null });
+    await sendApplication({ ...env, REVIEW_EMAIL_FROM: "Eddy <notifications@eddy.global>" } as Env, officer, "recAPPLICANT");
+    const [email] = resend(calls);
+    expect(email.from).toBe("Eddy <notifications@eddy.global>");
+    expect(email.reply_to).toBe("daniel@x.com");
   });
 
   it("won't send twice unless asked to", async () => {

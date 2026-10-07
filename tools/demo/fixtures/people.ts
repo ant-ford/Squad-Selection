@@ -158,10 +158,13 @@ function personView(persona: Persona, id: string) {
 
 const h = (days: number, hh: number, actor: string | null, action: string, summary: string, fields: string[] = []): HistoryEntry =>
   ({ at: at(days, hh, 15), actor, action, summary, fields });
+/** A change no person made: Eddy itself (shown as the wordmark), or the HKHA fixture sync. */
+const bySystem = (label: 'eddy' | 'hkha-sync', e: HistoryEntry): HistoryEntry =>
+  ({ ...e, actor: label === 'eddy' ? 'Eddy' : 'HKHA fixtures', actorLabel: label });
 
 const TOM_HISTORY: HistoryEntry[] = [
   h(-1, 21, 'Daniel Price', 'admin-membership', 'Membership details changed', ['Membership number', 'Join date', 'Commitment end date']),
-  h(-2, 10, null, 'row-update', 'Changed', ['Stage: 5. Chairman (Signed) → 6. Membership Officer (Signed)']),
+  bySystem('eddy', h(-2, 10, null, 'row-update', 'Changed', ['Stage: 5. Chairman (Signed) → 6. Membership Officer (Signed)'])),
   h(-4, 19, 'Jo Bennett', 'squad', 'Squad changed', ['Selected, HKFC D v Tigers']),
   h(-4, 18, 'Jo Bennett', 'row-availability', 'Availability answered for them', ['Available']),
   h(-6, 12, 'Alex Morgan', 'admin-squad', 'Teams or position changed', ['Selected team (start of season): none → HKFC D', 'Position: none → Midfielder']),
@@ -177,7 +180,7 @@ function history(person: string | null, match: string | null): { entries: Histor
   if (match) {
     return { entries: [
       h(-1, 20, 'Jo Bennett', 'squad', 'Squad changed', ['Selected: Sam Carter, Jamie Wong, Priya Nair']),
-      h(-2, 9, null, 'row-update', 'Changed', ['Date and time']),
+      bySystem('hkha-sync', h(-2, 9, null, 'row-update', 'Changed', ['Date and time'])),
       h(-6, 9, null, 'row-insert', 'Fixture added'),
     ] };
   }

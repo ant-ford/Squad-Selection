@@ -12,6 +12,8 @@ export interface HistoryEntry {
   at: string;
   /** Who did it, by name; null for the system or someone no longer on record. */
   actor: string | null;
+  /** When no person did it: the activity log's label ("eddy", "hkha-sync"), so the screen can show the wordmark for Eddy. */
+  actorLabel?: string;
   /** The activity log's action, e.g. "admin-membership". */
   action: string;
   /** A short sentence for the list, e.g. "Membership details changed". */

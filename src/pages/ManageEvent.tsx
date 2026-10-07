@@ -5,6 +5,7 @@ import { toast } from '@/lib/toast';
 import { Copy, Download, Plus, QrCode, Search, X } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import FileUpload from '@/components/profile/FileUpload';
 import { errorText } from '@/components/profile/steps';
@@ -266,7 +267,7 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
         <Field
           label="PayMe link or FPS ID to pay to"
           id="event-pay-to"
-          hint="Everyone invited sees this. Each payer uploads a screenshot of their payment, which Eddy reads for you to confirm."
+          hint={<>Everyone invited sees this. Each payer uploads a screenshot of their payment, which <EddyWordmark size={1.5} /> reads for you to confirm.</>}
           required
         >
           <Input value={f.paymentDetails} onChange={(e) => set({ paymentDetails: e.target.value })} placeholder="e.g. https://payme.hsbc/yourname, or FPS ID 1234567" />
