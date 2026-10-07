@@ -223,8 +223,9 @@ function suspensions(): SuspensionsBoard {
     { player: idFor('Aiden Choi'), name: 'Aiden Choi', servingTeam: 'HKFC E', remainingMatches: 2, points: 15, dcReferral: true, indeterminate: false },
     { player: idFor('Kenji Tanaka'), name: 'Kenji Tanaka', servingTeam: 'HKFC C', remainingMatches: 1, points: 10, dcReferral: false, indeterminate: true },
   ];
-  const legacy: LegacySuspensionRow[] = [{ player: 'demoP112', name: 'Stefan Novak', team: 'HKFC F', isSuspended: true, matchesToServe: 1 }];
-  return { open, cleared, cards, legacy };
+  // The flags left after the move have no registered team.
+  const legacy: LegacySuspensionRow[] = [{ player: 'demoP112', name: 'Stefan Novak', team: null, isSuspended: true, matchesToServe: 1 }];
+  return { open, cleared, cards, legacy, teams: TEAMS };
 }
 
 // ── Offices and teams ───────────────────────────────────────────────────
@@ -409,6 +410,7 @@ export const routes: Routes = {
   'POST /api/discipline/suspensions': () => ({ ...ok, id: 'demoSuspNew' }),
   'POST /api/discipline/suspensions/:id': () => ok,
   'POST /api/discipline/suspensions/:id/clear': () => ok,
+  'POST /api/discipline/flags/:id/clear': () => ok,
 
   'GET /api/admin/offices': () => offices(),
   'POST /api/admin/offices': () => ({ ...ok, id: 'demoOfficeNew' }),

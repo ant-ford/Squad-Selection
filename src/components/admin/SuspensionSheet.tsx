@@ -13,6 +13,7 @@ import {
   MAX_MATCHES,
   MIN_MATCHES,
   draftFrom,
+  draftFromFlag,
   draftProblem,
   emptyDraft,
   isDirty,
@@ -21,15 +22,19 @@ import {
   suspensionChange,
   type SuspensionDraft,
 } from '@/lib/suspensions';
-import { createSuspension, updateSuspension, type SuspensionRow } from '@/api/suspensions';
+import { createSuspension, updateSuspension, type LegacySuspensionRow, type SuspensionRow } from '@/api/suspensions';
 
 /**
  * Add or edit a suspension: player (add only), matches 1-10 or until
- * cleared, from date, reason. Closing with something typed asks first.
+ * cleared, from date, reason. Making an old flag a suspension also asks
+ * the serving team (the save clears the flag). Closing with something
+ * typed asks first.
  */
 export default function SuspensionSheet({
   row,
   person,
+  flag,
+  teams = [],
   today,
   onClose,
   onSaved,
@@ -38,11 +43,17 @@ export default function SuspensionSheet({
   row?: SuspensionRow;
   /** Who to add it for, when opened from the person page. */
   person?: { id: string; name: string } | null;
+  /** The old flag to make a suspension. */
+  flag?: LegacySuspensionRow;
+  /** The serving teams to choose from, with a flag. */
+  teams?: string[];
   today: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [start] = useState<SuspensionDraft>(() => (row ? draftFrom(row) : emptyDraft(today, person?.id ?? null)));
+  const [start] = useState<SuspensionDraft>(() =>
+    row ? draftFrom(row) : flag ? draftFromFlag(flag, today, teams) : emptyDraft(today, person?.id ?? null),
+  );
   const [draft, setDraft] = useState<SuspensionDraft>(start);
   const [picked, setPicked] = useState<{ id: string; name: string } | null>(row ? { id: row.player, name: row.name } : person ?? null);
   const [asking, setAsking] = useState(false);
@@ -73,8 +84,8 @@ export default function SuspensionSheet({
           <SheetTitle>{row ? 'Edit suspension' : 'Add a suspension'}</SheetTitle>
         </SheetHeader>
         <SheetBody className="space-y-4">
-          {row ? (
-            <p className="text-sm font-medium text-foreground">{row.name}</p>
+          {row || flag ? (
+            <p className="text-sm font-medium text-foreground">{row?.name ?? flag?.name}</p>
           ) : (
             <Field label="Player" required>
               {(control) => (
@@ -123,6 +134,18 @@ export default function SuspensionSheet({
               </ActionButton>
             </div>
           </div>
+          {draft.servingTeam !== undefined && (
+            <Field label="Serving team" required>
+              <select className={inputClass} value={draft.servingTeam} onChange={(e) => set({ servingTeam: e.target.value })}>
+                <option value="">–</option>
+                {teams.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="From" required>
             <Input type="date" value={draft.fromDate} onChange={(e) => set({ fromDate: e.target.value })} />
           </Field>

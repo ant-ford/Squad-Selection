@@ -68,6 +68,11 @@ export interface SuspensionsBoard {
   cleared: SuspensionRow[];
   cards: CardSuspensionRow[];
   legacy: LegacySuspensionRow[];
+  /**
+   * Active team names by rank, only when there are old flags: making one a
+   * suspension may need a serving team (the flags left have no registered team).
+   */
+  teams?: string[];
 }
 
 export const CLEARED_DAYS = 90;

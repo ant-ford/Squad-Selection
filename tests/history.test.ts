@@ -5,7 +5,7 @@ describe("history labels", () => {
   it("names every admin action the design lists", () => {
     for (const action of [
       "admin-membership", "admin-stage", "admin-squad", "admin-junior-route",
-      "admin-suspension-set", "admin-suspension-edit", "admin-suspension-clear",
+      "admin-suspension-set", "admin-suspension-edit", "admin-suspension-clear", "admin-suspension-flag-clear",
       "admin-office", "admin-person-create", "admin-team", "admin-team-role",
       "admin-card-link", "admin-reregistration-move", "admin-reregistration-keep",
     ]) {

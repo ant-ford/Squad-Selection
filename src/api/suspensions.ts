@@ -60,6 +60,8 @@ export interface SuspensionsBoard {
   cleared: SuspensionRow[];
   cards: CardSuspensionRow[];
   legacy: LegacySuspensionRow[];
+  /** Active team names by rank; only when there are old flags. */
+  teams?: string[];
 }
 
 export interface NewSuspension {
@@ -67,6 +69,8 @@ export interface NewSuspension {
   matches: number | null;
   fromDate: string;
   reason: string;
+  /** Default: the registered team. */
+  servingTeam?: string;
 }
 
 export type SuspensionChange = Partial<Pick<SuspensionRow, 'matches' | 'fromDate' | 'reason'>>;
@@ -85,4 +89,9 @@ export function updateSuspension(id: string, change: SuspensionChange): Promise<
 
 export function clearSuspension(id: string, reason?: string): Promise<{ ok: true }> {
   return apiPost(`/api/discipline/suspensions/${encodeURIComponent(id)}/clear`, reason ? { reason } : {});
+}
+
+/** Clears an old Is Suspended / Matches To Serve flag, recording nothing. */
+export function clearSuspensionFlag(playerId: string): Promise<{ ok: true }> {
+  return apiPost(`/api/discipline/flags/${encodeURIComponent(playerId)}/clear`, {});
 }
