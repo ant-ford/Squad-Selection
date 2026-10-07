@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Wand2, X, Search, Plus } from 'lucide-react';
 import { apiPost, apiGet } from '@/lib/apiClient';
 import type { MatchPlayer } from '@/api/getPlayersForMatch';

@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { apiPost, ApiError } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';

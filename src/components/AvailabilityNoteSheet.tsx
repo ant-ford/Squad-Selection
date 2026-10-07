@@ -29,7 +29,7 @@ export default function AvailabilityNoteSheet({
     <Sheet open dirty={!busy && notes.trim() !== fixture.playerNotes.trim()} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
         <SheetHeader onClose={onClose}>
-          <SheetTitle>{status === 'Maybe' ? 'Maybe' : 'Not available'} – add a note?</SheetTitle>
+          <SheetTitle>{status === 'Maybe' ? 'Maybe' : 'No'} – add a note?</SheetTitle>
         </SheetHeader>
         <SheetBody>
           <p className="py-2 text-xs text-muted-foreground">

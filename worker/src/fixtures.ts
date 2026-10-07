@@ -216,8 +216,6 @@ export async function getMyFixtures(
     umpiring: await umpiringAccess(env, authUser),
     // The umpire's next duty within two weeks: the "Your duty" line (myDuties.ts).
     duty: await duty,
-    // Their details are Eddy's own screens on Supabase ("My details").
-    eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
     // itself never reaches the browser.
     isBirthday: isBirthdayOn(user.birthday, today),

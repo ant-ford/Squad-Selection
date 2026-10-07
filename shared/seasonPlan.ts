@@ -71,7 +71,8 @@ export interface SeasonPlanPlayer {
   name: string;
   status: string;
   playingPosition: string;
-  plan: SeasonPlanAnswers | null;
+  /** Without captaincy interest: coaches don't see it (owner, 2026-10-07). */
+  plan: Omit<SeasonPlanAnswers, "captaincyInterest"> | null;
 }
 
 /** GET /api/season-plan/board: the season plans by team, for allocating players. */

@@ -1,10 +1,10 @@
 /**
- * The Hockey Convenor's HKHA registration screen (worker/src/registration.ts,
+ * The Men's Convenor's HKHA registration screen (worker/src/registration.ts,
  * src/pages/Registration.tsx): every Active player's registration details,
  * who still needs registering this season, and what's missing before they
  * can be.
  *
- * Only the Hockey Convenor office opens it (the "registration" section,
+ * Only the Men's Convenor office opens it (the "registration" section,
  * auth.ts; owner, 6 Oct 2026): it carries HKID and passport numbers.
  */
 import { isUnderEighteen } from "./declarations";
@@ -67,7 +67,7 @@ export interface RegistrationBoard {
 }
 
 /**
- * What HockeyHK registration needs that the club doesn't hold, in the order
+ * What HKHA registration needs that the club doesn't hold, in the order
  * the Convenor would chase it. Empty when they're ready to register.
  */
 export function missingDetails(p: RegistrationPlayer, today: string): string[] {
@@ -91,7 +91,7 @@ export const isVisiting = (p: Pick<RegistrationPlayer, "hkidNo" | "passportNo">)
 export const tidyRegisteredName = (v: string): string => v.replace(/\s+/g, " ").trim();
 
 /**
- * A Registered Name in the format the club's existing ones use, as HockeyHK
+ * A Registered Name in the format the club's existing ones use, as HKHA
  * prints it on match cards: "SURNAME Given Names". Only a suggestion: many
  * players are registered with more given names (a Chinese name, a middle
  * name) than the club holds, so the Convenor checks it before saving.
@@ -102,7 +102,7 @@ export function suggestRegisteredName(surname: string | null, givenNames: string
   return tidyRegisteredName(`${s.toUpperCase()} ${givenNames ?? ""}`);
 }
 
-/** The download's columns, in HockeyHK's order (the Fillout registration list). */
+/** The download's columns, in HKHA's order (the Fillout registration list). */
 export const REGISTRATION_CSV_HEADER = [
   "Team",
   "Shirt No",

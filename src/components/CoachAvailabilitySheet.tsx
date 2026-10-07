@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CheckCircle2, HelpCircle, XCircle, Info } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
@@ -132,7 +132,7 @@ export default function CoachAvailabilitySheet({
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
                 {player.optInOnly
-                  ? `${player.name} is opt-in only, so they count as Unavailable until they answer.`
+                  ? `${player.name} is opt-in only, so they count as No until they answer.`
                   : `Their preferences make them ${player.availabilityStatus} for this fixture.`}{' '}
                 Saving Available records an answer for this fixture only, which overrides that.
               </span>
@@ -161,7 +161,7 @@ export default function CoachAvailabilitySheet({
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Opt-in only</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Counts {player.name} as Unavailable for every fixture they have not answered,
+                  Counts {player.name} as No for every fixture they have not answered,
                   instead of Available. For players who are rarely around and do not update their
                   status. They can still mark themselves available for any fixture.
                 </p>

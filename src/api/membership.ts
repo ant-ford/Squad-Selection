@@ -86,6 +86,18 @@ export function getMembershipInsights(): Promise<MembershipInsightsData> {
   return apiGet<MembershipInsightsData>('/api/membership/insights');
 }
 
+/** An Active person who still owes a form this season (worker/src/formsDue.ts). */
+export interface FormsDuePerson {
+  id: string;
+  name: string;
+  firstName: string;
+  mobile: string;
+}
+
+export function getFormsDue(): Promise<{ waivers: FormsDuePerson[]; details: FormsDuePerson[] }> {
+  return apiGet('/api/membership/forms-due');
+}
+
 export function getMembershipBoard(): Promise<MembershipBoard> {
   return apiGet<MembershipBoard>('/api/membership/board');
 }
