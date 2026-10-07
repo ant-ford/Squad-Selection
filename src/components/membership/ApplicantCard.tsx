@@ -2,6 +2,7 @@ import { MessageCircle } from 'lucide-react';
 import type { ApplicantCard as Card, Chase } from '@/api/membership';
 import { toWhatsAppNumber, whatsAppLink } from '@/lib/whatsapp';
 import { DEFAULT_PHOTO, fallBackToDefaultPhoto, thumbOf } from '@/lib/defaultPhoto';
+import PersonName from '@/components/PersonName';
 
 /** Amber from two weeks in one stage, red from a month. */
 export function ageTone(days: number | null): string {
@@ -47,16 +48,14 @@ export function Avatar({ card, size = 'h-10 w-10' }: { card: { name: string; pho
   );
 }
 
-/** A small WhatsApp icon link that does not open the card it sits on. */
+/** A small WhatsApp icon link, raised above the card's button (see CardButton). */
 export function WhatsAppIcon({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => e.stopPropagation()}
-      className="p-1.5 -m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+      className="relative z-10 p-1.5 -m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
       aria-label={label}
       title={label}
     >
@@ -65,28 +64,38 @@ export function WhatsAppIcon({ href, label }: { href: string; label: string }) {
   );
 }
 
-export default function ApplicantCard({ card, onOpen }: { card: Card; onOpen: () => void }) {
+/** A board card's frame. */
+export const cardClass = 'relative isolate bg-card border border-border rounded-lg p-3 text-left hover:border-primary/40';
+
+/**
+ * The button that opens a board card's sheet: it covers the whole card, and
+ * the card's links (the name, WhatsApp) sit above it rather than inside it.
+ */
+export function CardButton({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={label}
+      className="absolute inset-0 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    />
+  );
+}
+
+export default function ApplicantCard({ card, personHref, onOpen }: { card: Card; personHref: string | null; onOpen: () => void }) {
   const whatsApp = applicantWhatsApp(card);
   const chase = chaseWhatsApp(card);
   const age = ageLabel(card);
   const meta = [card.team, card.playingPosition].filter(Boolean).join(' · ');
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="bg-card border border-border rounded-lg p-3 text-left hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
-    >
+    <div className={cardClass}>
+      <CardButton label={`Open ${card.name}'s application`} onOpen={onOpen} />
       <div className="flex items-start gap-2.5">
         <Avatar card={card} />
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm text-foreground truncate">{card.name}</p>
+          <p className="font-medium text-sm text-foreground truncate">
+            <PersonName name={card.name} href={personHref} />
+          </p>
           {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
           {card.membershipNo && <p className="text-xs text-muted-foreground">No. {card.membershipNo}</p>}
         </div>

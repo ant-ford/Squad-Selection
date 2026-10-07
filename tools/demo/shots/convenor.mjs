@@ -6,7 +6,7 @@ const as = 'mens-convenor';
 
 /** The registration list item for `name`, by its row button. */
 const regItem = (name) =>
-  `[...document.querySelectorAll('main li')].find((li) => li.querySelector('button[aria-expanded]')?.innerText.includes(${JSON.stringify(name)}))`;
+  `[...document.querySelectorAll('main li')].find((li) => li.querySelector('button[aria-expanded]')?.getAttribute('aria-label')?.includes(${JSON.stringify(name)}))`;
 
 /** The tabs and the list under them. */
 const tabsAndList = `[document.querySelector('main [role=tablist]'), document.querySelector('main [role=tabpanel] ul')]`;
