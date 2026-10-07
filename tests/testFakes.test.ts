@@ -13,7 +13,8 @@ import { officers } from "../worker/src/data/officers";
 import type { Env } from "../worker/src/env";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
 import { installFakeRepos } from "./helpers/fakeRepos";
-import { exception, match, office, person, recId } from "./helpers/factories";
+import { exception, match, office, person, recId, team } from "./helpers/factories";
+import { authContexts } from "../worker/src/authContext";
 
 const env = { ...SUPABASE_TEST_ENV } as Env;
 
@@ -173,6 +174,13 @@ describe("fake repositories", () => {
       { id: ALICE, membershipNo: "M1", preferredName: "Test", status: "Member" },
     ]);
     expect((await people(env).listContactsByIds(new Set([ALICE, "nonsense"])))[0].photo).toEqual([{ url: "u", filename: "f" }]);
+    // Names by id or by email (any case); ids that aren't row ids are ignored.
+    expect((await people(env).listNamesFor(["nonsense"], [" ALICE@x.com "])).map((n) => n.id).sort()).toEqual([ALICE, recId("Old")].sort());
+    expect((await people(env).listNamesFor([recId("Gone")], []))).toEqual([{ id: recId("Gone"), preferredName: "Test", givenNames: null, email: null }]);
+    // One directory row by id (resigned or not: the caller decides), null when there's no such person.
+    expect(await people(env).getDirectoryRow(ALICE)).toMatchObject({ id: ALICE, status: "Member", membershipNo: "M1" });
+    expect((await people(env).getDirectoryRow(recId("Gone")))?.status).toBe("Resigned");
+    expect(await people(env).getDirectoryRow("recNobody00000000")).toBeNull();
     expect((await people(env).listInactiveRankable()).map((p) => p.id)).toEqual([recId("Old")]);
     await people(env).update(ALICE, { sectionRank: 4, membershipNo: "M2", playingAbility: null });
     expect(fake.state.people[0]).toMatchObject({ sectionRank: 4, crm: { membershipNo: "M2" } });
@@ -183,16 +191,56 @@ describe("fake repositories", () => {
     expect(await officers(env).listAllMembers(["sponsor"])).toHaveLength(2);
 
     fake.state.availabilityExceptions.push(exception({ id: recId("X1"), player: [ALICE], match: [M1], season: "2026-2027" }));
-    const { createdIds } = await availabilityExceptions(env).apply({
-      deleteIds: [recId("X1")],
-      updates: [],
-      creates: [{ matchId: M1, playerId: ALICE, status: "Maybe", updatedById: ALICE }],
-    });
+    // set_availability: Available with nothing to override deletes the row.
+    const cleared = await availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1], status: "Available" });
+    expect(cleared).toMatchObject({ updated: 1, results: [{ matchId: M1, exceptionId: null }], seasons: ["2026-2027"] });
+    expect(cleared.before).toEqual([{ matchId: M1, exceptionId: recId("X1"), status: "Unavailable" }]);
+    expect(fake.state.availabilityExceptions).toEqual([]);
+    const { results } = await availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1], status: "Maybe", updatedById: ALICE });
     expect(fake.state.availabilityExceptions).toMatchObject([
-      { id: createdIds[0], player: [ALICE], match: [M1], availabilityStatus: "Maybe", season: "2026-2027", updatedBy: ALICE },
+      { id: results[0].exceptionId, player: [ALICE], match: [M1], availabilityStatus: "Maybe", season: "2026-2027", updatedBy: ALICE },
     ]);
-    expect(fake.callsTo("availabilityExceptions").map((c) => c.method)).toEqual(["apply"]);
+    // All or nothing, with set_availability's P0002 for a match that does not exist.
+    await expect(
+      availabilityExceptions(env).set({ playerId: ALICE, matchIds: [M1, recId("Nowhere")], status: "Unavailable" }),
+    ).rejects.toMatchObject({ code: "P0002" });
+    expect(fake.state.availabilityExceptions[0].availabilityStatus).toBe("Maybe");
+    expect(fake.callsTo("availabilityExceptions").map((c) => c.method)).toEqual(["set", "set", "set"]);
     expect(fake.callsTo("people", "listContactsByIds")[0].args).toEqual([[ALICE, "nonsense"]]);
+    fake.restore();
+  });
+});
+
+describe("fake auth_context", () => {
+  it("answers like the SQL: person by email (Active first), all teams' links, Active offices in office order", async () => {
+    const ALICE = recId("Alice");
+    const fake = installFakeRepos({
+      people: [person({ id: ALICE, email: "Alice@X.com", active: false }), person({ id: recId("Other"), email: "bob@x.com" })],
+      teams: [
+        team({ id: recId("TeamB"), teamName: "B", active: false, coach: [ALICE], teamCaptain: [ALICE] }),
+        team({ id: recId("TeamA"), teamName: "A", sectionCaptain: [ALICE], teamCaptain: [ALICE] }),
+      ],
+      officers: [
+        office("sponsor", ALICE),
+        office("sectionChair", ALICE, { designation: "Chairman" }),
+        office("membershipOfficer", ALICE, { status: "Retired" }),
+      ],
+    });
+    const ctx = await authContexts({} as Env).load(" alice@x.COM ");
+    expect(ctx.person).toMatchObject({ id: ALICE, uuid: ALICE, active: false });
+    expect(ctx).toMatchObject({
+      isTeamCoach: true,
+      coachTeams: ["B"], // an inactive team still counts
+      teamSectionCaptain: true,
+      allTeamNames: ["A", "B"],
+      captainTeams: ["A"], // Active teams only
+      offices: [
+        { role: "section_chair", office: "sectionChair", designation: "Chairman" },
+        { role: "sponsor", office: null, designation: "" },
+      ],
+      umpire: false,
+    });
+    expect((await authContexts({} as Env).load("nobody@x.com")).person).toBeNull();
     fake.restore();
   });
 });

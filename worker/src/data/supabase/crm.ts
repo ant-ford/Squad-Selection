@@ -16,7 +16,7 @@ import { API_ID_RE } from "../ids";
 import type { MembershipEventsRepo } from "../membershipEvents";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../../../shared/schema/fieldMaps";
 import { REVIEWS_FROM } from "../../../../shared/statementStages";
-import { fileLink } from "./files";
+import { fileLink, photoLink } from "./files";
 import { startReview } from "../../reviewEmails";
 
 /** Attachment columns, turned into signed links on the way out. */
@@ -32,7 +32,11 @@ async function signAttachments(env: Env, row: Record<string, unknown>) {
     const refs = row[key];
     if (!Array.isArray(refs)) continue;
     row[key] = await Promise.all(
-      refs.map(async (r: { fileId: string; filename: string | null }) => ({ url: await fileLink(env, r.fileId), filename: r.filename ?? "Attachment" })),
+      refs.map(async (r: { fileId: string; filename: string | null }) => ({
+        // A photo shows on the boards (a day's link, photoLink); documents get the short one.
+        url: key === "photo" ? await photoLink(env, r.fileId) : await fileLink(env, r.fileId),
+        filename: r.filename ?? "Attachment",
+      })),
     );
   }
   return row;
@@ -66,6 +70,7 @@ export function peopleCrmReads(env: Env) {
       return selectOne(env, "api_people_crm", APPLICANT_STAGE_FIELDS, id);
     },
     listDirectory: () => selectRows(env, "api_people_crm", CHAIRMAN_FIELDS, "or=(status.is.null,status.neq.Resigned)"),
+    getDirectoryRow: (id: string) => selectOne(env, "api_people_crm", CHAIRMAN_FIELDS, id),
     listContactsByIds: async (ids: Iterable<string>) => {
       const wanted = [...new Set([...ids].filter((id) => API_ID_RE.test(id)))];
       if (wanted.length === 0) return [];

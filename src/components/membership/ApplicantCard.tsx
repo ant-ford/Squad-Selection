@@ -1,7 +1,7 @@
 import { MessageCircle } from 'lucide-react';
 import type { ApplicantCard as Card, Chase } from '@/api/membership';
 import { toWhatsAppNumber, whatsAppLink } from '@/lib/whatsapp';
-import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto, thumbOf } from '@/lib/defaultPhoto';
 
 /** Amber from two weeks in one stage, red from a month. */
 export function ageTone(days: number | null): string {
@@ -42,7 +42,7 @@ export function chaseWhatsApp(card: Card): string | null {
 export function Avatar({ card, size = 'h-10 w-10' }: { card: { name: string; photo?: string }; size?: string }) {
   return (
     <div className={`${size} shrink-0 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center`}>
-      <img src={card.photo || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" loading="lazy" onError={fallBackToDefaultPhoto} />
+      <img src={thumbOf(card.photo) || DEFAULT_PHOTO} alt="" className="h-full w-full object-cover" loading="lazy" onError={fallBackToDefaultPhoto} />
     </div>
   );
 }

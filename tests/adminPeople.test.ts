@@ -168,16 +168,18 @@ describe("history", () => {
     expect(out[0].action).toBe("activate");
   });
 
-  it("reads the person, then their log rows and active/inactive events", async () => {
+  it("reads the person, then their log rows, active/inactive events, squad changes and answers given for them", async () => {
     const calls = fake({
       people: [{ id: U(7) }],
-      activity_log: [{ occurred_at: "2026-10-05T02:00:00Z", action: "admin-stage", fields: ["applicant_stage"], actor: null }],
+      activity_log: (url) =>
+        url.searchParams.get("entity") ? [{ occurred_at: "2026-10-05T02:00:00Z", action: "admin-stage", fields: ["applicant_stage"], actor: null }] : [],
       ranking_events: [],
+      match_selection_changes: [],
     });
     const { entries } = await getPersonHistory(env, "recP1");
     expect(entries).toHaveLength(1);
-    expect(calls).toHaveLength(3);
-    const log = calls.find((c) => c.url.pathname.endsWith("/activity_log"))!.url.searchParams;
+    expect(calls).toHaveLength(5);
+    const log = calls.find((c) => c.url.pathname.endsWith("/activity_log") && c.url.searchParams.get("entity"))!.url.searchParams;
     expect(log.get("entity")).toBe("eq.people");
     expect(log.get("entity_id")).toBe(`eq.${U(7)}`);
     expect(log.get("limit")).toBe("50");
@@ -197,10 +199,11 @@ describe("history", () => {
 // The routes: each is gated on the people section before anything is read.
 // ---------------------------------------------------------------------------
 
-const mocks = vi.hoisted(() => ({ requireSection: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireSection: vi.fn(), requireAuthorizedUser: vi.fn() }));
 vi.mock("../worker/src/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../worker/src/auth")>()),
   requireSection: mocks.requireSection,
+  requireAuthorizedUser: mocks.requireAuthorizedUser,
 }));
 
 import worker from "../worker/src/index";
@@ -213,9 +216,10 @@ const get = (path: string) =>
 describe("admin people routes", () => {
   beforeEach(() => {
     mocks.requireSection.mockReset();
+    mocks.requireAuthorizedUser.mockReset();
   });
 
-  it.each(["/api/history?person=recP1", "/api/admin/people?q=sam", "/api/admin/people/recP1"])("%s is refused without the people section, before any read", async (path) => {
+  it.each(["/api/admin/people?q=sam", "/api/admin/people/recP1"])("%s is refused without the people section, before any read", async (path) => {
     const calls = fake({ people: [personRow()] });
     mocks.requireSection.mockImplementation(async () => {
       throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
@@ -232,5 +236,77 @@ describe("admin people routes", () => {
     const res = await get("/api/admin/people?q=sam");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ people: [{ id: "recP1", name: "Sam Lee", team: "HKFC C", status: "Member", stage: null, active: true }] });
+  });
+});
+
+describe("change history access", () => {
+  const coachOf = (...teams: string[]) => ({ ...base, role: "coach", coachTeams: teams }) as AuthorizedUser;
+  const history = {
+    people: [{ id: U(7), registered_team: "HKFC C", selected_team_sos: "HKFC C", selected_team_eos: null }],
+    activity_log: (url: URL) =>
+      url.searchParams.get("entity")
+        ? [
+            { occurred_at: "2026-10-05T02:00:00Z", action: "admin-membership", fields: ["member_type"], actor: null },
+            { occurred_at: "2026-10-05T03:00:00Z", action: "row-update", fields: ["mobile_no", "opt_in_only"], changes: { opt_in_only: [false, true] }, actor: null },
+          ]
+        : [],
+    ranking_events: [],
+    match_selection_changes: [],
+  };
+  beforeEach(() => mocks.requireAuthorizedUser.mockReset());
+
+  it("shows an officer everything, with values where kept", async () => {
+    fake(history);
+    mocks.requireAuthorizedUser.mockResolvedValue(officer);
+    const res = await get("/api/history?person=recP1");
+    const { entries } = (await res.json()) as { entries: { summary: string; fields: string[] }[] };
+    expect(entries.map((e) => e.summary)).toEqual(["Changed", "Membership details changed"]);
+    expect(entries[0].fields).toEqual(["Mobile", "Opt-In Only: off → on"]);
+  });
+
+  it("shows the player's coach the hockey side only: no officer actions, no personal fields", async () => {
+    fake(history);
+    mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC C"));
+    const { entries } = (await (await get("/api/history?person=recP1")).json()) as { entries: { summary: string; fields: string[] }[] };
+    expect(entries).toEqual([expect.objectContaining({ summary: "Changed", fields: ["Opt-In Only: off → on"] })]);
+  });
+
+  it("refuses another team's coach", async () => {
+    fake(history);
+    mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC A"));
+    expect((await get("/api/history?person=recP1")).status).toBe(403);
+  });
+
+  const matchTables = {
+    matches: [{ id: U(9), home_team: "HKFC C", away_team: "Valley B" }],
+    match_selection_changes: [{ occurred_at: "2026-10-06T10:00:00Z", side: "home", source: "coach", added: [U(1)], removed: [U(2)], actor: { preferred_name: "Lee", given_names: null, surname: "Coach" } }],
+    activity_log: [
+      { occurred_at: "2026-10-06T09:00:00Z", action: "row-update", fields: ["home_kit"], changes: { home_kit: ["White", "Blue"] }, actor: null, actor_label: null },
+      { occurred_at: "2026-10-06T08:00:00Z", action: "row-update", fields: ["match_date"], changes: { match_date: ["2026-10-10T01:00:00Z", "2026-10-10T06:30:00Z"] }, actor: null, actor_label: "hkha-sync" },
+      { occurred_at: "2026-10-06T07:00:00Z", action: "row-availability", fields: ["status"], changes: { person: U(1), status: ["Available", "Unavailable"] }, entity_id: U(9), actor: { preferred_name: "Lee", given_names: null, surname: "Coach" } },
+    ],
+    people: [{ id: U(1), preferred_name: "Sam", given_names: null, surname: "Lee" }, { id: U(2), preferred_name: "Tom", given_names: null, surname: "Wu" }],
+  };
+
+  it("gives a fixture's coach its squad changes, fixture changes and answers given for players", async () => {
+    fake(matchTables);
+    mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC C"));
+    const res = await get("/api/history?match=recM1");
+    expect(res.status).toBe(200);
+    const { entries } = (await res.json()) as { entries: { summary: string; fields: string[]; actor: string | null }[] };
+    expect(entries).toEqual([
+      { at: "2026-10-06T10:00:00.000Z", actor: "Lee Coach", action: "squad", summary: "Squad HKFC C", fields: ["In: Sam Lee", "Out: Tom Wu"] },
+      { at: "2026-10-06T09:00:00.000Z", actor: null, action: "row-update", summary: "Changed", fields: ["Home kit: White → Blue"] },
+      { at: "2026-10-06T08:00:00.000Z", actor: "HKHA fixtures", action: "row-update", summary: "Changed", fields: ["Date and time: Sat 10 Oct, 09:00 → Sat 10 Oct, 14:30"] },
+      { at: "2026-10-06T07:00:00.000Z", actor: "Lee Coach", action: "row-availability", summary: "Answer for Sam Lee", fields: ["Available → Unavailable"] },
+    ]);
+  });
+
+  it("refuses a coach of neither side, and 404s an unknown fixture", async () => {
+    fake(matchTables);
+    mocks.requireAuthorizedUser.mockResolvedValue(coachOf("HKFC A"));
+    expect((await get("/api/history?match=recM1")).status).toBe(403);
+    fake({ matches: [] });
+    expect((await get("/api/history?match=recNOPE")).status).toBe(404);
   });
 });

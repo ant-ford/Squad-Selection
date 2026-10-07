@@ -71,6 +71,29 @@ export default defineConfig(({ command }) => ({
               expiration: { maxEntries: 1 },
             },
           },
+          {
+            // Stored files: photos, thumbnails and posters, by their signed
+            // link. A link names one file and stays the same for its bucket
+            // (a day for photos, data/supabase/files.ts), and a new link
+            // means a new expiry, so a cached copy is never stale: answer
+            // from the cache. Documents' links change hourly, so they
+            // mostly miss, and expire out of here within two days.
+            urlPattern: ({ url }) => /\/api\/files\/[0-9a-f-]{36}$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "eddy-files",
+              expiration: { maxEntries: 400, maxAgeSeconds: 2 * 24 * 60 * 60, purgeOnQuotaError: true },
+              // Fetched with CORS (the Worker allows it), so what is kept is
+              // a readable 200 rather than an opaque response, which browsers
+              // count as megabytes of quota each.
+              cacheableResponse: { statuses: [200] },
+              plugins: [
+                {
+                  requestWillFetch: async ({ request }) => new Request(request.url, { mode: "cors", credentials: "omit" }),
+                },
+              ],
+            },
+          },
         ],
         // The default plus the self-hosted font.
         globPatterns: ["**/*.{js,css,html,woff2}"],

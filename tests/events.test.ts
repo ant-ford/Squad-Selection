@@ -4,7 +4,18 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import type { DirectoryPerson } from "../shared/emailLists";
 
 const DIR: DirectoryPerson[] = [];
-vi.mock("../worker/src/chairman", () => ({ getChairmanDirectory: async () => ({ people: DIR, generatedAt: "" }) }));
+/** The whole directory (managers' screens) and one person's entry (the viewer's checks). */
+const directoryReads = vi.hoisted(() => ({ whole: 0, one: [] as string[] }));
+vi.mock("../worker/src/chairman", () => ({
+  getChairmanDirectory: async () => {
+    directoryReads.whole++;
+    return { people: DIR, generatedAt: "" };
+  },
+  getDirectoryPerson: async (_env: unknown, id: string) => {
+    directoryReads.one.push(id);
+    return DIR.find((p) => p.id === id) ?? null;
+  },
+}));
 
 import { checkIn, eventTasks, getMyEvents, respondToEvent, saveEvent, setAttendance, uploadPaymentProof } from "../worker/src/events";
 import { attendedEvents } from "../worker/src/eventAttendance";
@@ -14,10 +25,28 @@ import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
 import { billed, cleanLink, linkLabel, checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
+import { signedIn } from "./helpers/factories";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
-const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) =>
-  ({ email: `${personId}@x.com`, personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [], ...extra }) as AuthorizedUser;
+/**
+ * The signed-in user as auth_context reads them: their uuid, and the
+ * Social Secretary office / team links the current fake() was given.
+ */
+const userOf = (personId: string, extra: Partial<AuthorizedUser> = {}) => {
+  const uuid = UUID[personId] ?? "";
+  return signedIn({
+    email: `${personId}@x.com`,
+    personId,
+    personUuid: uuid,
+    offices: (rights.offices?.[uuid] ?? []).map(() => ({ role: "social_secretary", office: null, designation: "" })),
+    socialSecretaryTeams: ((rights.teamPeople?.[uuid] ?? []) as { teams: { id: string; team_name: string } }[]).map((t) => ({
+      id: t.teams.id,
+      name: t.teams.team_name,
+    })),
+    ...extra,
+  });
+};
+let rights: { offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]> } = {};
 
 const person = (id: string, name: string, team: string, status = "Member"): DirectoryPerson => ({
   id,
@@ -61,6 +90,7 @@ type Call = { url: URL; method: string; body: any };
 /** A fake PostgREST: `events`, `responses` (rows for event_responses), offices and team_people per uuid. */
 function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
   const calls: Call[] = [];
+  rights = { offices: opts.offices, teamPeople: opts.teamPeople };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -103,6 +133,8 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
 afterEach(() => {
   vi.unstubAllGlobals();
   invalidateAll();
+  directoryReads.whole = 0;
+  directoryReads.one = [];
 });
 const upsertOf = (calls: Call[]) => calls.find((c) => c.url.pathname.endsWith("/event_responses") && c.method === "POST");
 
@@ -227,6 +259,16 @@ describe("the player page and My Tasks", () => {
     // Applicants aren't in the default audience.
     fake({ events: [event()] });
     expect(await eventTasks(env, userOf("recAPP"))).toEqual([]);
+  });
+
+  it("reads only the viewer's own directory entry (and a sign-up's), never the whole directory", async () => {
+    fake({ events: [event()] });
+    await getMyEvents(env, userOf("recDAD"));
+    await eventTasks(env, userOf("recDAD"));
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going" });
+    await respondToEvent(env, userOf("recDAD"), EVENT_ID, { personId: "recSON", status: "going" });
+    expect(directoryReads.whole).toBe(0);
+    expect(directoryReads.one).toEqual(["recDAD", "recDAD", "recDAD", "recDAD", "recSON"]);
   });
 });
 

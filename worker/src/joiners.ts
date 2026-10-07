@@ -261,7 +261,7 @@ export async function updateJoiner(env: Env, actor: AuthorizedUser, apiId: strin
 }
 
 async function log(env: Env, actor: AuthorizedUser, action: string, apiId: string, fields: string[]) {
-  const [actorId, entityId] = await Promise.all([personUuid(env, actor.personId), personUuid(env, apiId)]);
+  const [actorId, entityId] = [actor.personUuid || null, await personUuid(env, apiId)];
   await db(env)
     .insert("activity_log", [{ actor_person_id: actorId, action: `joiner-${action}`, entity: "people", entity_id: entityId, fields }])
     .catch((err) => console.error("activity_log write failed:", err instanceof Error ? err.message : err));
@@ -473,7 +473,7 @@ async function loadStep(env: Env, user: AuthorizedUser, stepId: string): Promise
   const d = db(env);
   const [step, me] = await Promise.all([
     d.one<StepRow>("steps", `select=id,step,person_id,started_at,done_at,waiting_on_person_id&process=eq.new_joiner&id=${eq(stepId)}`),
-    personUuid(env, user.personId),
+    Promise.resolve(user.personUuid || null),
   ]);
   if (!step || (step.step !== "kit" && step.step !== "registration")) throw new HttpError("Task not found.", 404, "NOT_FOUND");
   // The convenor it waits on, or a Section Captain.
@@ -524,8 +524,7 @@ export async function completeJoinerTask(env: Env, user: AuthorizedUser, stepId:
 }
 
 /** Open kit and registration requests waiting on this person, for My Tasks. */
-export async function openJoinerTasks(env: Env, personApiId: string): Promise<{ id: string; kind: JoinerStepKey; subject: string }[]> {
-  const me = await personUuid(env, personApiId);
+export async function openJoinerTasks(env: Env, me: string): Promise<{ id: string; kind: JoinerStepKey; subject: string }[]> {
   if (!me) return [];
   const rows = await db(env).select<{ id: string; step: string; who: { preferred_name: string | null; given_names: string | null; surname: string | null } | null }>(
     "steps",

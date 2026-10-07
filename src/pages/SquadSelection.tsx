@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { usePlayersForMatch, useAvailabilityPoll, useRecommendations } from '@/lib/queries';
 import { toast } from 'sonner';
-import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle } from 'lucide-react';
+import { Wand2, X, Settings2, Search, Plus, Trash2, MessageCircle, History } from 'lucide-react';
 import { apiPost, apiGet, ApiError } from '../lib/apiClient';
 import MatchHeader from '@/components/MatchHeader';
 import PlayerFilters, { DEFAULT_ELIGIBILITY, filtersToParams, isDefaultEligibility, paramsToFilters, type FilterState } from '@/components/PlayerFilters';
@@ -15,7 +15,7 @@ import CoachAvailabilitySheet, { type CoachAvailabilityTarget } from '@/componen
 import { fixtureLink, type FixtureBrief } from '@/lib/whatsapp';
 import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { MatchPlayer } from '@/api/getPlayersForMatch';
+import { noteSquadNotified, type MatchPlayer } from '@/api/getPlayersForMatch';
 import { computeAutoSelectIds } from '@/lib/autoSelect';
 import { compareSelected, sortSquadList } from '@/lib/squadSort';
 import { POS_SHORT, initials, shortTeam } from '@/lib/format';
@@ -56,9 +56,12 @@ export default function SquadSelection() {
 
   const { data, isLoading, isError, error, refetch } = usePlayersForMatch(matchId!, side);
   const { data: pollData } = useAvailabilityPoll(matchId!, true);
-  // includeSelected: the current squad is ranked too, so a player taken out
-  // of it before saving drops back into their natural place in the list.
-  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT, true, true);
+  // The ranking comes with the players (recommendationOrder); only a Worker
+  // older than that field is asked for it separately. includeSelected: the
+  // current squad is ranked too, so a player taken out of it before saving
+  // drops back into their natural place in the list.
+  const needsRecommendations = !!data && data.recommendationOrder === undefined;
+  const { data: recData } = useRecommendations(matchId!, side, undefined, RECOMMENDATION_POOL_LIMIT, needsRecommendations, true);
 
   const [pendingDeltas, setPendingDeltas] = useState<Delta[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => {
@@ -371,8 +374,11 @@ export default function SquadSelection() {
   }, [mergedPlayers, filters]);
 
   const recRankById = useMemo(
-    () => new Map((recData?.recommendations ?? []).map((r, i) => [r.id, i] as [string, number])),
-    [recData]
+    () => {
+      const order = data?.recommendationOrder ?? recData?.recommendations.map((r) => r.id) ?? [];
+      return new Map(order.map((id, i) => [id, i] as [string, number]));
+    },
+    [data?.recommendationOrder, recData]
   );
 
   const sortedPlayers = useMemo(
@@ -453,8 +459,51 @@ export default function SquadSelection() {
       venue: m.venue,
       kit: m.kit ?? '',
       link: matchId ? fixtureLink(window.location.origin, matchId) : undefined,
+      change: m.change,
     };
   }, [data?.match, matchId]);
+
+  // Who came in and went out since the squad was last sent from Notify.
+  const sinceNotice = useMemo(() => {
+    const notice = data?.match.notice;
+    if (!notice) return null;
+    const told = new Set(notice.squad);
+    const now = new Set(selectedPlayers.map((p) => p.id));
+    const target = (p: MatchPlayer) => ({ id: p.id, preferredName: p.preferredName, mobile: p.mobile, shirtNo: p.shirtNo, playingPosition: p.playingPosition });
+    return {
+      at: notice.at,
+      added: selectedPlayers.filter((p) => !told.has(p.id)).map(target),
+      removed: mergedPlayers.filter((p) => told.has(p.id) && !now.has(p.id)).map(target),
+    };
+  }, [data?.match.notice, selectedPlayers, mergedPlayers]);
+
+  // The squad was sent: remember it as what the players know (once per sheet).
+  const notifiedRef = useRef(false);
+  const handleNotified = () => {
+    const side = data?.match.side;
+    if (notifiedRef.current || !matchId || !side) return;
+    notifiedRef.current = true;
+    void noteSquadNotified(matchId, side)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['playersForMatch'] }))
+      .catch(() => {
+        notifiedRef.current = false;
+      });
+  };
+
+  // An empty squad can start from the team's last one: everyone in it who
+  // isn't Unavailable or blocked, as changes to save.
+  const lastSquad = data?.match.lastSquad;
+  const canStartFromLast = !!lastSquad && lastSquad.players.length > 0 && selectedPlayers.length === 0 && pendingDeltas.length === 0;
+  const startFromLastSquad = () => {
+    if (!lastSquad) return;
+    const byId = new Map(mergedPlayers.map((p) => [p.id, p]));
+    const picks = lastSquad.players
+      .map((id) => byId.get(id))
+      .filter((p): p is MatchPlayer => !!p && p.eligibilityStatus !== 'blocked' && p.availabilityStatus !== 'Unavailable');
+    updateDeltas(picks.map((p) => ({ playerId: p.id, action: 'select' })));
+    const skipped = lastSquad.players.length - picks.length;
+    toast.success(`${picks.length} from the last squad${skipped ? `; ${skipped} left out (unavailable or blocked)` : ''}. Save to keep.`);
+  };
 
   const pendingPlayers = useMemo(
     () => mergedPlayers.filter(p => pendingDeltas.some(d => d.playerId === p.id)),
@@ -619,6 +668,15 @@ export default function SquadSelection() {
           />
           <label htmlFor="toggle-all" className="text-sm font-medium text-muted-foreground cursor-pointer select-none">Select all</label>
         </div>
+        {canStartFromLast && (
+          <button
+            onClick={startFromLastSquad}
+            className="inline-flex items-center gap-1.5 px-3 min-h-10 rounded-full text-xs sm:text-sm font-medium border border-border bg-muted text-muted-foreground hover:bg-muted/80"
+          >
+            <History className="h-3.5 w-3.5" />
+            Last squad ({lastSquad!.players.length})
+          </button>
+        )}
         <div className="w-px h-5 bg-border/50 hidden sm:block" />
         
         <button
@@ -852,7 +910,12 @@ export default function SquadSelection() {
             shirtNo: p.shirtNo,
             playingPosition: p.playingPosition,
           }))}
-          onClose={() => setShowNotify(false)}
+          sinceNotice={sinceNotice}
+          onNotified={handleNotified}
+          onClose={() => {
+            setShowNotify(false);
+            notifiedRef.current = false;
+          }}
         />
       )}
 

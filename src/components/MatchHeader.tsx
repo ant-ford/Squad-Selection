@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { setMatchKit, type KitColour, type MatchInfo } from '@/api/getPlayersForMatch';
 import { toast } from 'sonner';
+import { History } from 'lucide-react';
+import HistorySheet from '@/components/HistorySheet';
 
 const KIT_SWATCH: Record<Exclude<KitColour, ''>, string> = {
   Blue: 'bg-blue-600 border-blue-700',
@@ -61,6 +63,7 @@ function KitToggle({ matchId, side, kit }: { matchId: string; side: 'home' | 'aw
  * The large stat boxes and progress bar were removed for space.
  */
 export default function MatchHeader({ match, matchId }: { match: MatchInfo; matchId?: string }) {
+  const [showHistory, setShowHistory] = useState(false);
   return (
     <div className="border-b border-border bg-card">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -84,8 +87,22 @@ export default function MatchHeader({ match, matchId }: { match: MatchInfo; matc
           >
             {match.selectedCount}/{match.targetSquadSize}
           </span>
+          {matchId && (
+            <button
+              type="button"
+              onClick={() => setShowHistory(true)}
+              className="h-9 w-9 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+              aria-label="History"
+              title="History"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
+      {showHistory && matchId && (
+        <HistorySheet title={`${match.homeTeam} vs ${match.awayTeam}`} matchId={matchId} onClose={() => setShowHistory(false)} />
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@
  * behaviour.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { CacheVersions } from "./cacheVersions";
 
 export interface RequestStats {
   /** Supabase (PostgREST) calls made for this request. */
@@ -36,6 +37,41 @@ export interface RequestContext {
   /** The error behind a 5xx answer, and who was signed in, for error_log (systemHealth.ts). */
   error?: unknown;
   personId?: string;
+  /**
+   * Their People uuid: sent with every database write as x-eddy-actor, so
+   * the change history knows who made the change (data/supabase.ts).
+   */
+  personUuid?: string;
+  /** The signed-in email (auth.ts): whose reused sign-in answer a write drops. */
+  email?: string;
+  /** The database's cache versions, once this request has read them (auth.ts). */
+  versions?: CacheVersions;
+  /** The one read of the versions on a request without sign-in (cache.ts requestVersions). */
+  versionsRead?: Promise<CacheVersions | null>;
+}
+
+/**
+ * The request has written to the database (data/supabase.ts): the versions
+ * it read before are behind its own write, so they are read again before
+ * anything else is cached under them.
+ */
+export function noteRequestWrite(): void {
+  const context = storage.getStore();
+  if (!context) return;
+  context.versions = undefined;
+  context.versionsRead = undefined;
+  for (const listener of writeListeners) listener(context);
+}
+
+const writeListeners: ((context: RequestContext) => void)[] = [];
+
+/**
+ * Called on every database write made inside a request, after the write
+ * (auth.ts drops the writer's reused sign-in answer, so their next request
+ * reads their own write).
+ */
+export function onRequestWrite(listener: (context: RequestContext) => void): void {
+  writeListeners.push(listener);
 }
 
 /** Remembers the error a 5xx answer was made from (index.ts), for error_log. */
@@ -45,9 +81,18 @@ export function noteRequestError(err: unknown): void {
 }
 
 /** Remembers who is signed in (auth.ts), for error_log. */
-export function noteRequestPerson(personId: string): void {
+export function noteRequestPerson(personId: string, email?: string, personUuid?: string): void {
   const context = storage.getStore();
-  if (context) context.personId = personId;
+  if (!context) return;
+  context.personId = personId;
+  if (email) context.email = email;
+  if (personUuid) context.personUuid = personUuid;
+}
+
+/** Remembers the cache versions read with the person (auth.ts), for the caches later in the request. */
+export function noteRequestVersions(versions: CacheVersions): void {
+  const context = storage.getStore();
+  if (context) context.versions = versions;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

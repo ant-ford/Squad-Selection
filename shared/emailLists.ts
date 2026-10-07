@@ -74,6 +74,10 @@ export interface DirectoryPerson {
   values: Record<GroupKey, string[]>;
   emails: string[];
   emailSource: EmailSource;
+  /** Their own mobile, for "WhatsApp these people". */
+  mobile?: string;
+  /** What a message calls them: preferred name, else given names. */
+  firstName?: string;
   /** People.Age below 18: the guardian is copied in. */
   under18: boolean;
 }

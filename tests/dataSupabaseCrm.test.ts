@@ -47,6 +47,15 @@ describe("officer-section reads on Supabase", () => {
     expect(calls[0].url.searchParams.get("applicantStage")).toBe('in.("3. Club Application (Signed)")');
   });
 
+  it("reads one directory row by id, with the directory's columns", async () => {
+    const calls = postgrest(() => []);
+    expect(await people(env).getDirectoryRow("recAAAAAAAAAAAAAA")).toBeNull();
+    expect(calls[0].url.pathname).toMatch(/api_people_crm$/);
+    expect(calls[0].url.searchParams.get("id")).toBe("eq.recAAAAAAAAAAAAAA");
+    expect(calls[0].url.searchParams.get("limit")).toBe("1");
+    expect(calls[0].url.searchParams.get("select")).toContain("guardianEmail");
+  });
+
   it("looks up contacts by row id: imported (rec...) or created in Eddy (uuid)", async () => {
     const calls = postgrest(() => []);
     expect(await people(env).listContactsByIds(["not-an-id", ""])).toEqual([]);

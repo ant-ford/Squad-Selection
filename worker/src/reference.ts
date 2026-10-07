@@ -1,10 +1,10 @@
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getShared, invalidateCache, invalidateCachePrefix, invalidateShared } from "./cache";
+import { getVersioned, invalidateCache, invalidateShared } from "./cache";
 import { inBackground } from "./requestContext";
 import { people } from "./data/people";
 import { teams as teamsRepo } from "./data/teams";
-import { officers, type Office } from "./data/officers";
+import type { Office } from "./data/officers";
 import { availabilityExceptions } from "./data/availabilityExceptions";
 import type { Player, Team, AvailabilityException } from "../../shared/schema/domainTypes";
 
@@ -21,7 +21,7 @@ export interface ReferenceData {
 export const UNRANKED_TEAM_RANK = 99;
 
 export async function getReferenceData(env: Env): Promise<ReferenceData> {
-  return getShared<ReferenceData>(env, "club-reference", async () => {
+  return getVersioned<ReferenceData>(env, "club-reference", ["people", "teams", "team_people"], async () => {
     const [teams, players] = await Promise.all([
       teamsRepo(env).listActive(),
       people(env).listActive(),
@@ -43,57 +43,9 @@ export async function getReferenceData(env: Env): Promise<ReferenceData> {
 
 const REFERENCE_TTL_MS = 10 * 60 * 1000;
 
-/**
- * Coach / Section Captain relationships across ALL team records â€” including
- * teams currently marked inactive. Authorization must depend on the person's
- * role, not on whether a team record happens to be inactive, so this lookup
- * deliberately skips the "{Active}=TRUE()" filter used by getReferenceData().
- */
-export interface TeamCoachLinks {
-  coachIds: string[];
-  sectionCaptainIds: string[];
-  /**
-   * Team names each person coaches (Teams.Coach link), keyed by People
-   * record id. A plain object rather than a Map, as it was when this went
-   * through KV's JSON round trip (which turns a Map into {}).
-   */
-  coachTeamNamesByPersonId: Record<string, string[]>;
-  /** Every team name, regardless of Active status - a Section Captain sees the whole section. */
-  allTeamNames: string[];
-}
-
-/** Cached: every authenticated request needs this. */
-export async function getTeamCoachLinks(env: Env): Promise<TeamCoachLinks> {
-  return getShared<TeamCoachLinks>(
-    env,
-    "team-coach-links",
-    async () => {
-      const allTeams = await teamsRepo(env).listAll();
-      const coachIds = new Set<string>();
-      const sectionCaptainIds = new Set<string>();
-      const coachTeamNamesByPersonId: Record<string, string[]> = {};
-      const allTeamNames: string[] = [];
-      for (const team of allTeams) {
-        const teamName = team.teamName || "";
-        if (teamName) allTeamNames.push(teamName);
-        for (const id of team.coach ?? []) {
-          if (typeof id !== "string") continue;
-          coachIds.add(id);
-          if (teamName) (coachTeamNamesByPersonId[id] ??= []).push(teamName);
-        }
-        for (const id of team.sectionCaptain ?? []) {
-          if (typeof id === "string") sectionCaptainIds.add(id);
-        }
-      }
-      return {
-        coachIds: [...coachIds],
-        sectionCaptainIds: [...sectionCaptainIds],
-        coachTeamNamesByPersonId,
-        allTeamNames,
-      };
-    },
-    REFERENCE_TTL_MS,
-  );
+/** The Active teams alone (~3 KB), for screens that need no players list. */
+export async function getActiveTeams(env: Env): Promise<Team[]> {
+  return getVersioned<Team[]>(env, "active-teams", ["teams", "team_people"], () => teamsRepo(env).listActive(), REFERENCE_TTL_MS);
 }
 
 /*
@@ -112,22 +64,6 @@ export interface OfficerRole {
   /** The row's Designation. Empty when the row has none. */
   designation: string;
 }
-
-/**
- * Offices held, keyed by People record id, from the Membership Officers,
- * Section Chairs and Section Captains tables. Only Active rows count: a Retired row is history,
- * not access.
- *
- * Officers sign in with their personal email, which is on their People
- * record, and each officer row links to that record through Member. So this
- * is matched on the record id, like the Teams coach links, and never on the
- * officer row's own Email field.
- */
-export interface OfficerLinks {
-  rolesByPersonId: Record<string, OfficerRole[]>;
-}
-
-export const OFFICER_LINKS_KEY = "officer-links";
 
 /**
  * The applicant records behind the membership board and Insights
@@ -149,32 +85,6 @@ export const STATEMENT_RECORDS_KEY = "statement-records:v2";
 /** Who the New Joiner and Statements processes are waiting on (myTasks.ts); declared here for the same reason. */
 export const WAITING_ON_KEY = "waiting-on";
 
-export async function getOfficerLinks(env: Env): Promise<OfficerLinks> {
-  return getShared<OfficerLinks>(
-    env,
-    OFFICER_LINKS_KEY,
-    async () => {
-      // The Kit Convenor opens the kit screens, the Hockey Convenor league
-      // registration requests, the Assistant Director of Hockey every
-      // team's coach screens and the Umpire Coordinator the umpiring duties.
-      const offices: Office[] = [
-        "membershipOfficer", "sectionChair", "sectionCaptain",
-        "kitConvenor", "hockeyConvenor", "assistantDirector", "umpireCoordinator",
-      ];
-      const rows = await officers(env).listActive(offices);
-      const rolesByPersonId: Record<string, OfficerRole[]> = {};
-      for (const { office, designation, memberIds } of rows) {
-        for (const id of memberIds) (rolesByPersonId[id] ??= []).push({ office, designation });
-      }
-      return { rolesByPersonId };
-    },
-    REFERENCE_TTL_MS,
-  );
-}
-
-/** An access decision follows a correction made outside the Worker within a minute. */
-const PLAYER_BY_EMAIL_TTL_MS = 60 * 1000;
-
 function playerByEmailKey(email: string): string {
   return `player-by-email:${normalizeEmail(email)}`;
 }
@@ -190,17 +100,6 @@ export function invalidatePlayerByEmail(email: string, env?: Env): void {
 }
 
 /**
- * Fan-out for a write that changes club reference data (team rosters,
- * coach links, ability/rank fields) - every read built on top of
- * getReferenceData/getTeamCoachLinks or a per-match player list would
- * otherwise keep serving the pre-write snapshot.
- */
-export async function invalidateReferenceData(env: Env): Promise<void> {
-  invalidateCachePrefix("players-for-match:");
-  await invalidateShared(env, ["club-reference", "team-coach-links"]);
-}
-
-/**
  * People-record lookup by email, cached. Every caller, including the
  * authorization path in worker/src/auth.ts, reuses the entry. Pass
  * { fresh: true } to bypass the cache for a live read.
@@ -213,12 +112,7 @@ export async function getPlayerByEmail(
   if (opts?.fresh) {
     return lookupPlayerByEmail(env, email);
   }
-  return getShared<Player | null>(
-    env,
-    playerByEmailKey(email),
-    () => lookupPlayerByEmail(env, email),
-    PLAYER_BY_EMAIL_TTL_MS,
-  );
+  return getVersioned<Player | null>(env, playerByEmailKey(email), ["people"], () => lookupPlayerByEmail(env, email));
 }
 
 async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | null> {
@@ -228,17 +122,15 @@ async function lookupPlayerByEmail(env: Env, email: string): Promise<Player | nu
 /**
  * Availability exceptions for one or more seasons.
  *
- * Cached for five minutes, which is fine for the aggregate views but NOT for
- * a player looking at their own answer. The cache lives in the memory of one
- * Worker isolate, and Cloudflare runs many: a write invalidates the cache on
- * whichever isolate served it, and says nothing to the others. So a player
- * could set Maybe, tap Available, and have the next request land on an
- * isolate still holding a five-minute-old copy - which showed Maybe again.
- * From their side the status simply would not change.
+ * Kept under the availability_exceptions and matches versions (cache.ts
+ * getVersioned). It used to be a plain five-minute copy per isolate, which
+ * a write cleared only on the isolate that took it: a player could tap
+ * Available and be shown Maybe again by another isolate. A tap now moves
+ * the version, so every isolate reads afresh on its next request, and the
+ * player sees their own answer.
  *
- * Pass { fresh: true } where read-your-own-write matters. It skips the cache
- * entirely rather than trying to invalidate across isolates, which an
- * in-memory cache cannot do.
+ * { fresh: true } still skips the cache, for a write path that must read
+ * what is there this instant.
  */
 export async function getExceptionsForSeasons(
   env: Env,
@@ -251,9 +143,35 @@ export async function getExceptionsForSeasons(
     return availabilityExceptions(env).listForSeasons(uniqueSeasons);
   };
   if (opts?.fresh) return load();
-  return getShared<AvailabilityException[]>(env, cacheKey, load, EXCEPTIONS_TTL_MS);
+  // The season of an answer is its match's: both tables' versions.
+  return getVersioned<AvailabilityException[]>(env, cacheKey, ["availability_exceptions", "matches"], load, EXCEPTIONS_TTL_MS);
 }
 
 const EXCEPTIONS_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Every answer for these matches, and nothing else (match=in.(...), narrow
+ * columns): what a coach list, a calendar squad or the poll needs, instead
+ * of the whole season's answers (~177 KB on preview) filtered here.
+ *
+ * Kept under the availability_exceptions version (cache.ts getVersioned),
+ * like getExceptionsForSeasons, so a cached copy is the current one in
+ * every isolate. Only that version: the rows are looked up by match and
+ * player api ids, which never change, and carry no season (which is why
+ * the season read also depends on matches). { fresh: true } skips the cache.
+ */
+export async function getExceptionsForMatches(
+  env: Env,
+  matchIds: string[],
+  opts?: { fresh?: boolean },
+): Promise<AvailabilityException[]> {
+  const ids = [...new Set(matchIds.filter(Boolean))].sort();
+  if (ids.length === 0) return [];
+  const load = () => availabilityExceptions(env).listForMatches(ids);
+  if (opts?.fresh) return load();
+  return getVersioned<AvailabilityException[]>(
+    env, `exceptions:matches:${ids.join(",")}`, ["availability_exceptions"], load, EXCEPTIONS_TTL_MS,
+  );
+}
 
 export { invalidateCache };

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ChevronDown, Copy, Download, Mail, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Copy, Download, Mail, MessageCircle, Plus, Search, X } from 'lucide-react';
+import WhatsAppListSheet from '@/components/WhatsAppListSheet';
 import { toast } from 'sonner';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -79,6 +80,7 @@ export default function EmailLists() {
   const options = useMemo(() => groupOptions(people), [people]);
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const list = useMemo(() => buildList(people, selection, added, removed), [people, selection, added, removed]);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
   const addresses = useMemo(() => uniqueAddresses(list), [list]);
   const noEmail = list.filter((p) => p.emails.length === 0);
   const juniors = list.filter((p) => p.under18);
@@ -263,6 +265,13 @@ export default function EmailLists() {
                   >
                     <Download className="h-3.5 w-3.5" /> CSV
                   </button>
+                  <button
+                    onClick={() => setShowWhatsApp(true)}
+                    disabled={list.length === 0}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted text-foreground hover:bg-muted/80 disabled:opacity-50"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                  </button>
                   {mailto && (
                     <a
                       href={mailto}
@@ -395,6 +404,13 @@ export default function EmailLists() {
           </div>
         )}
       </main>
+      {showWhatsApp && (
+        <WhatsAppListSheet
+          title={`WhatsApp ${list.length} ${list.length === 1 ? 'person' : 'people'}`}
+          people={list.map((p) => ({ id: p.id, name: p.name, firstName: p.firstName, mobile: p.mobile }))}
+          onClose={() => setShowWhatsApp(false)}
+        />
+      )}
       <AppFooter />
     </div>
   );

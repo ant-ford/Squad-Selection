@@ -9,7 +9,6 @@ import type {
   AbilityGroupConfiguration, AvailabilityException, AvailabilityRule, AvailabilityRuleType, KitColour, Match, MatchCard,
   Player, Team,
 } from "../../../../shared/schema/domainTypes";
-import { fileLink } from "./files";
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -28,7 +27,7 @@ export interface PlayerRow {
   date_of_birth: string | null; photo_file_id: string | null;
 }
 
-export async function toPlayer(env: Env, r: PlayerRow): Promise<Player> {
+export async function toPlayer(_env: Env, r: PlayerRow): Promise<Player> {
   return {
     id: r.id,
     preferredName: str(r.preferred_name),
@@ -57,11 +56,58 @@ export async function toPlayer(env: Env, r: PlayerRow): Promise<Player> {
     rankUpdatedAt: str(r.rank_updated_at),
     status: str(r.status),
     applicantStage: str(r.applicant_stage),
-    photo: r.photo_file_id ? await fileLink(env, r.photo_file_id) : undefined,
+    // Not signed here: most reads of people never show the photo (the club
+    // reference signed one per player). A screen that shows it signs it
+    // (photoLink in data/supabase/files.ts), as the ranking does.
+    photoFileId: r.photo_file_id ?? undefined,
     sportsBackground: str(r.sports_background),
     selectionComments: str(r.selection_comments),
     optInOnly: r.opt_in_only === true,
     birthday: birthdayKey(r.date_of_birth ?? undefined),
+  };
+}
+
+/** An api_players_lite row: the squad screens' columns, birthday already "MM-DD". */
+export interface PlayerLiteRow {
+  id: string;
+  preferred_name: string | null; given_names: string | null; surname: string | null; shirt_no_value: string | null;
+  email: string | null; mobile_no: string | null; active: boolean;
+  registered_team: string | null; selected_team_sos: string | null; selected_team_eos: string | null;
+  playing_position: string | null; playing_ability: string | null;
+  is_visiting_player: boolean; is_suspended: boolean; matches_to_serve: number | null;
+  ever_registered_to_premier: boolean; u21_eligible: boolean;
+  section_rank: number | null; status: string | null; applicant_stage: string | null; opt_in_only: boolean;
+  birthday: string | null;
+  last_seen_at?: string | null;
+}
+
+/** As toPlayer, for the lite view: no photo (so nothing to sign), CV, coach notes, Player/Coach or rank date. */
+export function toPlayerLite(r: PlayerLiteRow): Player {
+  return {
+    id: r.id,
+    preferredName: str(r.preferred_name),
+    givenNames: str(r.given_names),
+    surname: str(r.surname),
+    shirtNoValue: str(r.shirt_no_value),
+    email: str(r.email),
+    mobileNo: str(r.mobile_no),
+    active: r.active,
+    registeredTeam: str(r.registered_team),
+    selectedTeamSos: str(r.selected_team_sos),
+    selectedTeamEos: str(r.selected_team_eos),
+    playingPosition: str(r.playing_position),
+    playingAbility: str(r.playing_ability),
+    isVisitingPlayer: r.is_visiting_player,
+    isSuspended: r.is_suspended,
+    matchesToServe: int(r.matches_to_serve),
+    everRegisteredToPremier: r.ever_registered_to_premier,
+    u21Eligible: r.u21_eligible,
+    sectionRank: int(r.section_rank),
+    status: str(r.status),
+    applicantStage: str(r.applicant_stage),
+    optInOnly: r.opt_in_only === true,
+    birthday: str(r.birthday),
+    lastSeenAt: str(r.last_seen_at ?? null),
   };
 }
 
@@ -92,6 +138,7 @@ export interface MatchRow {
   selected_players_home: string[]; selected_players_away: string[]; auto_select_enabled: boolean;
   home_kit: string | null; away_kit: string | null; ump_1: string | null; ump_2: string | null;
   selection_version_home?: number | null; selection_version_away?: number | null;
+  previous_match_date?: string | null; previous_venue?: string | null; previous_status?: string | null; changed_at?: string | null;
 }
 
 export function toMatch(r: MatchRow): Match {
@@ -117,6 +164,10 @@ export function toMatch(r: MatchRow): Match {
     ump2: r.ump_2 || "",
     selectionVersionHome: r.selection_version_home ?? 0,
     selectionVersionAway: r.selection_version_away ?? 0,
+    previousMatchDate: r.previous_match_date || undefined,
+    previousVenue: r.previous_venue || undefined,
+    previousStatus: r.previous_status || undefined,
+    changedAt: r.changed_at || undefined,
   };
 }
 

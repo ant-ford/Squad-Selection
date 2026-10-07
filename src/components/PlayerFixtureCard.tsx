@@ -2,6 +2,7 @@ import { Users } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
 import { availableLabel } from '@shared/availableLabel';
 import type { MyFixture } from '@/api/getMyFixtures';
+import { fixtureChangeText, isCalledOff } from '@shared/fixtureChange';
 
 interface Props {
   fixture: MyFixture;
@@ -13,6 +14,8 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
   const isSelected = fixture.selectionStatus === 'Selected';
   const isUnavailable = fixture.availabilityStatus === 'Unavailable';
   const isMaybe = fixture.availabilityStatus === 'Maybe';
+  // Postponed or cancelled: shown for a week, with nothing to answer.
+  const calledOff = isCalledOff(fixture.change);
 
   const statusColorMap: Record<string, string> = {
     Available: 'bg-green-200 text-green-800 border-green-300',
@@ -92,44 +95,51 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       <div className="mt-1.5">
         <MetaLine date={fixture.date} venue={fixture.venue} />
       </div>
-      <div className="mt-1.5 flex justify-between items-center">
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Users className="h-3 w-3" />
-          {fixture.selectedCount}/{fixture.targetSquadSize}
-        </span>
-        <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
-          {[
-            { value: 'Available', label: availableLabel(isSelected) },
-            { value: 'Maybe', label: 'Maybe' },
-            { value: 'Unavailable', label: 'No' },
-          ].map(({ value, label }, idx) => {
-            const active = fixture.availabilityStatus === value;
-            return (
-              <button
-                key={value}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAvailabilityChange(value as any);
-                }}
-                className={`
-                  px-2 py-1 text-xs font-medium min-w-[48px] transition-colors
-                  ${idx === 0 ? 'rounded-l-full' : ''}
-                  ${idx === 2 ? 'rounded-r-full' : ''}
-                  ${active ? statusColorMap[value] : 'bg-background text-muted-foreground hover:bg-muted/50'}
-                  ${idx > 0 ? 'border-l border-border' : ''}
-                `}
-              >
-                {label}
-              </button>
-            );
-          })}
+      {fixture.change && (
+        <p className={`mt-1 text-xs font-medium ${calledOff ? 'text-danger-soft-foreground' : 'text-warning-soft-foreground'}`}>
+          {fixtureChangeText(fixture.change, fixture.date)}
+        </p>
+      )}
+      {!calledOff && (
+        <div className="mt-1.5 flex justify-between items-center">
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Users className="h-3 w-3" />
+            {fixture.selectedCount}/{fixture.targetSquadSize}
+          </span>
+          <div className="flex border border-border rounded-full overflow-hidden shrink-0 ml-4">
+            {[
+              { value: 'Available', label: availableLabel(isSelected) },
+              { value: 'Maybe', label: 'Maybe' },
+              { value: 'Unavailable', label: 'No' },
+            ].map(({ value, label }, idx) => {
+              const active = fixture.availabilityStatus === value;
+              return (
+                <button
+                  key={value}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAvailabilityChange(value as any);
+                  }}
+                  className={`
+                    px-2 py-1 text-xs font-medium min-w-[48px] transition-colors
+                    ${idx === 0 ? 'rounded-l-full' : ''}
+                    ${idx === 2 ? 'rounded-r-full' : ''}
+                    ${active ? statusColorMap[value] : 'bg-background text-muted-foreground hover:bg-muted/50'}
+                    ${idx > 0 ? 'border-l border-border' : ''}
+                  `}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Says where the status came from. A preference is a default the
           player can override just by tapping one of the buttons above; an
           answer they gave for this fixture is not overridden by anything. */}
-      {fixture.availabilityFromRule && (
+      {fixture.availabilityFromRule && !calledOff && (
         <p className="mt-1.5 text-[11px] text-muted-foreground">
           {fixture.availabilityStatus} from your availability preferences. Tap to set this
           fixture on its own.

@@ -9,7 +9,8 @@ import { sectionsFor, type AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
 import { db, eq } from "../data/supabase";
 import { PIPELINE_STAGES, ACCEPTED_STAGE, stageTargets } from "../../../shared/membershipStages";
-import { actionLabel, fieldLabel, type HistoryEntry } from "../../../shared/history";
+import { actionLabel, type HistoryEntry } from "../../../shared/history";
+import { ACTIVITY_SELECT, activityEntry, coachesPerson, HISTORY_ROWS, isOfficer, iso, newestFirst, personHockeyHistory, type ActivityRowDb } from "../history";
 import { displayName, type PersonAdminCan, type PersonAdminView, type PersonSearchRow } from "../../../shared/adminPeople";
 
 /** A People api id as the app holds it. */
@@ -18,7 +19,6 @@ export const API_ID = /^[A-Za-z0-9-]{3,64}$/;
 /** Letters (any script), spaces and the punctuation names carry; nothing PostgREST treats as syntax. */
 const SEARCH = /^[\p{L}\p{M} '’.-]+$/u;
 const MAX_RESULTS = 20;
-const HISTORY_ROWS = 50;
 
 interface NameCols {
   preferred_name: string | null;
@@ -159,12 +159,7 @@ export async function getPersonAdmin(env: Env, user: AuthorizedUser, id: string)
 
 // ── History ──────────────────────────────────────────────────────────────
 
-export interface ActivityRowDb {
-  occurred_at: string;
-  action: string;
-  fields: string[] | null;
-  actor: NameCols | null;
-}
+export type { ActivityRowDb } from "../history";
 
 export interface RankingRowDb {
   occurred_at: string;
@@ -172,21 +167,19 @@ export interface RankingRowDb {
   actor: NameCols | null;
 }
 
-const iso = (t: string) => {
-  const d = new Date(t);
-  return Number.isNaN(d.getTime()) ? t : d.toISOString();
-};
-
-/** Both sources as one list, newest first, at most 50. */
-export function buildHistory(activity: ActivityRowDb[], ranking: RankingRowDb[]): HistoryEntry[] {
-  const entries: HistoryEntry[] = [
-    ...activity.map((r) => ({
-      at: iso(r.occurred_at),
-      actor: r.actor ? displayName(r.actor) : null,
-      action: r.action,
-      summary: actionLabel(r.action),
-      fields: (r.fields ?? []).map(fieldLabel),
-    })),
+/**
+ * The log, the active/inactive ranking events and (when given) the squad
+ * and answer entries as one list, newest first, at most 50. `forCoach`
+ * leaves out what a coach mustn't see: officers' actions and personal fields.
+ */
+export function buildHistory(
+  activity: ActivityRowDb[],
+  ranking: RankingRowDb[],
+  more: HistoryEntry[] = [],
+  forCoach = false,
+): HistoryEntry[] {
+  return newestFirst([
+    ...activity.map((r) => activityEntry(r, { forCoach })).filter((e): e is HistoryEntry => e !== null),
     ...ranking.map((r) => ({
       at: iso(r.occurred_at),
       actor: r.actor ? displayName(r.actor) : null,
@@ -194,26 +187,43 @@ export function buildHistory(activity: ActivityRowDb[], ranking: RankingRowDb[])
       summary: actionLabel(r.kind),
       fields: [],
     })),
-  ];
-  return entries.sort((a, b) => b.at.localeCompare(a.at)).slice(0, HISTORY_ROWS);
+    ...more,
+  ]);
 }
 
-/** GET /api/history?person=<api id>: three reads (the person, the log, the ranking events). */
-export async function getPersonHistory(env: Env, personApiId: string): Promise<{ entries: HistoryEntry[] }> {
+/**
+ * GET /api/history?person=<api id>. Officers with the people section see it
+ * all; the coaches of the person's team see the hockey side of it (history.ts).
+ * Reads: the person, then their log, ranking events, squad changes and
+ * answers given for them, then the fixtures of those answers.
+ */
+export async function getPersonHistory(
+  env: Env,
+  personApiId: string,
+  viewer?: Pick<AuthorizedUser, "officerRoles" | "coachTeams">,
+): Promise<{ entries: HistoryEntry[] }> {
   if (!API_ID.test(personApiId)) throw new HttpError("Choose a person.", 400, "INVALID_INPUT");
   const d = db(env);
-  const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(personApiId)}`);
+  const person = await d.one<{ id: string; registered_team: string | null; selected_team_sos: string | null; selected_team_eos: string | null }>(
+    "people",
+    `select=id,registered_team,selected_team_sos,selected_team_eos&api_id=${eq(personApiId)}`,
+  );
   if (!person) throw new HttpError("Person not found.", 404, "NOT_FOUND");
+  const forCoach = !!viewer && !isOfficer(viewer);
+  if (forCoach && !coachesPerson(viewer, person)) {
+    throw new HttpError("Only officers and this player's coaches can see their history.", 403, "COACH_ACCESS_REQUIRED");
+  }
   const actor = "actor:people!{fk}(preferred_name,given_names,surname)";
-  const [activity, ranking] = await Promise.all([
+  const [activity, ranking, hockey] = await Promise.all([
     d.select<ActivityRowDb>(
       "activity_log",
-      `select=id,occurred_at,action,fields,${actor.replace("{fk}", "activity_log_actor_person_id_fkey")}&entity=eq.people&entity_id=${eq(person.id)}&order=occurred_at.desc&limit=${HISTORY_ROWS}`,
+      `select=${ACTIVITY_SELECT}&entity=eq.people&entity_id=${eq(person.id)}&order=occurred_at.desc&limit=${HISTORY_ROWS}`,
     ),
     d.select<RankingRowDb>(
       "ranking_events",
       `select=id,occurred_at,kind,${actor.replace("{fk}", "ranking_events_actor_id_fkey")}&person_id=${eq(person.id)}&kind=in.(activate,deactivate)&order=occurred_at.desc&limit=${HISTORY_ROWS}`,
     ),
+    personHockeyHistory(env, person.id),
   ]);
-  return { entries: buildHistory(activity, ranking) };
+  return { entries: buildHistory(activity, ranking, hockey, forCoach) };
 }

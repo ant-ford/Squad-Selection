@@ -16,6 +16,7 @@ const CoachLayout    = lazy(() => import('./components/CoachLayout'));
 const CoachDashboard = lazy(() => import('./pages/CoachDashboard'));
 const SquadSelection = lazy(() => import('./pages/SquadSelection'));
 const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
+const TeamAvailability = lazy(() => import('./pages/TeamAvailability'));
 // Officers' sections - deferred for the same reason.
 const MembershipBoard = lazy(() => import('./pages/MembershipBoard'));
 const EmailLists = lazy(() => import('./pages/EmailLists'));
@@ -41,6 +42,7 @@ const MyDetails = lazy(() => import('./pages/MyDetails'));
 const Apply = lazy(() => import('./pages/Apply'));
 const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
+const Reactivate = lazy(() => import('./pages/Reactivate'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 const SignApplication = lazy(() => import('./pages/SignApplication'));
 const Quizzes = lazy(() => import('./pages/Quizzes'));
@@ -263,6 +265,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: '/reactivate/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Reactivate />
+          </Suspense>
+        ),
+      },
+      {
         path: '/joiner-task/:id',
         element: (
           <Suspense fallback={<RouteSkeleton />}>
@@ -434,6 +444,14 @@ const router = createBrowserRouter([
             element: (
               <Suspense fallback={<RouteSkeleton />}>
                 <PlayerRanking />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'availability',
+            element: (
+              <Suspense fallback={<RouteSkeleton />}>
+                <TeamAvailability />
               </Suspense>
             ),
           },

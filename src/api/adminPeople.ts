@@ -82,6 +82,11 @@ export function getPersonHistory(id: string): Promise<{ entries: HistoryEntry[] 
   return apiGet('/api/history', { person: id });
 }
 
+/** A fixture's squad changes, fixture changes and answers coaches gave (its coaches and officers). */
+export function getMatchHistory(id: string): Promise<{ entries: HistoryEntry[] }> {
+  return apiGet('/api/history', { match: id });
+}
+
 export function saveMembership(id: string, body: MembershipSave): Promise<{ ok: true; changed: string[]; removedPeriods: number }> {
   return apiPost(`/api/admin/people/${encodeURIComponent(id)}/membership`, body);
 }

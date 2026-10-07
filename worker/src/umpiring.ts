@@ -10,6 +10,7 @@ import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, inList, SupabaseError } from "./data/supabase";
 import { getCached, invalidateCache } from "./cache";
+import { inBackground } from "./requestContext";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { buildNameDictionary, canonicalKey, parseUmpire } from "../../shared/umpires";
 import { NO_QUALIFICATION } from "../../shared/volunteering";
@@ -17,6 +18,8 @@ import {
   clashingGame,
   gameLabel,
   isOnCommitment,
+  knownSpelling,
+  mergeOutsideNames,
   seasonOf,
   weekEnd,
   weekOf,
@@ -91,42 +94,96 @@ export function isCoordinator(user: AuthorizedUser): boolean {
  * The club's umpires (People uuids): Active people with an umpiring level,
  * and anyone who umpired an HKFC game in the last 12 months, by name on
  * the match card (shared/umpires.ts) or confirmed in Eddy.
+ *
+ * Also the outside umpires on those match cards: names that are no Active
+ * member's, and not an HKFC team's duty umpire. HKHA's spelling, for the
+ * coordinator's list.
  */
-async function umpirePool(env: Env): Promise<Map<string, PersonRow>> {
+async function umpireData(env: Env): Promise<{ pool: [string, PersonRow][]; cardNames: string[] }> {
   const { data } = await getCached(
     POOL_KEY,
     async () => {
-      const since = new Date(Date.now() - 365 * DAY_MS).toISOString();
-      const [people, matches, umpired] = await Promise.all([
-        db(env).select<PersonRow>("people", `select=${PERSON_COLUMNS}&active=is.true`),
-        db(env).select<{ id: string; ump_1: string | null; ump_2: string | null; home_team: string | null; away_team: string | null }>(
-          "matches",
-          `select=id,ump_1,ump_2,home_team,away_team&match_date=gte.${encodeURIComponent(since)}&match_date=lte.${encodeURIComponent(new Date().toISOString())}`,
-        ),
-        db(env).select<{ id: string; person_id: string | null }>(
-          "umpire_assignments",
-          `select=id,person_id,umpire_duties!inner(match_date)&status=eq.confirmed&person_id=not.is.null&umpire_duties.match_date=gte.${encodeURIComponent(since)}&umpire_duties.match_date=lte.${encodeURIComponent(new Date().toISOString())}`,
-        ),
-      ]);
-      const teams = new Set(matches.flatMap((m) => [m.home_team, m.away_team]).filter((t): t is string => !!t));
-      const values = matches.flatMap((m) => [m.ump_1, m.ump_2]);
-      const names = buildNameDictionary(values, teams);
-      const keys = new Set(
-        values.map((v) => parseUmpire(v, { teams, names }).key).filter((k): k is string => !!k),
-      );
-      const fromEddy = new Set(umpired.map((u) => u.person_id));
-      const pool: [string, PersonRow][] = people
-        .filter((p) => {
-          if (qualified(p) || fromEddy.has(p.id)) return true;
-          const asWritten = [`${p.given_names ?? ""} ${p.surname ?? ""}`, `${p.preferred_name ?? ""} ${p.surname ?? ""}`];
-          return asWritten.some((n) => n.trim().includes(" ") && keys.has(canonicalKey(n)));
-        })
-        .map((p) => [p.id, p]);
-      return pool;
+      const computed = await computeUmpireData(env);
+      // Kept for auth_context, which shows the umpiring screen from it.
+      void inBackground(() => storeUmpirePool(env, computed.pool));
+      return computed;
     },
     10 * 60 * 1000,
   );
-  return new Map(data);
+  return data;
+}
+
+async function umpirePool(env: Env): Promise<Map<string, PersonRow>> {
+  return new Map((await umpireData(env)).pool);
+}
+
+/**
+ * Outside umpires' names, one spelling each: those put down in Eddy in the
+ * last 12 months (taken off ones left out, so a misspelling goes once
+ * redone), then those on HKFC match cards.
+ */
+async function outsideNames(env: Env): Promise<string[]> {
+  const since = new Date(Date.now() - 365 * DAY_MS).toISOString();
+  const [used, { cardNames }] = await Promise.all([
+    db(env).select<{ id: string; external_name: string; created_at: string }>(
+      "umpire_assignments",
+      `select=id,external_name,created_at&external_name=not.is.null&status=neq.withdrawn&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc,id`,
+    ),
+    umpireData(env),
+  ]);
+  return mergeOutsideNames(
+    used.map((o) => o.external_name),
+    cardNames,
+  );
+}
+
+/**
+ * Stores the pool (People uuids) where auth_context reads it: the part of
+ * the rule only shared/umpires.ts can decide (names on match cards).
+ */
+async function storeUmpirePool(env: Env, pool: [string, PersonRow][]): Promise<number> {
+  return db(env).rpc<number>("set_umpire_pool", { p_people: pool.map(([id]) => id) });
+}
+
+/** The daily refresh (scheduled handler): someone named on a match card shows within a day. */
+export async function refreshUmpirePool(env: Env): Promise<number> {
+  const { pool } = await computeUmpireData(env);
+  invalidateCache(POOL_KEY);
+  return storeUmpirePool(env, pool);
+}
+
+/** The pool and the outside umpires' names on HKFC match cards, from a year of matches. */
+async function computeUmpireData(env: Env): Promise<{ pool: [string, PersonRow][]; cardNames: string[] }> {
+  const since = new Date(Date.now() - 365 * DAY_MS).toISOString();
+  const [people, matches, umpired] = await Promise.all([
+    db(env).select<PersonRow>("people", `select=${PERSON_COLUMNS}&active=is.true`),
+    db(env).select<{ id: string; ump_1: string | null; ump_2: string | null; home_team: string | null; away_team: string | null }>(
+      "matches",
+      `select=id,ump_1,ump_2,home_team,away_team&match_date=gte.${encodeURIComponent(since)}&match_date=lte.${encodeURIComponent(new Date().toISOString())}`,
+    ),
+    db(env).select<{ id: string; person_id: string | null }>(
+      "umpire_assignments",
+      `select=id,person_id,umpire_duties!inner(match_date)&status=eq.confirmed&person_id=not.is.null&umpire_duties.match_date=gte.${encodeURIComponent(since)}&umpire_duties.match_date=lte.${encodeURIComponent(new Date().toISOString())}`,
+    ),
+  ]);
+  const teams = new Set(matches.flatMap((m) => [m.home_team, m.away_team]).filter((t): t is string => !!t));
+  const values = matches.flatMap((m) => [m.ump_1, m.ump_2]);
+  const names = buildNameDictionary(values, teams);
+  const parsed = values.map((v) => parseUmpire(v, { teams, names }));
+  const keys = new Set(parsed.map((u) => u.key).filter((k): k is string => !!k));
+  const fromEddy = new Set(umpired.map((u) => u.person_id));
+  const writtenAs = (p: PersonRow) =>
+    [`${p.given_names ?? ""} ${p.surname ?? ""}`, `${p.preferred_name ?? ""} ${p.surname ?? ""}`].filter((n) => n.trim().includes(" "));
+  const pool: [string, PersonRow][] = people
+    .filter((p) => qualified(p) || fromEddy.has(p.id) || writtenAs(p).some((n) => keys.has(canonicalKey(n))))
+    .map((p) => [p.id, p]);
+  const members = new Set(people.flatMap((p) => writtenAs(p).map(canonicalKey)));
+  const cardNames = parsed
+    .filter((u) => u.name && u.key && !members.has(u.key) && !u.duty?.startsWith("HKFC"))
+    .map((u) => u.name!)
+    // A full name: a first name alone, or an umpire number, isn't one.
+    .filter((n) => n.includes(" ") && !/\d/.test(n));
+  return { pool, cardNames };
 }
 
 async function personByApiId(env: Env, apiId: string): Promise<PersonRow> {
@@ -135,18 +192,14 @@ async function personByApiId(env: Env, apiId: string): Promise<PersonRow> {
   return p;
 }
 
-/** Who may open the umpiring screen, and as what; null for no one else. */
-export async function umpiringAccess(env: Env, user: AuthorizedUser): Promise<UmpiringAccess | null> {
+/**
+ * Who may open the umpiring screen, and as what; null for no one else.
+ * The umpire flag comes from auth_context (the live conditions plus the
+ * stored pool), so asking costs no read.
+ */
+export async function umpiringAccess(_env: Env, user: AuthorizedUser): Promise<UmpiringAccess | null> {
   if (isCoordinator(user)) return "coordinator";
-  // Asked on every player page: a failure here (a database without the
-  // umpiring tables yet) hides the screen, never the page.
-  try {
-    const pool = await umpirePool(env);
-    for (const p of pool.values()) if (p.api_id === user.personId) return "umpire";
-  } catch (err) {
-    console.error("Umpiring access not read:", err instanceof Error ? err.message : err);
-  }
-  return null;
+  return user.umpire ? "umpire" : null;
 }
 
 async function requireAccess(env: Env, user: AuthorizedUser): Promise<{ access: UmpiringAccess; me: PersonRow }> {
@@ -159,14 +212,7 @@ function requireCoordinator(user: AuthorizedUser): void {
   if (!isCoordinator(user)) throw new HttpError("Only the Umpire Coordinator can do that.", 403, "OFFICER_ACCESS_REQUIRED");
 }
 
-/** Names for assignment rows: club umpires by first name, outside umpires as entered. */
-async function namesFor(env: Env, rows: AssignmentRow[]): Promise<Map<string, PersonRow>> {
-  const ids = [...new Set(rows.map((r) => r.person_id).filter((x): x is string => !!x))];
-  if (ids.length === 0) return new Map();
-  const people = await db(env).select<PersonRow>("people", `select=${PERSON_COLUMNS}&id=${inList(ids)}`);
-  return new Map(people.map((p) => [p.id, p]));
-}
-
+/** An assignment row for the board: club umpires by first name, outside umpires as entered. */
 function toAssignment(r: AssignmentRow, people: Map<string, PersonRow>): DutyAssignment {
   const p = r.person_id ? people.get(r.person_id) : undefined;
   return {
@@ -196,27 +242,31 @@ function toDuty(d: DutyRow, assignments: DutyAssignment[]): UmpireDuty {
   };
 }
 
-/** Duties between two HK dates (inclusive), with their live assignments. */
+type BoardDutyRow = DutyRow & { umpire_assignments?: (AssignmentRow & { person: PersonRow | null })[] | null };
+
+/** Oldest first, as the board lists who put their name down. */
+const byCreated = (a: AssignmentRow, b: AssignmentRow) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+
+/**
+ * Duties between two HK dates (inclusive), with their live assignments and
+ * the club umpires' names: ONE PostgREST read, the assignments and their
+ * people embedded (it was three in a row: duties, then assignments, then
+ * names).
+ */
 async function dutiesBetween(env: Env, from: string, to: string): Promise<UmpireDuty[]> {
   const start = new Date(`${from}T00:00:00+08:00`).toISOString();
   const end = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + DAY_MS).toISOString();
-  const rows = await db(env).select<DutyRow>(
+  const rows = await db(env).select<BoardDutyRow>(
     "umpire_duties",
-    `select=${DUTY_COLUMNS}&match_date=gte.${encodeURIComponent(start)}&match_date=lt.${encodeURIComponent(end)}&order=match_date,id`,
+    `select=${DUTY_COLUMNS},umpire_assignments(${ASSIGNMENT_COLUMNS},person:people!umpire_assignments_person_id_fkey(${PERSON_COLUMNS}))` +
+      `&match_date=gte.${encodeURIComponent(start)}&match_date=lt.${encodeURIComponent(end)}` +
+      `&umpire_assignments.status=neq.withdrawn&order=match_date,id`,
   );
-  if (rows.length === 0) return [];
-  const assignments = await db(env).select<AssignmentRow>(
-    "umpire_assignments",
-    `select=${ASSIGNMENT_COLUMNS}&duty_id=${inList(rows.map((r) => r.id))}&status=neq.withdrawn&order=created_at,id`,
-  );
-  const people = await namesFor(env, assignments);
-  const byDuty = new Map<string, DutyAssignment[]>();
-  for (const a of assignments) {
-    const list = byDuty.get(a.duty_id) ?? [];
-    list.push(toAssignment(a, people));
-    byDuty.set(a.duty_id, list);
-  }
-  return rows.map((d) => toDuty(d, byDuty.get(d.id) ?? []));
+  return rows.map(({ umpire_assignments: embedded, ...d }) => {
+    const live = [...(embedded ?? [])].sort(byCreated);
+    const people = new Map(live.flatMap((a) => (a.person ? [[a.person.id, a.person] as [string, PersonRow]] : [])));
+    return toDuty(d, live.map(({ person: _person, ...a }) => toAssignment(a, people)));
+  });
 }
 
 /**
@@ -224,16 +274,21 @@ async function dutiesBetween(env: Env, from: string, to: string): Promise<Umpire
  * app shows them in) and any they're picked for, less those they've said
  * they're Unavailable for. For flagging duties that clash.
  */
-async function ownGames(env: Env, people: PersonRow[], from: string, to: string): Promise<Map<string, OwnGame[]>> {
-  const out = new Map<string, OwnGame[]>();
-  if (people.length === 0) return out;
+type WeekGame = { id: string; match_date: string; venue: string | null; home_team: string | null; away_team: string | null };
+
+/** The games between two HK dates (inclusive), Rescheduled ones left out. */
+function gamesBetween(env: Env, from: string, to: string): Promise<WeekGame[]> {
   const start = new Date(`${from}T00:00:00+08:00`).toISOString();
   const end = new Date(new Date(`${to}T00:00:00+08:00`).getTime() + DAY_MS).toISOString();
-  const matches = await db(env).select<{ id: string; match_date: string; venue: string | null; home_team: string | null; away_team: string | null }>(
+  return db(env).select<WeekGame>(
     "matches",
     `select=id,match_date,venue,home_team,away_team&match_date=gte.${encodeURIComponent(start)}&match_date=lt.${encodeURIComponent(end)}&match_status=neq.Rescheduled`,
   );
-  if (matches.length === 0) return out;
+}
+
+async function ownGames(env: Env, people: PersonRow[], matches: WeekGame[]): Promise<Map<string, OwnGame[]>> {
+  const out = new Map<string, OwnGame[]>();
+  if (people.length === 0 || matches.length === 0) return out;
   const ids = matches.map((m) => m.id);
   const personIds = people.map((p) => p.id);
   const [selections, unavailable] = await Promise.all([
@@ -284,20 +339,36 @@ async function dutyWeeks(env: Env, coordinator: boolean): Promise<string[]> {
 }
 
 export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam: string | null): Promise<UmpiringBoard> {
-  const { access, me } = await requireAccess(env, user);
+  const access = await umpiringAccess(env, user);
+  if (!access) throw new HttpError("The umpiring duties are for the club's umpires.", 403, "UMPIRE_ACCESS_REQUIRED");
   const coordinator = access === "coordinator";
   const thisWeek = weekOf(new Date().toISOString());
-  const weeks = await dutyWeeks(env, coordinator);
-  // Default: this week while it still has games to come, else the next week with duties.
-  let week = weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam) ? weekOf(`${weekParam}T12:00:00+08:00`) : null;
-  if (!week) week = weeks.find((w) => w >= thisWeek) ?? thisWeek;
+  const asked = weekParam && /^\d{4}-\d{2}-\d{2}$/.test(weekParam) ? weekOf(`${weekParam}T12:00:00+08:00`) : null;
   // Umpires see the weeks to come only.
-  if (!coordinator && week < thisWeek) week = thisWeek;
+  const atLeast = (w: string) => (!coordinator && w < thisWeek ? thisWeek : w);
 
-  const duties = await dutiesBetween(env, week, weekEnd(week));
-  const pool = await umpirePool(env);
-  const others = coordinator ? [...pool.values()] : [];
-  const games = await ownGames(env, [me, ...others.filter((p) => p.id !== me.id)], week, weekEnd(week));
+  // Everything that doesn't wait on another read goes out at once: their own
+  // record, the weeks with duties, the pool and outside names (coordinator),
+  // and, when the week was asked for, its duties and games.
+  const askedWeek = asked ? atLeast(asked) : null;
+  const askedReads = askedWeek
+    ? Promise.all([dutiesBetween(env, askedWeek, weekEnd(askedWeek)), gamesBetween(env, askedWeek, weekEnd(askedWeek))])
+    : null;
+  const [me, weeks, pool, externalNames] = await Promise.all([
+    personByApiId(env, user.personId),
+    dutyWeeks(env, coordinator),
+    // Only the coordinator's board lists the pool; an umpire's own flag came with sign-in.
+    coordinator ? umpirePool(env) : null,
+    coordinator ? outsideNames(env) : undefined,
+    // Awaited here too, so its failure fails the board at once.
+    askedReads,
+  ]);
+  // Default: this week while it still has games to come, else the next week with duties.
+  const week = askedWeek ?? atLeast(weeks.find((w) => w >= thisWeek) ?? thisWeek);
+  const [duties, matches] = await (askedReads ?? Promise.all([dutiesBetween(env, week, weekEnd(week)), gamesBetween(env, week, weekEnd(week))]));
+
+  const others = pool ? [...pool.values()] : [];
+  const games = await ownGames(env, [me, ...others.filter((p) => p.id !== me.id)], matches);
   markClashes(duties, games, me, others);
   const now = today();
   const board: UmpiringBoard = {
@@ -307,7 +378,7 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
     duties,
     me: {
       personId: me.api_id,
-      isUmpire: pool.has(me.id),
+      isUmpire: pool ? pool.has(me.id) : user.umpire,
       onCommitment: isOnCommitment(me.commitment_end_date, now),
       commitmentEndDate: me.commitment_end_date,
     },
@@ -315,14 +386,10 @@ export async function getUmpiringBoard(env: Env, user: AuthorizedUser, weekParam
     messages: user.officerRoles.some((r) => r.office === "umpireCoordinator"),
   };
   if (coordinator) {
-    board.umpires = [...pool.values()]
+    board.umpires = [...(pool?.values() ?? [])]
       .map<UmpireOption>((p) => ({ personId: p.api_id, name: firstName(p), fullName: fullName(p), onCommitment: isOnCommitment(p.commitment_end_date, now) }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-    const outside = await db(env).select<{ id: string; external_name: string; created_at: string }>(
-      "umpire_assignments",
-      "select=id,external_name,created_at&external_name=not.is.null&order=created_at.desc,id",
-    );
-    board.externalNames = [...new Set(outside.map((o) => o.external_name))].slice(0, 20);
+    board.externalNames = externalNames ?? [];
   }
   return board;
 }
@@ -445,9 +512,11 @@ export async function assignDuty(env: Env, user: AuthorizedUser, dutyId: string,
   const now = new Date().toISOString();
 
   if (externalName) {
+    // "andy chan" is saved as the Andy Chan already known.
+    const name = knownSpelling(externalName, await outsideNames(env)) ?? externalName;
     await writing(() =>
       db(env).insert("umpire_assignments", [
-        { duty_id: d.id, external_name: externalName, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
+        { duty_id: d.id, external_name: name, paid: true, status: "confirmed", confirmed_at: now, created_by: me.id },
       ]),
     );
     return { ok: true };
@@ -510,7 +579,7 @@ export function tallyDuties(duties: UmpireDuty[], season: string): UmpiringRepor
       team.uncovered++;
       continue;
     }
-    const key = a.personId ?? `external:${a.name.toLowerCase()}`;
+    const key = a.personId ?? `external:${canonicalKey(a.name)}`;
     const t = tallies.get(key) ?? { name: a.name, personId: a.personId, external: a.external, free: 0, paid: 0, noShows: 0 };
     tallies.set(key, t);
     if (a.status === "no_show") {

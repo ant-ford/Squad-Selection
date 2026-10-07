@@ -1,7 +1,7 @@
 import { HttpError } from "./http";
 import { availabilityRules, type NewAvailabilityRule } from "./data/availabilityRules";
 import type { Env } from "./env";
-import { getShared, invalidateShared } from "./cache";
+import { getVersioned } from "./cache";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
 
 /**
@@ -163,8 +163,8 @@ const RULES_TTL_MS = 5 * 60 * 1000;
  * player's own view and a coach's whole-squad view; the table is small
  * (a handful of rows per player at most).
  *
- * Held for at most 30 s in each isolate (cache.ts getShared), so a saved
- * preference reaches every isolate within that.
+ * Kept under the availability_rules version (cache.ts getVersioned), so a
+ * saved preference is seen by every isolate on its next request.
  *
  * A failed read is NOT cached. It used to be: the read returned an empty
  * list on any error and that empty list sat in the cache for five minutes,
@@ -177,7 +177,7 @@ const RULES_TTL_MS = 5 * 60 * 1000;
  */
 export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRule[]> {
   try {
-    return await getShared<AvailabilityRule[]>(env, RULES_CACHE_KEY, async () => {
+    return await getVersioned<AvailabilityRule[]>(env, RULES_CACHE_KEY, ["availability_rules"], async () => {
       return availabilityRules(env).listAll();
     }, RULES_TTL_MS);
   } catch (err) {
@@ -189,11 +189,6 @@ export async function getAllAvailabilityRules(env: Env): Promise<AvailabilityRul
 export async function getRulesForPlayer(env: Env, playerId: string): Promise<AvailabilityRule[]> {
   const all = await getAllAvailabilityRules(env);
   return all.filter((r) => (r.player ?? []).includes(playerId));
-}
-
-/** Drop the rules everywhere - this isolate and the shared store. */
-export async function invalidateAvailabilityRules(env: Env): Promise<void> {
-  await invalidateShared(env, [RULES_CACHE_KEY]);
 }
 
 // ── Player-facing management ────────────────────────────────────────────
@@ -254,7 +249,6 @@ export async function createAvailabilityRule(
     endDate: input.endDate,
     notes: input.notes,
   });
-  await invalidateAvailabilityRules(env);
   return created;
 }
 
@@ -268,6 +262,5 @@ export async function deleteAvailabilityRule(env: Env, playerId: string, ruleId:
     throw new HttpError("Rule not found", 404);
   }
   await availabilityRules(env).delete(ruleId);
-  await invalidateAvailabilityRules(env);
   return { success: true };
 }

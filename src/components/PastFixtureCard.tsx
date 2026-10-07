@@ -9,12 +9,15 @@ import { MetaLine } from '@/components/shared/MetaLine';
  *
  * What replaces them is the record of what actually happened - the result,
  * who scored, who was carded, and whether this player was on the match card.
+ * Kept to three short rows (owner, 6 Oct 2026) so more results fit on screen:
+ * teams and score, date and venue, then the player's own line followed by
+ * the scorers and cards.
  */
 
 const OUTCOME_STYLE: Record<'win' | 'draw' | 'loss', string> = {
-  win: 'bg-green-100 text-green-800 border-green-200',
+  win: 'bg-success-soft text-success-soft-foreground border-success/30',
   draw: 'bg-muted text-muted-foreground border-border',
-  loss: 'bg-red-100 text-red-800 border-red-200',
+  loss: 'bg-danger-soft text-danger-soft-foreground border-danger/30',
 };
 
 const OUTCOME_LABEL: Record<'win' | 'draw' | 'loss', string> = {
@@ -23,11 +26,13 @@ const OUTCOME_LABEL: Record<'win' | 'draw' | 'loss', string> = {
   loss: 'Lost',
 };
 
+const CHIP = 'inline-flex items-center gap-1 text-xs font-medium px-1.5 py-px rounded-full border';
+
 /** "Y" / "R" and the like, kept short so a row of them stays readable. */
 function cardTone(card: string): string {
   const c = card.toUpperCase();
-  if (c.startsWith('R')) return 'bg-red-100 text-red-800 border-red-200';
-  return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (c.startsWith('R')) return 'bg-danger-soft text-danger-soft-foreground border-danger/30';
+  return 'bg-warning-soft text-warning-soft-foreground border-warning/40';
 }
 
 /**
@@ -40,87 +45,74 @@ export function scoreInFixtureOrder(f: Pick<PastFixture, 'goalsFor' | 'goalsAgai
   return f.isHome ? [f.goalsFor, f.goalsAgainst] : [f.goalsAgainst, f.goalsFor];
 }
 
+/** "Sam Lee, Raj Patel (2)". */
+export function scorerList(scorers: PastFixture['scorers']): string {
+  return scorers.map((s) => (s.goals && s.goals > 1 ? `${s.name} (${s.goals})` : s.name)).join(', ');
+}
+
 export default function PastFixtureCard({ fixture }: { fixture: PastFixture }) {
   const score = scoreInFixtureOrder(fixture);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          {/* Home team first, as on the upcoming fixture cards. */}
-          <p className="font-semibold text-sm text-foreground truncate">
-            {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
-            <span className="text-muted-foreground font-normal"> vs </span>
-            {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
-          </p>
-          <div className="mt-1">
-            <MetaLine date={fixture.date} venue={fixture.venue} />
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-1 shrink-0">
+    <div className="bg-card border border-border rounded-xl px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        {/* Home team first, as on the upcoming fixture cards. */}
+        <p className="min-w-0 flex-1 font-semibold text-sm text-foreground truncate">
+          {fixture.isHome ? fixture.hkfcTeam : fixture.opponent}
+          <span className="text-muted-foreground font-normal"> vs </span>
+          {fixture.isHome ? fixture.opponent : fixture.hkfcTeam}
+        </p>
+        <div className="flex items-center gap-1.5 shrink-0">
           {score ? (
-            <span className="text-lg font-semibold tabular-nums leading-none text-foreground">
+            <span className="text-base font-semibold tabular-nums leading-none text-foreground">
               {score[0]}&ndash;{score[1]}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">No score</span>
           )}
           {fixture.outcome && (
-            <span
-              className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${OUTCOME_STYLE[fixture.outcome]}`}
-            >
-              {OUTCOME_LABEL[fixture.outcome]}
-            </span>
+            <span className={`${CHIP} ${OUTCOME_STYLE[fixture.outcome]}`}>{OUTCOME_LABEL[fixture.outcome]}</span>
           )}
         </div>
       </div>
 
-      {/* Whether this player was actually there. A Match Card is the
-          appearance record, so its absence is not "did not play" in any
-          disciplinary sense - it just means no card was recorded. */}
-      <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+      <div className="mt-0.5">
+        <MetaLine date={fixture.date} venue={fixture.venue} />
+      </div>
+
+      {/* Whether this player was actually there, then the match's scorers
+          and cards on the same line. A Match Card is the appearance record,
+          so its absence is not "did not play" in any disciplinary sense - it
+          just means no card was recorded. */}
+      <div className="mt-1 flex items-center gap-x-1.5 gap-y-1 flex-wrap text-xs">
         {fixture.played ? (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/30 bg-primary-tint/10 text-primary">
-            Played
-          </span>
+          <span className={`${CHIP} border-primary/30 bg-primary-tint/10 text-primary`}>Played</span>
         ) : (
-          <span className="text-[11px] text-muted-foreground">Not on the match card</span>
+          <span className="text-muted-foreground">Not on the match card</span>
         )}
         {fixture.myGoals > 0 && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border border-green-200 bg-green-100 text-green-800">
+          <span className={`${CHIP} bg-success-soft text-success-soft-foreground border-success/30`}>
             <Trophy className="h-3 w-3" />
             {fixture.myGoals === 1 ? '1 goal' : `${fixture.myGoals} goals`}
           </span>
         )}
         {fixture.myCards.map((c, i) => (
-          <span
-            key={`${c}-${i}`}
-            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${cardTone(c)}`}
-          >
+          <span key={`${c}-${i}`} className={`${CHIP} ${cardTone(c)}`}>
             {c}
           </span>
         ))}
+        {fixture.scorers.length > 0 && (
+          <span className="text-foreground">
+            <span className="text-muted-foreground">Scorers</span> {scorerList(fixture.scorers)}
+          </span>
+        )}
+        {fixture.cards.length > 0 && (
+          <span className="text-foreground">
+            <span className="text-muted-foreground">Cards</span>{' '}
+            {fixture.cards.map((c) => `${c.name} (${(c.cards ?? []).join(', ')})`).join(', ')}
+          </span>
+        )}
       </div>
-
-      {(fixture.scorers.length > 0 || fixture.cards.length > 0) && (
-        <div className="mt-2.5 pt-2.5 border-t border-border space-y-1">
-          {fixture.scorers.length > 0 && (
-            <p className="text-xs text-foreground">
-              <span className="font-medium text-foreground">Scorers</span>{' '}
-              {fixture.scorers
-                .map((s) => (s.goals && s.goals > 1 ? `${s.name} (${s.goals})` : s.name))
-                .join(', ')}
-            </p>
-          )}
-          {fixture.cards.length > 0 && (
-            <p className="text-xs text-foreground">
-              <span className="font-medium text-foreground">Cards</span>{' '}
-              {fixture.cards.map((c) => `${c.name} (${(c.cards ?? []).join(', ')})`).join(', ')}
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

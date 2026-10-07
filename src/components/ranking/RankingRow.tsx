@@ -2,11 +2,11 @@ import { useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEven
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  ArrowUpDown, BarChart3, CalendarDays, ChevronDown, ChevronUp, FileText, GripVertical, MessageSquare, MoreVertical, UserMinus,
+  ArrowUpDown, BarChart3, CalendarDays, ChevronDown, ChevronUp, FileText, GripVertical, History, MessageSquare, MoreVertical, UserMinus,
 } from 'lucide-react';
 import type { Player } from '@shared/schema/domainTypes';
 import { POS_SHORT } from '@/lib/format';
-import { DEFAULT_PHOTO, fallBackToDefaultPhoto } from '@/lib/defaultPhoto';
+import { DEFAULT_PHOTO, fallBackToDefaultPhoto, thumbOf } from '@/lib/defaultPhoto';
 import { abilityBadgeStyle } from '@/lib/abilityColour';
 import { nameOf, shortStage } from '@/lib/rankingModel';
 import { toneClasses } from '@/lib/statusTone';
@@ -17,6 +17,8 @@ export interface RankingRowActions {
   onOpenMoveToRank: (playerId: string) => void;
   onViewStats: (playerId: string) => void;
   onViewAttendance: (playerId: string) => void;
+  /** Who changed what for this player (HistorySheet). */
+  onViewHistory?: (playerId: string) => void;
   onPhotoClick: (url: string) => void;
   /** Section Captains only; left out, the menu has no "Make inactive". */
   onMakeInactive?: (playerId: string) => void;
@@ -104,7 +106,7 @@ export function RankingRow(
         className="shrink-0 rounded-full overflow-hidden border border-border"
         aria-label={player.photo ? `Photo of ${name}` : name}
       >
-        <img src={player.photo || DEFAULT_PHOTO} alt="" className="h-9 w-9 rounded-full object-cover" onError={fallBackToDefaultPhoto} />
+        <img src={thumbOf(player.photo) || DEFAULT_PHOTO} alt="" className="h-9 w-9 rounded-full object-cover" loading="lazy" onError={fallBackToDefaultPhoto} />
       </button>
 
       <div className="w-7 text-center shrink-0">
@@ -223,6 +225,11 @@ function RowMenu(props: RankingRowProps & { name: string }) {
           <DropdownMenuItem onSelect={() => props.onViewAttendance(player.id)}>
             <CalendarDays className="h-4 w-4" /> Attendance
           </DropdownMenuItem>
+          {props.onViewHistory && (
+            <DropdownMenuItem onSelect={() => props.onViewHistory?.(player.id)}>
+              <History className="h-4 w-4" /> History
+            </DropdownMenuItem>
+          )}
           {props.onMakeInactive && (
             <>
               <DropdownMenuSeparator />

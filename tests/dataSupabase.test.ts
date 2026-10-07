@@ -32,6 +32,22 @@ describe("Supabase data client", () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
+  it("names the signed-in person on writes, for the change history", async () => {
+    const calls = stubFetch(() => ({ body: [] }));
+    const uuid = "0b1f9c8e-3c4d-4e5f-8a9b-0c1d2e3f4a5b";
+    await runWithRequestContext({ stats: newRequestStats(), personId: "recP1", personUuid: uuid }, async () => {
+      await db(env).update("people", "id=eq.x", { opt_in_only: true });
+      await db(env).rpc("set_availability", {});
+      await db(env).select("people", "select=id");
+    });
+    await db(env).update("people", "id=eq.x", { opt_in_only: false });
+    const actor = (i: number) => (calls[i].init.headers as Record<string, string>)["x-eddy-actor"];
+    expect(actor(0)).toBe(uuid);
+    expect(actor(1)).toBe(uuid);
+    expect(actor(2)).toBeUndefined(); // reads don't need it
+    expect(actor(3)).toBeUndefined(); // no request (a scheduled job): no person
+  });
+
   it("follows pages until a short one", async () => {
     let n = 0;
     const calls = stubFetch(() => ({ body: n++ === 0 ? Array.from({ length: 1000 }, (_, i) => ({ i })) : [{ i: 1000 }] }));

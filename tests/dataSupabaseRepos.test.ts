@@ -37,14 +37,25 @@ const playerRow = {
 };
 
 describe("Supabase repositories", () => {
-  it("maps api_players rows as the Airtable mapper does, with a signed photo link", async () => {
+  it("maps api_players rows as the Airtable mapper does, with the photo's file id (signed only where shown)", async () => {
     const calls = postgrest(() => [playerRow]);
-    const [p] = await people(env).listActive();
+    const p = (await people(env).getById("recP1"))!;
     expect(calls[0].url.pathname).toBe("/rest/v1/api_players");
-    expect(calls[0].url.searchParams.get("active")).toBe("is.true");
     expect(p).toMatchObject({ id: "recP1", preferredName: "Al", shirtNoValue: "7", sectionRank: 12, playingAbility: undefined, birthday: "05-17" });
-    expect(p.photo).toMatch(/^https:\/\/api\.test\/api\/files\/11111111-2222-3333-4444-555555555555\?exp=\d+&sig=[0-9a-f]{64}$/);
+    expect(p.photoFileId).toBe("11111111-2222-3333-4444-555555555555");
+    expect(p.photo).toBeUndefined();
     expect(p.teamRank).toBeUndefined();
+  });
+
+  it("reads the Active list from api_players_lite: the squad fields, no photo to sign", async () => {
+    const { photo_file_id: _photo, date_of_birth: _dob, sports_background: _cv, selection_comments: _notes, player_coach: _pc, rank_updated_at: _rank, ...lite } = playerRow;
+    const calls = postgrest(() => [{ ...lite, birthday: "05-17" }]);
+    const [p] = await people(env).listActive();
+    expect(calls[0].url.pathname).toBe("/rest/v1/api_players_lite");
+    expect(calls[0].url.searchParams.get("active")).toBe("is.true");
+    expect(p).toMatchObject({ id: "recP1", preferredName: "Al", shirtNoValue: "7", sectionRank: 12, playingAbility: undefined, birthday: "05-17", optInOnly: false });
+    expect(p.photo).toBeUndefined();
+    expect(p.selectionComments).toBeUndefined();
   });
 
   it("looks people up by lower-cased email", async () => {
@@ -78,12 +89,27 @@ describe("Supabase repositories", () => {
     expect(calls[1].body).toEqual({ p_match: "recM1", p_side: "away", p_people: ["recA", "recB"] });
   });
 
-  it("applies an availability change set in one call and returns the new ids", async () => {
-    const calls = postgrest(() => ["uuid-new"]);
-    const write = { matchId: "recM", playerId: "recP", status: "Maybe" as const, updatedById: "recC" };
-    const out = await availabilityExceptions(env).apply({ deleteIds: ["recE1"], updates: [], creates: [write] });
-    expect(out.createdIds).toEqual(["uuid-new"]);
-    expect(calls[0].body).toEqual({ p: { delete: ["recE1"], update: [], create: [{ match: "recM", player: "recP", status: "Maybe", notes: "", updatedBy: "recC" }] } });
+  it("answers availability in one set_availability call and returns what it did", async () => {
+    const outcome = {
+      updated: 1,
+      results: [{ matchId: "recM", exceptionId: "uuid-new" }],
+      before: [],
+      seasons: ["2026-2027"],
+    };
+    const calls = postgrest(() => outcome);
+    const out = await availabilityExceptions(env).set({ matchIds: ["recM"], playerId: "recP", status: "Maybe", updatedById: "recC" });
+    expect(out).toEqual(outcome);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url.pathname).toBe("/rest/v1/rpc/set_availability");
+    expect(calls[0].body).toEqual({ p_player: "recP", p_matches: ["recM"], p_status: "Maybe", p_notes: null, p_updated_by: "recC" });
+  });
+
+  it("answers a whole day in one set_availability_for_date call", async () => {
+    const calls = postgrest(() => ({ updated: 0, results: [], before: [], seasons: [] }));
+    const out = await availabilityExceptions(env).setForDate({ playerId: "recP", date: "2026-10-10", status: "Unavailable", notes: "Away" });
+    expect(out.results).toEqual([]);
+    expect(calls[0].url.pathname).toBe("/rest/v1/rpc/set_availability_for_date");
+    expect(calls[0].body).toEqual({ p_player: "recP", p_date: "2026-10-10", p_status: "Unavailable", p_notes: "Away" });
   });
 
   it("returns offices in the order they were asked for", async () => {

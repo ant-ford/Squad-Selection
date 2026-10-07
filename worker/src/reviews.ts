@@ -278,7 +278,7 @@ export async function getReview(env: Env, user: AuthorizedUser, rawId: string): 
     });
   }
   if (canDo === "sponsor" || canDo === "officer") {
-    view.savedSignatureUrl = await signed(env, await savedSignature(env, user.personId));
+    view.savedSignatureUrl = await signed(env, await savedSignature(env, user.personUuid));
     view.drafts = draftsFor(row, canDo);
     // Ready by the next time the page is opened.
     if (needsDrafts(row, canDo)) draftNextStep(env, row.id, canDo);

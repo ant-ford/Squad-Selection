@@ -18,7 +18,7 @@ import type { AuthorizedUser } from "../worker/src/auth";
 import type { Env } from "../worker/src/env";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { person, recId, team } from "./helpers/factories";
+import { person, recId, team, signedIn } from "./helpers/factories";
 
 const ENV = { ...SUPABASE_TEST_ENV } as unknown as Env;
 
@@ -48,14 +48,14 @@ useFakeRepos(() => ({
 
 // The AuthorizedUser auth.ts would produce for Ada: Section Captain, so
 // coachTeams is every team name (see B7 - the single source of coach truth).
-const captainAuthUser: AuthorizedUser = {
+const captainAuthUser: AuthorizedUser = signedIn({
   email: "ada@hkfc.com",
   personId: CAP,
   role: "coach",
   coachTeams: ["HKFC A", "HKFC B"],
   isSectionCaptain: true,
   officerRoles: [],
-};
+});
 
 beforeEach(() => {
   invalidateAll();

@@ -104,7 +104,7 @@ export interface PlayerAttendanceInput {
 const OFF_STATUSES = new Set(["Cancelled", "Rescheduled"]);
 
 /** Which HKFC side a Match Card belongs to: its Team, or the only HKFC side in the match. */
-function cardSide(card: MatchCard, match: Match, isOurs: (t: string) => boolean): string {
+export function cardSide(card: MatchCard, match: Match, isOurs: (t: string) => boolean): string {
   if (card.team && (card.team === match.homeTeam || card.team === match.awayTeam)) return card.team;
   const ours = [match.homeTeam, match.awayTeam].filter(isOurs);
   return ours.length === 1 ? ours[0] : card.team || "";
@@ -296,7 +296,7 @@ export async function getPlayerAttendance(
 
   const season = currentSeason();
   const [ctx, rules] = await Promise.all([
-    getSeasonContext(env, season),
+    getSeasonContext(env, season, player.id),
     getRulesForPlayer(env, player.id),
   ]);
 

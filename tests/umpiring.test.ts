@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
-import { assignDuty, confirmAssignment, getUmpiringBoard, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, refreshUmpirePool, takeDuty, tallyDuties, umpiringAccess, withdrawAssignment } from "../worker/src/umpiring";
+import { signedIn } from "./helpers/factories";
 import { invalidateAll } from "../worker/src/cache";
 import {
   captainsMessage,
@@ -10,6 +11,8 @@ import {
   reportGrid,
   dutyLine,
   isOnCommitment,
+  mergeOutsideNames,
+  similarOutsideNames,
   umpiresMessage,
   weekOf,
   type DutyAssignment,
@@ -18,8 +21,10 @@ import {
 import { gamesUmpiredChoice } from "../shared/commitmentReview";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
+/** Who auth_context says is in the umpire pool: the qualified (George, Ann) and Bob, from a match card. */
+const UMPIRES = new Set(["recGEORGE", "recANN", "recBOB"]);
 const user = (personId: string, officerRoles: AuthorizedUser["officerRoles"] = []) =>
-  ({ email: "u@x.com", personId, role: "player", coachTeams: [], isSectionCaptain: false, officerRoles }) as unknown as AuthorizedUser;
+  signedIn({ email: "u@x.com", personId, officerRoles, umpire: UMPIRES.has(personId) });
 const george = user("recGEORGE", [{ office: "umpireCoordinator", designation: "" }]);
 
 const DUTY = "11111111-1111-1111-1111-111111111111";
@@ -125,8 +130,16 @@ describe("the commitment and pay", () => {
 });
 
 describe("who sees the duties", () => {
-  it("is qualified umpires, anyone named as umpire on an HKFC match card this year, and the coordinator", async () => {
-    fake({
+  /** The pool refreshUmpirePool stores (People uuids), from a fake with the given tables. */
+  async function storedPool(tables: Parameters<typeof fake>[0]): Promise<string[]> {
+    let stored: string[] = [];
+    fake({ ...tables, set_umpire_pool: (_url, _method, body) => ((stored = [...body.p_people].sort()), stored.length) });
+    await refreshUmpirePool(env);
+    return stored;
+  }
+
+  it("stores qualified umpires and anyone named as umpire on an HKFC match card this year", async () => {
+    const pool = await storedPool({
       people: people(),
       matches: [
         { id: "m1", ump_1: "HKFC D - Page Bob", ump_2: "Appointed", home_team: "HKFC F", away_team: "Elite B" },
@@ -134,21 +147,21 @@ describe("who sees the duties", () => {
       ],
       umpire_assignments: [],
     });
-    expect(await umpiringAccess(env, user("recANN"))).toBe("umpire"); // qualified
-    expect(await umpiringAccess(env, user("recBOB"))).toBe("umpire"); // on a match card, names swapped
-    expect(await umpiringAccess(env, user("recCAT"))).toBeNull(); // "Not Applicable", and a first name alone isn't enough
+    // Ann and George are qualified; Bob is on a match card, names swapped.
+    // Cat isn't: "Not Applicable", and a first name alone isn't enough.
+    expect(pool).toEqual(["u-ann", "u-bob", "u-george"]);
+  });
+
+  it("stores anyone who umpired a game in Eddy this year", async () => {
+    expect(await storedPool({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] })).toContain("u-cat");
+  });
+
+  it("decides the screen from sign-in (auth_context's umpire flag) and the offices, with no reads", async () => {
+    const calls = fake({});
+    expect(await umpiringAccess(env, user("recANN"))).toBe("umpire");
+    expect(await umpiringAccess(env, user("recCAT"))).toBeNull();
     expect(await umpiringAccess(env, user("recZED", [{ office: "sectionCaptain", designation: "" }]))).toBe("coordinator");
-  });
-
-  it("hides the screen, not the player page, when the umpiring tables can't be read", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    fake({ people: people(), matches: [], umpire_assignments: () => new Response(JSON.stringify({ code: "42P01", message: "relation does not exist" }), { status: 404 }) });
-    expect(await umpiringAccess(env, user("recANN"))).toBeNull();
-  });
-
-  it("includes anyone who umpired a game in Eddy this year", async () => {
-    fake({ people: people(), matches: [], umpire_assignments: [{ id: "a1", person_id: "u-cat" }] });
-    expect(await umpiringAccess(env, user("recCAT"))).toBe("umpire");
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -378,5 +391,74 @@ describe("the season's record", () => {
         { day: "2026-10-18", cells: { "HKFC A": ["–"] } },
       ],
     });
+  });
+});
+
+describe("outside umpires' names", () => {
+  const known = ["Andy Chan", "Philipp Boettger", "Jelena Surjanac", "Kuldeep Singh"];
+
+  it("keeps one spelling per umpire, however written, the first list's winning", () => {
+    expect(mergeOutsideNames(["andy chan", "Kuldeep Singh"], ["Andy CHAN", "SINGH Kuldeep", "Lyle  Williams"])).toEqual([
+      "andy chan",
+      "Kuldeep Singh",
+      "Lyle Williams",
+    ]);
+  });
+
+  it("asks about a name a letter or two out, or part of one", () => {
+    expect(similarOutsideNames("Andy Chen", known)).toEqual(["Andy Chan"]);
+    expect(similarOutsideNames("Phillip Boettger", known)).toEqual(["Philipp Boettger"]);
+    expect(similarOutsideNames("Singh Kuldip", known)).toEqual(["Kuldeep Singh"]);
+    expect(similarOutsideNames("boettger", known)).toEqual(["Philipp Boettger"]);
+    expect(similarOutsideNames("Surjanak", known)).toEqual(["Jelena Surjanac"]);
+  });
+
+  it("asks nothing for a known name, a new one, or too little to go on", () => {
+    expect(similarOutsideNames("ANDY  chan", known)).toEqual([]);
+    expect(similarOutsideNames("Chan Andy", known)).toEqual([]);
+    expect(similarOutsideNames("Mark Lee", known)).toEqual([]);
+    expect(similarOutsideNames("An", known)).toEqual([]);
+    expect(similarOutsideNames("Andy", ["Andy Chan", "Andy Lo"])).toEqual(["Andy Chan", "Andy Lo"]);
+  });
+
+  const recent = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
+  const board = (used: unknown[]) => ({
+    people: byApiId,
+    matches: [
+      { id: "m1", ump_1: "Appt - Jelena SURJANAC", ump_2: "Khalsa C - Lyle Williams - 4477", home_team: "HKFC F", away_team: "Khalsa C" },
+      { id: "m2", ump_1: "HKFC D - Ray Smith", ump_2: "Page Bob", home_team: "HKFC D", away_team: "Valley B" },
+      { id: "m3", ump_1: "Appointed", ump_2: "Gurdev", home_team: "HKFC B", away_team: "Valley A" },
+      { id: "m4", ump_1: "andy chan", ump_2: "Valley B", home_team: "HKFC E", away_team: "Valley B" },
+    ],
+    umpire_duties: [{ id: DUTY, match_date: future, time_tbc: false, status: "scheduled", duty_team: "HKFC D" }],
+    umpire_assignments: (url: URL, method: string, body: any) => {
+      if (method !== "GET") return body ?? [];
+      return url.searchParams.get("external_name") ? used : [];
+    },
+  });
+
+  it("lists those put down in Eddy and those on HKFC match cards, A–Z", async () => {
+    const calls = fake(board([{ id: "a1", external_name: "Andy Chan", created_at: recent }]));
+    const b = await getUmpiringBoard(env, george, null);
+    // Not Bob (a member, names swapped), nor HKFC D's duty umpire, nor a first name alone.
+    expect(b.externalNames).toEqual(["Andy Chan", "Jelena SURJANAC", "Lyle Williams"]);
+    const read = calls.find((c) => c.url.searchParams.get("external_name"))!;
+    expect(read.url.searchParams.get("status")).toBe("neq.withdrawn");
+  });
+
+  it("saves a known name in its known spelling", async () => {
+    const calls = fake(board([{ id: "a1", external_name: "Andy Chan", created_at: recent }]));
+    await assignDuty(env, george, DUTY, { externalName: "andy  CHAN" });
+    expect(writes(calls)[0].body[0]).toMatchObject({ external_name: "Andy Chan" });
+    invalidateAll();
+    const again = fake(board([]));
+    await assignDuty(env, george, DUTY, { externalName: "jelena surjanac" });
+    expect(writes(again)[0].body[0]).toMatchObject({ external_name: "Jelena SURJANAC" });
+  });
+
+  it("counts one outside umpire once in the season's record, however written", () => {
+    const outside = (name: string, id: string) => duty({ id, assignments: [assignment({ name, personId: null, external: true, paid: true })] });
+    const report = tallyDuties([outside("Andy Chan", "d1"), outside("andy chan", "d2"), outside("Chan Andy", "d3")], "2026-2027");
+    expect(report.umpires.map((u) => [u.name, u.paid])).toEqual([["Andy Chan", 3]]);
   });
 });

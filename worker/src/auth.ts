@@ -1,10 +1,13 @@
 import { HttpError } from "./http";
 import { normalizeEmail } from "../../shared/normalizeEmail";
 import type { Env } from "./env";
-import { getOfficerLinks, getPlayerByEmail, getTeamCoachLinks, type Office, type OfficerRole } from "./reference";
-import { getCached } from "./cache";
+import type { Office, OfficerRole } from "./reference";
+import { getCached, invalidateCache } from "./cache";
+import { FRESH_HEADER, FRESH_WINDOW_MS } from "../../shared/freshHeader";
 import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
-import { noteRequestPerson } from "./requestContext";
+import { noteRequestPerson, noteRequestVersions, onRequestWrite } from "./requestContext";
+import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
+import { raiseVersionFloor, withVersionFloor, type CacheVersions } from "./cacheVersions";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
 const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
@@ -16,8 +19,12 @@ export { normalizeEmail } from "../../shared/normalizeEmail";
 export interface AuthorizedUser {
   /** Verified, normalized email from the Supabase session. */
   email: string;
-  /** Matched People record id in Airtable. */
+  /** The matched People record's api id. */
   personId: string;
+  /** The same record's uuid (people.id). */
+  personUuid: string;
+  /** The matched People record, as auth_context read it for this request. */
+  person: AuthPerson;
   /** "coach" when the person holds any coach / section-captain relationship. */
   role: "player" | "coach";
   /**
@@ -35,6 +42,16 @@ export interface AuthorizedUser {
    * on its own, like a coach link: an officer need not be a playing member.
    */
   officerRoles: OfficerRole[];
+  /** Every Active office row they hold, sponsors and social secretaries included. */
+  offices: HeldOffice[];
+  /** Active teams they captain (Teams.Team Captain). */
+  captainTeams: string[];
+  /** Teams they are social secretary of (team_people role social_secretary). */
+  socialSecretaryTeams: { id: string; name: string }[];
+  /** In the club's umpire pool (umpiring.ts). */
+  umpire: boolean;
+  /** The database's cache versions, read with the person at the start of the request. */
+  versions: CacheVersions;
 }
 
 /**
@@ -62,23 +79,58 @@ export async function requireVerifiedEmail(request: Request, env: Env): Promise<
 }
 
 export async function requireAuthorizedUser(request: Request, env: Env): Promise<AuthorizedUser> {
-  const email = await verifySupabaseSession(request, env);
-  const normalizedEmail = normalizeEmail(email);
+  // Supabase checks the session on every request (owner decision,
+  // 2026-10-06). The person's facts don't wait for it: auth_context starts
+  // at the same time, for the email the token CLAIMS, and its answer is
+  // used only when Supabase confirms that same email. Otherwise (no
+  // readable claim, or a different verified email) it is asked again for
+  // the verified one. One database call, with no re-lookups behind it.
+  const claimed = claimedEmail(request);
+  // The app marks requests made in the 10 s after its own write (FRESH_HEADER):
+  // those read auth_context afresh, so the person always sees their own write.
+  const fresh = request.headers.get(FRESH_HEADER) === "1";
+  const early = claimed ? loadAuthContext(env, claimed, fresh) : null;
+  // A rejected token must answer 401, whatever the early read did.
+  early?.catch(() => undefined);
+  const normalizedEmail = normalizeEmail(await verifySupabaseSession(request, env));
+  const context = early && claimed === normalizedEmail ? await early : await loadAuthContext(env, normalizedEmail, fresh);
+  return authorize(normalizedEmail, context);
+}
 
-  // Independent reads keyed off the verified session - run in parallel.
-  // No behavioural or security impact: both are pure reads, neither depends
-  // on the other's result, and a failure in either rejects the request
-  // exactly as the sequential version did. The coach-link lookup warms its
-  // 10-minute cache either way.
-  // Cached 60s (getPlayerByEmail's default TTL) - the Supabase token
-  // verification above still runs on every request, so a revoked session is
-  // rejected immediately; only the People-record lookup behind it is cached.
-  const [player, links, officers] = await Promise.all([
-    getPlayerByEmail(env, normalizedEmail),
-    getTeamCoachLinks(env),
-    getOfficerLinks(env),
-  ]);
+/**
+ * How long an isolate reuses one email's auth_context answer (owner
+ * decision, 2026-10-07). A screen opens several endpoints at once, and a
+ * player taps through a few in a row: one database call serves them all.
+ * Access is still decided on every request from the answer, and Supabase
+ * still checks the session (60 s per token, verifySupabaseSession).
+ */
+const AUTH_CONTEXT_REUSE_MS = FRESH_WINDOW_MS;
 
+const authContextKey = (email: string) => `auth-context:${email}`;
+
+/**
+ * auth_context for an email, shared by this isolate's requests for 10 s;
+ * concurrent requests share one call (getCached's in-flight de-dup).
+ * Keyed by email, never by token: the answer is about the email, and is
+ * used only once Supabase has confirmed the request is that email's.
+ */
+async function loadAuthContext(env: Env, email: string, fresh = false): Promise<AuthContext> {
+  if (fresh) invalidateCache(authContextKey(email));
+  const { data, fromCache } = await getCached(authContextKey(email), () => authContexts(env).load(email), AUTH_CONTEXT_REUSE_MS);
+  if (!fromCache) raiseVersionFloor(data.versions);
+  return data;
+}
+
+// A write drops the writer's reused answer in this isolate, so their next
+// request reads auth_context again, with the versions their write moved:
+// they see it at once.
+onRequestWrite((context) => {
+  if (context.email) invalidateCache(authContextKey(context.email));
+});
+
+/** The access rules, applied to what auth_context read. Throws 403 on denial. */
+export function authorize(normalizedEmail: string, context: AuthContext): AuthorizedUser {
+  const player = context.person;
   if (!player) {
     console.warn(`Access denied - no People record matched email ${normalizedEmail}`);
     throw new HttpError("Application access is not authorised.", 403, "APPLICATION_ACCESS_DENIED");
@@ -89,21 +141,21 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
   // Teams table linked fields are the ONLY source of coach access. Uses ALL
   // team records (not just active ones) so a person's access never depends
   // on whether their team record is temporarily marked inactive.
-  const isSectionCaptain = links.sectionCaptainIds.includes(player.id);
+  const isSectionCaptain = context.teamSectionCaptain;
   // Coach status comes from the Teams.Coach link itself, never from the
-  // derived team-name list below. coachTeamNamesByPersonId only gains an
-  // entry when the team record has a non-empty Team Name, so deriving access
-  // from it silently locked out anyone coaching a team whose name was blank.
-  const isTeamCoach = links.coachIds.includes(player.id);
-  const officerRoles = officers.rolesByPersonId[player.id] ?? [];
+  // team-name list below. That list only has teams with a non-empty Team
+  // Name, so deriving access from it silently locked out anyone coaching a
+  // team whose name was blank.
+  const isTeamCoach = context.isTeamCoach;
+  const officerRoles: OfficerRole[] = context.offices.flatMap((o) =>
+    o.office && o.office !== "sponsor" ? [{ office: o.office as Office, designation: o.designation }] : [],
+  );
   // The Assistant Director of Hockey coaches every team, like a Section
   // Captain's team link (owner decision, 2026-10-04).
   const coachesAllTeams = isSectionCaptain || officerRoles.some((r) => r.office === "assistantDirector");
   // Section Captains see every team everywhere - the most permissive of the
   // paths this used to be computed on, now the single definition.
-  const coachTeams = coachesAllTeams
-    ? links.allTeamNames
-    : links.coachTeamNamesByPersonId[player.id] ?? [];
+  const coachTeams = coachesAllTeams ? context.allTeamNames : context.coachTeams;
   const isCoach = isTeamCoach || coachesAllTeams;
 
   // Applicants in the New Joiner process sign in to fill in their application.
@@ -122,15 +174,45 @@ export async function requireAuthorizedUser(request: Request, env: Env): Promise
     throw new HttpError("Your HKFC application access has been disabled.", 403, "APPLICATION_ACCESS_DENIED");
   }
 
-  noteRequestPerson(player.id);
+  noteRequestPerson(player.id, normalizedEmail, player.uuid);
+  // A reused answer's versions, raised to the newest this isolate has seen.
+  const versions = withVersionFloor(context.versions);
+  noteRequestVersions(versions);
   return {
     email: normalizedEmail,
     personId: player.id,
+    personUuid: player.uuid,
+    person: player,
     role: isCoach ? "coach" : "player",
     coachTeams,
     isSectionCaptain,
     officerRoles,
+    offices: context.offices,
+    captainTeams: context.captainTeams,
+    socialSecretaryTeams: context.socialSecretaryTeams,
+    umpire: context.umpire,
+    versions,
   };
+}
+
+/**
+ * The email an access token says it is for, NOT verified: only for starting
+ * the read early. Null when the token isn't a readable JWT, has no email,
+ * or has expired (Supabase would refuse it anyway).
+ */
+export function claimedEmail(request: Request): string | null {
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))) as { email?: unknown; exp?: unknown };
+    if (typeof claims.email !== "string" || !claims.email) return null;
+    if (typeof claims.exp === "number" && claims.exp * 1000 <= Date.now()) return null;
+    return normalizeEmail(claims.email);
+  } catch {
+    return null;
+  }
 }
 
 /**
