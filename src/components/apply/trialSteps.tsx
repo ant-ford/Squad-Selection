@@ -63,7 +63,7 @@ export function TrialDatesStep({ trial, ...nav }: Omit<StepProps, 'details'> & {
               onChange={(e) => toggle(s.id, e.target.checked)}
             />
             <span>
-              {safeFormat(s.startsAt, 'EEE d MMM yyyy, h:mm a')} · {s.place}
+              {safeFormat(s.startsAt, 'EEE d MMM yyyy, HH:mm')} · {s.place}
               {s.notes && <span className="block text-xs text-muted-foreground">{s.notes}</span>}
             </span>
           </label>

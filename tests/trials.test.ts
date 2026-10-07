@@ -108,7 +108,7 @@ describe("the Section Captains' practice trial", () => {
       }
       return base(input, init);
     });
-    await invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "Tue 7 Oct, 8pm, HKFC" });
+    await invitePracticeTrial(env, captain, U(1), { team: "HKFC A", when: "Tue 7 Oct, 20:00, HKFC" });
     expect(n).toBe(1);
     const [coach, player] = resend(calls);
     expect(coach.to).toEqual(["adh@example.com"]);
@@ -117,9 +117,9 @@ describe("the Section Captains' practice trial", () => {
     expect(coach.subject).toBe("Practice trial: Sam Lee");
     expect(coach.text).toContain("Dear Lee and Coachie,");
     expect(coach.text).toContain("no HKID: a visiting player");
-    expect(coach.text).toContain("HKFC A practice: Tue 7 Oct, 8pm, HKFC");
+    expect(coach.text).toContain("HKFC A practice: Tue 7 Oct, 20:00, HKFC");
     expect(player.to).toEqual(["sam@x.com"]);
-    expect(player.text).toContain("Tue 7 Oct, 8pm, HKFC");
+    expect(player.text).toContain("Tue 7 Oct, 20:00, HKFC");
   });
 
   it("is for Section Captains, needs a team and when, and only for stage 1", async () => {
