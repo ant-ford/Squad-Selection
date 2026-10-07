@@ -777,7 +777,6 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
 /** /events/manage/new and /events/manage/:id (the social secretaries and Section Captains). */
 export default function ManageEventPage() {
   const { id = 'new' } = useParams();
-  const navigate = useNavigate();
   const isNew = id === 'new';
   const view = useQuery({ queryKey: ['manageEvents'], queryFn: getManageView, retry: false });
   const detail = useQuery({ queryKey: ['eventResponses', id], queryFn: () => getEventResponses(id), enabled: !isNew });
