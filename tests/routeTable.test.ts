@@ -230,6 +230,7 @@ const EXPECTED_ROUTES = [
   "GET /api/umpiring/report signed-in",
   "POST /api/umpiring/duties/:id([0-9a-f-]{36})/take signed-in",
   "POST /api/umpiring/duties/:id([0-9a-f-]{36})/assign signed-in",
+  "POST /api/umpiring/duties/:id([0-9a-f-]{36})/not-needed signed-in",
   "POST /api/umpiring/assignments/:id([0-9a-f-]{36})/withdraw signed-in",
   "POST /api/umpiring/assignments/:id([0-9a-f-]{36})/confirm signed-in",
   "POST /api/umpiring/assignments/:id([0-9a-f-]{36})/no-show signed-in",

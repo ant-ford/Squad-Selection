@@ -28,6 +28,7 @@ import {
   getUmpiringReport,
   markDutyChangesSeen,
   setNoShow,
+  setNotNeeded,
   takeDuty,
   withdrawAssignment,
 } from '@/api/umpiring';
@@ -172,7 +173,7 @@ function UmpireActions({ duty, board }: { duty: UmpireDuty; board: UmpiringBoard
   const [anyway, setAnyway] = useState(false);
   const mine = duty.assignments.find((a) => a.personId === board.me.personId);
   const taken = confirmedOf(duty);
-  if (duty.status === 'cancelled' || isPast(duty)) return null;
+  if (duty.status === 'cancelled' || duty.notNeeded || isPast(duty)) return null;
 
   if (mine?.status === 'confirmed') {
     return (
@@ -247,6 +248,13 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
         Remove
       </ActionButton>
     ) : null;
+  }
+  if (duty.notNeeded) {
+    return (
+      <ActionButton variant="ghost" loading={action.isPending} onClick={() => action.mutate(() => setNotNeeded(duty.id, false))}>
+        Undo
+      </ActionButton>
+    );
   }
 
   // `contents`: these sit in the card's status row; the offers and the
@@ -389,9 +397,14 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
             </div>
           </div>
         ) : (
-          <ActionButton variant="outline" onClick={() => setAssigning(true)}>
-            Assign
-          </ActionButton>
+          <>
+            <ActionButton variant="outline" onClick={() => setAssigning(true)}>
+              Assign
+            </ActionButton>
+            <ActionButton variant="ghost" loading={action.isPending} onClick={() => action.mutate(() => setNotNeeded(duty.id, true))}>
+              Not needed
+            </ActionButton>
+          </>
         ))}
     </div>
   );
@@ -428,6 +441,8 @@ function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBo
               Removed by HKHA
               {taken && coordinator ? ` · tell ${taken.name}` : ''}
             </span>
+          ) : duty.notNeeded ? (
+            <StatusChip>Not needed</StatusChip>
           ) : taken ? (
             <>
               <Who a={taken} />
@@ -437,7 +452,7 @@ function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBo
             <StatusChip tone="warning">Open</StatusChip>
           )}
           {duty.status === 'rescheduled' && <span className="text-muted-foreground"> · Rescheduled</span>}
-          {board.me.isUmpire && duty.clash && !cancelled && <span className={warningText}> · ⚠ Your game {duty.clash}</span>}
+          {board.me.isUmpire && duty.clash && !cancelled && !duty.notNeeded && <span className={warningText}> · ⚠ Your game {duty.clash}</span>}
         </p>
         {!busy && board.me.isUmpire && <UmpireActions duty={duty} board={board} />}
         {!busy && coordinator && <CoordinatorActions duty={duty} board={board} />}

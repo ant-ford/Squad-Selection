@@ -45,6 +45,8 @@ export interface UmpireDuty {
   /** "HKFC F". */
   dutyTeam: string;
   status: DutyStatus;
+  /** No umpire needed (a walk-over), marked by the coordinator. */
+  notNeeded: boolean;
   /** Offers, the confirmed umpire, no-shows; withdrawn ones are left out. */
   assignments: DutyAssignment[];
   /** The viewer's own game it clashes with ("10:45 HKFC D vs Valley B"), if any. */
@@ -146,7 +148,7 @@ export interface UmpireTally {
 }
 
 /** How a played duty was covered. */
-export type DutyOutcome = "free" | "paid" | "outside" | "no_show" | "uncovered";
+export type DutyOutcome = "free" | "paid" | "outside" | "no_show" | "uncovered" | "not_needed";
 
 /** One played duty in the season report. */
 export interface ReportDuty {
@@ -199,6 +201,7 @@ const OUTCOME_LABEL: Record<DutyOutcome, string> = {
   outside: "Paid (outside)",
   no_show: "No-show",
   uncovered: "Uncovered",
+  not_needed: "Not needed",
 };
 
 /** Every played duty as spreadsheet rows, with a header. */
@@ -223,6 +226,7 @@ export function reportCsvRows(report: Pick<UmpiringReport, "rows">): string[][] 
 
 /** A grid cell: "George", "💰Pagey", "✗Ann" for a no-show, "–" for nobody. */
 export function gridCell(r: Pick<ReportDuty, "outcome" | "short">): string {
+  if (r.outcome === "not_needed") return "n/a";
   if (r.outcome === "uncovered" || !r.short) return "–";
   if (r.outcome === "no_show") return `✗${r.short}`;
   return r.outcome === "free" ? r.short : `💰${r.short}`;
@@ -320,15 +324,20 @@ const inOrder = <T extends Pick<UmpireDuty, "matchDate" | "slot" | "venue">>(dut
  */
 export function umpiresMessage(duties: UmpireDuty[], link: string): string {
   const lines = inOrder(duties.filter((d) => d.status !== "cancelled")).map((d) => {
+    if (d.notNeeded) return `${dutyLine(d)} ${NOT_NEEDED}`;
     const c = confirmedOf(d);
     return c ? `${dutyLine(d)} ${umpireMark(c)}` : dutyLine(d);
   });
   return [HEADER, "", ...lines, "", `Put your name down: ${link}`].join("\n");
 }
 
+/** A walk-over's line ends with this in both messages. */
+const NOT_NEEDED = "Not needed";
+
 /** The second message, to the captains group: the week's umpires. */
 export function captainsMessage(duties: UmpireDuty[]): string {
   const lines = inOrder(duties.filter((d) => d.status !== "cancelled")).map((d) => {
+    if (d.notNeeded) return `${dutyLine(d)} ${NOT_NEEDED}`;
     const c = confirmedOf(d);
     return c ? `${dutyLine(d)} ${umpireMark(c)}` : `${dutyLine(d)} ❓`;
   });

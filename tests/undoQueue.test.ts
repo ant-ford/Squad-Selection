@@ -190,6 +190,7 @@ const duty = (assignments: DutyAssignment[]): UmpireDuty => ({
   slot: 1,
   dutyTeam: "HKFC D",
   status: "scheduled",
+  notNeeded: false,
   assignments,
 });
 

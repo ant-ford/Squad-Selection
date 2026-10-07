@@ -25,6 +25,11 @@ export function assignDuty(dutyId: string, body: { personId?: string; externalNa
   return apiPost(`/api/umpiring/duties/${dutyId}/assign`, body);
 }
 
+/** The coordinator marks a duty as needing no umpire (a walk-over), or undoes it. */
+export function setNotNeeded(dutyId: string, notNeeded: boolean): Promise<{ ok: true }> {
+  return apiPost(`/api/umpiring/duties/${dutyId}/not-needed`, { notNeeded });
+}
+
 export function withdrawAssignment(id: string): Promise<{ ok: true }> {
   return apiPost(`/api/umpiring/assignments/${id}/withdraw`, {});
 }

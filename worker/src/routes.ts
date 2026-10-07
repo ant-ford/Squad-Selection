@@ -31,7 +31,7 @@ import { getMyDeclarations, submitDeclarations } from "./declarations";
 import { getMySeasonPlan, getSeasonPlanBoard, submitSeasonPlan } from "./seasonPlan";
 import { getMyVolunteering, getVolunteersBoard, saveVolunteering } from "./volunteering";
 import { ackDutyChanges } from "./myDuties";
-import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, takeDuty, withdrawAssignment } from "./umpiring";
+import { assignDuty, confirmAssignment, getUmpiringBoard, getUmpiringReport, setNoShow, setNotNeeded, takeDuty, withdrawAssignment } from "./umpiring";
 import { confirmDetails, deleteMyProfile, getMyDetails, saveKitSizes, saveSection, uploadFile } from "./details";
 import { readIdDocument } from "./idRead";
 import { draftSponsorAnswers, getSigningView, remakeApplicationPdf, sendApplicationOn, signApplication } from "./applicationSigning";
@@ -735,6 +735,7 @@ export const ROUTES: readonly Route[] = [
   route("GET", "/api/umpiring/report", "signed-in", ({ env, user, url }) => getUmpiringReport(env, user, url.searchParams.get("season"))),
   route("POST", `/api/umpiring/duties/:id(${UUID})/take`, "signed-in", async ({ request, env, user, params }) => takeDuty(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", `/api/umpiring/duties/:id(${UUID})/assign`, "signed-in", async ({ request, env, user, params }) => assignDuty(env, user, params.id, await readBodyOrEmpty(request))),
+  route("POST", `/api/umpiring/duties/:id(${UUID})/not-needed`, "signed-in", async ({ request, env, user, params }) => setNotNeeded(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", `/api/umpiring/assignments/:id(${UUID})/withdraw`, "signed-in", ({ env, user, params }) => withdrawAssignment(env, user, params.id)),
   route("POST", `/api/umpiring/assignments/:id(${UUID})/confirm`, "signed-in", ({ env, user, params }) => confirmAssignment(env, user, params.id)),
   route("POST", `/api/umpiring/assignments/:id(${UUID})/no-show`, "signed-in", async ({ request, env, user, params }) => setNoShow(env, user, params.id, await readBodyOrEmpty(request))),
