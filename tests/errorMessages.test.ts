@@ -34,6 +34,12 @@ describe('errorMessage', () => {
     expect(errorMessage(api(404, undefined, 'Request failed (404)'))).toBe('Not saved. Please try again.');
   });
 
+  it('says Eddy is read-only, not that something broke', () => {
+    expect(errorMessage(api(503, 'READ_ONLY', "Eddy is read-only for a short while. Your change wasn't saved."))).toBe(
+      'Not saved: Eddy is read-only for a short while. Try again later.',
+    );
+  });
+
   it('treats no response as a dropped connection', () => {
     expect(errorMessage(new TypeError('Failed to fetch'), 'submit')).toBe('Not submitted: the connection dropped. Check your signal and try again.');
     expect(errorMessage(undefined)).toBe('Not saved: the connection dropped. Check your signal and try again.');

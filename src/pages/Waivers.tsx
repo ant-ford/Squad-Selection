@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import SignaturePad from '@/components/SignaturePad';
@@ -15,7 +15,7 @@ import { formGaps } from '@/lib/formGaps';
 import { useFormGaps } from '@/lib/useFormGaps';
 import { differs } from '@/lib/drafts';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getMyDeclarations, submitDeclarations } from '@/api/declarations';
 import {
   CODE_OF_CONDUCT,
@@ -118,7 +118,7 @@ function Form({ view, onDone }: { view: DeclarationsView; onDone: () => void }) 
       </Section>
 
       {view.underEighteen && (
-        <Section title="Parent or Guardian's Consent">
+        <Section title="Parent or guardian's consent">
           <p className="text-xs text-muted-foreground">
             {view.playerName} is under 18, so a parent or guardian completes this part.
           </p>
@@ -192,8 +192,8 @@ export default function Waivers() {
             <button onClick={() => refetch()} className="text-sm text-primary underline">Try again</button>
           </div>
         ) : view.signedThisSeasonAt ? (
-          <Section title={`Waivers & Declarations ${view.season.replace('-', '–')}`}>
-            <p className="text-sm text-foreground">You signed this season's waivers on {safeFormat(view.signedThisSeasonAt, 'd MMM yyyy')}.</p>
+          <Section title={`Waivers & declarations ${view.season.replace('-', '–')}`}>
+            <p className="text-sm text-foreground">You signed this season's waivers on {safeFormat(view.signedThisSeasonAt, LONG_DATE)}.</p>
           </Section>
         ) : (
           <>

@@ -1,0 +1,54 @@
+name: SQL tests
+
+# Runs the database's own rules - the Postgres functions and triggers in
+# supabase/migrations - which the vitest suite never reaches (it fakes the
+# data layer). A throwaway local Supabase database is started with Docker,
+# every migration is applied in order (a migration that fails to apply fails
+# the run), and then the pgTAP files in supabase/tests run, each inside a
+# transaction that is rolled back. Nothing here touches preview or production.
+#
+# Locally (needs Docker): npm run test:sql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sql-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The same CLI version the repo applies migrations with.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+
+      # Only Postgres: no API, auth, storage or studio containers. Applies
+      # every migration in supabase/migrations, and stops on the first one
+      # that fails.
+      - name: Start the database and apply every migration
+        run: supabase db start
+
+      # The availability rule cases come from the same JSON as the TypeScript
+      # test (tests/fixtures/availabilityRuleCases.json), so the pgTAP file
+      # for them is generated here rather than kept in the repo.
+      - name: Generate the availability rule cases
+        run: node scripts/availability-rule-checks.mjs --tap supabase/tests/availability_rule_cases.test.sql
+
+      # pg_prove over supabase/tests: each file runs in its own transaction,
+      # rolled back at the end. Any failed assertion fails the run.
+      - name: Run the SQL tests
+        run: supabase test db

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Copy, Download, Plus, QrCode, Search, X } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -460,7 +460,7 @@ function StatusAndPoster({ e, data, onDeleted }: { e: ManagedEvent; data: Respon
       </div>
       {e.includesMe === false && e.status !== 'cancelled' && (
         <p className="text-xs rounded-md bg-warning-soft text-warning-soft-foreground px-3 py-2">
-          You're not in this invite list, so it won't show on your player page. Edit who's invited, or use “Answer for someone” under Answers.
+          You're not in this invite list, so it won't show in your Player view. Edit who's invited, or use “Answer for someone” under Answers.
         </p>
       )}
       <FileUpload kind="document" label="Poster" hint="A picture: JPEG, PNG or WebP" hasFile={!!e.posterUrl} onUploaded={refresh} upload={(dataUrl) => uploadPoster(id, dataUrl)} />
@@ -777,7 +777,6 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
 /** /events/manage/new and /events/manage/:id (the social secretaries and Section Captains). */
 export default function ManageEventPage() {
   const { id = 'new' } = useParams();
-  const navigate = useNavigate();
   const isNew = id === 'new';
   const view = useQuery({ queryKey: ['manageEvents'], queryFn: getManageView, retry: false });
   const detail = useQuery({ queryKey: ['eventResponses', id], queryFn: () => getEventResponses(id), enabled: !isNew });

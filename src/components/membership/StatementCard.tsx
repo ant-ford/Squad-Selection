@@ -1,9 +1,9 @@
 import type { StatementCard as Card } from '@/api/membership';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { NOT_STARTED, NOTIFIED } from '@shared/statementStages';
 import { Avatar, WhatsAppIcon, ageTone, whatsAppTo } from './ApplicantCard';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 /**
  * The line that matters on a Not Started review: when the automatic email
@@ -32,14 +32,14 @@ const firstOf = (name: string) => name.split(' ')[0] || name;
 
 /**
  * WhatsApp to the member. Once they have been emailed, the message is a
- * reminder to fill in the Commitment Form.
+ * reminder to fill in the Player Statement.
  */
 export function memberWhatsApp(card: Card): string | null {
   const first = firstOf(card.name);
   return whatsAppTo(
     card.mobileNo,
     card.stage === NOTIFIED
-      ? `Hi ${first}, a reminder to fill in the Commitment Form from the email about your HKFC commitment review.`
+      ? `Hi ${first}, a reminder to fill in the Player Statement from the email about your HKFC commitment review.`
       : `Hi ${first}, `,
   );
 }
@@ -84,9 +84,9 @@ export default function StatementCard({ card, today, onOpen }: { card: Card; tod
       </div>
       {(status || (card.waitingOn && card.stage !== NOT_STARTED)) && (
         <div className="mt-2 flex items-center gap-1.5">
-          {status && <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${status.tone}`}>{status.label}</span>}
+          {status && <span className={`text-xs px-1 py-0.5 rounded shrink-0 ${status.tone}`}>{status.label}</span>}
           {card.waitingOn && card.stage !== NOT_STARTED && (
-            <span className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
+            <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
           )}
           {chase && card.chase && <WhatsAppIcon href={chase} label={`WhatsApp ${card.chase.name} (Sponsor)`} />}
         </div>
