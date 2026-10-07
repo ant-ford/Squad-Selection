@@ -10,6 +10,7 @@ import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { linkId } from "../../shared/airtableValueUtils";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName } from "../../shared/personName";
 
 /**
  * Season statistics for one player.
@@ -291,6 +292,6 @@ export async function getPlayerSeasonStats(
 
   return {
     ...stats,
-    playerName: player.preferredName || player.givenNames || "Player",
+    playerName: firstName(player) || "Player",
   };
 }

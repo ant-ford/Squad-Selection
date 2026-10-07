@@ -17,6 +17,7 @@ import type { Env } from "./env";
 import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
 import { getCached, invalidateCachePrefix } from "./cache";
+import { firstName } from "../../shared/personName";
 
 export type RankingEventKind = "move" | "reorder" | "activate" | "deactivate";
 
@@ -274,7 +275,7 @@ export async function getRankingEvents(env: Env, days = 7): Promise<RankingChang
         const nameOf = (id: string) => {
           const p = byId.get(id);
           if (!p) return "";
-          return p.preferredName || p.givenNames || "Player";
+          return firstName(p) || "Player";
         };
         return shown.map((r) => {
           const actorId = r.actorId ?? actorIdByEmail.get(actorEmailOf(r)) ?? "";

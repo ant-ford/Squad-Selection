@@ -26,6 +26,7 @@ import {
   type ManualSuspensionProgress,
 } from "./suspension";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { fullName } from "../../shared/personName";
 import {
   CLEARED_DAYS,
   MAX_SUSPENSION_MATCHES,
@@ -70,7 +71,7 @@ const asManual = (r: ApiSuspension): ManualSuspension => ({
 });
 
 const nameOf = (p: PersonRow | undefined) =>
-  (p && [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ")) || "(no name)";
+  fullName(p) || "(no name)";
 
 /**
  * Open suspensions (served or not), those cleared in the last 90 days, the

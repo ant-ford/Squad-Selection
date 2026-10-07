@@ -16,6 +16,7 @@ import { HttpError } from "./http";
 import { db, eq } from "./data/supabase";
 import { invalidateCache } from "./cache";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
+import { fullName } from "../../shared/personName";
 
 export interface ReactivationAsk {
   status: "asked" | "active" | "nobody" | "no-captains";
@@ -36,7 +37,7 @@ export interface ReactivationRequest {
 
 const NAME = "preferred_name,given_names,surname";
 const nameOf = (p: { preferred_name: string | null; given_names: string | null; surname: string | null } | null) =>
-  [p?.preferred_name || p?.given_names, p?.surname].filter(Boolean).join(" ") || "Someone";
+  fullName(p) || "Someone";
 
 export const reactivationTasksKey = (personId: string) => `reactivation-tasks:${personId}`;
 

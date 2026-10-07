@@ -19,6 +19,7 @@ import { sendEmail } from "../mailer";
 import { contactOf } from "../officeContacts";
 import { PDF_TEMPLATES } from "./templates";
 import { PRACTICES } from "../../../shared/commitmentReview";
+import { fullName } from "../../../shared/personName";
 
 export interface Signer {
   name: string;
@@ -149,8 +150,6 @@ interface OfficeRow {
   people: { id: string; preferred_name: string | null; given_names: string | null; surname: string | null; email: string | null } | null;
 }
 
-const nameOf = (p: OfficeRow["people"]) => [p?.preferred_name || p?.given_names, p?.surname].filter(Boolean).join(" ");
-
 const appOrigin = (env: Env) => (env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "");
 
 /**
@@ -195,8 +194,8 @@ export async function makePlayerStatement(env: Env, reviewApiId: string): Promis
     isPlayerNeeded: r.is_player_needed_officer ?? "",
     otherComments: r.other_comments_officer ?? "",
     recommendedReduction: r.recommended_reduction ?? "",
-    sponsor: { name: nameOf(sponsorOffice?.people ?? null), designation: sponsorOffice?.designation ?? "Sponsor", date: c.sponsor_submitted_at, signed: !!r.sponsor_signature_file },
-    officer: { name: nameOf(officerOffice?.people ?? null), designation: officerOffice?.designation ?? "Membership Officer", date: c.officer_submitted_at, signed: !!c.officer_signature_file_id },
+    sponsor: { name: fullName(sponsorOffice?.people ?? null), designation: sponsorOffice?.designation ?? "Sponsor", date: c.sponsor_submitted_at, signed: !!r.sponsor_signature_file },
+    officer: { name: fullName(officerOffice?.people ?? null), designation: officerOffice?.designation ?? "Membership Officer", date: c.officer_submitted_at, signed: !!c.officer_signature_file_id },
   };
 
   const assets: Record<string, Asset> = { template: await templateAsset(env, "player-statement") };

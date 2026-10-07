@@ -14,6 +14,7 @@
  */
 import type { Env } from "./env";
 import { db, eq } from "./data/supabase";
+import { firstName, fullName } from "../../shared/personName";
 
 /** An office's holder, as OFFICE_HOLDER_SELECT reads them. */
 export interface OfficeHolderPerson {
@@ -68,10 +69,9 @@ export const officeAddress = (officeEmail: string | null | undefined, personalEm
 
 export function contactOf(row: OfficeLike | null | undefined): OfficeContact {
   const p = row?.people ?? null;
-  const firstName = p?.preferred_name || p?.given_names || null;
   return {
-    name: [firstName, p?.surname].filter(Boolean).join(" ") || null,
-    firstName,
+    name: fullName(p) || null,
+    firstName: firstName(p) || null,
     email: officeAddress(row?.office_email, p?.email),
     personId: p?.id ?? null,
     apiId: p?.api_id ?? null,

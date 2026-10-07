@@ -26,6 +26,7 @@ import { recordRegistered } from "./registration";
 import { activeOfficeHolders, contactOf, senderFor, type OfficeHolderRow } from "./officeContacts";
 import { TRIAL_STAGE } from "../../shared/trials";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName, fullName } from "../../shared/personName";
 import {
   EMPTY_JOINER,
   joinerProblem,
@@ -351,7 +352,7 @@ async function request(
     const { sender, from } = signedBy(env, actor, offices);
     const taskUrl = `${appOrigin(env)}/joiner-task/${stepId}`;
     const sponsor = offices.find((o) => o.id === p.sponsored_by_sponsor_id);
-    const preferredName = p.preferred_name || p.given_names || "the new joiner";
+    const preferredName = firstName(p) || "the new joiner";
     const email =
       key === "kit"
         ? kitEmail({
@@ -415,7 +416,7 @@ const toStepState = (s: StepRow | undefined): JoinerStepState | null =>
         id: s.id,
         startedAt: s.started_at,
         doneAt: s.done_at,
-        waitingOn: s.waiter ? [s.waiter.preferred_name || s.waiter.given_names, s.waiter.surname].filter(Boolean).join(" ") : null,
+        waitingOn: s.waiter ? fullName(s.waiter) : null,
       }
     : null;
 
@@ -475,7 +476,7 @@ export async function getJoinerTask(env: Env, user: AuthorizedUser, stepId: stri
   const p = await db(env).one<JoinerRow>("people", `select=${JOINER_COLUMNS}&id=${eq(step.person_id)}`);
   if (!p) throw new HttpError("Task not found.", 404, "NOT_FOUND");
   const kind = step.step as JoinerStepKey;
-  const applicant = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ") || "New joiner";
+  const applicant = fullName(p) || "New joiner";
   let rows: [string, string | null][];
   const files: JoinerTask["files"] = [];
   if (kind === "kit") {
@@ -522,6 +523,6 @@ export async function openJoinerTasks(env: Env, me: string): Promise<{ id: strin
   return rows.map((r) => ({
     id: r.id,
     kind: r.step as JoinerStepKey,
-    subject: [r.who?.preferred_name || r.who?.given_names, r.who?.surname].filter(Boolean).join(" ") || "A new joiner",
+    subject: fullName(r.who) || "A new joiner",
   }));
 }
