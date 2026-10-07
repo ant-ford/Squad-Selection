@@ -208,6 +208,29 @@ export async function readBodyOrEmpty(request: Request): Promise<Record<string, 
   return ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
 }
 
+/** The first route matching the method and path, and its parameters. */
+export function findRoute(
+  routes: readonly Route[],
+  method: string,
+  pathname: string,
+): { route: Route; params: Record<string, string> } | null {
+  for (const route of routes) {
+    if (route.method !== method) continue;
+    const params = route.match(pathname);
+    if (params) return { route, params };
+  }
+  return null;
+}
+
+/** The first scope covering the path, and its parameters. */
+export function findScope(scopes: readonly Scope[], pathname: string): { scope: Scope; params: Record<string, string> } | null {
+  for (const scope of scopes) {
+    const params = scope.match(pathname);
+    if (params) return { scope, params };
+  }
+  return null;
+}
+
 /**
  * The first route matching the method and path, guarded; otherwise the
  * first scope covering the path, guarded, then 404 NOT_FOUND. There is no
@@ -222,21 +245,17 @@ export async function dispatch(
   origin: string,
 ): Promise<Response> {
   const method = request.method;
-  const { pathname } = url;
-  for (const r of routes) {
-    if (r.method !== method) continue;
-    const params = r.match(pathname);
-    if (!params) continue;
-    const given = await applyGuard(r.guard, request, env, params);
-    const out = await r.handler({ request, env, url, origin, params, ...given });
+  const found = findRoute(routes, method, url.pathname);
+  if (found) {
+    const { route, params } = found;
+    const given = await applyGuard(route.guard, request, env, params);
+    const out = await route.handler({ request, env, url, origin, params, ...given });
     return out instanceof Response ? out : json(out, 200, origin);
   }
-  for (const s of scopes) {
-    const params = s.match(pathname);
-    if (!params) continue;
-    await applyGuard(s.guard, request, env, params);
-    if (s.postBody && method === "POST") await readJsonBody(request);
-    break;
+  const covered = findScope(scopes, url.pathname);
+  if (covered) {
+    await applyGuard(covered.scope.guard, request, env, covered.params);
+    if (covered.scope.postBody && method === "POST") await readJsonBody(request);
   }
   return errorJson("Not Found", 404, origin, "NOT_FOUND");
 }
