@@ -172,6 +172,23 @@ describe("the coach toggle", () => {
     expect(db.state.people.find((p) => p.id === REG)!.optInOnly).toBe(true);
   });
 
+  // Coaches act only on their own teams (owner decision, 7 Oct 2026): the
+  // route hands over who may be changed, and a refusal writes nothing.
+  it("refuses a coach of another team with NOT_YOUR_TEAM, and writes nothing", async () => {
+    const seen: string[] = [];
+    await expect(
+      setPlayerOptInOnly(ENV, {
+        coachEmail: "coach@hkfc.com", playerId: REG, optInOnly: true,
+        mayChange: (p) => { seen.push(p.registeredTeam ?? ""); return false; },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: "NOT_YOUR_TEAM" });
+    expect(seen).toEqual(["C"]);
+    expect(db.state.people.find((p) => p.id === REG)!.optInOnly).toBeFalsy();
+
+    await setPlayerOptInOnly(ENV, { coachEmail: "coach@hkfc.com", playerId: REG, optInOnly: true, mayChange: () => true });
+    expect(db.state.people.find((p) => p.id === REG)!.optInOnly).toBe(true);
+  });
+
   it("rejects a non-boolean rather than writing something odd", async () => {
     await expect(
       setPlayerOptInOnly(ENV, { coachEmail: "c@hkfc.com", playerId: REG, optInOnly: "yes" as any }),

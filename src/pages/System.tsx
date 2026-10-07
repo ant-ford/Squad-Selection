@@ -85,7 +85,7 @@ export default function System() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="System" />
+      <AppHeader title="System" guide="captains" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTeamAttendance, type TeamAttendanceInput } from "../worker/src/teamAttendance";
+import { computeTeamAttendance, onlyTeams, type TeamAttendanceInput } from "../worker/src/teamAttendance";
 import type { AvailabilityRule, Match, MatchCard, Player, Team } from "../shared/schema/domainTypes";
 
 const SEASON = "2026-2027";
@@ -65,6 +65,23 @@ describe("computeTeamAttendance", () => {
     expect(res.teams[1].players.map((p) => p.id)).toEqual(["recB1"]);
     expect(res.teams.map((t) => t.targetSquadSize)).toEqual([16, 15, 16]);
     expect(res.dates).toEqual(["2026-10-04", "2026-10-11"]);
+  });
+
+  // Coaches see only their own squads (owner decision, 7 Oct 2026); those
+  // who coach every team are handed every name.
+  it("narrows to the coach's teams: their squads, fixtures and dates only", () => {
+    const res = onlyTeams(run({
+      players: [player("recA1", "HKFC A"), player("recB1", "HKFC B"), player("recC1", "HKFC C")],
+      matches: [
+        match("m1", "2026-10-04", { homeTeam: "HKFC B", awayTeam: "HKFC C" }),
+        match("m2", "2026-10-11", { homeTeam: "HKFC A" }),
+        match("m3", "2026-10-18"),
+      ],
+    }), ["HKFC B"]);
+    expect(res.teams.map((t) => t.team)).toEqual(["HKFC B"]);
+    expect(res.fixtures.map((f) => [f.matchId, f.team])).toEqual([["m1", "HKFC B"], ["m3", "HKFC B"]]);
+    expect(res.dates).toEqual(["2026-10-04", "2026-10-18"]);
+    expect(onlyTeams(res, []).teams).toEqual([]);
   });
 
   it("names players by first name and surname", () => {

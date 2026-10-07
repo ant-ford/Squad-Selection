@@ -164,7 +164,7 @@ export default function Volunteers() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Volunteers" />
+      <AppHeader title="Volunteers" guide="coach" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">
         {isLoading ? (
           <Skeleton className="h-96 w-full" />
