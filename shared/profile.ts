@@ -142,6 +142,8 @@ const address = (prefix: "home" | "business", label: string, flatTypes: readonly
 export const MEMBER_TYPES = ["Main", "Spouse", "Child", "Partner"] as const;
 /** Membership category choices; also what the Membership Officer may set. */
 export const CATEGORY_TYPES = ["Sports Preferred", "Junior (21-27)", "Junior (under 21)", "Sports Debenture", "Sports Subscriber"] as const;
+/** Playing position choices; also what the person page may set (worker/src/admin/squad.ts). */
+export const PLAYING_POSITIONS = ["Goalkeeper", "Defender", "Midfielder", "Forward", "Flexible/Varies"] as const;
 
 export const PROFILE_SECTIONS: SectionSpec[] = [
   {
@@ -250,7 +252,7 @@ export const PROFILE_SECTIONS: SectionSpec[] = [
     title: "Your hockey this season",
     fields: [
       { key: "active", column: "active", label: "Will you be an active member this season?", type: "yesno", required: true, audiences: ["member"] },
-      { key: "playingPosition", column: "playing_position", label: "Playing position", type: "select", options: ["Goalkeeper", "Defender", "Midfielder", "Forward", "Flexible/Varies"], required: true },
+      { key: "playingPosition", column: "playing_position", label: "Playing position", type: "select", options: PLAYING_POSITIONS, required: true },
       {
         key: "playingLevel",
         column: "playing_level",

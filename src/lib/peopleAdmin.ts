@@ -3,10 +3,10 @@
  * src/pages/PersonAdmin.tsx): the membership form's diff, plain words for
  * the API's refusals, the stage choices and the list chips.
  */
-import { PROFILE_SECTIONS } from '@shared/profile';
+import { PLAYING_POSITIONS, PROFILE_SECTIONS } from '@shared/profile';
 import { PARKED_STAGES } from '@shared/membershipStages';
 import type { StatusTone } from '@/lib/statusTone';
-import type { MembershipKey, MembershipSave, PersonMembership } from '@/api/adminPeople';
+import type { MembershipKey, MembershipSave, PersonMembership, PersonSquad, SquadKey, SquadSave } from '@/api/adminPeople';
 
 /** Options for a profile select, from the same list the application form uses. */
 function profileOptions(column: string): readonly string[] {
@@ -150,4 +150,59 @@ export function searchable(q: string): string | null {
   const t = q.trim().replace(/\s+/g, ' ');
   if (t.length < 2 || t.length > 60) return null;
   return /^[\p{L}\p{M} '’.-]+$/u.test(t) ? t : null;
+}
+
+// ── Squad: teams and position ───────────────────────────────────────────
+
+export interface SquadFieldSpec {
+  key: SquadKey;
+  label: string;
+  /** Team names (the API's teamOptions) or the positions. */
+  options: readonly string[];
+}
+
+/**
+ * The squad fields the caller may change, in order: the registered team for
+ * the Men's Convenor only (can.registeredTeam), the selected teams and the
+ * position for anyone with can.squad.
+ */
+export function squadFields(can: { squad: boolean; registeredTeam: boolean }, teamOptions: readonly string[]): SquadFieldSpec[] {
+  if (!can.squad) return [];
+  return [
+    ...(can.registeredTeam ? [{ key: 'registeredTeam' as const, label: 'Registered team', options: teamOptions }] : []),
+    { key: 'selectedTeamSos', label: 'Selected team, start of season', options: teamOptions },
+    { key: 'selectedTeamEos', label: 'Selected team, end of season', options: teamOptions },
+    { key: 'playingPosition', label: 'Position', options: PLAYING_POSITIONS },
+  ];
+}
+
+export type SquadDraft = Record<SquadKey, string>;
+
+export function squadDraft(s: PersonSquad): SquadDraft {
+  return {
+    registeredTeam: s.registeredTeam ?? '',
+    selectedTeamSos: s.selectedTeamSos ?? '',
+    selectedTeamEos: s.selectedTeamEos ?? '',
+    playingPosition: s.playingPosition ?? '',
+  };
+}
+
+/** Only the changed fields among those offered, each with what the screen read; null when nothing changed. */
+export function squadChange(saved: PersonSquad, draft: SquadDraft, offered: readonly SquadKey[]): SquadSave | null {
+  const body: SquadSave = { expect: {} };
+  let any = false;
+  for (const key of offered) {
+    const was = norm(saved[key]);
+    const now = norm(draft[key]);
+    if (was === now) continue;
+    body[key] = now;
+    body.expect[key] = saved[key] ?? null;
+    any = true;
+  }
+  return any ? body : null;
+}
+
+/** A select's choices: the list, plus a stored value the list no longer has (an old or inactive team). */
+export function withCurrent(options: readonly string[], current: string): string[] {
+  return current && !options.includes(current) ? [current, ...options] : [...options];
 }
