@@ -116,6 +116,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - linking match cards to people by exact Registered Name (`match_cards_link_person`). Both match-card triggers run only when the columns they read change;
   - stamping `inactive_since` and the membership stage;
   - commitment periods.
+- **Constraints.** `people.status` is Member, Applicant or Resigned, and `people.applicant_stage` one of the stages in `shared/membershipStages.ts` (CHECKs). The team columns Eddy writes (people's registered and selected teams, `hkha_registrations`, `season_rollover_people`, `shirt_numbers`, `suspensions`) reference `teams.team_name`, `ON UPDATE CASCADE`. Columns hkha-sync fills (opponents, `match_cards`, `umpire_duties`, `registration_events`) stay free text, so a sync never fails on a name. Renaming a team also needs `hkfc_team_level()` and hkha-sync changed.
 - **Squad changes.** Every squad write goes through `on_squad_changed()`. It stores who was added or removed, by whom and by which path, in `match_selection_changes`, and bumps that side's version.
 - **Files.**
   - Stored in R2 (binding `FILES`) and referenced from `files`. The browser only ever gets signed links (`worker/src/files.ts`), which expire within two hours, or two days for photos and posters.

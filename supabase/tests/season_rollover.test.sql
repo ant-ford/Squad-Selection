@@ -10,6 +10,12 @@
 begin;
 select plan(19);
 
+-- The club's teams: people's team columns reference teams.team_name
+-- (20261007170006_data_constraints).
+insert into public.teams (airtable_id, team_name, team_rank, active)
+select 'recRoTeam' || l, 'HKFC ' || l, o, true
+from unnest(array['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) with ordinality as x(l, o);
+
 -- finished_in = EOS, else SOS, else the registered team.
 insert into public.people (airtable_id, given_names, surname, active, registered_team, selected_team_sos, selected_team_eos, previous_eos, last_seen_at) values
   ('recRoA', 'Moved', 'Up', true, 'HKFC C', 'HKFC D', 'HKFC B', 'HKFC E', null),         -- finished in B: all three change
