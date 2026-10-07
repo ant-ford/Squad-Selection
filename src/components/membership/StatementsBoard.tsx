@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Search } from 'lucide-react';
-import { useStatementBoard } from '@/lib/queries';
+import { useMyProfile, useStatementBoard } from '@/lib/queries';
+import { personPageHref } from '@/lib/personPage';
 import { hkDateKey } from '@shared/hkDateKey';
 import { REVIEW_NEEDS_FIXING, shortReviewStage } from '@shared/statementStages';
 import KanbanColumns, { BoardColumnsSkeleton } from './KanbanColumns';
@@ -14,6 +15,7 @@ import StatementSheet from './StatementSheet';
  */
 export default function StatementsBoard() {
   const { data: board, isLoading, isError, refetch } = useStatementBoard();
+  const { data: profile } = useMyProfile();
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = useState<string | null>(null);
   const today = hkDateKey(new Date().toISOString());
@@ -98,7 +100,14 @@ export default function StatementsBoard() {
           columns={columns}
           itemsFor={byColumn}
           chipLabel={shortReviewStage}
-          renderItem={(card) => <StatementCard card={card} today={today} onOpen={() => setOpenId(card.id)} />}
+          renderItem={(card) => (
+            <StatementCard
+              card={card}
+              today={today}
+              personHref={personPageHref(profile?.sections, card.personId)}
+              onOpen={() => setOpenId(card.id)}
+            />
+          )}
         />
       )}
 

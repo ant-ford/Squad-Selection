@@ -102,7 +102,7 @@ import {
 } from "./kit";
 import { getRegistrationBoard, markRegistered, registrationCsv, saveRegistrationDetails, unmarkRegistered } from "./registration";
 import { resolveRegistrationEvent } from "./reRegistrations";
-import { clearSuspension, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
+import { clearSuspension, clearSuspensionFlag, createSuspension, getSuspensionsBoard, updateSuspension } from "./discipline";
 import { ADMIN_ROUTES } from "./admin/routes";
 import { getDataChecks } from "./dataChecks";
 import { linkMatchCard } from "./matchCardLink";
@@ -712,6 +712,7 @@ export const ROUTES: readonly Route[] = [
   route("POST", "/api/discipline/suspensions", "section:discipline", async ({ request, env, user }) => createSuspension(env, user, await readBodyOrEmpty(request))),
   route("POST", "/api/discipline/suspensions/:id([^/]{1,64})/clear", "section:discipline", async ({ request, env, user, params }) => clearSuspension(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", "/api/discipline/suspensions/:id([^/]{1,64})", "section:discipline", async ({ request, env, user, params }) => updateSuspension(env, user, params.id, await readBodyOrEmpty(request))),
+  route("POST", "/api/discipline/flags/:id([^/]{1,64})/clear", "section:discipline", ({ env, user, params }) => clearSuspensionFlag(env, user, params.id)),
 
   // ── Data checks (src/dataChecks.ts) ───────────────────────────────────
   // The Men's Convenor and the Section Captains.

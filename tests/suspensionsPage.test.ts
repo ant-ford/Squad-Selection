@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   closedHow,
   draftFrom,
+  draftFromFlag,
   draftProblem,
+  FLAG_REASON,
   emptyDraft,
   isDirty,
   leftLabel,
@@ -132,6 +134,25 @@ describe("the sheet", () => {
     expect(suspensionChange(s, draftFrom(s))).toBeNull();
     expect(suspensionChange(s, { ...draftFrom(s), matches: null })).toEqual({ matches: null });
     expect(suspensionChange(s, { ...draftFrom(s), reason: "Red card ", fromDate: "2026-10-02" })).toEqual({ fromDate: "2026-10-02" });
+  });
+
+  it("makes an old flag a suspension from today, asking the serving team when it has none", () => {
+    const flag = { player: "p9", name: "Kim Ho", team: null, isSuspended: true, matchesToServe: 2 };
+    const d = draftFromFlag(flag, "2026-10-08", ["HKFC A", "HKFC B"]);
+    expect(d).toEqual({ playerId: "p9", matches: 2, fromDate: "2026-10-08", reason: FLAG_REASON, servingTeam: "" });
+    expect(draftProblem(d)).toBe("Choose the serving team.");
+    expect(newSuspension({ ...d, servingTeam: "HKFC B" })).toEqual({
+      playerId: "p9",
+      matches: 2,
+      fromDate: "2026-10-08",
+      reason: FLAG_REASON,
+      servingTeam: "HKFC B",
+    });
+    expect(isDirty(d, { ...d, servingTeam: "HKFC B" })).toBe(true);
+    // Suspended with nothing to serve: until cleared. A team of ours is kept; many matches fit the stepper.
+    expect(draftFromFlag({ ...flag, matchesToServe: null }, "2026-10-08", []).matches).toBeNull();
+    expect(draftFromFlag({ ...flag, team: "HKFC B" }, "2026-10-08", ["HKFC B"]).servingTeam).toBe("HKFC B");
+    expect(draftFromFlag({ ...flag, matchesToServe: 30 }, "2026-10-08", []).matches).toBe(10);
   });
 
   it("knows when closing would lose something", () => {

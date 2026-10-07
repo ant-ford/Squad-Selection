@@ -4,7 +4,7 @@
  * sheet's save.
  */
 import type { StatusTone } from '@/lib/statusTone';
-import type { NewSuspension, SuspensionChange, SuspensionRow, SuspensionsBoard } from '@/api/suspensions';
+import type { LegacySuspensionRow, NewSuspension, SuspensionChange, SuspensionRow, SuspensionsBoard } from '@/api/suspensions';
 
 /** The stepper's range; "Until cleared" is the other choice. */
 export const MIN_MATCHES = 1;
@@ -56,7 +56,12 @@ export interface SuspensionDraft {
   matches: number | null;
   fromDate: string;
   reason: string;
+  /** Asked only when making an old flag a suspension; '' until chosen. */
+  servingTeam?: string;
 }
+
+/** The reason 20261007130203_suspensions.sql gave the flags it moved. */
+export const FLAG_REASON = 'Carried over from Is Suspended / Matches To Serve';
 
 export function emptyDraft(today: string, playerId: string | null = null): SuspensionDraft {
   return { playerId, matches: 1, fromDate: today, reason: '' };
@@ -66,9 +71,25 @@ export function draftFrom(s: SuspensionRow): SuspensionDraft {
   return { playerId: s.player, matches: s.matches, fromDate: s.fromDate, reason: s.reason };
 }
 
+/**
+ * An old flag as a suspension, from today: its matches to serve (within the
+ * stepper's range), else until cleared, served by its team when it is one
+ * of ours.
+ */
+export function draftFromFlag(flag: LegacySuspensionRow, today: string, teams: readonly string[]): SuspensionDraft {
+  return {
+    playerId: flag.player,
+    matches: flag.matchesToServe && flag.matchesToServe > 0 ? Math.min(flag.matchesToServe, MAX_MATCHES) : null,
+    fromDate: today,
+    reason: FLAG_REASON,
+    servingTeam: flag.team && teams.includes(flag.team) ? flag.team : '',
+  };
+}
+
 /** What's missing before the sheet can save; null when ready. */
 export function draftProblem(d: SuspensionDraft): string | null {
   if (!d.playerId) return 'Choose a player.';
+  if (d.servingTeam === '') return 'Choose the serving team.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.fromDate)) return 'Choose the start date.';
   if (!d.reason.trim()) return 'Give a reason.';
   return null;
@@ -76,7 +97,13 @@ export function draftProblem(d: SuspensionDraft): string | null {
 
 /** A new suspension from a ready draft. */
 export function newSuspension(d: SuspensionDraft): NewSuspension {
-  return { playerId: d.playerId!, matches: d.matches, fromDate: d.fromDate, reason: d.reason.trim() };
+  return {
+    playerId: d.playerId!,
+    matches: d.matches,
+    fromDate: d.fromDate,
+    reason: d.reason.trim(),
+    ...(d.servingTeam ? { servingTeam: d.servingTeam } : {}),
+  };
 }
 
 /** Only what an edit changed; null when nothing did. */
@@ -90,7 +117,13 @@ export function suspensionChange(s: SuspensionRow, d: SuspensionDraft): Suspensi
 
 /** Whether closing the sheet would lose something typed. */
 export function isDirty(start: SuspensionDraft, d: SuspensionDraft): boolean {
-  return start.playerId !== d.playerId || start.matches !== d.matches || start.fromDate !== d.fromDate || start.reason.trim() !== d.reason.trim();
+  return (
+    start.playerId !== d.playerId ||
+    start.matches !== d.matches ||
+    start.fromDate !== d.fromDate ||
+    start.reason.trim() !== d.reason.trim() ||
+    start.servingTeam !== d.servingTeam
+  );
 }
 
 /** One person's part of the board, for their person page. */

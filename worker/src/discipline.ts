@@ -165,7 +165,9 @@ export async function getSuspensionsBoard(env: Env, now = new Date()): Promise<S
       matchesToServe: p.matches_to_serve,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { open, cleared, cards, legacy };
+  if (legacy.length === 0) return { open, cleared, cards, legacy };
+  const teams = await d.select<{ team_name: string }>("teams", "select=team_name&active=is.true&order=team_rank.nullslast,team_name");
+  return { open, cleared, cards, legacy, teams: teams.map((t) => t.team_name) };
 }
 
 // ── Input ───────────────────────────────────────────────────────────────
@@ -294,5 +296,16 @@ export async function clearSuspension(
     .rpc<null>("admin_clear_suspension", { p_id: id, p_actor: actor.personId, p_reason: reason || null })
     .catch(mapError);
   await invalidate(env, false);
+  return { ok: true };
+}
+
+/**
+ * Clears an old hand-set Is Suspended / Matches To Serve flag without
+ * recording a suspension. (Recording one for the player clears it too.)
+ */
+export async function clearSuspensionFlag(env: Env, actor: AuthorizedUser, playerId: string): Promise<{ ok: true }> {
+  if (!API_ID.test(playerId)) throw new HttpError("Player not found.", 404, "NOT_FOUND");
+  await db(env).rpc<null>("admin_clear_suspension_flag", { p_player: playerId, p_actor: actor.personId }).catch(mapError);
+  await invalidate(env, true);
   return { ok: true };
 }

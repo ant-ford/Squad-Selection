@@ -111,6 +111,25 @@ describe("the board", () => {
       [ID, "2026-09-26", null],
     ]);
     expect(board.cleared[1]).toMatchObject({ name: "Sam Lee", active: false, served: 2, remaining: 0 });
+    // No old flags: the teams aren't read.
+    expect(board.teams).toBeUndefined();
+    expect(mocks.select.mock.calls.map((c) => c[0])).not.toContain("teams");
+  });
+
+  it("lists an old flag with the serving teams to choose from", async () => {
+    mocks.getSeasonContext.mockResolvedValue({ suspensionByPlayer: new Map(), previousMatches: [], allMatches: [] });
+    mocks.select.mockImplementation(async (table: string) =>
+      table === "api_suspensions"
+        ? []
+        : table === "teams"
+          ? [{ team_name: "HKFC A" }, { team_name: "HKFC B" }]
+          : [{ id: "u2", api_id: "recP2", preferred_name: "Kim", surname: "Ho", registered_team: null, is_suspended: true, matches_to_serve: 2 }],
+    );
+
+    const board = await getSuspensionsBoard(ENV, new Date("2026-10-06T00:00:00Z"));
+
+    expect(board.legacy).toEqual([{ player: "recP2", name: "Kim Ho", team: null, isSuspended: true, matchesToServe: 2 }]);
+    expect(board.teams).toEqual(["HKFC A", "HKFC B"]);
   });
 });
 
@@ -146,7 +165,12 @@ describe("the discipline section", () => {
 
   it("refuses anyone without it before anything is saved", async () => {
     mocks.requireSection.mockRejectedValue(new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED"));
-    for (const path of ["/api/discipline/suspensions", `/api/discipline/suspensions/${ID}`, `/api/discipline/suspensions/${ID}/clear`]) {
+    for (const path of [
+      "/api/discipline/suspensions",
+      `/api/discipline/suspensions/${ID}`,
+      `/api/discipline/suspensions/${ID}/clear`,
+      "/api/discipline/flags/recP1/clear",
+    ]) {
       const res = await post(path, valid);
       expect(res.status).toBe(403);
     }
@@ -187,6 +211,20 @@ describe("writes", () => {
     const res = await post(`/api/discipline/suspensions/${ID}/clear`, { reason: "  Overturned on appeal " });
     expect(res.status).toBe(200);
     expect(mocks.rpc).toHaveBeenCalledWith("admin_clear_suspension", { p_id: ID, p_actor: "recCONVENOR", p_reason: "Overturned on appeal" });
+  });
+
+  it("clears an old flag as the signed-in Convenor", async () => {
+    mocks.rpc.mockResolvedValue(null);
+    const res = await post("/api/discipline/flags/recP1/clear", {});
+    expect(res.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_clear_suspension_flag", { p_player: "recP1", p_actor: "recCONVENOR" });
+  });
+
+  it("answers a flag already cleared with 404", async () => {
+    mocks.rpc.mockRejectedValue(new SupabaseError("Supabase rpc admin_clear_suspension_flag failed", 404, "P0002"));
+    const res = await post("/api/discipline/flags/recP1/clear", {});
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: "NOT_FOUND" });
   });
 
   it("answers a suspension that is gone or already cleared with 404", async () => {

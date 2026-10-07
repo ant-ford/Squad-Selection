@@ -10,6 +10,7 @@ import ApplicantSheet from '@/components/membership/ApplicantSheet';
 import KanbanColumns, { BoardColumnsSkeleton } from '@/components/membership/KanbanColumns';
 import { downloadActiveMembers, type ApplicantCard as Card } from '@/api/membership';
 import { useMembershipBoard, useMyProfile } from '@/lib/queries';
+import { personPageHref } from '@/lib/personPage';
 import { NEEDS_FIXING } from '@shared/membershipStages';
 
 // Its own chunk: an officer checking the board never downloads the charts.
@@ -254,7 +255,9 @@ export default function MembershipBoard() {
             columns={columns}
             itemsFor={byColumn}
             chipLabel={(column) => column.replace(/ \(Signed\)$/, '')}
-            renderItem={(card) => <ApplicantCard card={card} onOpen={() => setOpenId(card.id)} />}
+            renderItem={(card) => (
+              <ApplicantCard card={card} personHref={personPageHref(profile?.sections, card.id)} onOpen={() => setOpenId(card.id)} />
+            )}
           />
         )}
         </>

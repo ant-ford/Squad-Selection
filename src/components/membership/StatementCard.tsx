@@ -1,7 +1,8 @@
 import type { StatementCard as Card } from '@/api/membership';
 import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { NOT_STARTED, NOTIFIED } from '@shared/statementStages';
-import { Avatar, WhatsAppIcon, ageTone, whatsAppTo } from './ApplicantCard';
+import PersonName from '@/components/PersonName';
+import { Avatar, CardButton, WhatsAppIcon, ageTone, cardClass, whatsAppTo } from './ApplicantCard';
 
 const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
@@ -53,29 +54,31 @@ export function sponsorWhatsApp(card: Card): string | null {
   );
 }
 
-export default function StatementCard({ card, today, onOpen }: { card: Card; today: string; onOpen: () => void }) {
+export default function StatementCard({
+  card,
+  today,
+  personHref,
+  onOpen,
+}: {
+  card: Card;
+  today: string;
+  personHref: string | null;
+  onOpen: () => void;
+}) {
   const status = statementStatus(card, today);
   const meta = [card.team, card.sponsor ? `Sponsor ${card.sponsor}` : undefined].filter(Boolean).join(' · ');
   const period = periodLabel(card);
   const whatsApp = memberWhatsApp(card);
   const chase = sponsorWhatsApp(card);
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className="bg-card border border-border rounded-lg p-3 text-left hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
-    >
+    <div className={cardClass}>
+      <CardButton label={`Open ${card.name}'s commitment review`} onOpen={onOpen} />
       <div className="flex items-start gap-2.5">
         <Avatar card={card} />
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm text-foreground truncate">{card.name}</p>
+          <p className="font-medium text-sm text-foreground truncate">
+            <PersonName name={card.name} href={personHref} />
+          </p>
           {period && <p className="text-xs text-muted-foreground truncate">{period}</p>}
           {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
           {card.membershipNo && <p className="text-xs text-muted-foreground">No. {card.membershipNo}</p>}

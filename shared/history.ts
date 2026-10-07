@@ -39,6 +39,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "admin-suspension-set": "Suspended",
   "admin-suspension-edit": "Suspension changed",
   "admin-suspension-clear": "Suspension cleared",
+  "admin-suspension-flag-clear": "Old suspension flag cleared",
   "admin-office": "Office changed",
   "admin-person-create": "Added",
   "admin-team": "Team changed",

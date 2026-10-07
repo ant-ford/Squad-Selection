@@ -11,6 +11,8 @@ import { inputClass, primaryButton, secondaryButton } from '@/components/kit/kit
 import { ApiError } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
+import { personPageHref } from '@/lib/personPage';
+import PersonName from '@/components/PersonName';
 import { downloadRegistration, getRegistrationBoard, markRegistered, saveRegistrationDetails, unmarkRegistered } from '@/api/registration';
 import { hkDateKey } from '@shared/hkDateKey';
 import { REASON_LABEL, isVisiting, missingDetails, suggestRegisteredName, tidyRegisteredName, type RegistrationPlayer } from '@shared/registration';
@@ -95,6 +97,7 @@ function RegisteredName({ p, busy, onSave }: { p: RegistrationPlayer; busy: bool
 function PlayerItem({
   p,
   today,
+  personHref,
   open,
   busy,
   onToggle,
@@ -105,6 +108,7 @@ function PlayerItem({
 }: {
   p: RegistrationPlayer;
   today: string;
+  personHref: string | null;
   open: boolean;
   busy: boolean;
   onToggle: () => void;
@@ -122,11 +126,19 @@ function PlayerItem({
   ].filter((d): d is [string, string] => !!d[1]);
   return (
     <li>
-      <button className="w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-muted/50" onClick={onToggle} aria-expanded={open}>
+      {/* The row's button covers it; the name link sits above it, not inside. */}
+      <div className="relative isolate flex items-start gap-2 px-3 py-2 text-left hover:bg-muted/50">
+        <button
+          type="button"
+          className="absolute inset-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={`${p.name}'s details`}
+        />
         <span className="w-9 shrink-0 text-right font-mono text-sm font-semibold text-foreground">{p.shirtNo ?? '–'}</span>
         <span className="flex-1 min-w-0">
           <span className="block text-sm text-foreground">
-            {p.name} <span className="text-xs text-muted-foreground">{p.registeredName ?? ''}</span>
+            <PersonName name={p.name} href={personHref} /> <span className="text-xs text-muted-foreground">{p.registeredName ?? ''}</span>
           </span>
           <span className="flex flex-wrap gap-1 mt-0.5">
             {p.reason ? (
@@ -152,7 +164,7 @@ function PlayerItem({
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 mt-1 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </div>
       {open && (
         <div className="px-3 pb-3 sm:pl-14 space-y-3">
           <div className="flex gap-3">
@@ -378,6 +390,7 @@ export default function Registration() {
                     key={p.id}
                     p={p}
                     today={today}
+                    personHref={personPageHref(profile?.sections, p.id)}
                     open={openId === p.id}
                     busy={register.isPending || undo.isPending || details.isPending}
                     onToggle={() => setOpenId(openId === p.id ? null : p.id)}

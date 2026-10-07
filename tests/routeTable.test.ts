@@ -220,6 +220,7 @@ const EXPECTED_ROUTES = [
   "POST /api/discipline/suspensions section:discipline",
   "POST /api/discipline/suspensions/:id([^/]{1,64})/clear section:discipline",
   "POST /api/discipline/suspensions/:id([^/]{1,64}) section:discipline",
+  "POST /api/discipline/flags/:id([^/]{1,64})/clear section:discipline",
   "GET /api/admin/data-checks section:dataChecks",
   "POST /api/admin/match-cards/:id([^/]{1,64})/link section:dataChecks",
   "GET /api/volunteering/me signed-in",

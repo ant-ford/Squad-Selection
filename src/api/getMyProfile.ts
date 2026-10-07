@@ -26,6 +26,8 @@ export interface ProfileData {
   events?: boolean;
   /** The umpiring duties screen: the club's umpires, and the Umpire Coordinator who runs it. */
   umpiring?: 'umpire' | 'coordinator' | null;
+  /** Whether the System screen is theirs: the owner and the Section Captains (worker/src/systemHealth.ts). */
+  system?: boolean;
   captainTeams: string[];
 
   coachTeams: {

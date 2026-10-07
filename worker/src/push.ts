@@ -312,7 +312,8 @@ export function alertIfNowOut(
 
 /**
  * The Umpire Coordinator took this person (a People uuid) off a duty they
- * held or offered for (umpiring.ts). The duty is read after the response.
+ * held or offered for, or their offer was closed when the duty went to
+ * someone else (umpiring.ts). The duty is read after the response.
  */
 export function alertDutyRemoved(env: Env, personUuid: string | null, dutyId: string): Promise<void> {
   if (!pushEnabled(env) || !personUuid) return Promise.resolve();
