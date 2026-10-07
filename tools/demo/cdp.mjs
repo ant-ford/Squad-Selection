@@ -154,7 +154,8 @@ async function makePage(conn, { width, height, scale, close }) {
           state = await page.eval(`
             const root = document.getElementById('root');
             const mounted = !!root && root.children.length > 0 && !document.getElementById('boot-loader');
-            const loading = !!document.querySelector('#root .animate-pulse');
+            // A skeleton, or the app's loading screen (the hopping ball).
+            const loading = !!document.querySelector('#root .animate-pulse, #root [class*="ball-hop"]');
             return { mounted, loading };`);
         } catch {
           quietSince = 0;
