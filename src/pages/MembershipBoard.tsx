@@ -101,7 +101,7 @@ export default function MembershipBoard() {
   if (!allowed) {
     return (
       <div className="min-h-screen bg-background">
-        <AppHeader title="Membership" />
+        <AppHeader title="Membership" guide="membership" />
         <div className="flex items-center justify-center p-6 pt-16">
           <div className="text-center space-y-3">
             <p className="text-lg font-semibold text-foreground">Membership access required</p>
@@ -121,6 +121,7 @@ export default function MembershipBoard() {
     <div className="min-h-screen bg-background flex flex-col">
       <AppHeader
         title="Membership"
+        guide="membership"
         menuItems={[{ label: exporting ? 'Exporting…' : 'Active members CSV', icon: Download, onSelect: () => void exportCsv(), disabled: exporting }]}
       />
 

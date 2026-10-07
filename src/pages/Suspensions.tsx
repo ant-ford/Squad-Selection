@@ -223,7 +223,7 @@ export default function Suspensions() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Suspensions" />
+      <AppHeader title="Suspensions" guide="convenor" />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>

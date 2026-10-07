@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { StatusChip } from '@/components/ui/status-chip';
 import { ErrorState } from '@/components/ui/error-state';
 import { useMyProfile } from '@/lib/queries';
+import { officerGuide } from '@/components/HelpLink';
 import { personChip, searchable } from '@/lib/peopleAdmin';
 import { searchPeople } from '@/api/adminPeople';
 
@@ -92,7 +93,7 @@ export default function People() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="People" />
+      <AppHeader title="People" guide={officerGuide(profile, 'membership')} />
       <main className="flex-1 container mx-auto max-w-2xl px-4 py-4 space-y-3">{body()}</main>
       <AppFooter />
     </div>
