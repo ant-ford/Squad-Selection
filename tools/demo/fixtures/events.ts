@@ -108,6 +108,7 @@ const EVENTS: DemoEvent[] = [
       id: 'demoEv1',
       type: 'team_social',
       title: 'C team curry night',
+      posterUrl: '/demo-assets/curry.svg',
       team: 'HKFC C',
       description: 'After the Valley B game. Set menu with a drink included; anything extra on your own tab.',
       location: 'Spice Lane, Wan Chai',
@@ -192,7 +193,7 @@ const EVENTS: DemoEvent[] = [
       guestsAllowed: true,
       maxGuests: 2,
       questions: [{ key: 'dietary', label: 'Dietary requirements', required: true }],
-      posterUrl: '/assets/logo-plain.svg',
+      posterUrl: '/demo-assets/christmas.svg',
     },
     audience: PLAYING,
     invited: 112,
@@ -415,7 +416,16 @@ const CURRY_PROOFS: Record<string, (due: number) => PaymentInfo> = {
   'Ben Hughes': (due) => proof(due, null),
 };
 
-function chargeList(e: DemoEvent): ChargeList {
+/**
+ * Screenshot variants (`?as=<persona>:<variant>`):
+ *  - charges-sent: the treasurer's list went out yesterday, and an answer changed since.
+ *  - checkin-open: the check-in page during the Start of Season drinks, for
+ *    someone who said Going with a guest and signed up their son.
+ */
+function chargeList(e: DemoEvent, variants?: Set<string>): ChargeList {
+  if (variants?.has('charges-sent') && e.details.paymentMode === 'account') {
+    return { ...chargeList(e), sentAt: at(-1, 10, 30), changedSince: ['Henry Yip'] };
+  }
   const payers = computeCharges(
     e.details,
     rowsOf(e).map((r) => {
@@ -491,6 +501,19 @@ function checkInView(req: DemoRequest): CheckInView | Refusal {
   const rows = rowsOf(e);
   const me = rows.find((r) => r.name === req.persona.name);
   const now = Date.now();
+  if (req.variants?.has('checkin-open')) {
+    // Tonight's drinks, open for check-in whatever the time.
+    const start = Date.parse(at(0, 19));
+    const going = (extra: Partial<ResponseDetails>) => ({ ...resp('going'), ...extra });
+    return {
+      event: { ...d, startsAt: new Date(start).toISOString(), endsAt: new Date(start + 3 * HOUR).toISOString() },
+      open: true,
+      people: [
+        { personId: req.persona.id, name: req.persona.name, self: true, response: going({ guests: [{ name: 'Mia Carter', age: 'adult' }] }) },
+        { personId: idOf('Leo Carter'), name: 'Leo Carter', self: false, response: going({ signedUpBy: by(req.persona.name) }) },
+      ],
+    };
+  }
   return {
     event: d,
     open: d.status === 'published' && now >= Date.parse(d.startsAt) - HOUR && now <= Date.parse(d.endsAt ?? d.startsAt) + HOUR,
@@ -520,7 +543,7 @@ export const routes: Routes = {
   'GET /api/events/:id/people': (req) => eventPeople(req),
   'GET /api/events/:id/charges': (req): ChargeList | Refusal => {
     const e = byId(req.params.id);
-    return e ? chargeList(e) : notFound();
+    return e ? chargeList(e, req.variants) : notFound();
   },
   'GET /api/events/:id/checkin-link': (req): { url: string } => ({ url: `https://app.eddy.global/checkin/${req.params.id}?c=demo3f9a1c7e5b2d` }),
   'GET /api/events/:id/checkin': (req): CheckInView | Refusal => checkInView(req),
@@ -528,7 +551,7 @@ export const routes: Routes = {
   'POST /api/events/:id/respond': () => ok,
   'POST /api/events/:id/status': () => ok,
   'POST /api/events/:id/delete': () => ok,
-  'POST /api/events/:id/poster': (): { url: string } => ({ url: '/assets/logo-plain.svg' }),
+  'POST /api/events/:id/poster': (): { url: string } => ({ url: '/demo-assets/christmas.svg' }),
   'POST /api/events/:id/charges-sent': () => ok,
   'POST /api/events/:id/payment-proof': (): PaymentInfo => proof(560, 560, { uploadedAt: new Date().toISOString() }),
   'POST /api/events/:id/confirm-payment': () => ok,

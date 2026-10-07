@@ -15,7 +15,7 @@ Nobody signs in, and nothing reaches a real API or database.
 node tools/demo/serve.mjs          # http://127.0.0.1:5190, or: node tools/demo/serve.mjs 5195
 ```
 
-Open any screen with `?as=<persona>`, for example http://127.0.0.1:5190/coach?as=coach. The tab keeps the persona as you move around, until another `?as=` changes it. Add `?signedout` to see the sign-in screen. A fixture can offer other states for screenshots as variants after a colon, for example `?as=player:kit-offered`.
+Open any screen with `?as=<persona>`, for example http://127.0.0.1:5190/coach?as=coach. The tab keeps the persona as you move around, until another `?as=` changes it. Add `?signedout` to see the sign-in screen. A fixture can offer other states for screenshots as variants after a colon: `player:kit-offered` (a captain says they've handed over your kit), `player:kit-holding` (you're holding a team's kit), `player:checkin-open` (an event's check-in page is open) and `section-captain:charges-sent` (the treasurer's list has gone).
 
 For the Claude desktop app, the `.claude/launch.json` entry is:
 
@@ -44,6 +44,7 @@ For the Claude desktop app, the `.claude/launch.json` entry is:
 - **Personas** (`personas.mjs`) ride in the fake access token (`Bearer demo.<persona>`), so the server keeps no state, and two tabs can be two people. A persona's offices decide its officer sections. `SECTION_OFFICES` there mirrors `worker/src/auth.ts`.
 - **`fixtures/`** has one file per area: `player`, `coach`, `officers`, `people`, `kit`, `events`, `umpiring` and `stats`. Each exports `routes`, a map from `'GET /api/path/:param'` to a handler. A handler returns the response body, or `reply(status, body)` for an error.
   - `data.ts` holds the shared cast and the dates. Dates are relative to today.
+  - `assets/` holds fictional images the fixtures use (event posters), served at `/demo-assets/`.
   - Vite loads the fixtures on each request, so an edit shows on the next reload, with no restart.
 - **A request no fixture answers** gets a 404 with an `X-Demo-Missing` header, and a `MISSING` line in the server log.
 
