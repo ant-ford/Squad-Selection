@@ -138,6 +138,7 @@ export interface MatchRow {
   selected_players_home: string[]; selected_players_away: string[]; auto_select_enabled: boolean;
   home_kit: string | null; away_kit: string | null; ump_1: string | null; ump_2: string | null;
   selection_version_home?: number | null; selection_version_away?: number | null;
+  previous_match_date?: string | null; previous_venue?: string | null; previous_status?: string | null; changed_at?: string | null;
 }
 
 export function toMatch(r: MatchRow): Match {
@@ -163,6 +164,10 @@ export function toMatch(r: MatchRow): Match {
     ump2: r.ump_2 || "",
     selectionVersionHome: r.selection_version_home ?? 0,
     selectionVersionAway: r.selection_version_away ?? 0,
+    previousMatchDate: r.previous_match_date || undefined,
+    previousVenue: r.previous_venue || undefined,
+    previousStatus: r.previous_status || undefined,
+    changedAt: r.changed_at || undefined,
   };
 }
 

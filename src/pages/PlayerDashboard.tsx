@@ -4,6 +4,7 @@ import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
+import { isCalledOff } from '@shared/fixtureChange';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart3, CalendarDays, ChevronDown, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
@@ -211,9 +212,13 @@ export default function PlayerDashboard() {
     return Array.from(map.entries());
   }, [data]);
 
-  // Every fixture the player can answer, for the same-day prompt.
+  // Every fixture the player can answer, for the same-day prompt (not a
+  // postponed or cancelled one, shown for a week but not played).
   const allFixtures = useMemo(
-    () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
+    () =>
+      (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []).filter(
+        (f) => !isCalledOff(f.change),
+      ),
     [data],
   );
   const fixturesByDay = useMemo(() => groupByHkDay(allFixtures), [allFixtures]);

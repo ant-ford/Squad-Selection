@@ -1,3 +1,4 @@
+import { fixtureChangeText, type FixtureChange } from '@shared/fixtureChange';
 import { safeFormat } from './dateUtils';
 import { POS_SHORT } from './format';
 import { positionRank } from './squadSort';
@@ -71,6 +72,8 @@ export interface FixtureBrief {
    * before the match id is known.
    */
   link?: string;
+  /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+  change?: FixtureChange;
 }
 
 /**
@@ -91,6 +94,19 @@ function fixtureLine(f: FixtureBrief): string {
   const when = `${safeFormat(f.date, 'EEE d MMM')} at ${safeFormat(f.date, 'HH:mm')}`;
   const where = f.venue ? `, ${f.venue}` : '';
   return `${f.hkfcTeam} vs ${f.opponent}, ${when}${where}`;
+}
+
+/**
+ * The team-group message about a fixture that moved or was called off
+ * (NotifySquadSheet), or null when nothing changed.
+ */
+export function buildChangeMessage(f: FixtureBrief): string | null {
+  if (!f.change) return null;
+  const game = `${f.hkfcTeam} vs ${f.opponent} on ${safeFormat(f.date, 'EEE d MMM')}`;
+  if (f.change.kind === 'postponed') return `${game} is postponed. The new date will follow.`;
+  if (f.change.kind === 'cancelled') return `${game} is cancelled.`;
+  const was = fixtureChangeText(f.change, f.date);
+  return `Change: ${fixtureLine(f)} (${was[0].toLowerCase()}${was.slice(1)}).`;
 }
 
 /** Message for one selected player. */

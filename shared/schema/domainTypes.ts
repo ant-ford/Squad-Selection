@@ -95,6 +95,11 @@ export interface Match {
    *  the page loaded. Supabase only; 0 before the first change. */
   selectionVersionHome?: number;
   selectionVersionAway?: number;
+  /** Before the last change (migration 20261007160204): kick-off, venue, status; and when it changed. */
+  previousMatchDate?: string;
+  previousVenue?: string;
+  previousStatus?: string;
+  changedAt?: string;
 }
 
 /** Shirt colour options on Matches.Home Kit / Away Kit. "" = not yet set. */

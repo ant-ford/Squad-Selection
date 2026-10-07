@@ -390,6 +390,7 @@ describe("session-derived identity (IDOR prevention)", () => {
       user: PLAYER_USER,
       team: "Men's 1s",
       includePast: false,
+      calledOff: true,
     });
   });
 
@@ -403,6 +404,7 @@ describe("session-derived identity (IDOR prevention)", () => {
       user: PLAYER_USER,
       team: undefined,
       includePast: true,
+      calledOff: true,
     });
   });
 
