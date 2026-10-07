@@ -4,6 +4,8 @@
  * offices open; `can` says which, and the server checks again on every save.
  */
 
+import { fullName } from "./personName";
+
 /** One search result. */
 export interface PersonSearchRow {
   id: string;
@@ -68,5 +70,5 @@ export interface PersonAdminView {
 
 /** First (preferred) name and surname, as the app shows names everywhere. */
 export function displayName(p: { preferred_name?: string | null; given_names?: string | null; surname?: string | null }): string {
-  return [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ") || "(no name)";
+  return fullName(p) || "(no name)";
 }

@@ -183,7 +183,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 - **Request stats:** `worker/src/requestContext.ts` counts database calls, bytes and wait time. The figures go out as a `Server-Timing` header and one log line per request.
 - **Crons:** `scheduled()` in `index.ts`. Preview has no crons, so its `/system` shows every job as never run.
   - **03:00 UTC (11:00 HKT):** commitment review emails, within a counted budget of about 40 subrequests.
-  - **03:30 UTC:** retention. `RETENTION_MODE` stays `report` until the owner flips it to `remove`.
+  - **03:30 UTC:** retention. `RETENTION_MODE` is `remove` since 7 Oct 2026: up to 20 due people a run (`docs/DATA_RETENTION.md`).
   - **04:00 UTC:** the system health check.
     - It reads the heartbeats and the error log, refreshes the umpire pool, and prunes rows older than 90 days.
     - When something is wrong, it puts a "System" line in the owner's My Tasks and emails `SYSTEM_ALERT_EMAIL`.

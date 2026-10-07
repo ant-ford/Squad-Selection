@@ -18,6 +18,7 @@ import { sendEmail } from "../mailer";
 import { activeOfficeHolders, contactOf } from "../officeContacts";
 import { PDF_TEMPLATES } from "./templates";
 import { ddmmyyyy } from "./playerStatement";
+import { fullName } from "../../../shared/personName";
 
 export const CLUB_NAME = "Hong Kong Football Club";
 
@@ -148,7 +149,7 @@ export async function makeU18Registration(env: Env, personUuid: string): Promise
     "guardian-signature": await fileAsset(env, signing.guardian_signature_file_id),
   });
   if (rendered.warnings.length) console.warn(`U18 form ${personUuid}: ${rendered.warnings.join("; ")}`);
-  const playerName = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
+  const playerName = fullName(p);
   const filename = documentFilename("HKHA U18 Registration", playerName);
   const fileId = await storeDocument(env, rendered.pdf, { kind: "u18_registration_form", filename, personId: p.id });
 

@@ -2,6 +2,7 @@ import { linkId } from "../../../shared/airtableValueUtils";
 import type { Match, MatchCard } from "../../../shared/schema/domainTypes";
 import { hkDateKey } from "../../../shared/hkDateKey";
 import { PAST_FIXTURE_WINDOW_DAYS } from "./matchReads";
+import { outcomeOf } from "../teamRecord";
 
 // ---------------------------------------------------------------------------
 // Recently played fixtures for a player
@@ -116,14 +117,7 @@ export function buildPastFixtures(opts: {
       division: m.division || "",
       goalsFor,
       goalsAgainst,
-      outcome:
-        goalsFor === null || goalsAgainst === null
-          ? null
-          : goalsFor > goalsAgainst
-          ? "win"
-          : goalsFor < goalsAgainst
-          ? "loss"
-          : "draw",
+      outcome: goalsFor === null || goalsAgainst === null ? null : outcomeOf(goalsFor, goalsAgainst),
       played: !!mine,
       myGoals: mine?.goals ?? 0,
       myCards: (mine?.cards ?? []).filter((c): c is string => typeof c === "string"),

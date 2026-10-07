@@ -10,6 +10,7 @@ import { HttpError } from "./http";
 import { db, eq, SupabaseError } from "./data/supabase";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { invalidatePeople } from "./invalidation";
+import { fullName } from "../../shared/personName";
 import {
   COACH_LEVELS,
   EMPTY_ROLES,
@@ -132,7 +133,6 @@ export async function saveVolunteering(env: Env, user: AuthorizedUser, body: Rec
   return { ok: true };
 }
 
-const personName = (p: PersonRow) => [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const personTeam = (p: PersonRow) => p.selected_team_eos || p.selected_team_sos || p.registered_team || "";
 
 /** Everyone who offered a role, or holds a coaching or umpiring level. */
@@ -144,7 +144,7 @@ export async function getVolunteersBoard(env: Env, user: AuthorizedUser): Promis
   const volunteers = rows
     .map((r) => ({
       id: r.api_id,
-      name: personName(r),
+      name: fullName(r),
       team: personTeam(r),
       status: r.status ?? "",
       active: r.active === true,

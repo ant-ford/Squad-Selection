@@ -15,6 +15,7 @@ import { alertDutyRemoved } from "./push";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { buildNameDictionary, canonicalKey, parseUmpire } from "../../shared/umpires";
 import { NO_QUALIFICATION } from "../../shared/volunteering";
+import { fullName } from "../../shared/personName";
 import {
   clashingGame,
   gameLabel,
@@ -83,7 +84,6 @@ const POOL_KEY = "umpiring:pool";
 
 const today = () => hkDateKey(new Date().toISOString());
 const firstName = (p: PersonRow) => (p.preferred_name || p.given_names || p.surname || "").trim().split(/\s+/)[0] ?? "";
-const fullName = (p: PersonRow) => [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
 const qualified = (p: PersonRow) => !!p.qualified_umpire && p.qualified_umpire !== NO_QUALIFICATION;
 
 /** The Umpire Coordinator and the Section Captains run the duties. */

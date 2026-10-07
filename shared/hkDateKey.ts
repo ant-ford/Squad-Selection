@@ -22,3 +22,19 @@ export function hkDateKey(iso: string | null | undefined): string {
   if (t < FIXED_OFFSET_FROM || t >= FIXED_OFFSET_TO) return HK_FORMAT.format(t);
   return new Date(t + HK_OFFSET_MS).toISOString().slice(0, 10);
 }
+
+/*
+ * Arithmetic on day keys ("YYYY-MM-DD"). A key is already a calendar date
+ * (in Hong Kong time when it came from hkDateKey), so this is plain date
+ * arithmetic at UTC midnight: no time zone can move it to another day.
+ */
+
+/** The day key `n` days after `dayKey` (before it when `n` is negative). */
+export function addDays(dayKey: string, n: number): string {
+  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Whole days from one day key to another (negative when `to` is earlier). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}

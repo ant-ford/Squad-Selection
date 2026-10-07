@@ -32,6 +32,7 @@ import { inBackground } from "./requestContext";
 import { pdfsEnabled } from "./pdf/render";
 import { makeApplicationPdf, pdfFor, recipientFor, sendApplication } from "./pdf/application";
 import { ROLE_LABEL, SIGN_ROLES, TURN_BY_STAGE, sponsorProblem, type SignRole, type SigningView, type SponsorAnswers } from "../../shared/signing";
+import { fullName } from "../../shared/personName";
 
 const SIGNING_STAGES = Object.keys(TURN_BY_STAGE);
 const SUBMITTED_STAGE = "3. Club Application (Signed)";
@@ -109,7 +110,7 @@ interface Holder {
 }
 
 const nameOf = (p: { preferred_name: string | null; given_names: string | null; surname: string | null }) =>
-  [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ") || "the applicant";
+  fullName(p) || "the applicant";
 
 /** Who holds each office (by office id). */
 async function holders(env: Env, officeIds: string[]): Promise<Record<string, Holder>> {

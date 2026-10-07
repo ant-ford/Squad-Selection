@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hkDateKey } from "../shared/hkDateKey";
+import { addDays, daysBetween, hkDateKey } from "../shared/hkDateKey";
 import { getSameDayMatches } from "../worker/src/seasonContext";
 import { currentSeason } from "../worker/src/seasonContext";
 import type { Match } from "../shared/schema/domainTypes";
@@ -63,5 +63,48 @@ describe("currentSeason (seasonContext.ts)", () => {
     // still within the same HKT day, no ambiguity either way here - pick a
     // clearer pre-boundary instant instead.
     expect(currentSeason(new Date("2026-06-30T10:00:00.000Z"))).toBe("2025-2026"); // 18:00 HKT, still June
+  });
+});
+
+// Day-key arithmetic: one copy for the worker, the shared insights and the
+// test fakes (S8). Plain date arithmetic on the key, never shifted by a zone.
+describe("addDays", () => {
+  it("crosses month, year and leap-day boundaries", () => {
+    expect(addDays("2026-01-31", 1)).toBe("2026-02-01");
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
+    expect(addDays("2027-02-28", 1)).toBe("2027-03-01");
+    expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
+    expect(addDays("2026-10-07", 0)).toBe("2026-10-07");
+    expect(addDays("2026-10-07", -364)).toBe("2025-10-08");
+  });
+
+  it("gives the same day as the setUTCDate copy it replaced", () => {
+    const viaSetDate = (day: string, n: number) => {
+      const d = new Date(`${day}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    for (let i = 0; i < 800; i += 7) {
+      const day = addDays("2025-01-01", i);
+      for (const n of [-729, -365, -364, -2, -1, 1, 2, 6, 14, 365]) expect(addDays(day, n)).toBe(viaSetDate(day, n));
+    }
+  });
+
+  it("throws on a day that is not a date, as every copy did", () => {
+    expect(() => addDays("not a day", 1)).toThrow(RangeError);
+  });
+});
+
+describe("daysBetween", () => {
+  it("counts whole days, negative when the second day is earlier", () => {
+    expect(daysBetween("2026-10-01", "2026-10-07")).toBe(6);
+    expect(daysBetween("2026-10-07", "2026-10-01")).toBe(-6);
+    expect(daysBetween("2028-02-28", "2028-03-01")).toBe(2);
+    expect(daysBetween("2026-10-07", "2026-10-07")).toBe(0);
+  });
+
+  it("undoes addDays", () => {
+    for (const n of [-400, -1, 0, 1, 30, 366]) expect(daysBetween("2026-10-07", addDays("2026-10-07", n))).toBe(n);
   });
 });

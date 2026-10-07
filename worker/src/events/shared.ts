@@ -8,6 +8,7 @@ import { fileLink, photoLink } from "../data/supabase/files";
 import { eventRights, managesEvent, type EventRights } from "../eventAccess";
 import { getChairmanDirectory } from "../chairman";
 import { matches, type DirectoryPerson, type Selection } from "../../../shared/emailLists";
+import { fullName } from "../../../shared/personName";
 import {
   cleanQuestions,
   cleanAudience,
@@ -30,7 +31,7 @@ const validId = (id: string) => {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError("Event not found.", 404, "NOT_FOUND");
 };
 export type NameParts = { preferred_name: string | null; given_names: string | null; surname: string | null };
-export const nameOf = (p: NameParts | null | undefined) => (p ? [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ") || "Unnamed" : "");
+export const nameOf = (p: NameParts | null | undefined) => (p ? fullName(p) || "Unnamed" : "");
 
 // ── Rows ─────────────────────────────────────────────────────────────────
 

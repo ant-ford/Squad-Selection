@@ -14,11 +14,11 @@ import { getShared } from "./cache";
 import { HttpError } from "./http";
 import { invalidateCommitments } from "./invalidation";
 import { STATEMENT_RECORDS_KEY } from "./reference";
-import { daysBetween, recordMembershipEvent, type Attachment, type Chase } from "./membership";
+import { recordMembershipEvent, type Attachment, type Chase } from "./membership";
 import { firstLink, getOfficeHolders, getPeopleByIds, type Contact } from "./contacts";
 import { commitments, type StatementRow } from "./data/commitments";
 import { isRowId } from "./data/ids";
-import { hkDateKey } from "../../shared/hkDateKey";
+import { addDays, daysBetween, hkDateKey } from "../../shared/hkDateKey";
 import {
   AUTO_NOTICE_DAYS,
   COMPLETE,
@@ -123,10 +123,6 @@ function attachments(v: unknown): Attachment[] {
   return v
     .filter((a) => a && typeof a.url === "string")
     .map((a) => ({ url: a.url as string, filename: typeof a.filename === "string" ? a.filename : "Attachment" }));
-}
-
-export function addDays(dayKey: string, n: number): string {
-  return new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Period End falls between today and AUTO_NOTICE_DAYS from now, inclusive. */

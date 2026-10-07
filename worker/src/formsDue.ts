@@ -15,6 +15,7 @@ import { db } from "./data/supabase";
 import { waiversDoneThisSeason } from "./myTasks";
 import { checkedThisSeason } from "../../shared/profile";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { firstName, fullName } from "../../shared/personName";
 
 export interface FormsDuePerson {
   id: string;
@@ -42,8 +43,8 @@ export async function getFormsDue(env: Env, now = new Date()): Promise<{ waivers
   const today = hkDateKey(now.toISOString());
   const person = (r: Row): FormsDuePerson => ({
     id: r.api_id,
-    name: [r.preferred_name || r.given_names, r.surname].filter(Boolean).join(" "),
-    firstName: (r.preferred_name || r.given_names || "").split(" ")[0],
+    name: fullName(r),
+    firstName: firstName(r).split(" ")[0],
     mobile: r.mobile_no ?? "",
   });
   const byName = (a: FormsDuePerson, b: FormsDuePerson) => a.name.localeCompare(b.name);

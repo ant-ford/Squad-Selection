@@ -6,6 +6,7 @@ import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
 import { SUBMITTED_STAGES } from "../../shared/membershipStages";
+import { firstName } from "../../shared/personName";
 
 /**
  * Whether signing in goes to the application rather than the player page:
@@ -49,10 +50,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
   ]);
 
   return {
-    preferredName:
-      user.preferredName ||
-      user.givenNames ||
-      "Coach",
+    preferredName: firstName(user) || "Coach",
 
     roles: Array.isArray(user.playerCoach)
       ? user.playerCoach

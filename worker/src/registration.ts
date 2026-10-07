@@ -17,6 +17,7 @@ import { fileLink } from "./data/supabase/files";
 import { currentSeason } from "./seasonContext";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
+import { fullName } from "../../shared/personName";
 import { invalidateMatchCards, invalidatePeople } from "./invalidation";
 import {
   REGISTRATION_CSV_HEADER,
@@ -133,7 +134,7 @@ export async function getRegistrationBoard(env: Env): Promise<RegistrationBoard>
       ]);
       return {
         id: p.api_id,
-        name: [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ") || "(no name)",
+        name: fullName(p) || "(no name)",
         team: p.registered_team || null,
         previousEos: p.previous_eos || null,
         shirtNo: p.shirt?.shirt_no ?? null,
@@ -297,7 +298,7 @@ export async function saveRegistrationDetails(
         `select=id,preferred_name,given_names,surname,active&registered_name=ilike.${encodeURIComponent(change.registeredName)}&id=neq.${p.id}`,
       );
       if (holder) {
-        const who = [holder.preferred_name || holder.given_names, holder.surname].filter(Boolean).join(" ") || "Another player";
+        const who = fullName(holder) || "Another player";
         throw new HttpError(`${who}${holder.active ? "" : " (not active)"} already has this registered name.`, 409, "NAME_TAKEN");
       }
     }

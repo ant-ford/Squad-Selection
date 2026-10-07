@@ -2,6 +2,7 @@ import { fixtureChangeText, type FixtureChange } from '@shared/fixtureChange';
 import { safeFormat } from './dateUtils';
 import { POS_SHORT } from './format';
 import { positionRank } from './squadSort';
+export { whatsAppLink } from '@shared/whatsapp';
 
 /**
  * WhatsApp "click to chat" helpers.
@@ -187,12 +188,4 @@ function squadBlock(players: AnnouncedPlayer[]): string {
   // *...* is WhatsApp bold.
   const body = groups.map((g) => `*${g.label}*\n${g.lines.join('\n')}`).join('\n\n');
   return `\n\nSquad (${players.length}):\n\n${body}`;
-}
-
-/**
- * wa.me link for one recipient. `number` must already have been through
- * toWhatsAppNumber.
- */
-export function whatsAppLink(number: string, message: string): string {
-  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 }

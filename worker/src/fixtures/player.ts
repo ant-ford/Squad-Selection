@@ -8,6 +8,7 @@ import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
 import { fixtureChange } from "../../../shared/fixtureChange";
 import { isBirthdayOn } from "../../../shared/birthday";
+import { firstName, fullName } from "../../../shared/personName";
 import { buildEvaluationContext, getSeasonContext, currentSeason } from "../seasonContext";
 import { evaluatePlayerEligibility } from "../eligibility";
 import { effectiveAvailability, getAllAvailabilityRules, getRulesForPlayer } from "../availabilityRules";
@@ -43,7 +44,7 @@ export function teamBirthdaysOn(
         (selectedDisplayTeam(p) || p.registeredTeam || "") === displayTeam &&
         isBirthdayOn(p.birthday, today),
     )
-    .map((p) => [p.preferredName || p.givenNames, p.surname].filter(Boolean).join(" ") || "A teammate")
+    .map((p) => fullName(p) || "A teammate")
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -68,7 +69,7 @@ export async function getMyFixtures(
   const base = {
     // The dashboard's season-stats panel reads stats for this id.
     playerId: user.id,
-    playerName: user.preferredName || user.givenNames || "Player",
+    playerName: firstName(user) || "Player",
     // People.Photo, already mapped to the first attachment's URL. Optional:
     // the dashboard falls back to the initial when a player has no photo.
     photo: user.photo || "",
@@ -105,7 +106,7 @@ export async function getMyFixtures(
       matches: ctx.allMatches,
       matchCards: ctx.matchCards,
       playerNameById: new Map(
-        ref.players.map((p) => [p.id, p.preferredName || p.givenNames || "Player"]),
+        ref.players.map((p) => [p.id, firstName(p) || "Player"]),
       ),
     });
   }
@@ -355,7 +356,7 @@ export async function buildPlayerFixtureView(
       ...(opts.withSquad
         ? {
             squad: s.selectedIds.map((id) => ({
-              name: squadPlayerById.get(id)?.preferredName || squadPlayerById.get(id)?.givenNames || "Player",
+              name: firstName(squadPlayerById.get(id)) || "Player",
               shirtNo: squadPlayerById.get(id)?.shirtNoValue || "",
               playingPosition: squadPlayerById.get(id)?.playingPosition || "",
               availabilityStatus: squadStatus.get(`${s.match.id}:${id}`) || "",
@@ -412,7 +413,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
   const view = await buildPlayerFixtureView(env, player, { withSquad: true });
   const fixtures = [...view.myTeam, ...view.playUpOpportunities, ...view.supportFixtures];
   return {
-    playerName: player.preferredName || player.givenNames || "Player",
+    playerName: firstName(player) || "Player",
     displayTeam: view.displayTeam,
     registeredTeam: view.displayTeam,
     fixtures,

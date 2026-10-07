@@ -40,6 +40,7 @@ interface PersonRow {
 
 // Lives in shared/declarations.ts now (the registration screen uses it too).
 import { isUnderEighteen } from "../../shared/declarations";
+import { fullName } from "../../shared/personName";
 export { isUnderEighteen };
 
 async function loadPerson(env: Env, personApiId: string): Promise<PersonRow> {
@@ -59,7 +60,7 @@ export async function getMyDeclarations(env: Env, user: AuthorizedUser): Promise
     season: `${start}-${start + 1}`,
     signedThisSeasonAt: waiversDoneThisSeason(p.waivers_signed_at, today) ? p.waivers_signed_at : null,
     underEighteen: isUnderEighteen(p.date_of_birth, today),
-    playerName: [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" "),
+    playerName: fullName(p),
     guardian: {
       surname: p.guardian_surname ?? "",
       givenNames: p.guardian_given_names ?? "",
