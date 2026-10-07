@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 import { queryClient, queryPersister } from './queryClient';
 import { setAccessDenied } from './accessDenied';
 import { clearAllDrafts } from './drafts';
+import { authClientOptions } from './authClientOptions';
+import { savedSessionUser, startupOutcome } from './savedSession';
 
 interface AuthContextValue {
   user: User | null;
@@ -46,23 +48,51 @@ export async function signOut(): Promise<void> {
   setAccessDenied(null);
 }
 
+/** The person in the session auth-js saved on this device, if it can still be refreshed. Read only. */
+function readSavedSessionUser(): User | null {
+  try {
+    const { storageKey } = authClientOptions(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
+    return savedSessionUser(localStorage.getItem(storageKey!));
+  } catch {
+    return null;
+  }
+}
+
 /** One getSession() + one onAuthStateChange subscription for the whole app. */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Opens as the person whose session is saved here, without waiting for
+  // getSession() to refresh their token over the network (savedSession.ts).
+  // Their own kept fixtures show at once; getSession() confirms behind them.
+  const [openedAs] = useState(readSavedSessionUser);
+  const [user, setUser] = useState<User | null>(openedAs);
+  const [loading, setLoading] = useState(openedAs === null);
 
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Initial load: getSession() parses the magic link hash and establishes the session
+    // 1. Initial load: getSession() parses the magic link hash, refreshes an
+    // expired token and establishes the session.
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (!isMounted) return;
-      // No session and no error: signed out (a refused refresh while starting
-      // up lands here, not in the listener), so the kept copy goes. An error
-      // (no connection) only pauses it.
-      if (!session && !error) void queryPersister.clear();
-      else queryPersister.setOwner(session?.user?.id ?? null);
-      setUser(session?.user ?? null);
+      const outcome = startupOutcome(openedAs, { session, error });
+      if (outcome.kind === 'signed-in') {
+        // Someone other than the person the app opened as: what's on screen
+        // was theirs. setOwner wipes the kept copy; the in-memory cache goes here.
+        if (outcome.clearCache) queryClient.clear();
+        queryPersister.setOwner(outcome.user.id);
+        setUser(outcome.user);
+      } else if (outcome.kind === 'signed-out') {
+        // Signed out: a refresh Supabase refused while starting up lands
+        // here, not in the listener. The kept copy goes, and so does anything
+        // shown from it.
+        void queryPersister.clear();
+        if (outcome.clearCache) queryClient.clear();
+        setUser(null);
+      } else {
+        // No connection: nothing is known yet. Stay as the app opened (the
+        // kept copy keeps showing); requests refresh or sign out as they go.
+        setUser(outcome.user);
+      }
       setLoading(false);
 
       // Safety net: manually clean up the URL hash if Supabase didn't clear it
@@ -74,6 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 2. Auth state listener
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
+      // The first answer is getSession()'s to handle (above). Taking it here
+      // too would drop the person the app opened as whenever starting up
+      // couldn't reach Supabase.
+      if (event === 'INITIAL_SESSION') return;
       // What's kept on the phone belongs to whoever is signed in. A lapsed
       // session (Supabase refused the refresh) wipes it like Log out does; a
       // different person signing in wipes the last one's.

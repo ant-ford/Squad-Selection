@@ -108,6 +108,8 @@ export async function answerReactivation(
     return result;
   } catch (err) {
     if ((err as { code?: string }).code === "P0002") throw new HttpError("Request not found.", 404, "NOT_FOUND");
+    // answer_reactivation() activates Members only (migration 20261007171006).
+    if ((err as { code?: string }).code === "22023") throw new HttpError("Only a member can be reactivated.", 409, "NOT_A_MEMBER");
     throw err;
   }
 }

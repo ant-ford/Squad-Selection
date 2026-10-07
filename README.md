@@ -212,7 +212,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 - **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded through `lazyPage()`, and unknown paths go to `/`.
 - **Data:** React Query hooks in `src/lib/queries.ts`, over `src/lib/apiClient.ts` (Bearer JWT, plus `X-Eddy-Fresh` after writes). The player page starts its requests in parallel as soon as there is a session.
   - **Kept on the phone:** the person's own profile, fixtures and tasks (nothing else) are kept in IndexedDB for up to 24 hours (`src/lib/persistedQueries.ts`), so the app opens on them and refetches at once behind. They're used only by the same person on the same build. Log out, a lapsed session, Delete my profile and a different person signing in all wipe them.
-- **Sign-in:** `@supabase/auth-js` only (`src/lib/supabase.ts`, `src/lib/auth.tsx`), never the whole supabase-js. Turnstile (`src/components/Turnstile.tsx`) is on when `VITE_TURNSTILE_SITE_KEY` is set.
+- **Sign-in:** `@supabase/auth-js` only (`src/lib/supabase.ts`, `src/lib/auth.tsx`), never the whole supabase-js. Turnstile (`src/components/Turnstile.tsx`) is on when `VITE_TURNSTILE_SITE_KEY` is set. The app opens as the person whose session is saved on the device, without waiting for the token refresh, and `getSession()` confirms behind the screen; API calls still wait for it (`src/lib/savedSession.ts`).
 - **One header on every signed-in screen:** `src/components/AppHeader.tsx`, with its rules in `src/lib/header.ts`. It has:
   - the screen's title, which is also the page's `h1` and tab title;
   - a back arrow on child screens;
