@@ -52,7 +52,7 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Screen | Route | Who |
 |---|---|---|
 | Player view | `/` | Everyone signed in. Applicants at stages 1–2 go to `/apply` instead. |
-| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. Only Section Captains make players inactive. |
+| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
 | Umpire view | `/umpiring` | The club's umpires. The Umpire Coordinator and Section Captains run the duties. |
 | Membership | `/membership` | Membership Officer, Section Captains |
 | Email lists | `/chairman` | Chairman, Section Captains |
@@ -137,6 +137,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 | Squad saves: a save sends only adds and removes; changes merge unless a change since the loaded version touched the same player (`409`); derby safety; higher-team priority | `worker/src/squad.ts`, `src/lib/squadDelta.ts`, SQL `apply_squad_changes()` / `on_squad_changed()` |
 | Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts`, SQL `set_availability()` / `availability_rule_status()`. The rule cases are pinned on both sides: `tests/availabilityRuleCases.test.ts` and `scripts/availability-rule-checks.mjs` |
 | Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` (`SECTION_OFFICES`), `worker/src/authContext.ts`, SQL `auth_context()` |
+| Coaches act only on their own teams (a match's HKFC side, a derby's written side, a team, a player's shown or registered team); Section Captains and the Assistant Director on every team; `403 NOT_YOUR_TEAM` | `worker/src/coachAccess.ts` (`requireCoachOfMatch`, `requireCoachOfMatchSide`), `worker/src/auth.ts` (`coachesEveryTeam`, `requireCoachOfTeam`, `coachesPlayer`) |
 | Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name (`worker/src/registration.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
 | Data checks (unlinked cards, shared Registered Names, re-registrations to review, incomplete players, likely duplicates) | `worker/src/dataChecks.ts`, `shared/dataChecks.ts` |
 | Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`) | `worker/src/admin/*`, SQL `admin_*()`; a person's history: `GET /api/history` |
@@ -164,7 +165,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 ## Worker internals
 
-- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`, and registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
+- **Routing:** `worker/src/index.ts`, with the officer admin routes in `worker/src/admin/routes.ts`. Every `/api` route needs a verified Supabase session. Coach and officer routes check `AuthorizedUser` from `auth.ts`. Coach routes also check that the match, team or player is the coach's own (`coachAccess.ts`). Registering to join needs only a verified email. The only routes without a session are `/health`, signed stored-file links (`files.ts`) and the HMAC-signed `.ics` calendar feeds. `tests/authorization-routes.test.ts` pins this.
 - **Sign-in:** each request checks the JWT with Supabase (`/auth/v1/user`; an isolate remembers a checked token for 60 s) and, in parallel, reads `auth_context()`. An isolate reuses that answer for 10 s. For 10 s after a write the app sends `X-Eddy-Fresh`, so a person always reads their own change, whichever isolate answers (`shared/freshHeader.ts`).
 - **Caching:**
   - `worker/src/cache.ts` keeps reads in each isolate's memory, under keys that carry the cache versions of the tables they're built from (`getVersioned`), so a write anywhere moves the key.

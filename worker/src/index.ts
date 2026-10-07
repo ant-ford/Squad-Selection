@@ -16,7 +16,8 @@ import {
 import { listTemplates, logMessage } from "./messages";
 import { noteSquadNotified } from "./squadNotices";
 import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
-import { requireAuthorizedUser, requireCoach, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
+import { coachesEveryTeam, coachesPlayer, requireAuthorizedUser, requireCoach, requireCoachOfTeam, requireSection, requireSectionCaptain, requireVerifiedEmail } from "./auth";
+import { requireCoachOfMatch, requireCoachOfMatchSide } from "./coachAccess";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getStatementBoard, requestReviewEmail } from "./statements";
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from "./reviews";
@@ -131,7 +132,7 @@ import {
   activatePlayer,
   deactivatePlayer,
 } from "./ranking";
-import type { AbilityGroupConfigMap } from "../../shared/schema/domainTypes";
+import type { AbilityGroupConfigMap, Player } from "../../shared/schema/domainTypes";
 import { getRecentChanges } from "./dashboard";
 import { getPlayerSeasonStats } from "./playerStats";
 import { getPlayerAttendance } from "./playerAttendance";
@@ -312,10 +313,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(await getTeamAvailabilityForMatch(env, matchTeamAvailMatch[1], side ?? undefined), 200, origin);
     }
 
-    // The remaining match reads back the coach-only selection screens.
+    // The remaining match reads back the coach-only selection screens: the
+    // coaches of the fixture's HKFC side(s) only (coachAccess.ts).
     const matchPlayersMatch = pathname.match(/^\/api\/match\/([^/]+)\/players$/);
     if (method === "GET" && matchPlayersMatch) {
-      await requireCoach(request, env);
+      await requireCoachOfMatch(env, await requireCoach(request, env), matchPlayersMatch[1]);
       const side = url.searchParams.get("side") as "home" | "away" | null;
       const data = await getPlayersForMatch(env, matchPlayersMatch[1], side ?? undefined);
       // ?recommendations=1: the squad screen's ranking with the players, in
@@ -329,7 +331,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
     const matchRecsMatch = pathname.match(/^\/api\/match\/([^/]+)\/recommendations$/);
     if (method === "GET" && matchRecsMatch) {
-      await requireCoach(request, env);
+      await requireCoachOfMatch(env, await requireCoach(request, env), matchRecsMatch[1]);
       const side = url.searchParams.get("side") as "home" | "away" | null;
       const position = url.searchParams.get("position") ?? undefined;
       const limitParam = url.searchParams.get("limit");
@@ -349,14 +351,18 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
     const matchAvailabilityMatch = pathname.match(/^\/api\/match\/([^/]+)\/availability$/);
     if (method === "GET" && matchAvailabilityMatch) {
-      await requireCoach(request, env);
+      await requireCoachOfMatch(env, await requireCoach(request, env), matchAvailabilityMatch[1]);
       return json(await getAvailabilityForMatch(env, matchAvailabilityMatch[1]), 200, origin);
     }
     // A coach answering for a player who cannot get into the app. The only
     // write that names another person, so it is coach-gated and the coach's
     // identity - from the session, never the body - goes on the record.
+    // The fixture must be one of the coach's; the player can be anyone in
+    // its pool (the squad screen lists every player who could play up or
+    // down), so the player is not narrowed further.
     if (method === "POST" && matchAvailabilityMatch) {
       const user = await requireCoach(request, env);
+      await requireCoachOfMatch(env, user, matchAvailabilityMatch[1]);
       const body = (await readJsonBody(request)) as { playerId?: string; status?: string; notes?: string };
       return json(
         await setPlayerAvailability(env, {
@@ -386,6 +392,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       return json(
         await setPlayerOptInOnly(env, {
           coachEmail: user.email,
+          // Season-long and about the player, not one fixture: only a coach
+          // of the player's own team, or of every team (availability.ts).
+          mayChange: coachesEveryTeam(user) ? undefined : (player) => coachesPlayer(user, player),
           playerId: optInOnlyMatch[1],
           optInOnly: body.optInOnly,
         }),
@@ -398,6 +407,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     const autoSelectMatch = pathname.match(/^\/api\/match\/([^/]+)\/auto-select$/);
     if (method === "POST" && autoSelectMatch) {
       const user = await requireCoach(request, env);
+      await requireCoachOfMatch(env, user, autoSelectMatch[1]);
       const body = await readJsonBody(request);
       const enabled =
         typeof body.enabled === "boolean"
@@ -458,6 +468,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const body = await readJsonBody(request);
       const side = body.side === "away" ? "away" : body.side === "home" ? "home" : undefined;
       if (!side) throw new HttpError('side must be "home" or "away"', 400);
+      await requireCoachOfMatchSide(env, user, matchKitMatch[1], side);
       const kit = typeof body.kit === "string" ? body.kit : "";
       return json(
         await setMatchKit(env, matchKitMatch[1], side, kit, user.email),
@@ -468,14 +479,16 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
     // ── Priority Player List (Read/Write - Authenticated) ──────────────────
     if (method === "GET" && pathname === "/api/team/auto-select-players") {
-      await requireCoach(request, env);
+      const user = await requireCoach(request, env);
       const teamName = requireParam(url.searchParams.get("team"), "team");
+      requireCoachOfTeam(user, teamName);
       return json(await getTeamAutoSelectPlayers(env, teamName), 200, origin);
     }
     if (method === "POST" && pathname === "/api/team/auto-select-players") {
       const user = await requireCoach(request, env);
       const body = await readJsonBody(request);
       const teamName = requireParam(body.teamName, "teamName");
+      requireCoachOfTeam(user, teamName);
       return json(
         await setTeamAutoSelectPlayers(env, teamName, body.playerIds || [], user.email),
         200,
@@ -507,10 +520,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     // ── Team Availability Dashboard (Read - Coach) ─────────────────────────
-    // Every squad's grid at once: names and statuses only, no notes.
+    // The coach's own squads' grids at once (every squad for those who coach
+    // every team): names and statuses only, no notes.
     if (method === "GET" && pathname === "/api/team-attendance") {
-      await requireCoach(request, env);
-      return json(await getTeamAttendance(env), 200, origin);
+      const user = await requireCoach(request, env);
+      return json(await getTeamAttendance(env, user.coachTeams), 200, origin);
     }
 
     // Player-facing routes: identity always comes from the verified Supabase
@@ -618,14 +632,20 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         selectedIds: string[];
         side?: "home" | "away";
       };
+      const side = body.side === "home" || body.side === "away" ? body.side : undefined;
+      await requireCoachOfMatchSide(env, user, String(body.matchId ?? ""), side);
       const { displaced } = await syncSquad(env, body.matchId, body.selectedIds, user.email, body.side);
       return json({ success: true, displaced }, 200, origin);
     }
 
     // Notify was used: the squad as it stands is what the players were told (squadNotices.ts).
+    // The side must be one of the coach's teams.
     if (method === "POST" && pathname === "/api/squad/notified") {
       const user = await requireCoach(request, env);
-      return json(await noteSquadNotified(env, user.personId, ((await readJsonBody(request)) ?? {}) as Record<string, unknown>), 200, origin);
+      const body = ((await readJsonBody(request)) ?? {}) as Record<string, unknown>;
+      if (body.side !== "home" && body.side !== "away") throw new HttpError("Choose the fixture and side.", 400, "INVALID_INPUT");
+      await requireCoachOfMatchSide(env, user, String(body.matchId ?? ""), body.side);
+      return json(await noteSquadNotified(env, user.personId, body), 200, origin);
     }
 
     // A squad save as changes: only who was added and removed, merged with
@@ -633,6 +653,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (method === "POST" && pathname === "/api/squad/changes") {
       const user = await requireCoach(request, env);
       const body = (await readJsonBody(request)) as SquadChangesBody;
+      // The side this save writes to must be one of the coach's teams.
+      const side = body.side === "home" || body.side === "away" ? body.side : undefined;
+      await requireCoachOfMatchSide(env, user, String(body.matchId ?? ""), side);
       const result = await applySquadChanges(env, body, { email: user.email, personId: user.personId });
       if (result.status === "conflict") {
         const names = result.players.map((p) => p.name);
@@ -676,8 +699,11 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         playerIds: string[];
         justification?: string;
       };
+      // One section-wide ranking: a coach moves only their own teams'
+      // players (ranking.ts); Section Captains and the Assistant Director anyone.
+      const mayMove = coachesEveryTeam(user) ? undefined : (player: Player) => coachesPlayer(user, player);
       return json(
-        await reorderRanking(env, body.playerIds, user.email, body.justification),
+        await reorderRanking(env, body.playerIds, user.email, body.justification, mayMove),
         200,
         origin,
       );
