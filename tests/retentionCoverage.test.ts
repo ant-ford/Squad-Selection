@@ -277,6 +277,19 @@ describe("personal data removal covers every reference to a person", () => {
     expect([...new Set(missing)]).toEqual([]);
   });
 
+  // The SQL test (.github/workflows/sql-tests.yml) seeds a row for each
+  // erased foreign key, runs erase_personal_data on a real database and checks
+  // the rows are gone. Its list must be this table's "erased" ones, exactly.
+  it("the SQL test checks exactly the erased foreign keys", () => {
+    const sqlTest = readFileSync(new URL("../supabase/tests/erase_personal_data.test.sql", import.meta.url), "utf8");
+    const listed = [...sqlTest.matchAll(/\('(\w+\.\w+)', '(?:deleted|blanked)'\)/g)].map((m) => m[1]).sort();
+    const erased = Object.entries(PEOPLE_FKS)
+      .filter(([, c]) => c === "erased")
+      .map(([fk]) => fk)
+      .sort();
+    expect(listed, "Add the foreign key to erased_fks in supabase/tests/erase_personal_data.test.sql, with a seeded row").toEqual(erased);
+  });
+
   it("neither retention function depends on the Airtable archive", () => {
     // Dropping the archive schema must not break them: erase may clear a raw
     // copy only through dynamic SQL, guarded by to_regclass.

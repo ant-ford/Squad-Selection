@@ -42,5 +42,13 @@ jobs:
       - name: Start the database and apply every migration
         run: supabase db start
 
+      # The availability rule cases come from the same JSON as the TypeScript
+      # test (tests/fixtures/availabilityRuleCases.json), so the pgTAP file
+      # for them is generated here rather than kept in the repo.
+      - name: Generate the availability rule cases
+        run: node scripts/availability-rule-checks.mjs --tap supabase/tests/availability_rule_cases.test.sql
+
+      # pg_prove over supabase/tests: each file runs in its own transaction,
+      # rolled back at the end. Any failed assertion fails the run.
       - name: Run the SQL tests
         run: supabase test db
