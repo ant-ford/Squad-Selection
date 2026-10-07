@@ -96,6 +96,7 @@ export function supabaseMatches(env: Env): MatchesRepo {
 
     listForSeason: (season) => list(season ? `season=${eq(season)}` : "order=id"),
     listScheduled: () => list("match_status=eq.Scheduled"),
+    listCalledOffSince: (sinceIso) => list(`match_status=in.(Rescheduled,Cancelled,Postponed)&changed_at=gte.${encodeURIComponent(sinceIso)}`),
     async listPlayedForSeasons(seasons) {
       if (seasons.length === 0) return [];
       return list(`match_status=eq.Played&season=${inList(seasons)}`);

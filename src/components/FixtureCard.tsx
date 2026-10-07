@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
+import { fixtureChangeText, isCalledOff } from '@shared/fixtureChange';
 import { availabilityClasses } from '@/lib/availabilityTone';
 import { toneClasses } from '@/lib/statusTone';
 import { isShortfallUrgent } from '@/lib/readiness';
@@ -175,6 +176,11 @@ export default function FixtureCard({
           <p className="text-sm text-muted-foreground">
             Division: {fixture.division} · {fixture.venue} · {time}
           </p>
+          {fixture.change && (
+            <p className={`text-xs font-medium ${isCalledOff(fixture.change) ? 'text-danger-soft-foreground' : 'text-warning-soft-foreground'}`}>
+              {fixtureChangeText(fixture.change, fixture.date)}
+            </p>
+          )}
         </div>
         <div className="text-right shrink-0 ml-3">
           {/* Once a match is played the squad count is history; the result is

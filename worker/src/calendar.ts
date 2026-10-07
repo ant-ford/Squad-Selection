@@ -1,3 +1,4 @@
+import { getMyDuties, type MyDuty } from "./myDuties";
 import type { Env } from "./env";
 import { requestVersions } from "./cache";
 import { inBackground, recordCacheHit, recordCacheMiss } from "./requestContext";
@@ -427,6 +428,37 @@ export function formatEventVEvent(e: CalendarEvent, appOrigin: string, now = new
   return lines.map(foldLine).join("\r\n");
 }
 
+/** How long a duty blocks out in the calendar: the game, with time to get ready. */
+const DUTY_MINUTES = 90;
+
+/**
+ * One of the umpire's own duties (myDuties.ts). A called-off one stays for
+ * two weeks as CANCELLED, so calendars drop it rather than keep the old slot.
+ */
+export function formatDutyVEvent(d: MyDuty, appOrigin: string, now = new Date()): string {
+  const start = new Date(d.matchDate);
+  const end = new Date(start.getTime() + DUTY_MINUTES * 60_000);
+  const off = d.status !== "scheduled";
+  const summary = `${off ? "CANCELLED: " : ""}Umpiring: ${d.homeTeam} vs ${d.awayTeam}`;
+  const description = buildDescription([
+    { lines: [`Umpire ${d.slot} · ${d.dutyTeam} duty${d.timeTbc ? " · time TBC" : ""}`] },
+    { lines: [`The duties: ${appOrigin}/umpiring`] },
+  ]);
+  const lines = [
+    "BEGIN:VEVENT",
+    `UID:duty-${d.assignmentId}@hkfc-squad-selection`,
+    `DTSTAMP:${formatIcsUtcTime(now)}`,
+    `DTSTART;TZID=Asia/Hong_Kong:${formatIcsLocalTime(start)}`,
+    `DTEND;TZID=Asia/Hong_Kong:${formatIcsLocalTime(end)}`,
+    `SUMMARY:${escapeIcsText(summary)}`,
+    `LOCATION:${escapeIcsText(d.venue || "TBC")}`,
+    `DESCRIPTION:${escapeIcsText(description)}`,
+    `STATUS:${off ? "CANCELLED" : "CONFIRMED"}`,
+    "END:VEVENT",
+  ];
+  return lines.map(foldLine).join("\r\n");
+}
+
 /**
  * Which of the dashboard's fixtures belong in a player's calendar.
  *
@@ -529,7 +561,18 @@ export async function handlePlayerCalendarFeed(env: Env, id: string | null, sig:
       console.error("Calendar events not added:", err instanceof Error ? err.message : err);
       return [] as CalendarEvent[];
     });
-    return generateIcsPayload([...events, ...specials.map((e) => formatEventVEvent(e, appOrigin))]);
+    // Their umpiring duties (myDuties.ts); the fixtures still come if this fails.
+    // Duties aren't in the cache versions, so a change shows within the edge
+    // copy's 15 minutes.
+    const duties = await getMyDuties(env, id).catch((err) => {
+      console.error("Calendar duties not added:", err instanceof Error ? err.message : err);
+      return [] as MyDuty[];
+    });
+    return generateIcsPayload([
+      ...events,
+      ...specials.map((e) => formatEventVEvent(e, appOrigin)),
+      ...duties.map((d) => formatDutyVEvent(d, appOrigin)),
+    ]);
   });
 }
 

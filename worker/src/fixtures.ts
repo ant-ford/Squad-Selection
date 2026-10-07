@@ -9,6 +9,7 @@ import type { KitColour, Match, MatchCard, Player } from "../../shared/schema/do
 import type { ReferenceData } from "./reference";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { fixtureChange, FIXTURE_CHANGE_DAYS } from "../../shared/fixtureChange";
 import { isBirthdayOn } from "../../shared/birthday";
 import { buildEvaluationContext, getSeasonContext, currentSeason, previousSeason } from "./seasonContext";
 import { evaluatePlayerEligibility } from "./eligibility";
@@ -18,6 +19,7 @@ import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
 import { changedSinceNotice, noticesForMatches, type SquadNotice } from "./squadNotices";
+import { nextDutyLine } from "./myDuties";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
@@ -44,6 +46,23 @@ export async function getScheduledMatches(env: Env): Promise<Match[]> {
   return getVersioned<Match[]>(env, SCHEDULED_MATCHES_KEY, ["matches", "match_selections"], async () => {
     return matches(env).listScheduled();
   }, SCHEDULED_MATCHES_TTL_MS);
+}
+
+export const CALLED_OFF_MATCHES_KEY = "called-off-matches:v1";
+
+/**
+ * Fixtures called off (postponed or cancelled) in the last 7 days, still
+ * dated today or later. Only Scheduled matches are listed otherwise, so these
+ * would vanish; the cards show them as "Postponed" for a week instead
+ * (shared/fixtureChange.ts, migration 20261007160204).
+ */
+export async function getCalledOffMatches(env: Env): Promise<Match[]> {
+  const all = await getVersioned<Match[]>(env, CALLED_OFF_MATCHES_KEY, ["matches"], async () => {
+    const since = new Date(Date.now() - FIXTURE_CHANGE_DAYS * 86_400_000).toISOString();
+    return matches(env).listCalledOffSince(since);
+  }, SCHEDULED_MATCHES_TTL_MS);
+  const today = hkDateKey(new Date().toISOString());
+  return all.filter((m) => m.matchDate && hkDateKey(m.matchDate) >= today && fixtureChange(m) !== null);
 }
 
 /** How far back "show past" reaches on the coach fixture list. */
@@ -169,7 +188,9 @@ export async function getMyFixtures(
   const displayTeam = selectedDisplayTeam(user) || teamName;
   // The view starts every read it needs at once; the reference data here is
   // the same read (joined in flight), so this adds no round trip.
-  const [ref, view] = await Promise.all([getReferenceData(env), buildPlayerFixtureView(env, user)]);
+  // Started with the rest: the umpire's next duty is one read of its own.
+  const duty = authUser.umpire ? nextDutyLine(env, authUser.personId).catch(() => null) : Promise.resolve(null);
+  const [ref, view] = await Promise.all([getReferenceData(env), buildPlayerFixtureView(env, user, { calledOff: true })]);
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
   const captainTeams = authUser.captainTeams;
@@ -193,6 +214,8 @@ export async function getMyFixtures(
     volunteers: await canSeeVolunteers(env, authUser),
     events: await canManageEvents(env, authUser),
     umpiring: await umpiringAccess(env, authUser),
+    // The umpire's next duty within two weeks: the "Your duty" line (myDuties.ts).
+    duty: await duty,
     // Their details are Eddy's own screens on Supabase ("My details").
     eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
@@ -251,7 +274,7 @@ export interface PlayerFixtureView {
 export async function buildPlayerFixtureView(
   env: Env,
   user: Player,
-  opts: { withSquad?: boolean } = {},
+  opts: { withSquad?: boolean; calledOff?: boolean } = {},
 ): Promise<PlayerFixtureView> {
   const playerId = user.id;
   const teamName = user.registeredTeam || "";
@@ -264,9 +287,11 @@ export async function buildPlayerFixtureView(
   // scheduled matches, the player's own season context (the eligibility
   // gate, their answers and the squad's) and the availability rules. The
   // later reads of each are cache hits, or join these in flight.
-  const [ref, allMatches] = await Promise.all([
+  const [ref, allMatches, calledOff] = await Promise.all([
     getReferenceData(env),
     getScheduledMatches(env),
+    // The dashboard shows a called-off game for a week; the calendar doesn't.
+    opts.calledOff ? getCalledOffMatches(env) : Promise.resolve([] as Match[]),
     getSeasonContext(env, currentSeason(), playerId),
     getAllAvailabilityRules(env),
   ]);
@@ -477,12 +502,22 @@ export async function buildPlayerFixtureView(
       fixtureCategory: x.category,
       isPlayUp: x.category === "play-up",
       selectionTeam: x.category !== "own" ? s.team : undefined,
+      /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+      change: fixtureChange(s.match) ?? undefined,
     };
   };
+  // Called-off games of the player's own team, shown (without answers) for a week.
+  const ownTeams = new Set([teamName, displayTeam].filter(Boolean));
+  const calledOffCards = calledOff.flatMap((m) => {
+    const sides = hkfcSides(m, teamNames);
+    const side = [sides.home, sides.away].find((x) => x && ownTeams.has(x.team));
+    return side ? [{ side: { match: m, ...side, dateKey: hkDateKey(m.matchDate) }, category: "own" as const }] : [];
+  });
+  const byDate = <T extends { date: string }>(cards: T[]) => cards.sort((a, b) => a.date.localeCompare(b.date));
   return {
     displayTeam,
     specialGoalkeeperView: specialGoalkeeperView || undefined,
-    myTeam: ownCards.map(buildCard),
+    myTeam: byDate([...ownCards, ...calledOffCards].map(buildCard)),
     playUpOpportunities: gated.filter((x) => x.category === "play-up").map(buildCard),
     supportFixtures: gated.filter((x) => x.category === "support").map(buildCard),
   };
@@ -518,7 +553,7 @@ export async function getPlayerFixtures(env: Env, playerId: string) {
 
 export async function getUpcomingFixtures(
   env: Env,
-  opts: { user?: AuthorizedUser; team?: string; includePast?: boolean },
+  opts: { user?: AuthorizedUser; team?: string; includePast?: boolean; calledOff?: boolean },
 ) {
   const ref = await getReferenceData(env);
   const teamsByName = new Map(ref.teams.map((t) => [t.teamName, t]));
@@ -536,12 +571,16 @@ export async function getUpcomingFixtures(
   const cutoff = new Date(Date.now() - PAST_FIXTURE_WINDOW_DAYS * 86_400_000);
   const pastCutoffKey = hkDateKey(cutoff.toISOString());
 
-  const scheduled = await getScheduledMatches(env);
+  const [scheduled, calledOff] = await Promise.all([
+    getScheduledMatches(env),
+    // The coach list shows a called-off game for a week; the team feed doesn't.
+    opts.calledOff ? getCalledOffMatches(env) : Promise.resolve([] as Match[]),
+  ]);
   // Played matches are only fetched when asked for, so the common case costs
   // nothing extra. They are a separate status, hence a separate read.
   const played = opts.includePast ? await getPlayedMatches(env) : [];
   const seen = new Set<string>();
-  const allMatches = [...scheduled, ...played].filter((m) => {
+  const allMatches = [...scheduled, ...calledOff, ...played].filter((m) => {
     if (!m.id || seen.has(m.id)) return false;
     seen.add(m.id);
     return true;
@@ -634,6 +673,8 @@ export async function getUpcomingFixtures(
         division: m.division || "",
         venue: m.venue || "",
         kit: ((isHome ? m.homeKit : m.awayKit) || "") as KitColour,
+        /** Moved, venue changed, postponed or cancelled in the last 7 days. */
+        change: fixtureChange(m) ?? undefined,
         targetSquadSize: team?.targetSquadSize || 16,
         selectedCount: selectedIds.length,
         selectedIds,

@@ -42,6 +42,7 @@ const MyDetails = lazy(() => import('./pages/MyDetails'));
 const Apply = lazy(() => import('./pages/Apply'));
 const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
 const JoinerTask = lazy(() => import('./pages/JoinerTask'));
+const Reactivate = lazy(() => import('./pages/Reactivate'));
 const ClubDoc = lazy(() => import('./pages/ClubDoc'));
 const SignApplication = lazy(() => import('./pages/SignApplication'));
 const Quizzes = lazy(() => import('./pages/Quizzes'));
@@ -260,6 +261,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<RouteSkeleton />}>
             <ClubDoc />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/reactivate/:id',
+        element: (
+          <Suspense fallback={<RouteSkeleton />}>
+            <Reactivate />
           </Suspense>
         ),
       },

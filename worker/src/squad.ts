@@ -15,7 +15,9 @@ import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
 import { previousSquad, squadNotice } from "./squadNotices";
 import { hkfcSides } from "./match";
+import { notSeenWeeks } from "./lastSeen";
 
+import { fixtureChange } from "../../shared/fixtureChange";
 type MatchSide = "home" | "away";
 
 // ── Cached match-record fetch ───────────────────────────────────────────
@@ -161,6 +163,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
        * that apart from a player who actually declined.
        */
       optInOnly: p.optInOnly === true,
+      /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture (lastSeen.ts). */
+      notSeenWeeks: notSeenWeeks(p.lastSeenAt, exc !== undefined),
       supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,
@@ -211,6 +215,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     notice,
     /** The team's last squad this season, for "Start from last squad". */
     lastSquad: previousSquad(ctx.matchesById.values(), match, hkfcTeam),
+    /** Moved or venue changed in the last 7 days: Notify offers a message about it. */
+    change: fixtureChange(match) ?? undefined,
   };
   return { match: matchInfo, players };
 }

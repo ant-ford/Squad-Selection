@@ -459,6 +459,7 @@ export default function SquadSelection() {
       venue: m.venue,
       kit: m.kit ?? '',
       link: matchId ? fixtureLink(window.location.origin, matchId) : undefined,
+      change: m.change,
     };
   }, [data?.match, matchId]);
 

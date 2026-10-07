@@ -4,6 +4,7 @@ import { Check, Copy, MessageCircle, X } from 'lucide-react';
 import {
   buildAvailabilityRequest,
   buildDroppedMessage,
+  buildChangeMessage,
   buildSelectionMessage,
   buildSquadAnnouncement,
   toWhatsAppNumber,
@@ -74,6 +75,18 @@ export default function NotifySquadSheet({
         fixture,
         players.map((p) => ({ name: p.preferredName, shirtNo: p.shirtNo, position: p.playingPosition })),
       );
+
+  // A moved or called-off fixture: a message for the team group first.
+  const changeMessage = buildChangeMessage(fixture);
+  const copyChange = async () => {
+    if (!changeMessage) return;
+    try {
+      await navigator.clipboard.writeText(changeMessage);
+      toast.success('Message copied — paste it into your team group');
+    } catch {
+      toast.error('Could not copy. Select the text and copy manually.');
+    }
+  };
 
   const copyAnnouncement = async () => {
     try {
@@ -154,6 +167,20 @@ export default function NotifySquadSheet({
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+          {changeMessage && (
+            <section>
+              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Tell the squad</h3>
+              <pre className="text-xs bg-muted/50 border border-border rounded-lg p-2.5 whitespace-pre-wrap font-sans text-foreground">
+                {changeMessage}
+              </pre>
+              <button
+                onClick={() => void copyChange()}
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 border border-border py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                <Copy className="h-4 w-4" /> Copy for team group
+              </button>
             </section>
           )}
           {/* Whole squad: copy for the team group. */}
