@@ -49,7 +49,24 @@ export interface PersonAdminView {
   membership?: PersonMembership;
   /** Only when can.stage; already filtered to the moves allowed. */
   stageTargets?: string[];
+  /** Only when can.squad. */
+  squad?: PersonSquad;
+  /** Active team names by rank; only when can.squad. */
+  teamOptions?: string[];
 }
+
+/** Teams and position, as stored. */
+export interface PersonSquad {
+  registeredTeam: string | null;
+  selectedTeamSos: string | null;
+  selectedTeamEos: string | null;
+  playingPosition: string | null;
+}
+
+export type SquadKey = keyof PersonSquad;
+
+/** A squad save: the changed fields and what the screen read for them. */
+export type SquadSave = Partial<PersonSquad> & { expect: Partial<PersonSquad> };
 
 export interface HistoryEntry {
   /** ISO timestamp. */
@@ -89,6 +106,11 @@ export function getMatchHistory(id: string): Promise<{ entries: HistoryEntry[] }
 
 export function saveMembership(id: string, body: MembershipSave): Promise<{ ok: true; changed: string[]; removedPeriods: number }> {
   return apiPost(`/api/admin/people/${encodeURIComponent(id)}/membership`, body);
+}
+
+/** Registered team (Men's Convenor), selected teams and position (Section Captains, Men's Convenor). */
+export function saveSquad(id: string, body: SquadSave): Promise<{ ok: true; changed: string[] }> {
+  return apiPost(`/api/admin/people/${encodeURIComponent(id)}/squad`, body);
 }
 
 export function moveStage(id: string, stage: string, from: string | null): Promise<{ ok: true; changed: string[] }> {

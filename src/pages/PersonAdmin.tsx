@@ -10,6 +10,7 @@ import { AdminBlock } from '@/components/admin/AdminBlock';
 import MembershipBlock from '@/components/admin/MembershipBlock';
 import StageBlock from '@/components/admin/StageBlock';
 import ActiveBlock from '@/components/admin/ActiveBlock';
+import SquadBlock from '@/components/admin/SquadBlock';
 import HistoryList, { historyKey } from '@/components/admin/HistoryList';
 import { useMyProfile } from '@/lib/queries';
 import { isApiError, personChip } from '@/lib/peopleAdmin';
@@ -69,6 +70,16 @@ export default function PersonAdmin() {
         )}
         {can.stage && person.stageTargets && person.stageTargets.length > 0 && (
           <StageBlock personId={person.id} stage={person.stage} targets={person.stageTargets} onSaved={saved} onReload={reload} />
+        )}
+        {can.squad && person.squad && (
+          <SquadBlock
+            personId={person.id}
+            squad={person.squad}
+            teamOptions={person.teamOptions ?? []}
+            can={can}
+            onSaved={saved}
+            onReload={reload}
+          />
         )}
         {can.activate && <ActiveBlock personId={person.id} name={person.name} active={person.active} onSaved={saved} />}
         {can.suspend && (

@@ -7,6 +7,8 @@
  *   GET  /api/admin/people/:id                people section
  *   POST /api/admin/people/:id/membership     membership section
  *   POST /api/admin/people/:id/stage          membership section
+ *   POST /api/admin/people/:id/squad          registered team: registration section;
+ *                                             selected teams, position: club or registration
  *   GET  /api/admin/offices, /api/admin/teams club section (Section Captains)
  *   POST /api/admin/offices, /offices/:id     club section
  *   POST /api/admin/people                    club section (a new office holder)
@@ -22,6 +24,7 @@ import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
 import { getMatchHistory } from "../history";
 import { moveStage, saveMembership } from "./membership";
+import { saveSquad } from "./squad";
 import { addOffice, createOfficeHolder, editOffice, listOffices, listTeams, saveTeam } from "./club";
 
 export async function readBody(request: Request): Promise<Record<string, unknown>> {
@@ -58,6 +61,12 @@ export async function adminRoute(request: Request, env: Env, url: URL): Promise<
   if (method === "GET" && person) {
     const user = await requireSection(request, env, "people");
     return getPersonAdmin(env, user, person[1]);
+  }
+  // Teams and position: the section check is per field (squad.ts).
+  const squad = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})\/squad$/);
+  if (method === "POST" && squad) {
+    const user = await requireSection(request, env, "people");
+    return saveSquad(env, user, squad[1], await readBody(request));
   }
   const membership = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})\/(membership|stage)$/);
   if (method === "POST" && membership) {
