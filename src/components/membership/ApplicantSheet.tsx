@@ -8,7 +8,7 @@ import { getNumberHolders, type ApplicantCard, type NumberHolder } from '@/api/m
 import { ApiError } from '@/lib/apiClient';
 import { Link } from 'react-router-dom';
 import { useApproveApplicant, useMyProfile } from '@/lib/queries';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Avatar, ageLabel, ageTone, applicantWhatsApp, chaseWhatsApp } from './ApplicantCard';
@@ -16,7 +16,7 @@ import { Avatar, ageLabel, ageTone, applicantWhatsApp, chaseWhatsApp } from './A
 export const sheetLinkClass =
   'inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-foreground max-w-full';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 const describeHolders = (holders: NumberHolder[]) =>
   holders.map((h) => (h.status ? `${h.name} (${h.status})` : h.name)).join(', ');

@@ -15,7 +15,7 @@ import { formGaps } from '@/lib/formGaps';
 import { useFormGaps } from '@/lib/useFormGaps';
 import { differs } from '@/lib/drafts';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getMyDeclarations, submitDeclarations } from '@/api/declarations';
 import {
   CODE_OF_CONDUCT,
@@ -193,7 +193,7 @@ export default function Waivers() {
           </div>
         ) : view.signedThisSeasonAt ? (
           <Section title={`Waivers & declarations ${view.season.replace('-', '–')}`}>
-            <p className="text-sm text-foreground">You signed this season's waivers on {safeFormat(view.signedThisSeasonAt, 'd MMM yyyy')}.</p>
+            <p className="text-sm text-foreground">You signed this season's waivers on {safeFormat(view.signedThisSeasonAt, LONG_DATE)}.</p>
           </Section>
         ) : (
           <>

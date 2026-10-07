@@ -76,7 +76,7 @@ export default function MyTasksBanner() {
             <p className="text-sm font-semibold text-foreground">{taskTitle(task)}</p>
             {/* Only when there is no button to press. */}
             {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{noLinkHint(task)}</p>}
-            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, h:mm a')}</p>}
+            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, HH:mm')}</p>}
           </div>
           {task.url &&
             // Eddy's own screens open in place; the Fillout forms in a new tab.
