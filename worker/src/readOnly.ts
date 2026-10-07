@@ -13,4 +13,4 @@ export function writesOff(env: Pick<Env, "WRITES">): boolean {
 }
 
 export const READ_ONLY_CODE = "READ_ONLY";
-export const READ_ONLY_MESSAGE = "Eddy is read-only for a short while. Your change wasn't saved.";
+export const READ_ONLY_MESSAGE = "Saving is paused for a short while. Your change wasn't saved.";

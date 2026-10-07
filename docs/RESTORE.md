@@ -65,7 +65,7 @@ The restore leaves the `public` schema itself, its Supabase grants and default p
 
 `WRITES` is a var of the API Worker (`worker/src/readOnly.ts`). It is `"on"` in `worker/wrangler.toml`, for production and for preview. With `WRITES = "off"`:
 
-- every save (any request other than GET, HEAD or the CORS preflight) gets `503` with the code `READ_ONLY`, before sign-in. The app shows one toast, "Eddy is read-only for a short while. Your change wasn't saved.", and the screen treats it as not saved;
+- every save (any request other than GET, HEAD or the CORS preflight) gets `503` with the code `READ_ONLY`, before sign-in. The app shows one toast, "Saving is paused for a short while. Your change wasn't saved.", and the screen treats it as not saved;
 - reads carry on, the `.ics` calendar feeds and signed file links included;
 - the daily jobs (review emails, retention, the health check) do nothing but log a line, and the Worker's 5xx answers aren't written to `error_log`;
 - `/health` answers `"writes": "off"`.

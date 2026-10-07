@@ -67,7 +67,7 @@ The Worker's second daily cron (`30 3 * * *` UTC, 11:30 Hong Kong) runs the job 
 2. With `RETENTION_MODE = "remove"`: `remove_personal_data()` for up to 20 due people, oldest first. Each one is checked again just before removal.
 3. Deletes the R2 objects queued in `r2_deletions` whose `delete_after` has passed, up to 250 a run, oldest first. A failure stays queued for the next run.
 
-`RETENTION_MODE` starts as **`"report"`**, which stamps people but removes nothing. Before switching to `"remove"` (in `worker/wrangler.toml`), check the list in the Supabase SQL editor:
+`RETENTION_MODE` is **`"remove"`** since 7 Oct 2026. It started as `"report"`, which stamps people but removes nothing. Before switching to `"remove"` (in `worker/wrangler.toml`), check the list in the Supabase SQL editor:
 
 ```sql
 select name, last_activity, due_on from public.retention_due_v order by last_activity;

@@ -13,6 +13,8 @@
  *
  * Each save is one SQL function (supabase/migrations/*_offices_teams_admin.sql)
  * that writes its own activity_log rows. Social secretaries stay in Events.
+ * Sensitive office changes, and offices people give themselves, also email
+ * the owner (officeAlert.ts).
  */
 import type { Env } from "../env";
 import type { AuthorizedUser } from "../auth";
@@ -24,6 +26,7 @@ import { normalizeEmail } from "../../../shared/normalizeEmail";
 import { displayName } from "../../../shared/adminPeople";
 import { adminRpc } from "./rpc";
 import { API_ID } from "./people";
+import { alertNewOffice, alertStatusChange, officeBeforeStatusChange } from "./officeAlert";
 
 /** The app's office keys and the database's roles, in the order the screen lists them. */
 export const OFFICE_ROLES: Record<Office, string> = {
@@ -149,13 +152,17 @@ export async function addOffice(env: Env, actor: AuthorizedUser, body: Record<st
   const p = parseNewOffice(body);
   const result = await adminRpc<{ id: string }>(env, "admin_save_office", { p, p_actor: actor.personId }, { messages: MESSAGES });
   await invalidateOffices(env);
+  await alertNewOffice(env, actor, p as { role: string; person: string; replaces?: string }, result.id);
   return { ok: true, id: result.id };
 }
 
 export async function editOffice(env: Env, actor: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; id: string }> {
   const p = parseOfficeEdit(apiId(id, "an office"), body);
+  // Retiring or reactivating may alert the owner: the row as it was says whose office and whether the status really changes.
+  const before = p.status ? await officeBeforeStatusChange(env, p.id as string) : undefined;
   const result = await adminRpc<{ id: string }>(env, "admin_save_office", { p, p_actor: actor.personId }, { messages: MESSAGES });
   await invalidateOffices(env);
+  if (before) await alertStatusChange(env, actor, before, p.status as "Active" | "Retired");
   return { ok: true, id: result.id };
 }
 

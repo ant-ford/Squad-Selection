@@ -6,6 +6,12 @@
 begin;
 select plan(17);
 
+-- The club's teams: people's team columns reference teams.team_name
+-- (20261007170006_data_constraints).
+insert into public.teams (airtable_id, team_name, team_rank, active)
+select 'recAdmTeam' || l, 'HKFC ' || l, o, true
+from unnest(array['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) with ordinality as x(l, o);
+
 insert into public.people (airtable_id, given_names, surname, email, active, registered_team, playing_position, section_rank)
 values ('recAdmP', 'Edited', 'Person', 'edited.person@example.com', true, 'HKFC D', 'Midfield', 30),
        ('recAdmOfficer', 'The', 'Officer', null, true, null, null, null);

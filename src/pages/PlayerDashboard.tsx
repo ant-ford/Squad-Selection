@@ -8,16 +8,12 @@ import { isCalledOff } from '@shared/fixtureChange';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart3, CalendarDays, ChevronDown, Flag, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
-import PlayerAvailabilitySheet from '@/components/PlayerAvailabilitySheet';
-import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
-import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
 import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
 import { toast } from '@/lib/toast';
 import AppFooter from '@/components/AppFooter';
 import AppHeader from '@/components/AppHeader';
 import PastFixtureCard from '@/components/PastFixtureCard';
-import BirthdayBanner, { TeamBirthdayBanner } from '@/components/BirthdayBanner';
 import MyTasksBanner from '@/components/MyTasksBanner';
 import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
@@ -25,7 +21,14 @@ import EventsSection from '@/components/events/EventsSection';
 import { useScrollMemory } from '@/lib/scrollMemory';
 import { useSheetParam } from '@/lib/useSheetParam';
 
-// Opened from the profile menu: loaded then, not with the page.
+// Opened from a card, after an answer or from the profile menu: loaded then,
+// not with the page (the service worker keeps them, so they open at once).
+const PlayerAvailabilitySheet = lazy(() => import('@/components/PlayerAvailabilitySheet'));
+const AvailabilityNoteSheet = lazy(() => import('@/components/AvailabilityNoteSheet'));
+const SameDayGamesPrompt = lazy(() => import('@/components/SameDayGamesPrompt'));
+// Shown on birthdays only.
+const BirthdayBanner = lazy(() => import('@/components/BirthdayBanner'));
+const TeamBirthdayBanner = lazy(() => import('@/components/BirthdayBanner').then((m) => ({ default: m.TeamBirthdayBanner })));
 const CalendarSyncSheet = lazy(() => import('@/components/CalendarSyncSheet'));
 const SeasonStatsSheet = lazy(() => import('@/components/SeasonStatsSheet'));
 const AvailabilityRulesSheet = lazy(() => import('@/components/AvailabilityRulesSheet'));
@@ -298,24 +301,26 @@ export default function PlayerDashboard() {
     if (!open && (!needsSameDayPrompt(f, others) || isPromptDismissed(f.id))) return null;
     if (others.length === 0) return null;
     return (
-      <SameDayGamesPrompt
-        fixture={f}
-        others={others}
-        busy={bulkBusy !== null}
-        onSet={(id, status) => {
-          keepPromptOpen(f.id, true);
-          handleQuickAvailability(id, status);
-        }}
-        onOutAllDay={() => {
-          keepPromptOpen(f.id, false);
-          handleBulkAvailability(key, 'Unavailable');
-        }}
-        onClose={() => {
-          keepPromptOpen(f.id, false);
-          if (others.some((o) => o.availabilityStatus !== 'Unavailable')) setPromptDismissed(f.id, true);
-          setDismissTick((t) => t + 1);
-        }}
-      />
+      <Suspense fallback={null}>
+        <SameDayGamesPrompt
+          fixture={f}
+          others={others}
+          busy={bulkBusy !== null}
+          onSet={(id, status) => {
+            keepPromptOpen(f.id, true);
+            handleQuickAvailability(id, status);
+          }}
+          onOutAllDay={() => {
+            keepPromptOpen(f.id, false);
+            handleBulkAvailability(key, 'Unavailable');
+          }}
+          onClose={() => {
+            keepPromptOpen(f.id, false);
+            if (others.some((o) => o.availabilityStatus !== 'Unavailable')) setPromptDismissed(f.id, true);
+            setDismissTick((t) => t + 1);
+          }}
+        />
+      </Suspense>
     );
   };
 
@@ -350,10 +355,12 @@ export default function PlayerDashboard() {
           <EventsSection />
           <MyKitCard />
           <MyVolunteeringLink />
-          {data.isBirthday && <BirthdayBanner name={data.playerName} />}
-          {!!data.teamBirthdays?.length && (
-            <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
-          )}
+          <Suspense fallback={null}>
+            {data.isBirthday && <BirthdayBanner name={data.playerName} />}
+            {!!data.teamBirthdays?.length && (
+              <TeamBirthdayBanner names={data.teamBirthdays} team={displayTeam} />
+            )}
+          </Suspense>
         </div>
 
         {isSpecialGK ? (
@@ -453,35 +460,35 @@ export default function PlayerDashboard() {
         </div>
       </div>
 
-      {selectedFixture && (
-        <PlayerAvailabilitySheet
-          fixture={selectedFixture}
-          viewerId={data.playerId}
-          onClose={fixtureSheet.close}
-        />
-      )}
-      {noteFixture && noteStatus && (
-        <AvailabilityNoteSheet
-          // A second tap on another card starts a fresh note.
-          key={`${noteFixture.id}-${noteStatus}`}
-          fixture={noteFixture}
-          status={noteStatus}
-          conflictHint={supportConflictHint(noteFixture)}
-          busy={quickAvailability.isPending}
-          onClose={noteSheet.close}
-          onSave={(notes) => {
-            noteSheet.close();
-            quickAvailability.mutate(
-              { fixtureId: noteFixture.id, status: noteStatus, notes },
-              {
-                onSuccess: () => toast.success('Note saved'),
-                onError: () => toast.error('Failed to save note'),
-              },
-            );
-          }}
-        />
-      )}
       <Suspense fallback={null}>
+      {selectedFixture   && (
+          <PlayerAvailabilitySheet
+            fixture={selectedFixture}
+            viewerId={data.playerId}
+            onClose={fixtureSheet.close}
+          />
+        )}
+        {noteFixture && noteStatus && (
+          <AvailabilityNoteSheet
+            // A second tap on another card starts a fresh note.
+            key={`${noteFixture.id}-${noteStatus}`}
+            fixture={noteFixture}
+            status={noteStatus}
+            conflictHint={supportConflictHint(noteFixture)}
+            busy={quickAvailability.isPending}
+            onClose={noteSheet.close}
+            onSave={(notes) => {
+              noteSheet.close();
+              quickAvailability.mutate(
+                { fixtureId: noteFixture.id, status: noteStatus, notes },
+                {
+                  onSuccess: () => toast.success('Note saved'),
+                  onError: () => toast.error('Failed to save note'),
+                },
+              );
+            }}
+          />
+        )}
         {calendarSheet.value && <CalendarSyncSheet onClose={calendarSheet.close} />}
 
         {/* Their own stats, whatever id the link carries. */}
