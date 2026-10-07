@@ -16,10 +16,13 @@ import { NEEDS_FIXING } from '@shared/membershipStages';
 const MembershipInsights = lazy(() => import('@/components/membership/MembershipInsights'));
 // Likewise the commitment reviews, fetched only when their tab is opened.
 const StatementsBoard = lazy(() => import('@/components/membership/StatementsBoard'));
+// And the forms still owed this season, with their WhatsApp lists.
+const FormsDue = lazy(() => import('@/components/membership/FormsDue'));
 
 const TABS = [
   { key: 'board', label: 'New Joiner' },
   { key: 'statements', label: 'Statements' },
+  { key: 'forms', label: 'Forms' },
   { key: 'insights', label: 'Insights' },
 ] as const;
 type Tab = (typeof TABS)[number]['key'];
@@ -151,6 +154,10 @@ export default function MembershipBoard() {
         {tab === 'insights' ? (
           <Suspense fallback={<BoardColumnsSkeleton />}>
             <MembershipInsights />
+          </Suspense>
+        ) : tab === 'forms' ? (
+          <Suspense fallback={<BoardColumnsSkeleton />}>
+            <FormsDue />
           </Suspense>
         ) : tab === 'statements' ? (
           <Suspense fallback={<BoardColumnsSkeleton />}>
