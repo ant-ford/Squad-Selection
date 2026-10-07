@@ -167,7 +167,7 @@ SYSTEM_ALERT_EMAIL = "menscaptain@hkfchockey.com"
 # The read-only switch (src/readOnly.ts): "off" turns every save away.
 WRITES = "on"
 # Web Push (src/push.ts), as above, with preview's own VAPID key.
-PUSH = "off"
+PUSH = "on"
 VAPID_SUBJECT = "mailto:menscaptain@hkfchockey.com"
 
 [env.preview.triggers]
