@@ -381,7 +381,7 @@ export async function sendApplication(env: Env, user: AuthorizedUser, personApiI
   if (!app.pdf_file_id) throw new HttpError("The PDF isn't ready yet. Make it, check it, then send it.", 409, "NOT_READY");
   if (app.sent_at && !again) throw new HttpError("It has been sent already.", 409, "ALREADY_SENT");
   const { to, greeting, label } = recipientFor(env, app.application_type);
-  if (!to) throw new HttpError(`Eddy has no address for ${label}.`, 500, "SERVER_MISCONFIGURED");
+  if (!to) throw new HttpError(`There is no address on record for ${label}.`, 500, "SERVER_MISCONFIGURED");
 
   // The sender: the officer pressing Send, in their office's name.
   // From sign-in (auth_context): no read.

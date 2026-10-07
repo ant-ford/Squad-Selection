@@ -223,7 +223,7 @@ export async function remakeApplicationPdf(env: Env, user: AuthorizedUser, apiId
   if (!isMembershipOfficer(user)) throw new HttpError("Only a Membership Officer makes the PDF.", 403, "FORBIDDEN");
   const { app } = await loadApplication(env, apiId);
   if (!readyToSend(app)) throw new HttpError("The Membership Officer signs it before the PDF is made.", 409, "NOT_READY");
-  if (!pdfsEnabled(env)) throw new HttpError("Eddy isn't making PDFs yet.", 503, "PDFS_OFF");
+  if (!pdfsEnabled(env)) throw new HttpError("PDFs aren't switched on yet.", 503, "PDFS_OFF");
   await makeApplicationPdf(env, apiId);
   return getSigningView(env, user, apiId);
 }

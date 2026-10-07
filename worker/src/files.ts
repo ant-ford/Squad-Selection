@@ -24,7 +24,7 @@ function headerFilename(name: string | null): string {
 export async function serveClubDoc(env: Env, name: string, origin: string): Promise<Response> {
   const doc = (CLUB_DOCS as Record<string, { title: string; key: string }>)[name];
   const object = doc && env.FILES ? await env.FILES.get(doc.key) : null;
-  if (!doc || !object) return json({ error: "That document isn't in Eddy yet.", code: "NOT_FOUND" }, 404, origin);
+  if (!doc || !object) return json({ error: "That document hasn't been uploaded yet.", code: "NOT_FOUND" }, 404, origin);
   return new Response(object.body, {
     headers: {
       ...corsHeaders(origin),

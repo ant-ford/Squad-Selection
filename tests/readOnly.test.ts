@@ -92,7 +92,7 @@ describe("WRITES = off", () => {
     const c = ctx();
     const res = await worker.fetch(request(method, "/api/set-my-availability"), OFF, c);
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: "READ_ONLY", message: expect.stringMatching(/read-only/) });
+    expect(await res.json()).toEqual({ error: "READ_ONLY", message: expect.stringMatching(/Saving is paused/) });
     // The browser can read it: the usual CORS headers are on it.
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
     // No sign-in check, no database, and no error_log row (that is a write too).

@@ -300,7 +300,7 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
   // The Active Assistant Director of Hockey, written to as the office (its mailbox, else their email).
   const adh = adhOffice?.email ? adhOffice : null;
   const to = [...(adh ? [adh.email!] : []), ...coachList.map((c) => c.email!)];
-  if (!to.length) throw new HttpError(`Neither the Assistant Director of Hockey nor a ${team} coach has an email address in Eddy.`, 400, "INVALID_INPUT");
+  if (!to.length) throw new HttpError(`Neither the Assistant Director of Hockey nor a ${team} coach has an email address on record.`, 400, "INVALID_INPUT");
 
   const captain = await d.one<{ preferred_name: string | null; given_names: string | null; surname: string | null; offices: { office_email: string | null; designation: string | null; role: string }[] }>(
     "people",
