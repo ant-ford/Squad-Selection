@@ -10,3 +10,6 @@ export const GUIDE_URLS = {
   kit: 'https://eddy.global/guides/kit/',
   events: 'https://eddy.global/guides/events/',
 } as const;
+
+/** The privacy notice, also on eddy.global. Linked from the footer and the sign-in screen. */
+export const PRIVACY_URL = 'https://eddy.global/privacy/';
