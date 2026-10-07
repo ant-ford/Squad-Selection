@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
@@ -113,7 +113,6 @@ function DayAvailabilityControl({
 }
 
 export default function PlayerDashboard() {
-  const navigate = useNavigate();
   // Open by default (owner request, 2026-09-23) - players want to see how the
   // last games went. Results are always fetched (a few recent fixtures, read
   // from the cached season context) and hiding them is display-only, so the
@@ -321,7 +320,7 @@ export default function PlayerDashboard() {
               </span>
             </Link>
           )}
-          <EventsSection enabled={!!data.eddyProfile} />
+          <EventsSection />
           <MyKitCard />
           <MyVolunteeringLink />
           {data.isBirthday && <BirthdayBanner name={data.playerName} />}

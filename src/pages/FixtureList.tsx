@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import { useUpcomingFixtures } from '@/lib/queries';
-import { safeFormat, isPastFixture } from '@/lib/dateUtils';
+import { isPastFixture } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabPanel, type TabItem } from '@/components/ui/tabs';
