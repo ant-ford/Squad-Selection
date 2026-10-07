@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./styles/status-tokens.css";
+@import "./styles/layers.css";
 
 /* Self-hosted: one variable file (latin, 300-800). Preloaded from index.html by
    the preload-font plugin in vite.config.ts. */

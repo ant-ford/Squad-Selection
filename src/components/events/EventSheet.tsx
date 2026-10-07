@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CalendarDays, ExternalLink, MapPin, Plus, Search, Ticket, Trash2, UserPlus, X } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
 import { safeFormat } from '@/lib/dateUtils';
@@ -209,158 +209,160 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
 
   return (
     <Sheet open dirty={editorDirty} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="bottom" className="p-4 sm:max-w-lg sm:mx-auto">
+      <SheetContent side="bottom" className="sm:max-w-lg sm:mx-auto">
         <SheetHeader onClose={onClose}>
           <SheetTitle>{event.title}</SheetTitle>
         </SheetHeader>
-        <div className="space-y-4">
-          {event.posterUrl && <PosterImage url={event.posterUrl} title={event.title} className="max-h-[50vh]" />}
-          {cancelled && <p className="rounded-md bg-destructive/10 text-destructive text-sm font-medium p-2">This event has been cancelled.</p>}
-          <div className="space-y-1 text-sm text-foreground">
-            <p className="text-xs font-medium text-muted-foreground">
-              {EVENT_TYPE_LABEL[event.type]}
-              {event.team ? ` · ${event.team}` : ''}
-            </p>
-            <p className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" /> {eventWhen(event)}
-            </p>
-            {event.location && (
-              <p className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground shrink-0" /> {event.location}
+        <SheetBody>
+          <div className="space-y-4">
+            {event.posterUrl && <PosterImage url={event.posterUrl} title={event.title} className="max-h-[50vh]" />}
+            {cancelled && <p className="rounded-md bg-destructive/10 text-destructive text-sm font-medium p-2">This event has been cancelled.</p>}
+            <div className="space-y-1 text-sm text-foreground">
+              <p className="text-xs font-medium text-muted-foreground">
+                {EVENT_TYPE_LABEL[event.type]}
+                {event.team ? ` · ${event.team}` : ''}
               </p>
-            )}
-            {prices.length > 0 && (
               <p className="flex items-center gap-2">
-                <Ticket className="h-4 w-4 text-muted-foreground shrink-0" /> {prices.join(' · ')}
+                <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" /> {eventWhen(event)}
               </p>
-            )}
-            {event.description && <p className="whitespace-pre-line pt-1">{event.description}</p>}
-            {event.linkUrl && !cancelled && (
-              <a href={event.linkUrl} target="_blank" rel="noopener noreferrer" className={`${secondary} inline-flex items-center gap-1.5 mt-1`}>
-                <ExternalLink className="h-4 w-4" /> {linkLabel(event.linkUrl)}
-              </a>
-            )}
-          </div>
-
-          {!cancelled && (
-            <section className="rounded-xl border border-border p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-foreground">Are you coming?</h3>
-                <p className="text-xs text-muted-foreground">
-                  {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
+              {event.location && (
+                <p className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0" /> {event.location}
                 </p>
-              </div>
-              {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}
-              {event.open && (!mine || editingMe) ? (
-                <ResponseEditor onDirtyChange={setEditorDirty}
-                  key={`me-${mine?.status ?? 'none'}`}
-                  event={event}
-                  initial={draftOf(mine)}
-                  saving={save.isPending}
-                  onSave={(d) => save.mutate({ personId: null, d })}
-                  onCancel={mine ? () => setEditing(null) : undefined}
-                />
-              ) : mine ? (
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[mine.status]}`}>{answerLine(mine)}</span>
-                  {mine.canHelp && <span className="text-xs text-muted-foreground">You can help</span>}
-                  {event.open && (
-                    <button className="ml-auto text-sm text-primary" onClick={() => setEditing({ personId: null, name: 'You', initial: draftOf(mine) })}>
-                      Change
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">You didn't answer.</p>
               )}
-              {!event.open && <p className="text-xs text-muted-foreground">To change anything now, ask the social secretary.</p>}
-            </section>
-          )}
+              {prices.length > 0 && (
+                <p className="flex items-center gap-2">
+                  <Ticket className="h-4 w-4 text-muted-foreground shrink-0" /> {prices.join(' · ')}
+                </p>
+              )}
+              {event.description && <p className="whitespace-pre-line pt-1">{event.description}</p>}
+              {event.linkUrl && !cancelled && (
+                <a href={event.linkUrl} target="_blank" rel="noopener noreferrer" className={`${secondary} inline-flex items-center gap-1.5 mt-1`}>
+                  <ExternalLink className="h-4 w-4" /> {linkLabel(event.linkUrl)}
+                </a>
+              )}
+            </div>
 
-          {event.bill && billed(event.paymentMode) && !cancelled && <BillBox event={event} />}
-
-          {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
-            <section className="rounded-xl border border-border p-3 space-y-2">
-              <h3 className="text-sm font-semibold text-foreground">Other players you're signing up</h3>
-              {billed(event.paymentMode) && <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>}
-              {event.signedUp.map((p) =>
-                editing?.personId === p.personId ? (
-                  <div key={p.personId} className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">{p.name}</p>
-                    <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} onSave={(d) => save.mutate({ personId: p.personId, d })} onCancel={() => setEditing(null)} />
-                  </div>
-                ) : (
-                  <div key={p.personId} className="flex items-center gap-2">
-                    <span className="text-sm text-foreground flex-1 min-w-0 truncate">{p.name}</span>
-                    <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[p.status]}`}>{answerLine(p)}</span>
+            {!cancelled && (
+              <section className="rounded-xl border border-border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">Are you coming?</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
+                  </p>
+                </div>
+                {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}
+                {event.open && (!mine || editingMe) ? (
+                  <ResponseEditor onDirtyChange={setEditorDirty}
+                    key={`me-${mine?.status ?? 'none'}`}
+                    event={event}
+                    initial={draftOf(mine)}
+                    saving={save.isPending}
+                    onSave={(d) => save.mutate({ personId: null, d })}
+                    onCancel={mine ? () => setEditing(null) : undefined}
+                  />
+                ) : mine ? (
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[mine.status]}`}>{answerLine(mine)}</span>
+                    {mine.canHelp && <span className="text-xs text-muted-foreground">You can help</span>}
                     {event.open && (
-                      <>
-                        <button className="text-sm text-primary" onClick={() => setEditing({ personId: p.personId, name: p.name, initial: draftOf(p) })}>
-                          Change
-                        </button>
-                        <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground" aria-label={`Take ${p.name} off`} onClick={() => takeOff.mutate(p.personId)}>
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </>
+                      <button className="ml-auto text-sm text-primary" onClick={() => setEditing({ personId: null, name: 'You', initial: draftOf(mine) })}>
+                        Change
+                      </button>
                     )}
                   </div>
-                ),
-              )}
-              {event.open && event.invited && editing?.personId && !event.signedUp.some((p) => p.personId === editing.personId) ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Signing up {editing.name}</p>
-                  <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} saveLabel="Sign up" onSave={(d) => save.mutate({ personId: editing.personId, d })} onCancel={() => setEditing(null)} />
-                </div>
-              ) : event.open && event.invited && !adding ? (
-                <button className="inline-flex items-center gap-1.5 text-sm text-primary" onClick={() => setAdding(true)}>
-                  <UserPlus className="h-4 w-4" /> Sign up someone else
-                </button>
-              ) : event.open && event.invited ? (
-                <div className="space-y-2">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input autoFocus className={`${fieldInput} pl-8`} placeholder="Search by name" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search players by name" />
-                  </div>
-                  {people.data?.people.length === 0 && search.trim().length >= 2 && <p className="text-xs text-muted-foreground">Nobody invited by that name.</p>}
-                  <ul className="divide-y divide-border">
-                    {people.data?.people.map((p) => (
-                      <li key={p.personId} className="py-2 flex items-center gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-foreground truncate">{p.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {p.answer ? `${RESPONSE_LABEL[p.answer.status]}${p.answer.signedUpBy ? ` · signed up by ${p.answer.signedUpBy}` : ' · answered'}` : p.team ?? ''}
-                          </p>
-                        </div>
-                        {p.answer ? (
-                          <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[p.answer.status]}`}>Already {RESPONSE_LABEL[p.answer.status].toLowerCase()}</span>
-                        ) : (
-                          <button
-                            className="text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground"
-                            onClick={() => {
-                              setEditing({ personId: p.personId, name: p.name, initial: draftOf(null, 'going') });
-                              setAdding(false);
-                            }}
-                          >
-                            Add
-                          </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  <button className="text-xs text-muted-foreground" onClick={() => { setAdding(false); setSearch(''); }}>
-                    Close search
-                  </button>
-                </div>
-              ) : null}
-            </section>
-          )}
+                ) : (
+                  <p className="text-sm text-muted-foreground">You didn't answer.</p>
+                )}
+                {!event.open && <p className="text-xs text-muted-foreground">To change anything now, ask the social secretary.</p>}
+              </section>
+            )}
 
-          {event.manager && (
-            <Link to={`/events/manage/${event.id}`} className="block text-center text-sm text-primary">
-              Manage this event
-            </Link>
-          )}
-        </div>
+            {event.bill && billed(event.paymentMode) && !cancelled && <BillBox event={event} />}
+
+            {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
+              <section className="rounded-xl border border-border p-3 space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">Other players you're signing up</h3>
+                {billed(event.paymentMode) && <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>}
+                {event.signedUp.map((p) =>
+                  editing?.personId === p.personId ? (
+                    <div key={p.personId} className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">{p.name}</p>
+                      <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} onSave={(d) => save.mutate({ personId: p.personId, d })} onCancel={() => setEditing(null)} />
+                    </div>
+                  ) : (
+                    <div key={p.personId} className="flex items-center gap-2">
+                      <span className="text-sm text-foreground flex-1 min-w-0 truncate">{p.name}</span>
+                      <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[p.status]}`}>{answerLine(p)}</span>
+                      {event.open && (
+                        <>
+                          <button className="text-sm text-primary" onClick={() => setEditing({ personId: p.personId, name: p.name, initial: draftOf(p) })}>
+                            Change
+                          </button>
+                          <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground" aria-label={`Take ${p.name} off`} onClick={() => takeOff.mutate(p.personId)}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ),
+                )}
+                {event.open && event.invited && editing?.personId && !event.signedUp.some((p) => p.personId === editing.personId) ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">Signing up {editing.name}</p>
+                    <ResponseEditor onDirtyChange={setEditorDirty} event={event} initial={editing.initial} saving={save.isPending} saveLabel="Sign up" onSave={(d) => save.mutate({ personId: editing.personId, d })} onCancel={() => setEditing(null)} />
+                  </div>
+                ) : event.open && event.invited && !adding ? (
+                  <button className="inline-flex items-center gap-1.5 text-sm text-primary" onClick={() => setAdding(true)}>
+                    <UserPlus className="h-4 w-4" /> Sign up someone else
+                  </button>
+                ) : event.open && event.invited ? (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input autoFocus className={`${fieldInput} pl-8`} placeholder="Search by name" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search players by name" />
+                    </div>
+                    {people.data?.people.length === 0 && search.trim().length >= 2 && <p className="text-xs text-muted-foreground">Nobody invited by that name.</p>}
+                    <ul className="divide-y divide-border">
+                      {people.data?.people.map((p) => (
+                        <li key={p.personId} className="py-2 flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground truncate">{p.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {p.answer ? `${RESPONSE_LABEL[p.answer.status]}${p.answer.signedUpBy ? ` · signed up by ${p.answer.signedUpBy}` : ' · answered'}` : p.team ?? ''}
+                            </p>
+                          </div>
+                          {p.answer ? (
+                            <span className={`text-xs font-medium px-2 py-1 rounded ${statusChip[p.answer.status]}`}>Already {RESPONSE_LABEL[p.answer.status].toLowerCase()}</span>
+                          ) : (
+                            <button
+                              className="text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground"
+                              onClick={() => {
+                                setEditing({ personId: p.personId, name: p.name, initial: draftOf(null, 'going') });
+                                setAdding(false);
+                              }}
+                            >
+                              Add
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    <button className="text-xs text-muted-foreground" onClick={() => { setAdding(false); setSearch(''); }}>
+                      Close search
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            )}
+
+            {event.manager && (
+              <Link to={`/events/manage/${event.id}`} className="block text-center text-sm text-primary">
+                Manage this event
+              </Link>
+            )}
+          </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

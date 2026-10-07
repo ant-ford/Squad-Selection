@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, HelpCircle, XCircle, Info } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import { availabilityLabel } from '@/lib/availabilityTone';
 import { Textarea } from '@/components/ui/textarea';
@@ -95,11 +95,10 @@ export default function CoachAvailabilitySheet({
       onOpenChange={(next) => !next && onClose()}
     >
       <SheetContent side="bottom">
-        <div className="px-4 py-6">
-          <SheetHeader onClose={onClose}>
-            <SheetTitle>Set availability</SheetTitle>
-          </SheetHeader>
-
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>Set availability</SheetTitle>
+        </SheetHeader>
+        <SheetBody>
           <div className="py-2">
             <p className="text-sm font-medium text-foreground">{player.name}</p>
             <p className="text-xs text-muted-foreground">
@@ -191,7 +190,7 @@ export default function CoachAvailabilitySheet({
               </p>
             )}
           </div>
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

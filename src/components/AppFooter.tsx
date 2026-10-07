@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Smartphone } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -98,59 +98,61 @@ export default function AppFooter() {
       </div>
 
       <Sheet open={showHelp} onOpenChange={setShowHelp}>
-        <SheetContent side="bottom" className="max-w-md mx-auto p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <SheetContent side="bottom" className="max-w-md mx-auto">
           <SheetHeader onClose={() => setShowHelp(false)}>
             <SheetTitle>Install this app</SheetTitle>
           </SheetHeader>
-          <p className="text-sm text-muted-foreground">
-            Installing puts the app on your device, so it opens like any other app and
-            keeps you signed in.
-          </p>
+          <SheetBody>
+            <p className="text-sm text-muted-foreground">
+              Installing puts the app on your device, so it opens like any other app and
+              keeps you signed in.
+            </p>
 
-          {/* Two paths only. iPhone and iPad genuinely differ - the option
-              lives in the Share menu rather than the browser's own menu -
-              and every other platform reaches it the same way. Naming
-              specific browsers dated badly and excluded the ones people
-              actually use, so the wording describes the menu, not the
-              product, and says plainly that the label varies. */}
-          <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground list-decimal list-outside pl-5">
-            {iOS ? (
-              <>
-                <li>
-                  Tap the <span className="font-medium text-foreground">Share</span> button
-                  in your browser's toolbar.
-                </li>
-                <li>
-                  Scroll down and choose{' '}
-                  <span className="font-medium text-foreground">Add to Home Screen</span>.
-                </li>
-                <li>
-                  Confirm with <span className="font-medium text-foreground">Add</span>.
-                </li>
-              </>
-            ) : (
-              <>
-                <li>Open your browser's menu, or look for an install icon in the address bar.</li>
-                <li>
-                  Choose <span className="font-medium text-foreground">Install</span> or{' '}
-                  <span className="font-medium text-foreground">Add to Home screen</span>.
-                  The exact wording varies between browsers.
-                </li>
-                <li>Confirm when prompted.</li>
-              </>
-            )}
-          </ol>
+            {/* Two paths only. iPhone and iPad genuinely differ - the option
+                lives in the Share menu rather than the browser's own menu -
+                and every other platform reaches it the same way. Naming
+                specific browsers dated badly and excluded the ones people
+                actually use, so the wording describes the menu, not the
+                product, and says plainly that the label varies. */}
+            <ol className="mt-3 space-y-2.5 text-sm text-muted-foreground list-decimal list-outside pl-5">
+              {iOS ? (
+                <>
+                  <li>
+                    Tap the <span className="font-medium text-foreground">Share</span> button
+                    in your browser's toolbar.
+                  </li>
+                  <li>
+                    Scroll down and choose{' '}
+                    <span className="font-medium text-foreground">Add to Home Screen</span>.
+                  </li>
+                  <li>
+                    Confirm with <span className="font-medium text-foreground">Add</span>.
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>Open your browser's menu, or look for an install icon in the address bar.</li>
+                  <li>
+                    Choose <span className="font-medium text-foreground">Install</span> or{' '}
+                    <span className="font-medium text-foreground">Add to Home screen</span>.
+                    The exact wording varies between browsers.
+                  </li>
+                  <li>Confirm when prompted.</li>
+                </>
+              )}
+            </ol>
 
-          <p className="mt-3 text-xs text-muted-foreground">
-            Not every browser can install apps. If you cannot find the option, the app
-            works normally in the browser and you can bookmark this page instead.
-          </p>
-          <button
-            onClick={() => setShowHelp(false)}
-            className="mt-4 w-full py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium"
-          >
-            Got it
-          </button>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Not every browser can install apps. If you cannot find the option, the app
+              works normally in the browser and you can bookmark this page instead.
+            </p>
+            <button
+              onClick={() => setShowHelp(false)}
+              className="mt-4 w-full py-2.5 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Got it
+            </button>
+          </SheetBody>
         </SheetContent>
       </Sheet>
     </footer>

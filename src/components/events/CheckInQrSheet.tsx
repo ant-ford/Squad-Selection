@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 import qrcode from 'qrcode-generator';
-import { Sheet, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { secondary } from '@/components/profile/steps';
 import { getCheckinLink } from '@/api/events';
@@ -29,12 +29,12 @@ function QrSvg({ text }: { text: string }) {
 export default function CheckInQrSheet({ event, onClose }: { event: EventDetails; onClose: () => void }) {
   const q = useQuery({ queryKey: ['checkinLink', event.id], queryFn: () => getCheckinLink(event.id) });
   return (
-    <Sheet open raised onOpenChange={(o) => !o && onClose()}>
-      <div role="dialog" aria-modal="true" className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[61] bg-background rounded-2xl shadow-lg p-4 w-[min(92vw,420px)] max-h-[90vh] overflow-y-auto">
+    <Sheet open onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="center">
         <SheetHeader onClose={onClose}>
           <SheetTitle>Check in: {event.title}</SheetTitle>
         </SheetHeader>
-        <div className="space-y-3 text-center">
+        <SheetBody className="space-y-3 text-center">
           <p className="text-xs text-muted-foreground">{eventWhen(event)}</p>
           {q.data ? <QrSvg text={q.data.url} /> : <Skeleton className="w-full max-w-[320px] aspect-square mx-auto" />}
           <p className="text-sm text-foreground">Scan with your phone camera, then tap <strong>I'm here</strong>.</p>
@@ -44,8 +44,8 @@ export default function CheckInQrSheet({ event, onClose }: { event: EventDetails
               <Copy className="h-4 w-4" /> Copy check-in link
             </button>
           )}
-        </div>
-      </div>
+        </SheetBody>
+      </SheetContent>
     </Sheet>
   );
 }

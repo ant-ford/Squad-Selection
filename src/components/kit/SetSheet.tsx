@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -172,7 +172,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
 
   return (
     <Sheet open onOpenChange={(open) => !open && !confirm && onClose()}>
-      <SheetContent side={wide ? 'right' : 'bottom'} className="p-4 pb-8 overflow-y-auto flex flex-col gap-3">
+      <SheetContent side={wide ? 'right' : 'bottom'}>
         <SheetHeader onClose={onClose}>
           <div className="min-w-0">
             <SheetTitle>
@@ -185,134 +185,135 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
             </p>
           </div>
         </SheetHeader>
+        <SheetBody className="flex flex-col gap-3">
+          <section className="space-y-1">
+            <p className="text-sm text-foreground">{sizesLine(set.sizes) || 'No sizes'}</p>
+            {orderedForSomeoneElse && <p className="text-xs text-muted-foreground">Ordered for {set.orderedForName}.</p>}
+            {set.numberHeldBy && (
+              <p className="text-xs text-muted-foreground">
+                A spare: number {set.shirtNo} is held by {set.numberHeldBy.name} ({[set.numberHeldBy.status, 'not Active'].filter(Boolean).join(', ')}).
+                It moves to whoever gets this set.
+              </p>
+            )}
+            {set.mismatches.map((m) => (
+              <p key={m} className="text-xs text-amber-700 flex gap-1 items-start">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" aria-hidden /> {m}
+              </p>
+            ))}
+            {swaps.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {swaps.map((s) => (
+                  <button
+                    key={`${s.item}-${s.with.id}`}
+                    className={secondaryButton}
+                    disabled={busy}
+                    onClick={() =>
+                      setConfirm({
+                        title: `Swap ${s.label.toLowerCase()} with #${s.with.shirtNo}?`,
+                        message: s.mutual
+                          ? `#${set.shirtNo} gets ${s.label.toLowerCase()} ${s.with.sizes[s.item]} and ${s.with.owner!.name} (#${s.with.shirtNo}) gets ${set.sizes[s.item]}, the size each wants.`
+                          : `#${set.shirtNo} gets the spare's ${s.label.toLowerCase()} (${s.with.sizes[s.item]}), and spare #${s.with.shirtNo} keeps ${set.sizes[s.item] ?? 'none'} instead.`,
+                        label: 'Swap',
+                        run: () => swap.mutate(s),
+                      })
+                    }
+                  >
+                    {s.label} {s.with.sizes[s.item]}: {s.mutual ? `swap with ${firstName(s.with.owner!.name)} #${s.with.shirtNo}` : `from spare #${s.with.shirtNo}`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
-        <section className="space-y-1">
-          <p className="text-sm text-foreground">{sizesLine(set.sizes) || 'No sizes'}</p>
-          {orderedForSomeoneElse && <p className="text-xs text-muted-foreground">Ordered for {set.orderedForName}.</p>}
-          {set.numberHeldBy && (
-            <p className="text-xs text-muted-foreground">
-              A spare: number {set.shirtNo} is held by {set.numberHeldBy.name} ({[set.numberHeldBy.status, 'not Active'].filter(Boolean).join(', ')}).
-              It moves to whoever gets this set.
-            </p>
+          {set.place === 'on_order' ? (
+            <p className="text-xs text-muted-foreground">This order hasn't arrived yet, so the set can't be handed out.</p>
+          ) : (
+            mode === 'none' && (
+              <div className="flex flex-wrap gap-2">
+                {owner && set.place !== 'with_owner' && (
+                  <button className={primaryButton} disabled={busy} onClick={() => move.mutate({ id: owner.id, name: owner.name })}>
+                    Give to {firstName(owner.name)}
+                  </button>
+                )}
+                <button className={secondaryButton} disabled={busy} onClick={() => setMode('give')}>
+                  Give to someone else
+                </button>
+                {set.holder && (
+                  <button className={secondaryButton} disabled={busy} onClick={() => move.mutate({ id: null, name: 'the kit store' })}>
+                    Back to the kit store
+                  </button>
+                )}
+              </div>
+            )
           )}
-          {set.mismatches.map((m) => (
-            <p key={m} className="text-xs text-amber-700 flex gap-1 items-start">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" aria-hidden /> {m}
-            </p>
-          ))}
-          {swaps.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {swaps.map((s) => (
+
+          {mode === 'give' && (
+            <section className="space-y-1">
+              <h3 className="text-xs font-semibold text-muted-foreground">Who's taking it?</h3>
+              <PersonPicker people={board.people} autoFocus onPick={(p) => move.mutate({ id: p.id, name: p.name })} />
+              <button className="text-xs text-primary underline" onClick={() => setMode('none')}>
+                Cancel
+              </button>
+            </section>
+          )}
+
+          {mode === 'none' && (
+            <div className="flex flex-wrap gap-2">
+              {!owner && (
+                <button className={secondaryButton} disabled={busy} onClick={() => setMode('allocate')}>
+                  Give this spare to a joiner
+                </button>
+              )}
+              {owner && (
                 <button
-                  key={`${s.item}-${s.with.id}`}
                   className={secondaryButton}
                   disabled={busy}
                   onClick={() =>
                     setConfirm({
-                      title: `Swap ${s.label.toLowerCase()} with #${s.with.shirtNo}?`,
-                      message: s.mutual
-                        ? `#${set.shirtNo} gets ${s.label.toLowerCase()} ${s.with.sizes[s.item]} and ${s.with.owner!.name} (#${s.with.shirtNo}) gets ${set.sizes[s.item]}, the size each wants.`
-                        : `#${set.shirtNo} gets the spare's ${s.label.toLowerCase()} (${s.with.sizes[s.item]}), and spare #${s.with.shirtNo} keeps ${set.sizes[s.item] ?? 'none'} instead.`,
-                      label: 'Swap',
-                      run: () => swap.mutate(s),
+                      title: `Make #${set.shirtNo} a spare?`,
+                      message: `${owner.name} (${owner.status || 'no status'}) gives up number ${set.shirtNo}, and the set is kept as a spare for someone it fits. Someone who stops being Active doesn't need this: their set is already a spare.`,
+                      label: 'Make it a spare',
+                      run: () => release.mutate(),
                     })
                   }
                 >
-                  {s.label} {s.with.sizes[s.item]}: {s.mutual ? `swap with ${firstName(s.with.owner!.name)} #${s.with.shirtNo}` : `from spare #${s.with.shirtNo}`}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {set.place === 'on_order' ? (
-          <p className="text-xs text-muted-foreground">This order hasn't arrived yet, so the set can't be handed out.</p>
-        ) : (
-          mode === 'none' && (
-            <div className="flex flex-wrap gap-2">
-              {owner && set.place !== 'with_owner' && (
-                <button className={primaryButton} disabled={busy} onClick={() => move.mutate({ id: owner.id, name: owner.name })}>
-                  Give to {firstName(owner.name)}
+                  Make it a spare
                 </button>
               )}
-              <button className={secondaryButton} disabled={busy} onClick={() => setMode('give')}>
-                Give to someone else
+              <button className={secondaryButton} disabled={busy} onClick={() => setMode('sizes')}>
+                Correct the sizes
               </button>
-              {set.holder && (
-                <button className={secondaryButton} disabled={busy} onClick={() => move.mutate({ id: null, name: 'the kit store' })}>
-                  Back to the kit store
-                </button>
-              )}
-            </div>
-          )
-        )}
-
-        {mode === 'give' && (
-          <section className="space-y-1">
-            <h3 className="text-xs font-semibold text-muted-foreground">Who's taking it?</h3>
-            <PersonPicker people={board.people} autoFocus onPick={(p) => move.mutate({ id: p.id, name: p.name })} />
-            <button className="text-xs text-primary underline" onClick={() => setMode('none')}>
-              Cancel
-            </button>
-          </section>
-        )}
-
-        {mode === 'none' && (
-          <div className="flex flex-wrap gap-2">
-            {!owner && (
-              <button className={secondaryButton} disabled={busy} onClick={() => setMode('allocate')}>
-                Give this spare to a joiner
-              </button>
-            )}
-            {owner && (
-              <button
-                className={secondaryButton}
-                disabled={busy}
-                onClick={() =>
-                  setConfirm({
-                    title: `Make #${set.shirtNo} a spare?`,
-                    message: `${owner.name} (${owner.status || 'no status'}) gives up number ${set.shirtNo}, and the set is kept as a spare for someone it fits. Someone who stops being Active doesn't need this: their set is already a spare.`,
-                    label: 'Make it a spare',
-                    run: () => release.mutate(),
-                  })
-                }
-              >
-                Make it a spare
-              </button>
-            )}
-            <button className={secondaryButton} disabled={busy} onClick={() => setMode('sizes')}>
-              Correct the sizes
-            </button>
-          </div>
-        )}
-
-        {mode === 'allocate' && (
-          <section className="space-y-1">
-            <h3 className="text-xs font-semibold text-muted-foreground">Who gets #{set.shirtNo}?</h3>
-            <PersonPicker
-              people={candidates}
-              autoFocus
-              describe={(p) => (p.sizes.shirt ? `Shirt ${p.sizes.shirt}${p.sizes.shirt === set.sizes.shirt ? ' · fits' : ''}` : 'No sizes yet')}
-              onPick={confirmAllocate}
-            />
-            <button className="text-xs text-primary underline" onClick={() => setMode('none')}>
-              Cancel
-            </button>
-          </section>
-        )}
-
-        {mode === 'sizes' && <SizesEditor set={set} onSaved={() => { toast.success('Sizes saved'); done(); }} onCancel={() => setMode('none')} />}
-
-        <section>
-          <button className="text-xs text-primary underline" onClick={() => setShowHistory((v) => !v)}>
-            {showHistory ? 'Hide history' : 'History'}
-          </button>
-          {showHistory && (
-            <div className="mt-2">
-              <History setId={set.id} />
             </div>
           )}
-        </section>
+
+          {mode === 'allocate' && (
+            <section className="space-y-1">
+              <h3 className="text-xs font-semibold text-muted-foreground">Who gets #{set.shirtNo}?</h3>
+              <PersonPicker
+                people={candidates}
+                autoFocus
+                describe={(p) => (p.sizes.shirt ? `Shirt ${p.sizes.shirt}${p.sizes.shirt === set.sizes.shirt ? ' · fits' : ''}` : 'No sizes yet')}
+                onPick={confirmAllocate}
+              />
+              <button className="text-xs text-primary underline" onClick={() => setMode('none')}>
+                Cancel
+              </button>
+            </section>
+          )}
+
+          {mode === 'sizes' && <SizesEditor set={set} onSaved={() => { toast.success('Sizes saved'); done(); }} onCancel={() => setMode('none')} />}
+
+          <section>
+            <button className="text-xs text-primary underline" onClick={() => setShowHistory((v) => !v)}>
+              {showHistory ? 'Hide history' : 'History'}
+            </button>
+            {showHistory && (
+              <div className="mt-2">
+                <History setId={set.id} />
+              </div>
+            )}
+          </section>
+        </SheetBody>
       </SheetContent>
       {confirm && (
         <ConfirmDialog

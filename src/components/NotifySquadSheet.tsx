@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Check, Copy, MessageCircle, X } from 'lucide-react';
+import { Check, Copy, MessageCircle } from 'lucide-react';
 import {
   buildAvailabilityRequest,
   buildDroppedMessage,
@@ -11,7 +11,7 @@ import {
   whatsAppLink,
   type FixtureBrief,
 } from '@/lib/whatsapp';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { safeFormat } from '@/lib/dateUtils';
 
 export interface NotifyTarget {
@@ -121,27 +121,18 @@ export default function NotifySquadSheet({
   return (
     <Sheet open onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom">
-        <div className="sticky top-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              {askingAvailability ? 'Ask for availability' : 'Notify squad'}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {askingAvailability
-                ? 'Nobody selected yet'
-                : `${players.length} selected · opens WhatsApp, you press send`}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-muted text-muted-foreground"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        <SheetHeader onClose={onClose}>
+          <SheetTitle className="text-base font-semibold">
+            {askingAvailability ? 'Ask for availability' : 'Notify squad'}
+          </SheetTitle>
+          <p className="text-xs text-muted-foreground">
+            {askingAvailability
+              ? 'Nobody selected yet'
+              : `${players.length} selected · opens WhatsApp, you press send`}
+          </p>
+        </SheetHeader>
 
-        <div className="px-4 py-3 space-y-4">
+        <SheetBody className="space-y-4">
           {changed && (
             <section>
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
@@ -263,7 +254,7 @@ export default function NotifySquadSheet({
               </div>
             </section>
           )}
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

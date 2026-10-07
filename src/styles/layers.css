@@ -1,0 +1,23 @@
+/* The app's one z-index scale. Use these names, not numbers.
+
+   z-raised   10  lifted within the page: sticky table columns, chart tooltips,
+                  a sheet's sticky header
+   z-sticky   20  a page's sticky bar (the squad screen's team bar)
+   z-bar      30  bars fixed to the screen edge (save bars)
+   z-overlay  50  everything opened on top: sheets, dialogs, lightboxes,
+                  menus, popovers. They're portalled to the end of <body>, so
+                  the one opened last sits on top without a higher number.
+
+   Toasts (sonner) sit above all of these on their own. */
+@utility z-raised {
+  z-index: 10;
+}
+@utility z-sticky {
+  z-index: 20;
+}
+@utility z-bar {
+  z-index: 30;
+}
+@utility z-overlay {
+  z-index: 50;
+}

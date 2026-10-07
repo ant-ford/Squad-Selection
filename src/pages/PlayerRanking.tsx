@@ -12,7 +12,7 @@ import { Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sheet } from '@/components/ui/sheet';
+import { Lightbox } from '@/components/ui/lightbox';
 import { Tabs, TabPanel } from '@/components/ui/tabs';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SeasonStatsSheet, { AttendanceSheet } from '@/components/SeasonStatsSheet';
@@ -286,7 +286,7 @@ export default function PlayerRanking() {
           <RankingFilters filters={filters} onChange={setFilters} teamOptions={teamOptions} />
 
           {currentGroup && filteredPlayers.length > 0 && (
-            <div className="sticky top-0 z-10 container mx-auto px-4">
+            <div className="sticky top-0 z-sticky container mx-auto px-4">
               <div className="bg-background/95 backdrop-blur-sm border-b border-border py-1 px-2 rounded-b-lg">
                 <span className="text-xs font-semibold text-muted-foreground">Ability group {currentGroup}</span>
               </div>
@@ -449,11 +449,7 @@ export default function PlayerRanking() {
 
       {openMenuPlayerId !== null && <div className="fixed inset-0 z-30" onClick={() => setOpenMenuPlayerId(null)} />}
 
-      <Sheet open={!!expandedPhoto} raised onOpenChange={(next) => !next && setExpandedPhoto(null)}>
-        <div className="fixed inset-0 z-[61] bg-black/70 flex items-center justify-center p-6" onClick={() => setExpandedPhoto(null)}>
-          <img src={expandedPhoto ?? undefined} alt="Player" className="max-w-full max-h-full rounded-lg shadow-2xl" />
-        </div>
-      </Sheet>
+      <Lightbox src={expandedPhoto} alt="Player photo" onClose={() => setExpandedPhoto(null)} />
 
       {leave.prompt}
       {hasChanges && (

@@ -656,7 +656,7 @@ export default function SquadSelection() {
       <PlayerFilters filters={filters} onChange={handleFilterChange} />
 
       {/* Pinned while the list scrolls under it. */}
-      <div className="sticky top-0 z-20 bg-background border-b border-border/50">
+      <div className="sticky top-0 z-sticky bg-background border-b border-border/50">
       <div className="container mx-auto px-4 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         <div className="flex items-center gap-2 min-h-10">
           <input
@@ -880,7 +880,7 @@ export default function SquadSelection() {
       </div>
 
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-50 items-center" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
+        <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-3 sm:p-4 flex gap-3 z-bar items-center" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}>
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
             {pendingPlayers.slice(0, 4).map(p => (
               <span key={p.id} className="text-xs px-2 py-1 rounded-full bg-primary-tint/10 text-primary shrink-0 font-medium">

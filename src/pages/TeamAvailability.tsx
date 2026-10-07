@@ -13,7 +13,7 @@ import type { SquadPlayer, TeamFixture, TeamSquad } from '@/api/getTeamAttendanc
 
 const NAME_COL = 'w-28 min-w-28 max-w-28';
 const DATE_COL = 'w-10 min-w-10';
-const STICKY = 'sticky left-0 z-10 bg-background shadow-[0_0_0_3px_hsl(var(--background))]';
+const STICKY = 'sticky left-0 z-raised bg-background shadow-[0_0_0_3px_hsl(var(--background))]';
 
 type OpenPlayer = { id: string; name: string };
 

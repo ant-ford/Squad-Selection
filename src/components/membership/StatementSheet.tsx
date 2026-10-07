@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { ExternalLink, FileText, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import type { StatementCard } from '@/api/membership';
@@ -39,7 +39,7 @@ export default function StatementSheet({
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side={wide ? 'right' : 'bottom'} className="p-4 pb-8 overflow-y-auto">
+      <SheetContent side={wide ? 'right' : 'bottom'}>
         <SheetHeader onClose={onClose}>
           <div className="flex items-center gap-3 min-w-0">
             <Avatar card={card} size="h-12 w-12" />
@@ -49,78 +49,79 @@ export default function StatementSheet({
             </div>
           </div>
         </SheetHeader>
-
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {status && <span className={`text-xs px-2 py-0.5 rounded ${status.tone}`}>{status.label}</span>}
-          {card.waitingOn && card.stage !== NOT_STARTED && (
-            <span className="text-xs text-muted-foreground">Waiting on {card.waitingOn}</span>
-          )}
-        </div>
-
-        {(whatsApp || chase || officerForm || card.playerStatement.length > 0) && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {whatsApp && (
-              <a href={whatsApp} target="_blank" rel="noreferrer" className={linkClass}>
-                <MessageCircle className="h-3.5 w-3.5 shrink-0" /> WhatsApp {card.mobileNo}
-              </a>
+        <SheetBody>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {status && <span className={`text-xs px-2 py-0.5 rounded ${status.tone}`}>{status.label}</span>}
+            {card.waitingOn && card.stage !== NOT_STARTED && (
+              <span className="text-xs text-muted-foreground">Waiting on {card.waitingOn}</span>
             )}
-            {chase && card.chase && (
-              <a href={chase} target="_blank" rel="noreferrer" className={linkClass}>
-                <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">WhatsApp {card.chase.name} (Sponsor)</span>
-              </a>
-            )}
-            {officerForm &&
-              (officerForm.startsWith('/') ? (
-                <Link to={officerForm} className={linkClass}>
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
-                </Link>
-              ) : (
-                <a href={officerForm} target="_blank" rel="noreferrer" className={linkClass}>
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
+          </div>
+
+          {(whatsApp || chase || officerForm || card.playerStatement.length > 0) && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {whatsApp && (
+                <a href={whatsApp} target="_blank" rel="noreferrer" className={linkClass}>
+                  <MessageCircle className="h-3.5 w-3.5 shrink-0" /> WhatsApp {card.mobileNo}
+                </a>
+              )}
+              {chase && card.chase && (
+                <a href={chase} target="_blank" rel="noreferrer" className={linkClass}>
+                  <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">WhatsApp {card.chase.name} (Sponsor)</span>
+                </a>
+              )}
+              {officerForm &&
+                (officerForm.startsWith('/') ? (
+                  <Link to={officerForm} className={linkClass}>
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
+                  </Link>
+                ) : (
+                  <a href={officerForm} target="_blank" rel="noreferrer" className={linkClass}>
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" /> Open my review form
+                  </a>
+                ))}
+              {card.playerStatement.map((f) => (
+                <a key={f.url} href={f.url} target="_blank" rel="noreferrer" className={linkClass} title="Player Statement">
+                  <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
                 </a>
               ))}
-            {card.playerStatement.map((f) => (
-              <a key={f.url} href={f.url} target="_blank" rel="noreferrer" className={linkClass} title="Player Statement">
-                <FileText className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
-              </a>
-            ))}
+            </div>
+          )}
+
+          {card.stage === NOT_STARTED && <NotifySection card={card} today={today} onDone={onClose} />}
+
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
+            <Fact label="Membership No." value={card.membershipNo} />
+            <Fact label="Period" value={periodLabel(card)} />
+            <Fact label="Join Date" value={date(card.joinDate)} />
+            <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
+            <Fact label="Team" value={card.team} />
+            <Fact label="Sponsor" value={card.sponsor} />
+            <Fact label="Matches Played" value={count(card.matchesPlayed)} />
+            <Fact label="Team Played" value={count(card.matchesTeamPlayed)} />
+            <Fact label="Available, Did Not Play" value={count(card.matchesAvailable)} />
+            <Fact label="Not Available" value={count(card.matchesNotAvailable)} />
+            <Fact label="Teams Played" value={card.teamsPlayed.join(', ')} />
+            <Fact label="Practices" value={card.practices} />
+            <Fact label="Social Functions" value={card.socialFunctions.join(', ')} />
+            <Fact label="Games Umpired" value={card.gamesUmpired} />
+            <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
+            <Fact label="Recommended Reduction" value={card.recommendedReduction} />
+            <Fact label="Member Submitted" value={date(card.memberSubmittedOn)} />
+            <Fact label="Sponsor Submitted" value={date(card.sponsorSubmittedOn)} />
+            <Fact label="Officer Submitted" value={date(card.officerSubmittedOn)} />
+          </dl>
+
+          <div className="space-y-4">
+            <TextBlock label="Reason for Low Participation (Member)" text={plain(card.lowParticipationReason)} />
+            <TextBlock label="Other Contributions (Member)" text={plain(card.otherContributions)} />
+            <TextBlock label="Section Service and Involvement (Member)" text={plain(card.sectionServiceMember)} />
+            <TextBlock label="HKFC Service and Involvement (Member)" text={plain(card.hkfcServiceMember)} />
+            <TextBlock label="Recommendation (Sponsor)" text={plain(card.sponsorRecommendation)} />
+            <TextBlock label="Section Service and Involvement (Sponsor)" text={plain(card.sectionServiceSponsor)} />
+            <TextBlock label="HKFC Service and Involvement (Sponsor)" text={plain(card.hkfcServiceSponsor)} />
           </div>
-        )}
-
-        {card.stage === NOT_STARTED && <NotifySection card={card} today={today} onDone={onClose} />}
-
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 mb-5">
-          <Fact label="Membership No." value={card.membershipNo} />
-          <Fact label="Period" value={periodLabel(card)} />
-          <Fact label="Join Date" value={date(card.joinDate)} />
-          <Fact label="Commitment End" value={date(card.commitmentEndDate)} />
-          <Fact label="Team" value={card.team} />
-          <Fact label="Sponsor" value={card.sponsor} />
-          <Fact label="Matches Played" value={count(card.matchesPlayed)} />
-          <Fact label="Team Played" value={count(card.matchesTeamPlayed)} />
-          <Fact label="Available, Did Not Play" value={count(card.matchesAvailable)} />
-          <Fact label="Not Available" value={count(card.matchesNotAvailable)} />
-          <Fact label="Teams Played" value={card.teamsPlayed.join(', ')} />
-          <Fact label="Practices" value={card.practices} />
-          <Fact label="Social Functions" value={card.socialFunctions.join(', ')} />
-          <Fact label="Games Umpired" value={card.gamesUmpired} />
-          <Fact label="Qualified Umpire" value={card.qualifiedUmpire} />
-          <Fact label="Recommended Reduction" value={card.recommendedReduction} />
-          <Fact label="Member Submitted" value={date(card.memberSubmittedOn)} />
-          <Fact label="Sponsor Submitted" value={date(card.sponsorSubmittedOn)} />
-          <Fact label="Officer Submitted" value={date(card.officerSubmittedOn)} />
-        </dl>
-
-        <div className="space-y-4">
-          <TextBlock label="Reason for Low Participation (Member)" text={plain(card.lowParticipationReason)} />
-          <TextBlock label="Other Contributions (Member)" text={plain(card.otherContributions)} />
-          <TextBlock label="Section Service and Involvement (Member)" text={plain(card.sectionServiceMember)} />
-          <TextBlock label="HKFC Service and Involvement (Member)" text={plain(card.hkfcServiceMember)} />
-          <TextBlock label="Recommendation (Sponsor)" text={plain(card.sponsorRecommendation)} />
-          <TextBlock label="Section Service and Involvement (Sponsor)" text={plain(card.sectionServiceSponsor)} />
-          <TextBlock label="HKFC Service and Involvement (Sponsor)" text={plain(card.hkfcServiceSponsor)} />
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );

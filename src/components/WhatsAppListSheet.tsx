@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check, MessageCircle } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { toWhatsAppNumber, whatsAppLink } from '@/lib/whatsapp';
 import { fillMessage } from '@shared/messageTemplates';
@@ -58,10 +58,10 @@ export default function WhatsAppListSheet({
   return (
     <Sheet open dirty={sent.size > 0 && sent.size < reachable.length} onOpenChange={(next) => !next && onClose()}>
       <SheetContent side="bottom" className="sm:max-w-lg sm:mx-auto sm:left-0 sm:right-0">
-        <div className="p-4 space-y-3">
-          <SheetHeader onClose={onClose}>
-            <SheetTitle>{title}</SheetTitle>
-          </SheetHeader>
+        <SheetHeader onClose={onClose}>
+          <SheetTitle>{title}</SheetTitle>
+        </SheetHeader>
+        <SheetBody className="space-y-3">
           {(templates.data?.templates.length ?? 0) > 0 && (
             <select
               value={templateId}
@@ -101,7 +101,7 @@ export default function WhatsAppListSheet({
               </li>
             ))}
           </ul>
-        </div>
+        </SheetBody>
       </SheetContent>
     </Sheet>
   );
