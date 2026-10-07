@@ -18,6 +18,7 @@ import { sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
 import { umpiringAccess } from "./umpiring";
+import { nextDutyLine } from "./myDuties";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { hkfcSides, type SideInfo } from "./match";
 import { outcomeOf } from "./teamRecord";
@@ -186,6 +187,8 @@ export async function getMyFixtures(
   const displayTeam = selectedDisplayTeam(user) || teamName;
   // The view starts every read it needs at once; the reference data here is
   // the same read (joined in flight), so this adds no round trip.
+  // Started with the rest: the umpire's next duty is one read of its own.
+  const duty = authUser.umpire ? nextDutyLine(env, authUser.personId).catch(() => null) : Promise.resolve(null);
   const [ref, view] = await Promise.all([getReferenceData(env), buildPlayerFixtureView(env, user, { calledOff: true })]);
   // coachTeams/isSectionCaptain come from the single authorization
   // derivation (auth.ts), not re-derived from Teams links here.
@@ -210,6 +213,8 @@ export async function getMyFixtures(
     volunteers: await canSeeVolunteers(env, authUser),
     events: await canManageEvents(env, authUser),
     umpiring: await umpiringAccess(env, authUser),
+    // The umpire's next duty within two weeks: the "Your duty" line (myDuties.ts).
+    duty: await duty,
     // Their details are Eddy's own screens on Supabase ("My details").
     eddyProfile: true,
     // Decided here, on the Hong Kong calendar day, so the date of birth
