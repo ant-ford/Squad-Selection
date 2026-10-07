@@ -220,6 +220,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `useDraft` keeps drafts of long forms.
   - `useFormGaps` lists what's missing next to the submit button.
 - **Sheets in the URL:** `useSheetParam` (`src/lib/useSheetParam.ts`) keeps the weekly sheets in a search parameter, so a phone's Back closes the sheet rather than the screen, and a shared link opens it. Player view: `?fixture=`, `?note=` (match id), `?stats=`, `?preferences=1`, `?calendar=1`, `?event=`. Kit: `?set=`. Ranking: `?stats=`, `?attendance=`, `?history=` (player id). Squad: `?history=1`. A Sheet with unsaved changes asks before Back closes it. Confirm dialogs, menus and popovers stay out of the URL.
+- **Product name:** on screen, the product name is `<EddyWordmark />` (`src/components/brand/EddyWordmark.tsx`: the logo's Fairwater Script lettering as one inline SVG path, 1.2em tall on the text baseline); plain "Eddy" only where the device draws the text (tab title, manifest, push, emails, WhatsApp, calendar, CSV, PDF, `alt` and `aria-label`). `tests/brandWordmark.test.ts` enforces it. Never add the font file: the repo is public and the font is licensed.
 - **Words:** `docs/glossary.md`. Weekly screens carry almost no explanatory text: rules are enforced by which options are shown.
 - **PWA** (`vite.config.ts`, Workbox):
   - Only sign-in and Player view are precached: the entry chunk, the vendor chunks, and the sheets and menus the player page opens. `scripts/precache-set.ts` works the list out from the bundle at build time.

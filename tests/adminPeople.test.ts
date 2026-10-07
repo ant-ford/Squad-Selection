@@ -302,7 +302,7 @@ describe("change history access", () => {
     matches: [{ id: U(9), home_team: "HKFC C", away_team: "Valley B" }],
     match_selection_changes: [{ occurred_at: "2026-10-06T10:00:00Z", side: "home", source: "coach", added: [U(1)], removed: [U(2)], actor: { preferred_name: "Lee", given_names: null, surname: "Coach" } }],
     activity_log: [
-      { occurred_at: "2026-10-06T09:00:00Z", action: "row-update", fields: ["home_kit"], changes: { home_kit: ["White", "Blue"] }, actor: null, actor_label: null },
+      { occurred_at: "2026-10-06T09:00:00Z", action: "row-update", fields: ["home_kit"], changes: { home_kit: ["White", "Blue"] }, actor: null, actor_label: "eddy" },
       { occurred_at: "2026-10-06T08:00:00Z", action: "row-update", fields: ["match_date"], changes: { match_date: ["2026-10-10T01:00:00Z", "2026-10-10T06:30:00Z"] }, actor: null, actor_label: "hkha-sync" },
       { occurred_at: "2026-10-06T07:00:00Z", action: "row-availability", fields: ["status"], changes: { person: U(1), status: ["Available", "Unavailable"] }, entity_id: U(9), actor: { preferred_name: "Lee", given_names: null, surname: "Coach" } },
     ],
@@ -317,8 +317,8 @@ describe("change history access", () => {
     const { entries } = (await res.json()) as { entries: { summary: string; fields: string[]; actor: string | null }[] };
     expect(entries).toEqual([
       { at: "2026-10-06T10:00:00.000Z", actor: "Lee Coach", action: "squad", summary: "Squad HKFC C", fields: ["In: Sam Lee", "Out: Tom Wu"] },
-      { at: "2026-10-06T09:00:00.000Z", actor: null, action: "row-update", summary: "Changed", fields: ["Home kit: White → Blue"] },
-      { at: "2026-10-06T08:00:00.000Z", actor: "HKHA fixtures", action: "row-update", summary: "Changed", fields: ["Date and time: Sat 10 Oct, 09:00 → Sat 10 Oct, 14:30"] },
+      { at: "2026-10-06T09:00:00.000Z", actor: "Eddy", actorLabel: "eddy", action: "row-update", summary: "Changed", fields: ["Home kit: White → Blue"] },
+      { at: "2026-10-06T08:00:00.000Z", actor: "HKHA fixtures", actorLabel: "hkha-sync", action: "row-update", summary: "Changed", fields: ["Date and time: Sat 10 Oct, 09:00 → Sat 10 Oct, 14:30"] },
       { at: "2026-10-06T07:00:00.000Z", actor: "Lee Coach", action: "row-availability", summary: "Answer for Sam Lee", fields: ["Available → Unavailable"] },
     ]);
   });

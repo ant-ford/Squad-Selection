@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import SignBlock from '@/components/SignBlock';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -167,7 +168,7 @@ function MemberForm({ review, onDone }: { review: ReviewView; onDone: (msg: stri
           })}
         </div>
         {recordedSocialFunctions(review.eventsAttended).length > 0 && (
-          <p className="text-xs text-muted-foreground mt-1">Ticked from the events Eddy recorded you at. Add any it missed.</p>
+          <p className="text-xs text-muted-foreground mt-1">Ticked from the events <EddyWordmark size={1.5} /> recorded you at. Add any it missed.</p>
         )}
       </fieldset>
       <Field label="Other contributions" hint={HINTS.otherContributions}>
@@ -518,11 +519,11 @@ export default function CommitmentReview() {
                 <p className="text-xs text-muted-foreground mt-2">Teams played: {review.attendance.teamsPlayed.join(', ')}</p>
               )}
               {!!review.gamesUmpiredInEddy && (
-                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in Eddy): {review.gamesUmpiredInEddy}</p>
+                <p className="text-xs text-muted-foreground mt-1">Games umpired (recorded in <EddyWordmark size={1.5} />): {review.gamesUmpiredInEddy}</p>
               )}
               {!!review.eventsAttended?.length && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Events attended (recorded in Eddy): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
+                  Events attended (recorded in <EddyWordmark size={1.5} />): {review.eventsAttended.map((e) => `${e.title} (${safeFormat(e.startsAt, 'd MMM')})`).join(', ')}
                 </p>
               )}
             </section>
