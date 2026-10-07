@@ -121,6 +121,8 @@ export default defineConfig(({ command }) => ({
       "@shared": path.resolve(__dirname, "./shared"),
     },
   },
+  // A new id per build: data kept on the phone by an older build is dropped (src/lib/queryClient.ts).
+  define: { __EDDY_BUILD__: JSON.stringify(Date.now().toString(36)) },
   build: {
     rollupOptions: {
       output: {
