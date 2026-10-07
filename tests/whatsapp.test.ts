@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildAvailabilityRequest,
+  buildNotSeenNudge,
   buildSelectionMessage,
   buildSquadAnnouncement,
   fixtureLink,
@@ -8,6 +9,7 @@ import {
   whatsAppLink,
   type FixtureBrief,
 } from '../src/lib/whatsapp';
+import { fillMessage } from '../shared/messageTemplates';
 
 // A wa.me link built from a bad number opens WhatsApp with no usable
 // recipient, which looks to the coach exactly like a message that sent. The
@@ -126,6 +128,16 @@ describe('buildAvailabilityRequest', () => {
 
   it('still reads cleanly without a link', () => {
     expect(buildAvailabilityRequest(FIXTURE)).toContain('Please mark whether you can play in Eddy.');
+  });
+});
+
+describe('buildNotSeenNudge', () => {
+  it('keeps {first name} for the list sheet to fill, and ends with the link', () => {
+    const link = fixtureLink('https://eddy.example', 'rec123');
+    const msg = buildNotSeenNudge({ ...FIXTURE, link });
+    expect(msg.startsWith('Hi {first name}, can you play in HKFC B vs Kowloon')).toBe(true);
+    expect(msg.endsWith(`Please answer in Eddy: ${link}`)).toBe(true);
+    expect(fillMessage(msg, { name: 'Sam Lee' }).startsWith('Hi Sam, ')).toBe(true);
   });
 });
 
