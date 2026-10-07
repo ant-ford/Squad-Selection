@@ -23,7 +23,7 @@ type OpenPlayer = { id: string; name: string };
 function CardBadge({ count, className = 'absolute -top-1 -right-1 z-[1]' }: { count: number; className?: string }) {
   return (
     <span
-      className={`${className} flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-0.5 text-[8px] font-semibold tabular-nums leading-none text-info-foreground ring-2 ring-background`}
+      className={`${className} flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-px text-xs font-semibold tabular-nums leading-none text-info-foreground ring-2 ring-background`}
     >
       {count}
     </span>
@@ -48,7 +48,7 @@ function TeamCell({
   // Two fixtures that day (rare): the count goes top-left, leaving the
   // corner the match card badge uses.
   const badge = fixtures.length > 1 && (
-    <span className="absolute -top-1 -left-1 rounded-full bg-muted-foreground px-1 text-[9px] leading-tight text-background">
+    <span className="absolute -top-1 -left-1 rounded-full bg-muted-foreground px-0.5 text-xs leading-none text-background">
       {fixtures.length}
     </span>
   );
@@ -72,7 +72,7 @@ function TeamCell({
       className={`${base} ${toneClasses(tone, f.past ? 'faint' : 'solid')}`}
     >
       <span className="text-xs font-semibold tabular-nums leading-none">{available}</span>
-      {maybe > 0 && <span className="mt-0.5 text-[9px] leading-none">+{maybe}?</span>}
+      {maybe > 0 && <span className="mt-0.5 text-xs leading-none">+{maybe}?</span>}
       {f.past && f.cardCount ? <CardBadge count={f.cardCount} /> : null}
       {badge}
     </button>
@@ -250,7 +250,7 @@ export default function TeamAvailability() {
                     } ${isToday ? 'border-l-2 border-primary' : ''}`}
                   >
                     <span className="block font-semibold tabular-nums">{safeFormat(d, 'd')}</span>
-                    <span className="block text-[10px] uppercase tracking-wide">{safeFormat(d, 'MMM')}</span>
+                    <span className="block text-xs leading-tight uppercase tracking-wide">{safeFormat(d, 'MMM')}</span>
                   </th>
                 );
               })}
@@ -269,7 +269,7 @@ export default function TeamAvailability() {
                     >
                       <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                       <span className="truncate">{shortTeam(squad.team)}</span>
-                      <span className="text-[10px] font-normal text-muted-foreground tabular-nums" title={`${squad.players.length} in the squad`}>
+                      <span className="text-xs font-normal text-muted-foreground tabular-nums" title={`${squad.players.length} in the squad`}>
                         {squad.players.length}
                       </span>
                     </button>
@@ -347,7 +347,7 @@ export default function TeamAvailability() {
             </li>
           ))}
           <li className="flex items-center gap-2">
-            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[9px]">+2?</span>
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-xs leading-none whitespace-nowrap">+2?</span>
             Maybes
           </li>
           <li className="flex items-center gap-2">
@@ -357,7 +357,7 @@ export default function TeamAvailability() {
             On the match card (past games)
           </li>
           <li className="flex items-center gap-2">
-            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[10px]">19</span>
+            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-xs leading-none">19</span>
             By the team: players in the squad
           </li>
         </ul>
