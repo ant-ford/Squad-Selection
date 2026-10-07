@@ -36,4 +36,5 @@ export default [
     el: `[${block('History')}.querySelector('h2'), ...${block('History')}.querySelectorAll('li')].slice(0, 6)`,
   },
   { name: 'mo-board', as, path: '/membership' },
+  { name: 'mo-forms', as, path: '/membership', steps: (page) => page.click('Forms', { selector: '[role=tab]', exact: true }) },
 ];

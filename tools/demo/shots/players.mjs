@@ -20,7 +20,7 @@ export default [
   { name: 'fixture-sheet', as: 'player', path: '/', steps: (page) => page.eval(`${card('Valley B')}.click()`) },
   {
     name: 'same-day', as: 'player', path: '/',
-    steps: async (page) => { await page.eval(cardButton('Valley B', 'No')); await page.click('Skip', { exact: true }); },
+    steps: async (page) => { await page.eval(cardButton('Valley B', 'No')); await page.settle(); await page.sleep(500); await page.click('Skip', { exact: true }).catch(() => {}); },
     el: `[...document.querySelectorAll('div,section')].filter((e) => /^(Other games on|You're out for all of)/.test(e.innerText ?? '')).pop()`, pad: 10,
   },
   {
