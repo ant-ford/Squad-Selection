@@ -71,7 +71,7 @@ export function CellGlyph({ cell }: { cell: Pick<AttendanceCell, 'status' | 'els
       return <X className={icon} strokeWidth={3} />;
     case 'elsewhere':
       // Which side they were with that day - the most useful thing the cell can say.
-      return <span className="text-[10px] font-semibold leading-none">{shortTeam(cell.elsewhereTeam ?? '')}</span>;
+      return <span className="text-xs font-semibold leading-none">{shortTeam(cell.elsewhereTeam ?? '')}</span>;
     case 'off':
       return <span className="leading-none">&ndash;</span>;
     default:
@@ -132,7 +132,7 @@ function Detail({ date, cells }: { date: string; cells: AttendanceCell[] }) {
             <Swatch cell={c} size="h-3.5 w-3.5 mt-0.5" />
             <div className="min-w-0">
               <p className="text-foreground">
-                {c.team} {scored ? `${c.goalsFor}–${c.goalsAgainst}` : 'v'} {c.opponent}
+                {c.team} {scored ? `${c.goalsFor}–${c.goalsAgainst}` : 'vs'} {c.opponent}
                 <span className="text-muted-foreground">
                   {' '}&middot; {c.isHome ? 'Home' : 'Away'}
                   {c.friendly && <> &middot; Friendly</>}
@@ -230,7 +230,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                     } ${isToday ? 'border-l-2 border-primary' : ''}`}
                   >
                     <span className="block font-semibold tabular-nums">{safeFormat(d, 'd')}</span>
-                    <span className="block text-[10px] uppercase tracking-wide">{safeFormat(d, 'MMM')}</span>
+                    <span className="block text-xs leading-tight uppercase tracking-wide">{safeFormat(d, 'MMM')}</span>
                   </th>
                 );
               })}
@@ -264,8 +264,8 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                         <button
                           onClick={() => setOpenKey(open ? null : key)}
                           aria-expanded={open}
-                          aria-label={`${team} v ${cell.opponent}, ${safeFormat(d, 'd MMM')}: ${look.label}`}
-                          title={`${shortTeam(team)} v ${cell.opponent} - ${look.label}`}
+                          aria-label={`${team} vs ${cell.opponent}, ${safeFormat(d, 'd MMM')}: ${look.label}`}
+                          title={`${shortTeam(team)} vs ${cell.opponent} - ${look.label}`}
                           style={look.style}
                           className={`relative flex h-8 w-10 items-center justify-center rounded-md transition-transform active:scale-95 ${
                             look.className
@@ -273,7 +273,7 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                         >
                           <CellGlyph cell={cell} />
                           {cells.length > 1 && (
-                            <span className="absolute -top-1 -right-1 rounded-full bg-foreground px-1 text-[9px] leading-tight text-background">
+                            <span className="absolute -top-1 -right-1 rounded-full bg-foreground px-0.5 text-xs leading-none text-background">
                               {cells.length}
                             </span>
                           )}
@@ -313,7 +313,7 @@ export function AttendanceLegend({ className = '' }: { className?: string }) {
         </div>
       ))}
       <p className="sm:col-span-2 flex items-center gap-2">
-        <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground text-[9px] font-semibold">C</span>
+        <span className="inline-flex h-4 w-5 shrink-0 items-center justify-center rounded bg-muted/50 text-muted-foreground text-xs font-semibold leading-none">C</span>
         With another side that day (the letter says which)
       </p>
     </div>

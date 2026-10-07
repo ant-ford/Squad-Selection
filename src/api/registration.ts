@@ -2,12 +2,12 @@ import { apiGet, apiPost } from '@/lib/apiClient';
 import { saveCsv } from '@/lib/saveCsv';
 import type { RegistrationBoard } from '@shared/registration';
 
-/** HKHA registration, the Hockey Convenor's screen (worker/src/registration.ts). */
+/** HKHA registration, the Men's Convenor's screen (worker/src/registration.ts). */
 export function getRegistrationBoard(): Promise<RegistrationBoard> {
   return apiGet<RegistrationBoard>('/api/registration/board');
 }
 
-/** Ticks players off as registered with HockeyHK this season. */
+/** Ticks players off as registered with HKHA this season. */
 export function markRegistered(ids: string[]): Promise<{ ok: true; count: number }> {
   return apiPost('/api/registration/registered', { ids });
 }

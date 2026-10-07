@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
-import { confirmKit, getKitBoard, getMyKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
+import { confirmKit, getKitBoard, getMyKit, getUncollectedKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
 import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -155,5 +155,35 @@ describe("kit", () => {
     await setOrderExpected(env, id, { expectedOn: null });
     expect(calls.at(-1)!.body).toEqual({ expected_on: null });
     await expect(setOrderExpected(env, id, { expectedOn: "15 Oct" })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("lists owners whose kit has waited in the store for more than 14 days, once each, with their mobile", async () => {
+    const calls = fake({
+      kit_sets_v: [
+        { id: "k1", owner_id: "recA", shirt_no: 12, received_on: "2026-09-01" },
+        { id: "k2", owner_id: "recA", shirt_no: 40, received_on: "2026-09-10" },
+        { id: "k3", owner_id: "recB", shirt_no: 7, received_on: "2026-09-20" },
+      ],
+      people: [
+        { id: "u1", api_id: "recA", preferred_name: "Sam", given_names: "Samuel", surname: "Lee", mobile_no: "+852 9000 0001" },
+        { id: "u2", api_id: "recB", preferred_name: null, given_names: "Tom Ka", surname: "Wu", mobile_no: null },
+      ],
+    });
+    const { people } = await getUncollectedKit(env, new Date("2026-10-07T04:00:00Z"));
+    expect(people).toEqual([
+      { id: "recA", name: "Sam Lee", firstName: "Sam", mobile: "+852 9000 0001", shirtNo: 12, since: "2026-09-01" },
+      { id: "recB", name: "Tom Ka Wu", firstName: "Tom", mobile: "", shirtNo: 7, since: "2026-09-20" },
+    ]);
+    const q = calls[0].url.searchParams;
+    expect(q.get("holder_id")).toBe("is.null");
+    expect(q.get("pending_to_id")).toBe("is.null");
+    expect(q.get("owner_id")).toBe("not.is.null");
+    expect(q.get("received_on")).toBe("lt.2026-09-23");
+  });
+
+  it("reads nothing more when no kit is waiting", async () => {
+    const calls = fake({ kit_sets_v: [] });
+    expect(await getUncollectedKit(env)).toEqual({ people: [] });
+    expect(calls).toHaveLength(1);
   });
 });
