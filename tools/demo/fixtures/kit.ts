@@ -95,6 +95,8 @@ function board(orderId: string | null): KitBoard {
 
 function myKit(p: Persona, variants: Set<string>): MyKit {
   const all = sets();
+  // kit-holding: the persona is HKFC D's captain, holding the team's sets to pass on.
+  if (variants.has('kit-holding')) p = { ...p, name: 'Charlie Dunn' };
   const holding = all
     .filter((s) => s.holder?.name === p.name && s.owner?.name !== p.name)
     .map(({ id, shirtNo, owner, heldSince, sizes, pendingTo }) => ({ id, shirtNo, owner, heldSince, sizes, pendingTo }));
