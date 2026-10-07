@@ -55,7 +55,7 @@ function TeamCell({
 
   if (f.off) {
     return (
-      <button onClick={onToggle} aria-expanded={open} aria-label={`${squad.team} v ${f.opponent}: cancelled`} className={`${base} bg-muted/40 text-muted-foreground`}>
+      <button onClick={onToggle} aria-expanded={open} aria-label={`${squad.team} vs ${f.opponent}: cancelled`} className={`${base} bg-muted/40 text-muted-foreground`}>
         <span className="leading-none">&ndash;</span>
         {badge}
       </button>
@@ -68,7 +68,7 @@ function TeamCell({
     <button
       onClick={onToggle}
       aria-expanded={open}
-      aria-label={`${squad.team} v ${f.opponent}, ${safeFormat(f.date, 'd MMM')}: ${available} available${maybe ? `, ${maybe} maybe` : ''}`}
+      aria-label={`${squad.team} vs ${f.opponent}, ${safeFormat(f.date, 'd MMM')}: ${available} available${maybe ? `, ${maybe} maybe` : ''}`}
       className={`${base} ${toneClasses(tone, f.past ? 'faint' : 'solid')}`}
     >
       <span className="text-xs font-semibold tabular-nums leading-none">{available}</span>
@@ -111,7 +111,7 @@ function FixtureDetail({
         return (
           <div key={f.matchId} className="space-y-2">
             <p className="text-foreground">
-              {f.team} {scored ? `${f.goalsFor}–${f.goalsAgainst}` : 'v'} {f.opponent}
+              {f.team} {scored ? `${f.goalsFor}–${f.goalsAgainst}` : 'vs'} {f.opponent}
               <span className="text-muted-foreground">
                 {' '}&middot; {f.isHome ? 'Home' : 'Away'}
                 {f.friendly && <> &middot; Friendly</>}

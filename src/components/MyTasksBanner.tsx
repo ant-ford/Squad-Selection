@@ -18,7 +18,7 @@ export function taskTitle(task: MyTask): string {
     case 'statement':
       return 'Complete your Player Statement';
     case 'waivers':
-      return "Complete this season's Waivers & Declarations";
+      return "Complete this season's waivers & declarations";
     case 'details':
       return `Check your details for ${hkSeasonLabel()}`;
     case 'application':
@@ -47,7 +47,7 @@ export function taskTitle(task: MyTask): string {
 }
 
 function noLinkHint(task: MyTask): string {
-  if (task.key === 'statement') return 'Use the Commitment Form link in your review email.';
+  if (task.key === 'statement') return 'Use the Player Statement link in your review email.';
   return 'Ask the Membership Officer for the form link.';
 }
 
@@ -76,7 +76,7 @@ export default function MyTasksBanner() {
             <p className="text-sm font-semibold text-foreground">{taskTitle(task)}</p>
             {/* Only when there is no button to press. */}
             {!task.url && <p className="text-xs text-muted-foreground mt-0.5">{noLinkHint(task)}</p>}
-            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, h:mm a')}</p>}
+            {task.due && <p className="text-xs text-muted-foreground mt-0.5">Answer by {safeFormat(task.due, 'EEE d MMM, HH:mm')}</p>}
           </div>
           {task.url &&
             // Eddy's own screens open in place; the Fillout forms in a new tab.

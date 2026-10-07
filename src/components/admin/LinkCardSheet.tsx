@@ -4,7 +4,7 @@ import { toast } from '@/lib/toast';
 import PersonPicker from '@/components/admin/PersonPicker';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ActionButton } from '@/components/ui/action-button';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { checkRefusal, linkedNote } from '@/lib/dataChecks';
 import { linkMatchCard, type UnlinkedCard } from '@/api/dataChecks';
 
@@ -51,7 +51,7 @@ export default function LinkCardSheet({
           <div>
             <p className="text-sm font-medium text-foreground">{card.rawName}</p>
             <p className="text-xs text-muted-foreground">
-              {[card.team, safeFormat(card.matchDate, 'd MMM yyyy', ''), card.opponent ? `v ${card.opponent}` : ''].filter(Boolean).join(' · ')}
+              {[card.team, safeFormat(card.matchDate, LONG_DATE, ''), card.opponent ? `v ${card.opponent}` : ''].filter(Boolean).join(' · ')}
             </p>
           </div>
           <div className="space-y-2" role="radiogroup" aria-label="Whose card">

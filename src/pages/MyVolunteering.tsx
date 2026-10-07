@@ -7,7 +7,7 @@ import AppFooter from '@/components/AppFooter';
 import VolunteeringSection from '@/components/VolunteeringSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getMyVolunteering, saveVolunteering } from '@/api/volunteering';
 import { volunteeringMissing, type MyVolunteering, type VolunteeringAnswers } from '@shared/volunteering';
 import { errorMessage } from '@/lib/errorMessages';
@@ -18,7 +18,7 @@ function Form({ initial, onSaved }: { initial: MyVolunteering; onSaved: () => vo
   const missing = volunteeringMissing(answers);
   return (
     <>
-      {initial.updatedAt && <p className="text-xs text-muted-foreground">Last updated {safeFormat(initial.updatedAt, 'd MMM yyyy')}.</p>}
+      {initial.updatedAt && <p className="text-xs text-muted-foreground">Last updated {safeFormat(initial.updatedAt, LONG_DATE)}.</p>}
       <VolunteeringSection value={answers} onChange={setAnswers} />
       {save.error && (
         <p role="alert" className="text-xs text-destructive">

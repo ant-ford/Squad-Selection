@@ -31,7 +31,7 @@ function writePendingEmail(value: string | null) {
 }
 
 /** The sign-in screen; the join page gives its own title, intro and return address. */
-export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter your email to sign in', redirectTo }: { title?: string; intro?: string; redirectTo?: string } = {}) {
+export default function Login({ title = 'Eddy', intro = 'Enter your email to sign in', redirectTo }: { title?: string; intro?: string; redirectTo?: string } = {}) {
   const [email, setEmail] = useState(() => readPendingEmail());
   const [code, setCode] = useState('');
   // 'request' collects the email; 'verify' accepts the code. We resume
@@ -162,7 +162,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
                 disabled={sending || waitingForCheck}
                 className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {sending ? 'Sending...' : waitingForCheck ? 'Checking...' : 'Send Sign-In Email'}
+                {sending ? 'Sending...' : waitingForCheck ? 'Checking...' : 'Send sign-in email'}
               </button>
             </form>
             {/* Someone who already has a code — read on another device, or
@@ -226,7 +226,7 @@ export default function Login({ title = 'HKFC Squad Selection', intro = 'Enter y
                 disabled={verifying || code.length !== CODE_LENGTH}
                 className="w-full bg-primary text-primary-foreground py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                {verifying ? 'Verifying...' : 'Sign In'}
+                {verifying ? 'Verifying...' : 'Sign in'}
               </button>
             </form>
             <div className="flex justify-between mt-4 text-xs">

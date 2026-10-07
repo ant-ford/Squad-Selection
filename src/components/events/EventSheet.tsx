@@ -248,7 +248,7 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">Are you coming?</h3>
                   <p className="text-xs text-muted-foreground">
-                    {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, h:mm a')}` : 'Answers have closed'}
+                    {event.open ? `Answer by ${safeFormat(event.respondBy ?? event.startsAt, 'EEE d MMM, HH:mm')}` : 'Answers have closed'}
                   </p>
                 </div>
                 {mine?.signedUpBy && <p className="text-xs text-muted-foreground">Signed up by {mine.signedUpBy.name}{billed(event.paymentMode) ? ', who pays for you' : ''}.</p>}

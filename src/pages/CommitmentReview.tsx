@@ -18,7 +18,7 @@ import { differs } from '@/lib/drafts';
 import { useDraft } from '@/lib/useDraft';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { DRAFT_KEPT_MESSAGE } from '@/lib/unsavedChanges';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getReview, submitMemberReport, submitOfficerReview, submitSponsorReview } from '@/api/reviews';
 import {
   belowAttendance,
@@ -37,7 +37,7 @@ import {
 const area = `${inputClass} h-auto min-h-[84px] py-2`;
 const shortArea = `${inputClass} h-auto py-2 resize-none`;
 
-const day = (d: string | null | undefined) => safeFormat(d, 'd MMM yyyy');
+const day = (d: string | null | undefined) => safeFormat(d, LONG_DATE);
 
 function Card({ title, children, note }: { title: string; children: ReactNode; note?: string }) {
   return (
@@ -370,7 +370,7 @@ function OfficerForm({ review, onDone }: { review: ReviewView; onDone: (msg: str
           id="cr-o-available"
           required
           label={`Players available${review.member.team ? ` for ${review.member.team}` : ''}`}
-          hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their Selected Team` : undefined}
+          hint={typeof review.teamActivePlayers === 'number' ? `${review.teamActivePlayers} active players with ${review.member.team} as their selected team` : undefined}
         >
           <input className={inputClass} inputMode="numeric" value={form.playersAvailable} onChange={(e) => setForm({ ...form, playersAvailable: e.target.value.replace(/\D/g, '') })} />
         </Field>
@@ -506,7 +506,7 @@ export default function CommitmentReview() {
                 {[
                   ['Played', review.attendance.matchesPlayed],
                   ['Team played', review.attendance.matchesTeamPlayed],
-                  ['Unavailable', review.attendance.matchesNotAvailable],
+                  ['No', review.attendance.matchesNotAvailable],
                 ].map(([label, value]) => (
                   <div key={label as string} className="rounded-lg bg-muted/50 py-2">
                     <p className="text-lg font-semibold text-foreground">{value ?? '—'}</p>

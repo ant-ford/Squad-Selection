@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/error-state';
 import { StepProgress } from '@/components/ui/step-progress';
 import { ApiError } from '@/lib/apiClient';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getMyDetails } from '@/api/details';
 import { getMySeasonPlan } from '@/api/seasonPlan';
 import { getMyVolunteering } from '@/api/volunteering';
@@ -104,7 +104,7 @@ export default function MyDetailsPage() {
     return (
       <>
         {details.data.checkedAt && (
-          <p className="text-xs text-muted-foreground">Last confirmed {safeFormat(details.data.checkedAt, 'd MMM yyyy')}.</p>
+          <p className="text-xs text-muted-foreground">Last confirmed {safeFormat(details.data.checkedAt, LONG_DATE)}.</p>
         )}
         <StepProgress step={index + 1} total={steps.length} title={step.title} />
         {step.key === 'membership' && <MembershipStep {...props} />}
