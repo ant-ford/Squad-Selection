@@ -68,15 +68,12 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
     // Worker enforces, so the app never keeps its own copy of it.
     sections: sectionsFor(authUser),
 
-    // The Hockey Rules quizzes are Eddy's own screens on Supabase (quizzes.ts).
-    quizzes: true,
-
     // Applicants (and people registering to join) with an application still
     // to fill in belong on it, not the player page.
     applicant: landsOnApplication(user.status, user.applicantStage, authUser),
 
     // Their own link for inviting someone to register to join (trials.ts):
-    // members only, once the app is on Supabase.
+    // members only.
     inviteLink:
       user.status === "Member"
         ? `${(env.APP_ORIGIN ?? "https://app.eddy.global").replace(/\/+$/, "")}/join?ref=${encodeURIComponent(user.id)}`
