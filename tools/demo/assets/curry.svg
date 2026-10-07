@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000">
+  <rect width="800" height="1000" fill="#f6b13c"/>
+  <circle cx="400" cy="430" r="230" fill="#fbe7c1"/>
+  <ellipse cx="400" cy="470" rx="200" ry="70" fill="#ffffff"/>
+  <ellipse cx="400" cy="455" rx="170" ry="52" fill="#c2561c"/>
+  <circle cx="350" cy="445" r="16" fill="#e8873a"/><circle cx="420" cy="462" r="14" fill="#7a2f10"/><circle cx="460" cy="440" r="12" fill="#3c8a3f"/>
+  <path d="M330 300 q20 -40 0 -80 M400 290 q20 -40 0 -80 M470 300 q20 -40 0 -80" stroke="#ffffff" stroke-width="10" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <text x="400" y="770" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="92" font-weight="900" fill="#5a1e06">CURRY NIGHT</text>
+  <text x="400" y="840" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" font-weight="700" fill="#5a1e06">HKFC C · after the Valley B game</text>
+  <text x="400" y="900" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" fill="#5a1e06">Saturday · 19:30 · Spice Route</text>
+</svg>

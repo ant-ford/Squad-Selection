@@ -1,0 +1,12 @@
+{
+  // Checks the fixtures against the app's API types: `npx tsc -p tools/demo`.
+  // The smoke workflow runs it, so a changed response shape fails there.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true
+  },
+  "include": ["fixtures", "fakeSupabase.ts", "personas.mjs"]
+}
