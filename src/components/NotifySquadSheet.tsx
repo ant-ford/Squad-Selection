@@ -12,6 +12,7 @@ import {
   type FixtureBrief,
 } from '@/lib/whatsapp';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import { safeFormat } from '@/lib/dateUtils';
 import { apiPost } from '@/lib/apiClient';
 import { usePushConfig } from '@/lib/queries';
@@ -215,7 +216,7 @@ export default function NotifySquadSheet({
                 disabled={sending}
                 className="mt-2 w-full inline-flex items-center justify-center gap-2 border border-border py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
               >
-                <Bell className="h-4 w-4" /> Send to Eddy app
+                <Bell className="h-4 w-4" /> <span>Send to <EddyWordmark /> app</span>
               </button>
             )}
           </section>

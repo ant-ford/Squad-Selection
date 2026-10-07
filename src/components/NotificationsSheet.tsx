@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from '@/lib/toast';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import EddyWordmark from '@/components/brand/EddyWordmark';
 import { disablePush, enablePush, pushIsOn, pushSupport } from '@/lib/push';
 
 /** Profile menu → Notifications: Eddy's personal alerts on this device, on or off. */
@@ -66,7 +67,7 @@ export default function NotificationsSheet({ publicKey, onClose }: { publicKey: 
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {support === 'needs-install' ? 'On iPhone, add Eddy to your Home Screen first.' : "This browser can't show notifications."}
+              {support === 'needs-install' ? <>On iPhone, add <EddyWordmark /> to your Home Screen first.</> : "This browser can't show notifications."}
             </p>
           )}
         </SheetBody>
