@@ -7,7 +7,7 @@ import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/apiClient';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { getVolunteersBoard } from '@/api/volunteering';
 import { COACH_LEVELS, UMPIRE_LEVELS, VOLUNTEER_GROUPS, type Volunteer } from '@shared/volunteering';
 
@@ -121,7 +121,7 @@ function ByPerson({ people }: { people: Volunteer[] }) {
                   {v.qualifiedCoach && <span className={`${chip} bg-primary-tint/10 text-primary`}>Coach {v.qualifiedCoach}</span>}
                   {v.qualifiedUmpire && <span className={`${chip} bg-primary-tint/10 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
                 </div>
-                {v.updatedAt && <p className="text-xs text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
+                {v.updatedAt && <p className="text-xs text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, LONG_DATE)}</p>}
               </li>
             ))}
           </ul>

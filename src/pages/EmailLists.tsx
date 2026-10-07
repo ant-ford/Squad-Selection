@@ -50,7 +50,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /**
- * The chairman's email lists (Section Chairs + Section Captains). Pick
+ * The chairman's email lists (the Chairman + Section Captains). Pick
  * groups, adjust by hand, then copy the addresses into a Bcc line or
  * download them. The list lives in the page address, so a bookmark is a
  * saved list. Every copy or download is recorded in Membership Events.
@@ -134,7 +134,7 @@ export default function EmailLists() {
         <div className="flex items-center justify-center p-6 pt-16">
           <div className="text-center space-y-3">
             <p className="text-lg font-semibold text-foreground">Chairman's access required</p>
-            <p className="text-sm text-muted-foreground">Email lists are for the Section Chairs and Section Captains.</p>
+            <p className="text-sm text-muted-foreground">Email lists are for the Chairman and Section Captains.</p>
             <button onClick={() => navigate('/')} className="min-h-10 px-3 text-sm text-primary underline">
               Player view
             </button>

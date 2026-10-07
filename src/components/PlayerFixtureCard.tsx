@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react';
 import { StatusBadge, MetaLine } from '@/components/shared';
 import { availableLabel } from '@shared/availableLabel';
+import { availabilityLabel } from '@/lib/availabilityTone';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { fixtureChangeText, isCalledOff } from '@shared/fixtureChange';
 
@@ -141,7 +142,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
           answer they gave for this fixture is not overridden by anything. */}
       {fixture.availabilityFromRule && !calledOff && (
         <p className="mt-1.5 text-xs text-muted-foreground">
-          {fixture.availabilityStatus} from your availability preferences. Tap to set this
+          {availabilityLabel(fixture.availabilityStatus)} from your availability preferences. Tap to set this
           fixture on its own.
         </p>
       )}

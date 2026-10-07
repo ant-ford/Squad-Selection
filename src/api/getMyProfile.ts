@@ -6,7 +6,7 @@ export interface ProfileData {
   isCoach: boolean;
 
   isSectionCaptain: boolean;
-  /** Active Membership Officer / Section Chair / Section Captain rows. Empty for almost everyone. */
+  /** Active Membership Officer / Chairman / Section Captain rows. Empty for almost everyone. */
   officerRoles: {
     office: 'membershipOfficer' | 'sectionChair' | 'sectionCaptain' | 'kitConvenor' | 'hockeyConvenor' | 'assistantDirector' | 'umpireCoordinator';
     designation: string;
@@ -14,7 +14,6 @@ export interface ProfileData {
   /** Officers' sections this person may open, decided by the Worker. */
   sections: ('membership' | 'chairman' | 'kit' | 'planning' | 'trials' | 'registration' | 'people' | 'discipline' | 'club' | 'dataChecks')[];
   /** Whether the Hockey Rules quizzes are in Eddy yet (Supabase backend). */
-  quizzes?: boolean;
   /** An applicant or someone registering to join: their home is the application page. */
   applicant?: boolean;
   /** Their link for inviting someone to register to join; members only, on Supabase. */

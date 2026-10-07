@@ -132,7 +132,7 @@ function Detail({ date, cells }: { date: string; cells: AttendanceCell[] }) {
             <Swatch cell={c} size="h-3.5 w-3.5 mt-0.5" />
             <div className="min-w-0">
               <p className="text-foreground">
-                {c.team} {scored ? `${c.goalsFor}–${c.goalsAgainst}` : 'v'} {c.opponent}
+                {c.team} {scored ? `${c.goalsFor}–${c.goalsAgainst}` : 'vs'} {c.opponent}
                 <span className="text-muted-foreground">
                   {' '}&middot; {c.isHome ? 'Home' : 'Away'}
                   {c.friendly && <> &middot; Friendly</>}
@@ -264,8 +264,8 @@ export default function AttendanceGrid({ playerId }: { playerId: string }) {
                         <button
                           onClick={() => setOpenKey(open ? null : key)}
                           aria-expanded={open}
-                          aria-label={`${team} v ${cell.opponent}, ${safeFormat(d, 'd MMM')}: ${look.label}`}
-                          title={`${shortTeam(team)} v ${cell.opponent} - ${look.label}`}
+                          aria-label={`${team} vs ${cell.opponent}, ${safeFormat(d, 'd MMM')}: ${look.label}`}
+                          title={`${shortTeam(team)} vs ${cell.opponent} - ${look.label}`}
                           style={look.style}
                           className={`relative flex h-8 w-10 items-center justify-center rounded-md transition-transform active:scale-95 ${
                             look.className

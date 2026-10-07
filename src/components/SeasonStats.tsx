@@ -181,7 +181,7 @@ export default function SeasonStats({ playerId }: { playerId: string }) {
           hint="selected, not on the match card"
           value={String(stats.gamesNoShow)}
         />
-        <DetailRow label="Unavailable" value={String(stats.gamesUnavailable)} />
+        <DetailRow label="No" value={String(stats.gamesUnavailable)} />
         <DetailRow label="Card points" value={String(stats.cardPoints)} />
       </div>
     </section>

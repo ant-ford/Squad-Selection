@@ -8,7 +8,7 @@ import { ActionButton } from '@/components/ui/action-button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorText } from '@/components/profile/steps';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { answerReactivation, getReactivationRequest } from '@/api/reactivation';
 
 /**
@@ -38,10 +38,10 @@ export default function ReactivatePage() {
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, 'd MMM yyyy')}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, LONG_DATE)}</p>
           <h2 className="text-base font-semibold text-foreground">{r.name} asks to be reactivated</h2>
           <p className="text-sm text-muted-foreground">
-            {[r.team, r.inactiveSince ? `inactive since ${safeFormat(r.inactiveSince, 'd MMM yyyy')}` : null].filter(Boolean).join(' · ')}
+            {[r.team, r.inactiveSince ? `inactive since ${safeFormat(r.inactiveSince, LONG_DATE)}` : null].filter(Boolean).join(' · ')}
           </p>
         </div>
         {r.doneAt ? (

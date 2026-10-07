@@ -334,11 +334,11 @@ function PlayerDataNote({ stats }: { stats: PeriodStats }) {
   if (stats.seasonsWithoutPlayers.length === 0) return null;
   const withPlayers = stats.seasons.filter((s) => !stats.seasonsWithoutPlayers.includes(s));
   if (withPlayers.length === 0) {
-    return <p className="text-xs text-muted-foreground">No Match Cards were recorded this season, so there are results but no player figures.</p>;
+    return <p className="text-xs text-muted-foreground">No match cards were recorded this season, so there are results but no player figures.</p>;
   }
   return (
     <p className="text-xs text-muted-foreground">
-      Appearances and goals are recorded from {shortSeason(withPlayers[0])}, the first season with Match Cards; earlier
+      Appearances and goals are recorded from {shortSeason(withPlayers[0])}, the first season with match cards; earlier
       seasons have results only.
     </p>
   );

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useEffect, useSyncExternalStore, type ComponentType } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, useRouteError, Navigate } from 'react-router-dom';
 import { usePrefetchQuery, useQuery } from '@tanstack/react-query';
 import { myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
@@ -10,54 +10,6 @@ import Login from './pages/Login';
 import AccessNotActive from '@/components/AccessNotActive';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
-
-// Coach-only routes — deferred so player-only visits skip this bundle.
-const CoachLayout    = lazy(() => import('./components/CoachLayout'));
-const CoachDashboard = lazy(() => import('./pages/CoachDashboard'));
-const SquadSelection = lazy(() => import('./pages/SquadSelection'));
-const PlayerRanking  = lazy(() => import('./pages/PlayerRanking'));
-const TeamAvailability = lazy(() => import('./pages/TeamAvailability'));
-// Officers' sections - deferred for the same reason.
-const MembershipBoard = lazy(() => import('./pages/MembershipBoard'));
-const EmailLists = lazy(() => import('./pages/EmailLists'));
-const ClubStats = lazy(() => import('./pages/ClubStats'));
-// A commitment review: the member, their sponsor or a Membership Officer.
-const CommitmentReview = lazy(() => import('./pages/CommitmentReview'));
-// This season's waivers & declarations.
-const Waivers = lazy(() => import('./pages/Waivers'));
-// Kit: orders, handing out and spares (Kit Convenor, Section Captains).
-const Kit = lazy(() => import('./pages/Kit'));
-// HKHA registration details (the Hockey Convenor only).
-const Registration = lazy(() => import('./pages/Registration'));
-const People = lazy(() => import('./pages/People'));
-const PersonAdmin = lazy(() => import('./pages/PersonAdmin'));
-const Suspensions = lazy(() => import('./pages/Suspensions'));
-const Club = lazy(() => import('./pages/Club'));
-const DataChecks = lazy(() => import('./pages/DataChecks'));
-// Season plans by team (Section Captains; coaches for their own teams).
-const SeasonPlans = lazy(() => import('./pages/SeasonPlans'));
-// The member details update (one section per screen).
-const MyDetails = lazy(() => import('./pages/MyDetails'));
-// The new joiner (applicant) form.
-const Apply = lazy(() => import('./pages/Apply'));
-const JoinerEdit = lazy(() => import('./pages/JoinerEdit'));
-const JoinerTask = lazy(() => import('./pages/JoinerTask'));
-const Reactivate = lazy(() => import('./pages/Reactivate'));
-const ClubDoc = lazy(() => import('./pages/ClubDoc'));
-const SignApplication = lazy(() => import('./pages/SignApplication'));
-const Quizzes = lazy(() => import('./pages/Quizzes'));
-const QuizTake = lazy(() => import('./pages/QuizTake'));
-const Join = lazy(() => import('./pages/Join'));
-const TrialSessions = lazy(() => import('./pages/TrialSessions'));
-const ManageEvents = lazy(() => import('./pages/ManageEvents'));
-// One event, as a page: /events/manage/new or /events/manage/:id.
-const ManageEvent = lazy(() => import('./pages/ManageEvent'));
-const CheckIn = lazy(() => import('./pages/CheckIn'));
-// Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
-const MyVolunteering = lazy(() => import('./pages/MyVolunteering'));
-const Volunteers = lazy(() => import('./pages/Volunteers'));
-const Umpiring = lazy(() => import('./pages/Umpiring'));
-const System = lazy(() => import('./pages/System'));
 
 /** Someone signing up from a member's link who hasn't been registered yet (pages/Join.tsx). */
 function pendingJoin(): boolean {
@@ -95,7 +47,7 @@ function Home() {
   return <PlayerDashboard />;
 }
 
-/** Minimal skeleton shown while a lazy coach route loads. */
+/** Minimal skeleton shown while a lazy route loads. */
 function RouteSkeleton() {
   return (
     <div className="min-h-screen bg-background p-6 space-y-4">
@@ -109,6 +61,20 @@ function RouteSkeleton() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A screen loaded on its first visit, so Player view doesn't carry it. The
+ * route skeleton shows while its chunk downloads; a chunk that fails to load
+ * reaches RouteError, which recovers from a stale deploy.
+ */
+function lazyPage(load: () => Promise<{ default: ComponentType }>) {
+  const Page = lazy(load);
+  return (
+    <Suspense fallback={<RouteSkeleton />}>
+      <Page />
+    </Suspense>
   );
 }
 
@@ -144,286 +110,66 @@ function RouteError() {
   );
 }
 
+// Sign-in and Player view load with the app; every other screen loads on its
+// first visit (lazyPage).
 const router = createBrowserRouter([
   // Open to anyone with a member's link: it signs them up (pages/Join.tsx).
   {
     path: '/join',
     errorElement: <RouteError />,
-    element: (
-      <Suspense fallback={<RouteSkeleton />}>
-        <Join />
-      </Suspense>
-    ),
+    element: lazyPage(() => import('./pages/Join')),
   },
   {
     element: <AuthGate />,
     errorElement: <RouteError />,
     children: [
       { path: '/', element: <Home /> },
-      {
-        path: '/chairman',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <EmailLists />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/stats',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <ClubStats />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/membership',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <MembershipBoard />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/joiners/new',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <JoinerEdit />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/joiners/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <JoinerEdit />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/quizzes',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Quizzes />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/quizzes/:key',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <QuizTake />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/checkin/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <CheckIn />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/events/manage',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <ManageEvents />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/events/manage/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <ManageEvent />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/trial-sessions',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <TrialSessions />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/sign-application/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <SignApplication />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/club-docs/:name',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <ClubDoc />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/reactivate/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Reactivate />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/joiner-task/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <JoinerTask />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/apply',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Apply />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/my-details',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <MyDetails />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/volunteering',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <MyVolunteering />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/volunteers',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Volunteers />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/system',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <System />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/umpiring',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Umpiring />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/season-plans',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <SeasonPlans />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/kit',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Kit />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/registration',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Registration />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/people',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <People />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/people/:id',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <PersonAdmin />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/suspensions',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Suspensions />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/club',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Club />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/data-checks',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <DataChecks />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/waivers',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <Waivers />
-          </Suspense>
-        ),
-      },
-      {
-        path: '/review/:reviewId',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <CommitmentReview />
-          </Suspense>
-        ),
-      },
+      { path: '/chairman', element: lazyPage(() => import('./pages/EmailLists')) },
+      { path: '/stats', element: lazyPage(() => import('./pages/ClubStats')) },
+      { path: '/membership', element: lazyPage(() => import('./pages/MembershipBoard')) },
+      { path: '/joiners/new', element: lazyPage(() => import('./pages/JoinerEdit')) },
+      { path: '/joiners/:id', element: lazyPage(() => import('./pages/JoinerEdit')) },
+      { path: '/quizzes', element: lazyPage(() => import('./pages/Quizzes')) },
+      { path: '/quizzes/:key', element: lazyPage(() => import('./pages/QuizTake')) },
+      { path: '/checkin/:id', element: lazyPage(() => import('./pages/CheckIn')) },
+      { path: '/events/manage', element: lazyPage(() => import('./pages/ManageEvents')) },
+      // One event, as a page: /events/manage/new or /events/manage/:id.
+      { path: '/events/manage/:id', element: lazyPage(() => import('./pages/ManageEvent')) },
+      { path: '/trial-sessions', element: lazyPage(() => import('./pages/TrialSessions')) },
+      { path: '/sign-application/:id', element: lazyPage(() => import('./pages/SignApplication')) },
+      { path: '/club-docs/:name', element: lazyPage(() => import('./pages/ClubDoc')) },
+      { path: '/reactivate/:id', element: lazyPage(() => import('./pages/Reactivate')) },
+      { path: '/joiner-task/:id', element: lazyPage(() => import('./pages/JoinerTask')) },
+      // The new joiner (applicant) form.
+      { path: '/apply', element: lazyPage(() => import('./pages/Apply')) },
+      // The member details update (one section per screen).
+      { path: '/my-details', element: lazyPage(() => import('./pages/MyDetails')) },
+      // Volunteering: the player's own, and the Volunteers view (officers, coaches, captains).
+      { path: '/volunteering', element: lazyPage(() => import('./pages/MyVolunteering')) },
+      { path: '/volunteers', element: lazyPage(() => import('./pages/Volunteers')) },
+      { path: '/system', element: lazyPage(() => import('./pages/System')) },
+      { path: '/umpiring', element: lazyPage(() => import('./pages/Umpiring')) },
+      // Season plans by team (Section Captains; coaches for their own teams).
+      { path: '/season-plans', element: lazyPage(() => import('./pages/SeasonPlans')) },
+      // Kit: orders, handing out and spares (Kit Convenor, Section Captains).
+      { path: '/kit', element: lazyPage(() => import('./pages/Kit')) },
+      // HKHA registration details (the Hockey Convenor only).
+      { path: '/registration', element: lazyPage(() => import('./pages/Registration')) },
+      { path: '/people', element: lazyPage(() => import('./pages/People')) },
+      { path: '/people/:id', element: lazyPage(() => import('./pages/PersonAdmin')) },
+      { path: '/suspensions', element: lazyPage(() => import('./pages/Suspensions')) },
+      { path: '/club', element: lazyPage(() => import('./pages/Club')) },
+      { path: '/data-checks', element: lazyPage(() => import('./pages/DataChecks')) },
+      // This season's waivers & declarations.
+      { path: '/waivers', element: lazyPage(() => import('./pages/Waivers')) },
+      // A commitment review: the member, their sponsor or a Membership Officer.
+      { path: '/review/:reviewId', element: lazyPage(() => import('./pages/CommitmentReview')) },
+      // Coach view: fixtures, squad, ranking and team availability.
       {
         path: '/coach',
-        element: (
-          <Suspense fallback={<RouteSkeleton />}>
-            <CoachLayout />
-          </Suspense>
-        ),
+        element: lazyPage(() => import('./components/CoachLayout')),
         children: [
-          {
-            index: true,
-            element: (
-              <Suspense fallback={<RouteSkeleton />}>
-                <CoachDashboard />
-              </Suspense>
-            ),
-          },
+          { index: true, element: lazyPage(() => import('./pages/CoachDashboard')) },
           {
             // The dashboard (index route above) already IS the fixture
             // list - this only exists so an old bookmark/link lands
@@ -431,30 +177,9 @@ const router = createBrowserRouter([
             path: 'fixtures',
             element: <Navigate to="/coach" replace />,
           },
-          {
-            path: 'match/:matchId',
-            element: (
-              <Suspense fallback={<RouteSkeleton />}>
-                <SquadSelection />
-              </Suspense>
-            ),
-          },
-          {
-            path: 'ranking',
-            element: (
-              <Suspense fallback={<RouteSkeleton />}>
-                <PlayerRanking />
-              </Suspense>
-            ),
-          },
-          {
-            path: 'availability',
-            element: (
-              <Suspense fallback={<RouteSkeleton />}>
-                <TeamAvailability />
-              </Suspense>
-            ),
-          },
+          { path: 'match/:matchId', element: lazyPage(() => import('./pages/SquadSelection')) },
+          { path: 'ranking', element: lazyPage(() => import('./pages/PlayerRanking')) },
+          { path: 'availability', element: lazyPage(() => import('./pages/TeamAvailability')) },
         ],
       },
       // An address Eddy doesn't have (an old link, a typo) lands on the player page.
@@ -505,9 +230,9 @@ function AppLoading() {
         />
         <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary-tint/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
         <div className="relative mt-10 text-center">
-          <p className={`font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground ${textIn}`}>HKFC</p>
-          <p className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>Squad Selection</p>
-          <p className={`mt-6 font-mono text-[10px] tracking-widest text-muted-foreground ${textIn} [animation-delay:240ms]`}>warming up…</p>
+          <p className={`font-mono text-3xl font-bold tracking-[0.4em] pl-[0.4em] text-foreground ${textIn}`}>Eddy</p>
+          <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>HKFC men's hockey</p>
+          <p className={`mt-6 font-mono text-xs tracking-widest text-muted-foreground ${textIn} [animation-delay:240ms]`}>warming up…</p>
         </div>
       </div>
     </div>

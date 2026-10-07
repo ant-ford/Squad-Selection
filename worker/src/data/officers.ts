@@ -14,7 +14,7 @@ export type Office =
   | "sponsor"
   // The kit screens (auth.ts).
   | "kitConvenor"
-  // League registration: the requests for new joiners (joiners.ts) and the
+  // HKHA registration: the requests for new joiners (joiners.ts) and the
   // registration screen (auth.ts).
   | "hockeyConvenor"
   // Coach rights for every team and the trial sessions (auth.ts).
