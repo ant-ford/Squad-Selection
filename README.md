@@ -185,6 +185,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - Preview sends everything to `MAIL_REDIRECT_TO`.
 - **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied, 25 s timeout) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
+- **Read-only switch:** `WRITES="off"` (`worker/src/readOnly.ts`), for a restore. Every non-GET request gets `503 READ_ONLY` before sign-in, the crons and the error log stop, and `/health` says `"writes": "off"`. The app shows one toast (`src/lib/apiClient.ts`). How to switch it: [docs/RESTORE.md](docs/RESTORE.md#the-read-only-switch).
 
 ---
 
@@ -238,7 +239,7 @@ The owner (Anthony) does these, and Claude asks first:
 - anything that writes to production (migrations, data fixes, scripts with `--target=production`);
 - GitHub secrets and environments; Cloudflare, Supabase and Resend settings, including Supabase Auth's CAPTCHA and email rate limit;
 - approving preview deploys and merging PRs;
-- flipping `RETENTION_MODE`; running the July season rollover;
+- flipping `RETENTION_MODE` or `WRITES`; running the July season rollover;
 - setting `hkid_hidden`; who is in `SYSTEM_OWNER_IDS`.
 
 Live scripts:
