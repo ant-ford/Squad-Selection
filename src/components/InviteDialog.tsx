@@ -1,6 +1,7 @@
 import { toast } from '@/lib/toast';
 import { Copy, MessageCircle } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { whatsAppShareLink } from '@shared/whatsapp';
 
 const MESSAGE = "Interested in playing hockey with HKFC? Register your interest here and we'll be in touch about trials:";
 
@@ -31,7 +32,7 @@ export default function InviteDialog({ link, onClose }: { link: string; onClose:
               <Copy className="h-4 w-4" /> Copy link
             </button>
             <a
-              href={`https://wa.me/?text=${encodeURIComponent(`${MESSAGE} ${link}`)}`}
+              href={whatsAppShareLink(`${MESSAGE} ${link}`)}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md bg-primary text-primary-foreground"

@@ -9,6 +9,7 @@
  */
 import { COMPLETE, MEMBER_SUBMITTED, NOT_STARTED, NOTIFIED, SPONSOR_SUBMITTED } from "./statementStages";
 import { median, seasonStartYear } from "./membershipInsights";
+import { daysBetween } from "./hkDateKey";
 
 export interface ReviewFact {
   name: string;
@@ -26,11 +27,6 @@ export interface ReviewFact {
   matchesTeamPlayed?: number;
   practices?: string;
   gamesUmpired?: string;
-}
-
-/** Whole days from one "YYYY-MM-DD" to another. */
-function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
 /** "YYYY-MM" for `n` months after the month of `day`. */

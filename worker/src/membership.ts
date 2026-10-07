@@ -19,7 +19,7 @@ import { selectedDisplayTeam } from "../../shared/displayTeam";
 import type { InsightFact, TeamSquad } from "../../shared/membershipInsights";
 import { HttpError } from "./http";
 import { invalidatePeople } from "./invalidation";
-import { hkDateKey } from "../../shared/hkDateKey";
+import { daysBetween, hkDateKey } from "../../shared/hkDateKey";
 import { toCsv } from "../../shared/csv";
 import { birthdayAtAge } from "../../shared/birthday";
 import {
@@ -129,11 +129,6 @@ function attachments(v: unknown): Attachment[] {
   return v
     .filter((a) => a && typeof a.url === "string")
     .map((a) => ({ url: a.url as string, filename: typeof a.filename === "string" ? a.filename : "Attachment" }));
-}
-
-/** Whole days from one "YYYY-MM-DD" to another. */
-export function daysBetween(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
 export function toCard(row: MembershipRow, today: string): ApplicantCard {

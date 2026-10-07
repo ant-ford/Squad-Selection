@@ -16,6 +16,7 @@ import { API_ID_RE } from "../ids";
 import type { MembershipEventsRepo } from "../membershipEvents";
 import { CHAIRMAN_FIELDS, COMMITMENT_FIELDS, MEMBERSHIP_FIELDS } from "../../../../shared/schema/fieldMaps";
 import { REVIEWS_FROM } from "../../../../shared/statementStages";
+import { addDays } from "../../../../shared/hkDateKey";
 import { fileLink, photoLink } from "./files";
 import { startReview } from "../../reviewEmails";
 
@@ -88,9 +89,6 @@ export function peopleCrmReads(env: Env) {
     },
   };
 }
-
-const addDays = (dayKey: string, n: number) =>
-  new Date(Date.parse(`${dayKey}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 export function supabaseCommitments(env: Env): CommitmentsRepo {
   return {

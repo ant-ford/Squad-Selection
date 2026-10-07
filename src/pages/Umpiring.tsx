@@ -20,6 +20,7 @@ import { hasPending, pendingKey, pendingLabel, withPending, type PendingAction, 
 import { hkDateKey } from '@shared/hkDateKey';
 import { toCsv } from '@shared/csv';
 import { saveCsv } from '@/lib/saveCsv';
+import { whatsAppShareLink } from '@shared/whatsapp';
 import {
   assignDuty,
   confirmAssignment,
@@ -39,7 +40,6 @@ import {
   umpireMark,
   umpiresMessage,
   weekEnd,
-  whatsappShareUrl,
   type DutyAssignment,
   type TeamTally,
   type UmpiringReport,
@@ -457,7 +457,7 @@ function Message({ title, text }: { title: string; text: string }) {
         <ActionButton variant="outline" icon={<Copy />} onClick={() => copy(text)}>
           Copy
         </ActionButton>
-        <a className={linkButton} href={whatsappShareUrl(text)} target="_blank" rel="noreferrer">
+        <a className={linkButton} href={whatsAppShareLink(text)} target="_blank" rel="noreferrer">
           <MessageCircle aria-hidden="true" /> WhatsApp
         </a>
       </div>

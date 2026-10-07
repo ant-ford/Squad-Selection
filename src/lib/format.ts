@@ -1,11 +1,4 @@
-/** Playing position abbreviations, used wherever a position needs to fit a chip or narrow column. */
-export const POS_SHORT: Record<string, string> = {
-  Goalkeeper: 'GK',
-  Defender: 'DEF',
-  Midfielder: 'MID',
-  Forward: 'FWD',
-  'Flexible/Varies': 'FLEX',
-};
+export { POS_SHORT } from '@shared/positions';
 
 /**
  * Team name with the club prefix dropped: "HKFC C" reads as "C".

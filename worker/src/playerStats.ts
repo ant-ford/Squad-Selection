@@ -3,6 +3,7 @@ import type { Env } from "./env";
 import { HttpError } from "./http";
 import { isFriendly, matchForCard } from "./playUp";
 import { parseCardValue, yellowPointsFor } from "./suspension";
+import { outcomeOf } from "./teamRecord";
 import { getReferenceData } from "./reference";
 import { getSeasonContext, currentSeason } from "./seasonContext";
 import { effectiveAvailability, getRulesForPlayer } from "./availabilityRules";
@@ -98,12 +99,6 @@ function isCountableTeamGame(m: Match, team: string): boolean {
   return (m.homeTeam || "") === team || (m.awayTeam || "") === team;
 }
 
-function outcomeFor(goalsFor: number, goalsAgainst: number): GameOutcome {
-  if (goalsFor > goalsAgainst) return "win";
-  if (goalsFor < goalsAgainst) return "loss";
-  return "draw";
-}
-
 function cardPointsFor(cards: string[]): number {
   return cards.reduce((sum, c) => sum + yellowPointsFor(c), 0);
 }
@@ -169,7 +164,7 @@ export function computePlayerSeasonStats(input: PlayerStatsInput): PlayerSeasonS
       isHome,
       goalsFor,
       goalsAgainst,
-      outcome: outcomeFor(goalsFor, goalsAgainst),
+      outcome: outcomeOf(goalsFor, goalsAgainst),
       goals: card.goals ?? 0,
       cards: cardValues,
       cardPoints: cardPointsFor(cardValues),

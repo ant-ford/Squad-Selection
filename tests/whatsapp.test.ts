@@ -10,6 +10,7 @@ import {
   type FixtureBrief,
 } from '../src/lib/whatsapp';
 import { fillMessage } from '../shared/messageTemplates';
+import { whatsAppLink as sharedWhatsAppLink, whatsAppShareLink } from '../shared/whatsapp';
 
 // A wa.me link built from a bad number opens WhatsApp with no usable
 // recipient, which looks to the coach exactly like a message that sent. The
@@ -153,5 +154,22 @@ describe('whatsAppLink', () => {
     expect(link.startsWith('https://wa.me/85291234567?text=')).toBe(true);
     expect(link).toContain('%0A'); // newline
     expect(link).not.toContain(' ');
+  });
+});
+
+describe('whatsAppShareLink', () => {
+  it('has no recipient and percent-encodes the message', () => {
+    expect(whatsAppShareLink('Umpires: A & B\nSat 🏑')).toBe('https://wa.me/?text=Umpires%3A%20A%20%26%20B%0ASat%20%F0%9F%8F%91');
+  });
+
+  it('is the recipient link with no number', () => {
+    expect(whatsAppShareLink('Hi')).toBe(sharedWhatsAppLink('', 'Hi'));
+  });
+});
+
+describe('one wa.me builder', () => {
+  it('the app re-exports the shared recipient link', () => {
+    expect(whatsAppLink).toBe(sharedWhatsAppLink);
+    expect(whatsAppLink('85291234567', 'Hi Sam')).toBe('https://wa.me/85291234567?text=Hi%20Sam');
   });
 });

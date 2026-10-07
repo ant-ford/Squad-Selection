@@ -12,6 +12,7 @@
  */
 import { NEEDS_FIXING, PIPELINE_STAGES, type BoardColumn } from "./membershipStages";
 import { seasonStartYear } from "./season";
+import { addDays } from "./hkDateKey";
 
 export interface InsightFact {
   name: string;
@@ -58,12 +59,6 @@ const ACCEPTED_INDEX = PIPELINE_STAGES.length - 1;
 export const OPEN_STAGES = PIPELINE_STAGES.slice(0, ACCEPTED_INDEX);
 
 const pad = (n: number) => String(n).padStart(2, "0");
-
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 /** Same calendar day a year earlier (29 Feb becomes 28 Feb). */
 function yearEarlier(day: string): string {
