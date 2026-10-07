@@ -84,9 +84,9 @@ export default function StatementCard({ card, today, onOpen }: { card: Card; tod
       </div>
       {(status || (card.waitingOn && card.stage !== NOT_STARTED)) && (
         <div className="mt-2 flex items-center gap-1.5">
-          {status && <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${status.tone}`}>{status.label}</span>}
+          {status && <span className={`text-xs px-1 py-0.5 rounded shrink-0 ${status.tone}`}>{status.label}</span>}
           {card.waitingOn && card.stage !== NOT_STARTED && (
-            <span className="text-[11px] text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
+            <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">Waiting on {card.waitingOn}</span>
           )}
           {chase && card.chase && <WhatsAppIcon href={chase} label={`WhatsApp ${card.chase.name} (Sponsor)`} />}
         </div>

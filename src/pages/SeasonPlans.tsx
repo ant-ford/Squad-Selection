@@ -19,7 +19,7 @@ const LEVEL_TONE: Record<string, string> = {
   some: 'bg-amber-500/15 text-amber-700',
   none: 'bg-rose-500/15 text-rose-700',
 };
-const badge = 'text-[11px] font-medium px-2 py-0.5 rounded-full';
+const badge = 'text-xs font-medium px-1.5 py-0.5 rounded-full';
 
 const FILTERS: { key: string; label: string; test: (p: SeasonPlanPlayer) => boolean }[] = [
   { key: 'all', label: 'Everyone', test: () => true },

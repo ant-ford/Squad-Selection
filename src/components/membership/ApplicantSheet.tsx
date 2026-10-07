@@ -25,7 +25,7 @@ export function Fact({ label, value }: { label: string; value?: ReactNode }) {
   if (value === undefined || value === null || value === '') return null;
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="text-sm text-foreground">{value}</dd>
     </div>
   );
@@ -228,7 +228,7 @@ function ApproveForm({ card, onDone }: { card: ApplicantCard; onDone: () => void
             onChange={(e) => setCommitmentEndDate(e.target.value)}
           />
           {commitmentEndDate && commitmentEndDate === card.turns28On && (
-            <span className="block mt-1 text-[11px]">28th birthday</span>
+            <span className="block mt-1 text-xs">28th birthday</span>
           )}
         </label>
         <label className="text-xs text-muted-foreground col-span-2">

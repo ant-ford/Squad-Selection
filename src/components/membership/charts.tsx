@@ -60,7 +60,7 @@ export function StatTile({
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-2xl font-semibold text-foreground mt-0.5">{value}</p>
       {delta && (
-        <p className="text-[11px] mt-0.5 flex items-center gap-0.5 flex-wrap text-muted-foreground">
+        <p className="text-xs mt-0.5 flex items-center gap-0.5 flex-wrap text-muted-foreground">
           {delta.change !== 0 && (
             <span
               className="inline-flex items-center font-medium"
@@ -76,7 +76,7 @@ export function StatTile({
           </span>
         </p>
       )}
-      {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+      {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
     </div>
   );
 }
@@ -106,7 +106,7 @@ export function ChartCard({
         {table && (
           <button
             onClick={() => setAsTable((v) => !v)}
-            className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="shrink-0 text-xs px-1.5 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
             aria-pressed={asTable}
           >
             {asTable ? 'Chart' : 'Table'}
@@ -123,7 +123,7 @@ export function DataTable({ head, rows }: { head: string[]; rows: ReactNode[][] 
     <div className="overflow-x-auto -mx-1">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
             {head.map((h, i) => (
               <th key={h} className={`px-1 pb-1.5 font-medium ${i > 0 ? 'text-right' : ''}`}>
                 {h}
@@ -201,7 +201,7 @@ export function HBars({
             </span>
           </span>
           {/* The note gets its own line, so it is never cut off beside a long bar. */}
-          {r.note && <span className="block text-[11px] text-muted-foreground truncate pl-1.5 leading-tight">{r.note}</span>}
+          {r.note && <span className="block text-xs text-muted-foreground truncate pl-1.5 leading-tight">{r.note}</span>}
           </span>
         </li>
       ))}
@@ -227,7 +227,7 @@ export function MonthColumns({ rows, unit }: { rows: { month: string; count: num
     <div style={chartVars}>
       <div className="relative flex">
         {/* y-axis ticks */}
-        <div className="flex flex-col justify-between h-36 pr-1.5 text-[10px] text-muted-foreground tabular-nums text-right w-7 shrink-0">
+        <div className="flex flex-col justify-between h-36 pr-1.5 text-xs text-muted-foreground tabular-nums text-right w-8 shrink-0">
           {ticks.map((t) => (
             <span key={t} className="leading-none -translate-y-1/2 first:translate-y-0 last:translate-y-0">
               {fmt(t)}
@@ -279,7 +279,7 @@ export function MonthColumns({ rows, unit }: { rows: { month: string; count: num
               </span>
             </div>
           )}
-          <div className="flex gap-0.5 mt-1 text-[10px] text-muted-foreground">
+          <div className="flex gap-0.5 mt-1 text-xs text-muted-foreground">
             {rows.map((r, i) => {
               const m = Number(r.month.slice(5, 7));
               const show = everyMonth || m === 1 || i === 0;
@@ -310,7 +310,7 @@ export function SquadBars({
   const pct = (n: number) => `${(n / top) * 100}%`;
   return (
     <div style={chartVars}>
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-[11px] text-muted-foreground" aria-label="Legend">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-muted-foreground" aria-label="Legend">
         <li className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--series-1)' }} /> Active players
         </li>
@@ -392,7 +392,7 @@ export function TeamKey({ teams }: { teams: string[] }) {
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 mb-2" aria-label="Key">
       {teams.map((t) => (
-        <li key={t} className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <li key={t} className="flex items-center gap-1 text-xs text-muted-foreground">
           <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: teamColour(t) }} aria-hidden />
           {shortTeam(t)}
         </li>
@@ -500,7 +500,7 @@ export function Columns({
     <div style={chartVars} className="pt-4">
       <div className="relative flex">
         {/* Tick labels sit centred on their gridlines, the reference line's included. */}
-        <div className="relative h-40 w-8 shrink-0 mr-1.5 text-[10px] text-muted-foreground tabular-nums text-right" aria-hidden>
+        <div className="relative h-40 w-9 shrink-0 mr-1.5 text-xs text-muted-foreground tabular-nums text-right" aria-hidden>
           {ticks.map((t) => (
             <span key={t} className="absolute right-0 leading-none -translate-y-1/2" style={{ top: `${(1 - t / top) * 100}%` }}>
               {fmt(t)}
@@ -539,7 +539,7 @@ export function Columns({
               >
                 {(i === hi || i === lo) && rows.length > 2 && (
                   <span
-                    className="absolute text-[10px] text-foreground tabular-nums"
+                    className="absolute text-xs text-foreground tabular-nums"
                     style={{ bottom: `calc(${(Math.min(r.value, top) / top) * 100}% + 2px)` }}
                     aria-hidden
                   >
@@ -575,7 +575,7 @@ export function Columns({
               </span>
             </div>
           )}
-          <div className="flex gap-[2px] mt-1 text-[10px] text-muted-foreground">
+          <div className="flex gap-[2px] mt-1 text-xs text-muted-foreground">
             {rows.map((r, i) => (
               // Unlabelled neighbours leave room, so a label may spill over its column.
               <span key={r.key} className="flex-1 min-w-0 text-center whitespace-nowrap overflow-visible flex justify-center">

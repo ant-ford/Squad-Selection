@@ -31,7 +31,7 @@ export function MetaLine({ date, venue }: { date: string; venue: string }) {
       </span>
       {countdown && (
         <span
-          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none tabular-nums ${tone}`}
+          className={`inline-flex items-center rounded-full border px-1.5 py-px text-xs font-medium leading-none tabular-nums ${tone}`}
         >
           {countdown}
         </span>

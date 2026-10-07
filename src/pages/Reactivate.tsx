@@ -38,7 +38,7 @@ export default function ReactivatePage() {
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, 'd MMM yyyy')}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, 'd MMM yyyy')}</p>
           <h2 className="text-base font-semibold text-foreground">{r.name} asks to be reactivated</h2>
           <p className="text-sm text-muted-foreground">
             {[r.team, r.inactiveSince ? `inactive since ${safeFormat(r.inactiveSince, 'd MMM yyyy')}` : null].filter(Boolean).join(' · ')}

@@ -53,7 +53,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
       {/* Which list it's from, in plain words: a team above (play-up) or
           below (support) the player's own. */}
       {(fixture.isPlayUp || fixture.fixtureCategory === 'support') && (
-        <p className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+        <p className={`mb-1 text-xs font-medium uppercase tracking-wide ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
           {fixture.isPlayUp
             ? isSelected
               ? `Selected to play up for ${fixture.selectionTeam || fixture.hkfcTeam}`
@@ -140,7 +140,7 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
           player can override just by tapping one of the buttons above; an
           answer they gave for this fixture is not overridden by anything. */}
       {fixture.availabilityFromRule && !calledOff && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
+        <p className="mt-1.5 text-xs text-muted-foreground">
           {fixture.availabilityStatus} from your availability preferences. Tap to set this
           fixture on its own.
         </p>

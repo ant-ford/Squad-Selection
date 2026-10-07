@@ -13,7 +13,7 @@ import { COACH_LEVELS, UMPIRE_LEVELS, VOLUNTEER_GROUPS, type Volunteer } from '@
 
 const input =
   'w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const chip = 'text-[11px] px-2 py-0.5 rounded-full bg-muted text-foreground';
+const chip = 'text-xs px-1.5 py-0.5 rounded-full bg-muted text-foreground';
 
 /** A role and who offered it; the qualifications are shown the same way. */
 interface RoleList {
@@ -72,7 +72,7 @@ function ByRole({ lists }: { lists: RoleList[] }) {
                     <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
                       {byTeam(l.people).map(([team, list]) => (
                         <div key={team} className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{team}</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{team}</p>
                           <ul className="text-xs text-foreground">
                             {list.map((v) => (
                               <li key={v.id} className="truncate">
@@ -121,7 +121,7 @@ function ByPerson({ people }: { people: Volunteer[] }) {
                   {v.qualifiedCoach && <span className={`${chip} bg-primary-tint/10 text-primary`}>Coach {v.qualifiedCoach}</span>}
                   {v.qualifiedUmpire && <span className={`${chip} bg-primary-tint/10 text-primary`}>Umpire {v.qualifiedUmpire}</span>}
                 </div>
-                {v.updatedAt && <p className="text-[11px] text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
+                {v.updatedAt && <p className="text-xs text-muted-foreground mt-0.5">Updated {safeFormat(v.updatedAt, 'd MMM yyyy')}</p>}
               </li>
             ))}
           </ul>

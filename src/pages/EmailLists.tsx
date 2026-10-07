@@ -200,7 +200,7 @@ export default function EmailLists() {
                 <ChevronDown className={`h-4 w-4 lg:hidden transition-transform ${showFilters ? 'rotate-180' : ''}`} />
               </button>
               <div className={`space-y-4 ${showFilters ? '' : 'hidden'} lg:block`}>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Several options in one group: anyone matching any of them. Several groups: people must match every group.
                 </p>
                 {GROUPS.filter((g) => g.primary).map(groupBlock)}
@@ -232,7 +232,7 @@ export default function EmailLists() {
                     {addresses.length === 1 ? 'address' : 'addresses'}
                   </p>
                   <p className="text-xs text-muted-foreground">{description}</p>
-                  <p className="text-[11px] text-muted-foreground mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Bookmark this page to keep the list. Copies and downloads are recorded in Membership Events.
                   </p>
                 </div>
