@@ -207,8 +207,11 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
   return { season, today, dates, teams: teamRows, fixtures: shownFixtures };
 }
 
-/** The whole club's grid, read off the shared (cached) season context. Coach only. */
-export async function getTeamAttendance(env: Env): Promise<TeamAttendance> {
+/**
+ * The grid for these teams (a coach's own; every team for those who coach
+ * every team), read off the shared (cached) season context. Coach only.
+ */
+export async function getTeamAttendance(env: Env, teams: readonly string[]): Promise<TeamAttendance> {
   const season = currentSeason();
   const [ref, ctx, rules] = await Promise.all([
     getReferenceData(env),
@@ -216,7 +219,7 @@ export async function getTeamAttendance(env: Env): Promise<TeamAttendance> {
     getAllAvailabilityRules(env),
   ]);
 
-  return computeTeamAttendance({
+  return onlyTeams(computeTeamAttendance({
     players: ref.players,
     teams: ref.teams,
     season,
@@ -227,5 +230,17 @@ export async function getTeamAttendance(env: Env): Promise<TeamAttendance> {
     cardedMatchIds: ctx.matchIdsWithCards,
     exceptions: ctx.exceptionsRaw,
     rules,
-  });
+  }), teams);
+}
+
+/** The grid narrowed to these teams' squads and fixtures, and their dates. */
+export function onlyTeams(grid: TeamAttendance, teams: readonly string[]): TeamAttendance {
+  const keep = new Set(teams);
+  const fixtures = grid.fixtures.filter((f) => keep.has(f.team));
+  return {
+    ...grid,
+    dates: [...new Set(fixtures.map((f) => f.date))].sort(),
+    teams: grid.teams.filter((t) => keep.has(t.team)),
+    fixtures,
+  };
 }

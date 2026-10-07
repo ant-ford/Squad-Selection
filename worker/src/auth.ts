@@ -8,6 +8,8 @@ import { PIPELINE_STAGES, ACCEPTED_STAGE } from "../../shared/membershipStages";
 import { noteRequestPerson, noteRequestVersions, onRequestWrite } from "./requestContext";
 import { authContexts, type AuthContext, type AuthPerson, type HeldOffice } from "./authContext";
 import { raiseVersionFloor, withVersionFloor, type CacheVersions } from "./cacheVersions";
+import { selectedDisplayTeam } from "../../shared/displayTeam";
+import type { Player } from "../../shared/schema/domainTypes";
 
 /** Applicants who may sign in: anyone in the New Joiner pipeline before acceptance. */
 const APPLICANT_SIGN_IN_STAGES = PIPELINE_STAGES.filter((s) => s !== ACCEPTED_STAGE);
@@ -152,7 +154,7 @@ export function authorize(normalizedEmail: string, context: AuthContext): Author
   );
   // The Assistant Director of Hockey coaches every team, like a Section
   // Captain's team link (owner decision, 2026-10-04).
-  const coachesAllTeams = isSectionCaptain || officerRoles.some((r) => r.office === "assistantDirector");
+  const coachesAllTeams = coachesEveryTeam({ isSectionCaptain, officerRoles });
   // Section Captains see every team everywhere - the most permissive of the
   // paths this used to be computed on, now the single definition.
   const coachTeams = coachesAllTeams ? context.allTeamNames : context.coachTeams;
@@ -226,6 +228,47 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
     throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
   }
   return user;
+}
+
+/**
+ * Coaches every team: a Section Captain's team link or the Assistant
+ * Director of Hockey office (owner decisions, 2026-10-04 and 2026-10-07).
+ * Their coachTeams is every team name.
+ */
+export function coachesEveryTeam(user: Pick<AuthorizedUser, "isSectionCaptain" | "officerRoles">): boolean {
+  return user.isSectionCaptain || user.officerRoles.some((r) => r.office === "assistantDirector");
+}
+
+/** Whether this coach acts for the team: one they coach, or any team for those who coach every team. */
+export function coachesTeam(user: Pick<AuthorizedUser, "role" | "coachTeams">, team: string | null | undefined): boolean {
+  return user.role === "coach" && !!team && user.coachTeams.includes(team);
+}
+
+/**
+ * Whether this coach acts for the player: they coach the team the app shows
+ * the player in, or the player's registered team (the same rule as a
+ * coach's view of a person's history, history.ts coachesPerson).
+ */
+export function coachesPlayer(
+  user: Pick<AuthorizedUser, "role" | "coachTeams">,
+  player: Pick<Player, "registeredTeam" | "selectedTeamSos" | "selectedTeamEos">,
+): boolean {
+  return coachesTeam(user, selectedDisplayTeam(player)) || coachesTeam(user, player.registeredTeam);
+}
+
+/**
+ * The 403 for a coach acting outside their own teams (owner decision,
+ * 2026-10-07: "Coaches act only on their teams' matches; Section Captains
+ * and the Assistant Director keep every team"). Like COACH_ACCESS_REQUIRED,
+ * it keeps them signed in.
+ */
+export function notYourTeam(): HttpError {
+  return new HttpError("You can only do this for your own teams.", 403, "NOT_YOUR_TEAM");
+}
+
+/** 403 NOT_YOUR_TEAM unless this coach acts for the team (coachAccess.ts has the match and side checks). */
+export function requireCoachOfTeam(user: Pick<AuthorizedUser, "role" | "coachTeams">, team: string | null | undefined): void {
+  if (!coachesTeam(user, team)) throw notYourTeam();
 }
 
 /**

@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     setMyAvailability: vi.fn(),
     setMyAvailabilityForDate: vi.fn(),
     setPlayerAvailability: vi.fn(),
+    setPlayerOptInOnly: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     getTeamAvailabilityForMatch: vi.fn(),
     recommendationOrder: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock("../worker/src/availability", () => ({
   setMyAvailability: mocks.setMyAvailability,
   setMyAvailabilityForDate: mocks.setMyAvailabilityForDate,
   setPlayerAvailability: mocks.setPlayerAvailability,
+  setPlayerOptInOnly: mocks.setPlayerOptInOnly,
 }));
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
@@ -165,7 +167,7 @@ import { SupabaseError } from "../worker/src/data/supabase";
 import { invalidateAll } from "../worker/src/cache";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { office, person, recId, team } from "./helpers/factories";
+import { match, office, person, recId, team } from "./helpers/factories";
 
 const ENV = {
   ...SUPABASE_TEST_ENV,
@@ -236,7 +238,20 @@ const COACH_USER: AuthorizedUser = expect.objectContaining({
   email: "coach@hkfc.com", personId: COACH, role: "coach", coachTeams: ["Men's 1s"], isSectionCaptain: false, officerRoles: [],
 });
 
+// Fixtures the coach routes look up: coaches act only on their own teams'
+// matches (coachAccess.ts). "recM1" is the coach's own team's.
+const OWN_MATCH = "recM1";
+/** Men's 3s away: the coach of Men's 1s has no side in it. */
+const OTHER_MATCH = recId("M3");
+/** Men's 1s at home to Men's 3s. */
+const DERBY = recId("Derby");
+
 const db = useFakeRepos(() => ({
+  matches: [
+    match({ id: OWN_MATCH, homeTeam: "Men's 1s", awayTeam: "Valley" }),
+    match({ id: OTHER_MATCH, homeTeam: "KCC", awayTeam: "Men's 3s" }),
+    match({ id: DERBY, homeTeam: "Men's 1s", awayTeam: "Men's 3s" }),
+  ],
   people: [
     person({ id: PLAYER, preferredName: "Test Player", email: "player@hkfc.com", registeredTeam: "Men's 3s" }),
     person({ id: COACH, preferredName: "Test Coach", email: "coach@hkfc.com", registeredTeam: "Men's 1s" }),
@@ -575,7 +590,8 @@ describe("coach-only routes", () => {
       jsonInit({ playerIds: ["recP9", "recP8"], actingEmail: "attacker@evil.com" }),
     );
     expect(res.status).toBe(200);
-    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined);
+    // A coach of one team moves only their own players (ranking.ts).
+    expect(mocks.reorderRanking).toHaveBeenCalledWith(ENV, ["recP9", "recP8"], "coach@hkfc.com", undefined, expect.any(Function));
   });
 
   it("passes the optional justification note through on ranking writes", async () => {
@@ -591,6 +607,7 @@ describe("coach-only routes", () => {
       ["recP9", "recP8"],
       "coach@hkfc.com",
       "bulk reorder",
+      expect.any(Function),
     );
 
     // Without a note the argument is simply absent.
@@ -600,6 +617,7 @@ describe("coach-only routes", () => {
       ["recP9", "recP8"],
       "coach@hkfc.com",
       undefined,
+      expect.any(Function),
     );
   });
 
@@ -679,6 +697,150 @@ describe("coach-only routes", () => {
     const res = await call("/api/my-profile");
     expect(res.status).toBe(200);
     expect(mocks.getMyProfile).toHaveBeenCalledWith(ENV, COACH_USER);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coaches act only on their own teams' matches (owner decision, 7 Oct 2026,
+// after the security review, PR #285): "Coaches act only on their teams'
+// matches; Section Captains and the Assistant Director keep every team."
+// The coach coaches Men's 1s; the Teams-linked Section Captain and the
+// Assistant Director coach every team. A derby needs the written side's team.
+// ---------------------------------------------------------------------------
+
+describe("coaches act only on their own teams", () => {
+  type Scope = "match" | "side";
+  const matchRoutes: { name: string; scope: Scope; request: (id: string, side: "home" | "away") => [string, RequestInit]; handler: () => ReturnType<typeof vi.fn> }[] = [
+    { name: "GET players", scope: "match", request: (id, side) => [`/api/match/${id}/players?side=${side}`, {}], handler: () => mocks.getPlayersForMatch },
+    { name: "GET recommendations", scope: "match", request: (id, side) => [`/api/match/${id}/recommendations?side=${side}`, {}], handler: () => mocks.getRecommendationsForMatch },
+    { name: "GET availability", scope: "match", request: (id) => [`/api/match/${id}/availability`, {}], handler: () => mocks.getAvailabilityForMatch },
+    { name: "POST availability for a player", scope: "match", request: (id) => [`/api/match/${id}/availability`, jsonInit({ playerId: PLAYER, status: "Maybe" })], handler: () => mocks.setPlayerAvailability },
+    { name: "POST auto-select", scope: "match", request: (id) => [`/api/match/${id}/auto-select`, jsonInit({ enabled: true })], handler: () => mocks.toggleAutoSelect },
+    { name: "POST kit", scope: "side", request: (id, side) => [`/api/match/${id}/kit`, jsonInit({ side, kit: "Blue" })], handler: () => mocks.setMatchKit },
+    { name: "POST squad changes", scope: "side", request: (id, side) => ["/api/squad/changes", jsonInit({ matchId: id, side, add: [], remove: [], version: 0 })], handler: () => mocks.applySquadChanges },
+    { name: "POST squad sync", scope: "side", request: (id, side) => ["/api/squad/sync", jsonInit({ matchId: id, side, selectedIds: [] })], handler: () => mocks.syncSquad },
+  ];
+
+  beforeEach(() => {
+    mocks.getPlayersForMatch.mockResolvedValue({ match: {}, players: [] });
+    mocks.getRecommendationsForMatch.mockResolvedValue({ recommendations: [] });
+    mocks.getAvailabilityForMatch.mockResolvedValue({ exceptions: [] });
+    mocks.setPlayerAvailability.mockResolvedValue({ success: true, exceptionId: null });
+    mocks.setMatchKit.mockResolvedValue({ success: true });
+    mocks.applySquadChanges.mockResolvedValue({ status: "ok", version: 1, selectedIds: [], displaced: [] });
+  });
+
+  // [who, match, side, allowed]
+  const cases = (scope: Scope): [string, string, "home" | "away", boolean][] => [
+    ["coach", OWN_MATCH, "home", true],
+    ["coach", OTHER_MATCH, "away", false],
+    // Asking for the other side of someone else's match gets nowhere either.
+    ["coach", OTHER_MATCH, "home", false],
+    ["coach", DERBY, "home", true],
+    // A derby: either side's coach reads it; only the side's own coach writes it.
+    ["coach", DERBY, "away", scope === "match"],
+    ["captain", OTHER_MATCH, "away", true],
+    ["captain", DERBY, "away", true],
+    ["adh", OTHER_MATCH, "away", true],
+    ["adh", DERBY, "away", true],
+  ];
+
+  for (const { name, scope, request, handler } of matchRoutes) {
+    it.each(cases(scope))(`${name}: %s on %s (%s) allowed=%s`, async (who, id, side, allowed) => {
+      signInAs(TOKENS[who as "coach" | "captain" | "adh"]);
+      const res = await call(...request(id, side));
+      if (allowed) {
+        expect(res.status).toBe(200);
+        expect(handler()).toHaveBeenCalledTimes(1);
+      } else {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+        expect(handler()).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("answers 404 for a coach naming a match that does not exist, and calls nothing", async () => {
+    signInAs(TOKENS.coach);
+    const res = await call(`/api/match/${recId("Nowhere")}/players`);
+    expect(res.status).toBe(404);
+    expect(mocks.getPlayersForMatch).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/squad/notified needs the side's own coach", async () => {
+    signInAs(TOKENS.coach);
+    const away = await call("/api/squad/notified", jsonInit({ matchId: DERBY, side: "away" }));
+    expect(away.status).toBe(403);
+    expect(await away.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+    const other = await call("/api/squad/notified", jsonInit({ matchId: OTHER_MATCH, side: "away" }));
+    expect(other.status).toBe(403);
+    const noSide = await call("/api/squad/notified", jsonInit({ matchId: OWN_MATCH }));
+    expect(noSide.status).toBe(400);
+  });
+
+  it("the priority player list: the coach's own team only", async () => {
+    signInAs(TOKENS.coach);
+    expect((await call("/api/team/auto-select-players?team=Men's%201s")).status).toBe(200);
+    const read = await call("/api/team/auto-select-players?team=Men's%203s");
+    expect(read.status).toBe(403);
+    expect(await read.json()).toMatchObject({ error: "NOT_YOUR_TEAM" });
+    const write = await call("/api/team/auto-select-players", jsonInit({ teamName: "Men's 3s", playerIds: [] }));
+    expect(write.status).toBe(403);
+    expect(mocks.getTeamAutoSelectPlayers).toHaveBeenCalledTimes(1);
+    expect(mocks.setTeamAutoSelectPlayers).not.toHaveBeenCalled();
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      expect((await call("/api/team/auto-select-players?team=Men's%203s")).status).toBe(200);
+      expect((await call("/api/team/auto-select-players", jsonInit({ teamName: "Men's 3s", playerIds: [] }))).status).toBe(200);
+    }
+  });
+
+  it("the team availability dashboard: the coach's own squads; every squad for those who coach every team", async () => {
+    mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
+    signInAs(TOKENS.coach);
+    await call("/api/team-attendance");
+    expect(mocks.getTeamAttendance).toHaveBeenLastCalledWith(ENV, ["Men's 1s"]);
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call("/api/team-attendance");
+      expect([...mocks.getTeamAttendance.mock.lastCall![1]].sort()).toEqual(["Men's 1s", "Men's 3s"]);
+    }
+  });
+
+  it("Opt-In Only: a coach may change only their own team's players (availability.ts checks)", async () => {
+    mocks.setPlayerOptInOnly.mockResolvedValue({ success: true });
+    signInAs(TOKENS.coach);
+    expect((await call(`/api/player/${PLAYER}/opt-in-only`, jsonInit({ optInOnly: true }))).status).toBe(200);
+    const { mayChange } = mocks.setPlayerOptInOnly.mock.lastCall![1];
+    expect(mayChange({ registeredTeam: "Men's 1s" })).toBe(true);
+    expect(mayChange({ registeredTeam: "Men's 3s" })).toBe(false);
+    expect(mayChange({ registeredTeam: "Men's 3s", selectedTeamEos: "Men's 1s" })).toBe(true);
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call(`/api/player/${PLAYER}/opt-in-only`, jsonInit({ optInOnly: true }));
+      expect(mocks.setPlayerOptInOnly.mock.lastCall![1].mayChange).toBeUndefined();
+    }
+  });
+
+  it("the ranking: one section-wide list; a coach moves only their own players, those who coach every team anyone", async () => {
+    signInAs(TOKENS.coach);
+    expect((await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }))).status).toBe(200);
+    const mayMove = mocks.reorderRanking.mock.lastCall![4];
+    expect(mayMove({ registeredTeam: "Men's 1s" })).toBe(true);
+    expect(mayMove({ registeredTeam: "Men's 3s" })).toBe(false);
+
+    for (const token of [TOKENS.captain, TOKENS.adh]) {
+      signInAs(token);
+      await call("/api/ranking/reorder", jsonInit({ playerIds: ["recP9"] }));
+      expect(mocks.reorderRanking.mock.lastCall![4]).toBeUndefined();
+    }
+
+    // Reading the ranking stays open to every coach.
+    mocks.getActiveRanking.mockResolvedValue({ players: [], activeCount: 0, config: {} });
+    signInAs(TOKENS.coach);
+    expect((await call("/api/ranking")).status).toBe(200);
   });
 });
 
@@ -806,7 +968,8 @@ describe("read routes require authentication", () => {
     mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
     const res = await call("/api/team-attendance");
     expect(res.status).toBe(200);
-    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV);
+    // Their own squads only.
+    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV, ["Men's 1s"]);
   });
 
   it("allows a coach through to recent-changes", async () => {

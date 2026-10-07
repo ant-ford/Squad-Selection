@@ -5,6 +5,8 @@ import type { Env } from "./env";
 import { getPlayerByEmail } from "./reference";
 import { HttpError } from "./http";
 import { alertIfNowOut } from "./push";
+import { notYourTeam } from "./auth";
+import type { Player } from "../../shared/schema/domainTypes";
 
 type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
 type AvailabilityStatus = ExceptionStatus;
@@ -245,7 +247,17 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
  */
 export async function setPlayerOptInOnly(
   env: Env,
-  input: { coachEmail: string; playerId: string; optInOnly: boolean },
+  input: {
+    coachEmail: string;
+    playerId: string;
+    optInOnly: boolean;
+    /**
+     * Whether this coach may change this player's default; absent for those
+     * who coach every team. 403 NOT_YOUR_TEAM otherwise (auth.ts
+     * coachesPlayer: the player's shown or registered team is theirs).
+     */
+    mayChange?: (player: Player) => boolean;
+  },
 ) {
   if (!input.playerId) throw new HttpError("playerId is required", 400);
   if (typeof input.optInOnly !== "boolean") {
@@ -253,6 +265,7 @@ export async function setPlayerOptInOnly(
   }
   const player = await people(env).getById(input.playerId);
   if (!player) throw new HttpError("Player not found", 404);
+  if (input.mayChange && !input.mayChange(player)) throw notYourTeam();
 
   await people(env).update(input.playerId, { optInOnly: input.optInOnly });
 

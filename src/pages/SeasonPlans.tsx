@@ -95,7 +95,7 @@ export default function SeasonPlans() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <AppHeader title="Season plans" />
+      <AppHeader title="Season plans" guide="coach" />
       <main className="flex-1 container mx-auto max-w-3xl px-4 py-4 space-y-3">
         {isLoading ? (
           <div className="space-y-3">
