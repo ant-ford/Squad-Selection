@@ -191,6 +191,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - Resend's free plan allows 100 emails a day and 3,000 a month, and Supabase sign-in codes share that allowance.
   - Eddy caps itself at 70 recipients a day (`DAILY_LIMIT`) and logs every send in `email_log`.
   - Preview sends everything to `MAIL_REDIRECT_TO`.
+  - Officers are written to at their office's mailbox (`offices.office_email`), else their own email, and an officer's email goes out from that mailbox when it is on hkfchockey.com, else from `REVIEW_EMAIL_FROM`. The rule and the office-holder reads are in `worker/src/officeContacts.ts`; the Assistant Director of Hockey is the Active `assistant_director` office.
 - **AI:** OpenRouter (`AI_DRAFT_MODEL`, data collection denied, 25 s timeout) drafts review and sponsor text and reads ID documents (`reviewDrafts.ts`, `vision.ts`, `idRead.ts`). Officers always confirm or edit the result.
 - **PDFs:** `worker/src/pdf/` collects the data, and the `render-pdf` Edge Function (`supabase/functions/render-pdf`) fills the templates. `PDFS="on"` enables it.
 - **Read-only switch:** `WRITES="off"` (`worker/src/readOnly.ts`), for a restore. Every non-GET request gets `503 READ_ONLY` before sign-in, the crons and the error log stop, and `/health` says `"writes": "off"`. The app shows one toast (`src/lib/apiClient.ts`). How to switch it: [docs/RESTORE.md](docs/RESTORE.md#the-read-only-switch).

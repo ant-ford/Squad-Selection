@@ -26,6 +26,7 @@ import { TRIAL_STAGE, type JoinResult, type JoinerTrial, type MyTrial, type Tria
 import { audienceOf } from "../../shared/profile";
 import { isUnderEighteen } from "./declarations";
 import { hkDateKey } from "../../shared/hkDateKey";
+import { activeOfficeHolders, officeContact, senderFor } from "./officeContacts";
 
 const isCaptain = (user: AuthorizedUser) => user.officerRoles.some((r) => r.office === "sectionCaptain");
 function requireCaptain(user: AuthorizedUser): void {
@@ -170,8 +171,9 @@ export async function submitRegistration(env: Env, user: AuthorizedUser): Promis
   return { ok: true };
 }
 
+/** The Section Captains' own mailboxes only (not their personal emails). */
 async function captainMailboxes(env: Env): Promise<{ emails: string[]; personId: string | null }> {
-  const rows = await db(env).select<{ office_email: string | null; person_id: string | null }>("offices", "select=office_email,person_id&role=eq.section_captain&status=eq.Active");
+  const rows = await activeOfficeHolders(env, "section_captain");
   return { emails: [...new Set(rows.map((r) => r.office_email).filter((e): e is string => !!e))], personId: rows[0]?.person_id ?? null };
 }
 
@@ -268,9 +270,6 @@ export async function joinerTrial(env: Env, personId: string): Promise<JoinerTri
   };
 }
 
-const addressOf = (v: string) => v.match(/<([^>]+)>/)?.[1] ?? v.trim();
-const displayName = (v: string) => v.match(/^\s*([^<]+?)\s*</)?.[1] ?? null;
-
 /**
  * A practice trial: the Assistant Director of Hockey and the coach of the
  * team the captain picks get the player's hockey CV, and the player is told
@@ -289,14 +288,18 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
   if (!p.email) throw new HttpError("They have no email address.", 400, "INVALID_INPUT");
   const teamRow = await d.one<{ id: string; team_name: string }>("teams", `select=id,team_name&team_name=${eq(team)}`);
   if (!teamRow) throw new HttpError("Choose the team from the list.", 400, "INVALID_INPUT");
-  const coaches = await d.select<{ people: { id: string; email: string | null; preferred_name: string | null; given_names: string | null } | null }>(
-    "team_people",
-    `select=people(id,email,preferred_name,given_names)&team_id=${eq(teamRow.id)}&role=eq.coach`,
-    "team_id,role,person_id",
-  );
+  const [coaches, adhOffice] = await Promise.all([
+    d.select<{ people: { id: string; email: string | null; preferred_name: string | null; given_names: string | null } | null }>(
+      "team_people",
+      `select=people(id,email,preferred_name,given_names)&team_id=${eq(teamRow.id)}&role=eq.coach`,
+      "team_id,role,person_id",
+    ),
+    officeContact(env, "assistant_director"),
+  ]);
   const coachList = coaches.map((c) => c.people).filter((c): c is NonNullable<typeof c> => !!c?.email);
-  const adh = env.ASSISTANT_DIRECTOR || "";
-  const to = [...(adh ? [addressOf(adh)] : []), ...coachList.map((c) => c.email!)];
+  // The Active Assistant Director of Hockey, written to as the office (its mailbox, else their email).
+  const adh = adhOffice?.email ? adhOffice : null;
+  const to = [...(adh ? [adh.email!] : []), ...coachList.map((c) => c.email!)];
   if (!to.length) throw new HttpError(`Neither the Assistant Director of Hockey nor a ${team} coach has an email address in Eddy.`, 400, "INVALID_INPUT");
 
   const captain = await d.one<{ preferred_name: string | null; given_names: string | null; surname: string | null; offices: { office_email: string | null; designation: string | null; role: string }[] }>(
@@ -305,10 +308,10 @@ export async function invitePracticeTrial(env: Env, actor: AuthorizedUser, apiId
   );
   const own = captain?.offices.find((o) => o.role === "section_captain");
   const captainName = captain ? nameOf(captain) : "HKFC Hockey";
-  const from = own?.office_email?.endsWith("@hkfchockey.com") ? `${captainName} <${own.office_email}>` : env.REVIEW_EMAIL_FROM || undefined;
+  const from = senderFor(env, captainName, own?.office_email);
   const name = nameOf(p as never) || "the player";
   const first = (p.preferred_name as string) || (p.given_names as string) || "there";
-  const greeting = [displayName(adh)?.split(" ")[0], ...coachList.map((c) => c.preferred_name || c.given_names)].filter(Boolean).join(" and ") || "all";
+  const greeting = [adh?.firstName, ...coachList.map((c) => c.preferred_name || c.given_names)].filter(Boolean).join(" and ") || "all";
   const visiting = !p.hkid_no && p.passport_no ? " (no HKID: a visiting player)" : "";
   const coachTo = coachList[0];
 
