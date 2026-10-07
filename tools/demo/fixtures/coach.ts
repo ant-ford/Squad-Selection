@@ -49,6 +49,8 @@ function matchPlayers(side: string | null): GetPlayersForMatchOutput {
     selectedByTeam: null, sameDayHigherTeam: null,
     selectionStatus: SELECTED.has(i) ? 'Selected' : '', selectionId: SELECTED.has(i) ? `demoSel${i}` : '',
     isU21: i === 10 || i === 18, isVisitingPlayer: i === 11,
+    // Not opened Eddy for weeks and no answer for this fixture: the "not seen" chip.
+    notSeenWeeks: i === 13 ? 7 : i === 19 ? 9 : null,
   }));
   Object.assign(players[16], { eligibilityStatus: 'blocked', reason: 'Suspended: 1 match to serve', blocks: [{ rule: 'suspension', reason: 'Suspended: 1 match to serve' }] });
   Object.assign(players[15], { selectedByTeam: 'HKFC D', conflicts: [{ type: 'same-day', team: 'HKFC D', matchId: 'demoM8' }] });

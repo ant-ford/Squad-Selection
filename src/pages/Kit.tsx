@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
-import { AlertTriangle, PackageOpen, Search } from 'lucide-react';
+import { AlertTriangle, MessageCircle, PackageOpen, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import WhatsAppListSheet from '@/components/WhatsAppListSheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import HandOutSheet from '@/components/kit/HandOutSheet';
 import SetSheet from '@/components/kit/SetSheet';
@@ -15,7 +16,8 @@ import { PlaceBadge, inputClass, primaryButton, secondaryButton, sizesLine } fro
 import { ApiError } from '@/lib/apiClient';
 import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
-import { getKitBoard, setOrderExpected, setOrderReceived } from '@/api/kit';
+import { useSheetParam } from '@/lib/useSheetParam';
+import { getKitBoard, getUncollectedKit, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
 
@@ -56,14 +58,20 @@ export default function Kit() {
     enabled: allowed,
     refetchInterval: 20_000,
   });
+  // Every order's kit left in the store for more than 14 days, with the owners' mobiles.
+  const uncollected = useQuery({ queryKey: ['kitUncollected'], queryFn: getUncollectedKit, enabled: allowed, staleTime: 60_000 });
+  const [chasing, setChasing] = useState(false);
   const changed = () => {
     void queryClient.invalidateQueries({ queryKey: ['kitBoard'] });
     void queryClient.invalidateQueries({ queryKey: ['kitHistory'] });
     void queryClient.invalidateQueries({ queryKey: ['myKit'] });
+    void queryClient.invalidateQueries({ queryKey: ['kitUncollected'] });
   };
 
   const [handingOut, setHandingOut] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The open set (?set=<id>): in the URL, so the phone's Back closes it.
+  const setSheet = useSheetParam('set');
+  const openId = setSheet.value;
   const [confirmArrived, setConfirmArrived] = useState(false);
   const arrived = useMutation({
     mutationFn: (on: string | null) => setOrderReceived(board!.order!.id, on),
@@ -92,6 +100,11 @@ export default function Kit() {
   const count = (key: string) => (board?.sets ?? []).filter(FILTERS.find((f) => f.key === key)!.test).length;
   const open = board?.sets.find((s) => s.id === openId) ?? null;
   const order = board?.order ?? null;
+  // A link to a set that isn't in this order just drops the parameter.
+  useEffect(() => {
+    if (board && openId && !open) setSheet.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board, openId, open]);
 
   const body = () => {
     if (profileLoading || (allowed && isLoading)) {
@@ -183,7 +196,7 @@ export default function Kit() {
         {view === 'insights' ? (
           <KitInsights
             board={board}
-            onOpenSet={setOpenId}
+            onOpenSet={setSheet.open}
             onShowSets={(show) => {
               // One update: two setParam calls would each start from the same old params.
               const next = new URLSearchParams(params);
@@ -207,6 +220,15 @@ export default function Kit() {
                   {f.label} {count(f.key)}
                 </button>
               ))}
+              {(uncollected.data?.people.length ?? 0) > 0 && (
+                <button
+                  onClick={() => setChasing(true)}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border border-border text-foreground"
+                  title="WhatsApp the owners of kit waiting in the store for more than 14 days"
+                >
+                  <MessageCircle className="h-3 w-3" aria-hidden /> Not collected {uncollected.data!.people.length}
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <div className="relative flex-1 min-w-0">
@@ -226,7 +248,7 @@ export default function Kit() {
             <ul className="rounded-xl border border-border bg-card divide-y divide-border">
               {sets.map((s) => (
                 <li key={s.id}>
-                  <button className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setOpenId(s.id)}>
+                  <button className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setSheet.open(s.id)}>
                     <span className="w-9 text-right font-mono text-sm font-semibold">{s.shirtNo}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-foreground truncate">
@@ -253,8 +275,16 @@ export default function Kit() {
           </>
         )}
 
+        {chasing && uncollected.data && (
+          <WhatsAppListSheet
+            title="Kit not collected"
+            people={uncollected.data.people.map((p) => ({ id: p.id, name: `${p.name} (${p.shirtNo}, since ${safeFormat(p.since, 'd MMM')})`, firstName: p.firstName, mobile: p.mobile }))}
+            defaultMessage="Hi {first name}, your kit is in the kit store waiting for you. When can you collect it?"
+            onClose={() => setChasing(false)}
+          />
+        )}
         {handingOut && <HandOutSheet board={board} onClose={() => setHandingOut(false)} onDone={changed} />}
-        {open && <SetSheet key={open.id} set={open} board={board} onClose={() => setOpenId(null)} onChanged={changed} />}
+        {open && <SetSheet key={open.id} set={open} board={board} onClose={setSheet.close} onChanged={changed} />}
         {confirmArrived && (
           <ConfirmDialog
             title="Has the kit arrived?"

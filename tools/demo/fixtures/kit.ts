@@ -1,4 +1,5 @@
 // Kit: the Kit Convenor's board (orders, sets, people) and a player's own kit.
+import type { UncollectedKit } from '@/api/kit';
 import type { KitBoard, KitMove, KitMoveResult, KitOrder, KitPerson, KitSet, KitSizes, MyKit } from '@shared/kit';
 import type { Persona } from '../personas.mjs';
 import type { Routes } from './routing';
@@ -123,5 +124,12 @@ export const routes: Routes = {
   'GET /api/kit/board': ({ query }) => board(query.get('order')),
   'GET /api/kit/me': ({ persona, variants }) => myKit(persona, variants),
   'GET /api/kit/sets/:id/history': (): KitMove[] => HISTORY,
+  // Kit from an earlier delivery still in the store after 14 days.
+  'GET /api/kit/uncollected': (): { people: UncollectedKit[] } => ({
+    people: [
+      { id: idOf('Marcus Leung'), name: 'Marcus Leung', firstName: 'Marcus', mobile: '+852 5550 2005', shirtNo: 5, since: day(-21) },
+      { id: idOf('Jamie Wong'), name: 'Jamie Wong', firstName: 'Jamie', mobile: '+852 5550 2036', shirtNo: 36, since: day(-17) },
+    ],
+  }),
   'POST /api/kit/move': () => MOVED,
 };

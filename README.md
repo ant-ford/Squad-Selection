@@ -195,6 +195,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 
 - **Routes:** `src/App.tsx`. Sign-in and Player view load with the app. Every other screen is lazy-loaded through `lazyPage()`, and unknown paths go to `/`.
 - **Data:** React Query hooks in `src/lib/queries.ts`, over `src/lib/apiClient.ts` (Bearer JWT, plus `X-Eddy-Fresh` after writes). The player page starts its requests in parallel as soon as there is a session.
+  - **Kept on the phone:** the person's own profile, fixtures and tasks (nothing else) are kept in IndexedDB for up to 24 hours (`src/lib/persistedQueries.ts`), so the app opens on them and refetches at once behind. They're used only by the same person on the same build. Log out, a lapsed session, Delete my profile and a different person signing in all wipe them.
 - **Sign-in:** `@supabase/auth-js` only (`src/lib/supabase.ts`, `src/lib/auth.tsx`), never the whole supabase-js. Turnstile (`src/components/Turnstile.tsx`) is on when `VITE_TURNSTILE_SITE_KEY` is set.
 - **One header on every signed-in screen:** `src/components/AppHeader.tsx`, with its rules in `src/lib/header.ts`. It has:
   - the screen's title, which is also the page's `h1` and tab title;
@@ -210,10 +211,12 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
   - `useUnsavedChanges` asks before leaving unsaved work.
   - `useDraft` keeps drafts of long forms.
   - `useFormGaps` lists what's missing next to the submit button.
+- **Sheets in the URL:** `useSheetParam` (`src/lib/useSheetParam.ts`) keeps the weekly sheets in a search parameter, so a phone's Back closes the sheet rather than the screen, and a shared link opens it. Player view: `?fixture=`, `?note=` (match id), `?stats=`, `?preferences=1`, `?calendar=1`, `?event=`. Kit: `?set=`. Ranking: `?stats=`, `?attendance=`, `?history=` (player id). Squad: `?history=1`. A Sheet with unsaved changes asks before Back closes it. Confirm dialogs, menus and popovers stay out of the URL.
 - **Words:** `docs/glossary.md`. Weekly screens carry almost no explanatory text: rules are enforced by which options are shown.
 - **PWA** (`vite.config.ts`, Workbox):
-  - The app shell is precached.
-  - `web-shell/index.ts` answers a missing hashed file with a 404, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
+  - Only sign-in and Player view are precached: the entry chunk, the vendor chunks, and the sheets and menus the player page opens. `scripts/precache-set.ts` works the list out from the bundle at build time.
+  - Every other screen is cached the first time it is opened (the `eddy-assets` cache), so officer screens are not downloaded to every player's phone.
+  - `web-shell/index.ts` answers a missing hashed file with a 404, which is never cached, so a client on an old deploy can recover. `src/lib/staleDeploy.ts` reloads once, then clears the caches.
   - Files opened through signed links (photos, posters) are cached for up to two days. Each new link is a new URL, so a cached copy is never stale.
   - App crashes are reported to the Worker (`src/lib/clientErrors.ts`).
 

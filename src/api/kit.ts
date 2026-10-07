@@ -7,6 +7,20 @@ export function getKitBoard(orderId?: string | null): Promise<KitBoard> {
   return apiGet<KitBoard>('/api/kit/board', orderId ? { order: orderId } : undefined);
 }
 
+/** Owners whose kit has waited in the store for more than 14 days. */
+export interface UncollectedKit {
+  id: string;
+  name: string;
+  firstName: string;
+  mobile: string;
+  shirtNo: number;
+  since: string;
+}
+
+export function getUncollectedKit(): Promise<{ people: UncollectedKit[] }> {
+  return apiGet('/api/kit/uncollected');
+}
+
 export function getMyKit(): Promise<MyKit> {
   return apiGet<MyKit>('/api/kit/me');
 }
