@@ -16,8 +16,9 @@ export function saveKitSizes(sizes: KitSizes): Promise<{ ok: true }> {
 }
 
 /** Replaces their photo, HKID or passport copy with a data URL (already shrunk in the browser). */
-export function uploadDetailsFile(kind: 'photo' | 'hkid' | 'passport', dataUrl: string): Promise<{ ok: true; url: string | null }> {
-  return apiPost(`/api/details/files/${kind}`, { dataUrl });
+/** A photo may come with its 128 px thumbnail (FileUpload.tsx), kept for the lists' avatars. */
+export function uploadDetailsFile(kind: 'photo' | 'hkid' | 'passport', dataUrl: string, thumbDataUrl?: string): Promise<{ ok: true; url: string | null }> {
+  return apiPost(`/api/details/files/${kind}`, thumbDataUrl ? { dataUrl, thumbDataUrl } : { dataUrl });
 }
 
 /** What an AI reading of their HKID or passport picture suggests for the Personal details (nothing is stored). */

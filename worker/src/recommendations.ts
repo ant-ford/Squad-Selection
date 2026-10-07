@@ -194,6 +194,30 @@ export function buildRecommendations(
   return limit !== undefined ? scored.slice(0, limit) : scored;
 }
 
+type PlayersForMatch = Awaited<ReturnType<typeof getPlayersForMatch>>;
+
+/**
+ * Every candidate's id, best first: the order the coach's squad screen sorts
+ * its list by. The same ranking as getRecommendationsForMatch with the
+ * current squad ranked too (includeSelected) and no position, built from the
+ * players the caller already has, so GET /api/match/:id/players can return
+ * it without the screen asking /recommendations to work out eligibility a
+ * second time. A team with no rank gets [] (the recommendations route
+ * refuses it with a 400; the screen then keeps the list's own order).
+ */
+export async function recommendationOrder(env: Env, playerData: PlayersForMatch): Promise<string[]> {
+  if (!playerData?.match) return [];
+  const teamRankMap = (await getReferenceData(env)).teamRankMap || {};
+  const targetTeamRank = teamRankMap[playerData.match.hkfcTeam];
+  if (targetTeamRank === undefined) return [];
+  return buildRecommendations(playerData.players, targetTeamRank, teamRankMap, { includeSelected: true }).map((r) => r.id);
+}
+
+/**
+ * The coach's recommendation list on its own. The squad screen now takes
+ * the order with the players (recommendationOrder); this stays for one
+ * release, for installed apps that still ask for it.
+ */
 export async function getRecommendationsForMatch(
   env: Env,
   matchId: string,

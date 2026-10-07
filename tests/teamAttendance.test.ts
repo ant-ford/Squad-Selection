@@ -117,6 +117,23 @@ describe("computeTeamAttendance", () => {
     expect(res.fixtures.find((f) => f.matchId === "m1")?.selectedCount).toBe(1);
   });
 
+  it("counts everyone on each side's Match Card, from any squad, once each", () => {
+    const card = (id: string, player: string, matchId: string, team: string): MatchCard =>
+      ({ id, player: [player], match: [matchId], team, season: SEASON, goals: 0 });
+    const res = run({
+      players: [player("recB1", "HKFC B"), player("recC1", "HKFC C")],
+      matches: [match("d1", "2026-09-20", { homeTeam: "HKFC B", awayTeam: "HKFC C" })],
+      cardsByPlayer: new Map([
+        ["recB1", [card("c1", "recB1", "d1", "HKFC B"), card("c1b", "recB1", "d1", "HKFC B")]],
+        ["recC1", [card("c2", "recC1", "d1", "HKFC B")]],
+        ["recX", [card("c3", "recX", "d1", "HKFC C")]],
+      ]),
+    });
+    const count = (team: string) => res.fixtures.find((f) => f.team === team)?.cardCount;
+    expect(count("HKFC B")).toBe(2);
+    expect(count("HKFC C")).toBe(1);
+  });
+
   it("records the result and off fixtures from the team's side", () => {
     const cards: MatchCard[] = [{ id: "c1", player: ["recB1"], match: ["m1"], team: "HKFC B", season: SEASON, goals: 1 }];
     const res = run({
@@ -128,8 +145,9 @@ describe("computeTeamAttendance", () => {
       cardsByPlayer: new Map([["recB1", cards]]),
     });
     const [played, off] = res.fixtures;
-    expect(played).toMatchObject({ past: true, isHome: false, goalsFor: 3, goalsAgainst: 1, off: false });
+    expect(played).toMatchObject({ past: true, isHome: false, goalsFor: 3, goalsAgainst: 1, off: false, cardCount: 1 });
     expect(off).toMatchObject({ past: false, off: true });
+    expect(off.cardCount).toBeUndefined();
     expect(res.teams[0].players[0].cells.m1.status).toBe("played");
   });
 });

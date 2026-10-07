@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     setPlayerAvailability: vi.fn(),
     getRecommendationsForMatch: vi.fn(),
     getTeamAvailabilityForMatch: vi.fn(),
+    recommendationOrder: vi.fn(),
     handleGetCalendarLink: vi.fn(),
     handlePlayerCalendarFeed: vi.fn(),
     handleGetTeamCalendarLink: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock("../worker/src/availability", () => ({
 vi.mock("../worker/src/recommendations", () => ({
   getRecommendationsForMatch: mocks.getRecommendationsForMatch,
   getTeamAvailabilityForMatch: mocks.getTeamAvailabilityForMatch,
+  recommendationOrder: mocks.recommendationOrder,
 }));
 vi.mock("../worker/src/calendar", () => ({
   handleGetCalendarLink: mocks.handleGetCalendarLink,
@@ -706,6 +708,27 @@ describe("read routes require authentication", () => {
     const res = await call("/api/ranking");
     expect(res.status).toBe(200);
     expect(mocks.getActiveRanking).toHaveBeenCalled();
+  });
+
+  it("gives a coach the squad with its recommendation order in one request, when asked", async () => {
+    signInAs(TOKENS.coach);
+    const squad = { match: { hkfcTeam: "Men's 3s" }, players: [{ id: "a" }, { id: "b" }] };
+    mocks.getPlayersForMatch.mockResolvedValue(squad);
+    mocks.recommendationOrder.mockResolvedValue(["b", "a"]);
+
+    const res = await call("/api/match/recM1/players?side=home&recommendations=1");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ...squad, recommendationOrder: ["b", "a"] });
+    // The order is built from the same players: one players-for-match, no second request's worth.
+    expect(mocks.getPlayersForMatch).toHaveBeenCalledTimes(1);
+    expect(mocks.getPlayersForMatch).toHaveBeenCalledWith(ENV, "recM1", "home");
+    expect(mocks.recommendationOrder).toHaveBeenCalledWith(ENV, squad);
+    expect(mocks.getRecommendationsForMatch).not.toHaveBeenCalled();
+
+    // Without the flag (an installed app from before), the answer is as it was.
+    const plain = await call("/api/match/recM1/players");
+    expect(await plain.json()).toEqual(squad);
+    expect(mocks.recommendationOrder).toHaveBeenCalledTimes(1);
   });
 
   it("allows a coach through to the team availability dashboard", async () => {

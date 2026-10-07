@@ -4,6 +4,7 @@ Small tools that put data or private files into Eddy. Not part of the app build 
 
 | Script | What it does |
 |---|---|
+| `backfill-photo-thumbnails.mjs` | Makes the 128 px WebP thumbnail next to each person's photo in R2 that has none (photos from before the app made them). Only reads the database. Dry run until `--apply` |
 | `import-kit-order.mjs` | Loads a supplier's kit order CSV into `kit_orders` and `kit_sets`. Idempotent; never moves a set |
 | `load-quizzes.mjs` | Loads the Hockey Rules quizzes (questions, answer keys) from a JSON file kept outside the repository |
 | `upload-club-doc.mjs` | Puts a club document (`shared/application.ts` CLUB_DOCS) into private file storage |

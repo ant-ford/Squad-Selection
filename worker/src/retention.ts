@@ -16,6 +16,7 @@
  */
 import type { Env } from "./env";
 import { db, inList } from "./data/supabase";
+import { thumbKey } from "./data/supabase/files";
 
 /** The cron expression (worker/wrangler.toml [triggers]) that runs this job. */
 export const RETENTION_CRON = "30 3 * * *";
@@ -87,7 +88,8 @@ export async function deleteQueuedFiles(env: Env, now = new Date()): Promise<num
     const queued = await d.select<{ r2_key: string }>("r2_deletions", `select=r2_key&${due}&order=delete_after,r2_key&limit=${R2_BATCH}`, "r2_key");
     if (queued.length === 0) break;
     const keys = queued.map((q) => q.r2_key);
-    await env.FILES.delete(keys);
+    // With any photo thumbnail kept next to the object (thumbKey); R2 ignores a key it hasn't got.
+    await env.FILES.delete(keys.flatMap((k) => [k, thumbKey(k)]));
     await d.remove("r2_deletions", `r2_key=${inList(keys)}`);
     deleted += keys.length;
     if (queued.length < R2_BATCH) break;
