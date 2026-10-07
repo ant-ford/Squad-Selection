@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { useMyProfile, usePushConfig } from '@/lib/queries';
 import { useSheetParam } from '@/lib/useSheetParam';
 import { coachDashboardPath } from '@/lib/scrollMemory';
-import { backTarget, currentView, documentTitle, switchViews, type View } from '@/lib/header';
+import { backTarget, currentView, documentTitle, phoneTitleRoom, switchViews, type View } from '@/lib/header';
 import { MainMenu, ProfileMenu } from '@/components/HeaderMenus';
 import { headerIconClass, type MenuEntry } from '@/components/headerItems';
 import type { GUIDE_URLS } from '@/components/HelpLink';
@@ -31,7 +31,8 @@ export interface AppHeaderProps {
  * The one header on every signed-in screen: [back] burger · logo (home) ·
  * title … Player/Coach/Umpire switch · profile menu. Pages pass only what is
  * theirs; the menus and the switch come from the signed-in person's profile.
- * At most four buttons on a phone (lib/header.ts phoneControls).
+ * At most four buttons on a phone (lib/header.ts phoneControls), and beside
+ * the switch the title or the logo, not both (phoneTitleRoom).
  */
 export default function AppHeader({ title, back, menuItems, profileItems = [], guide }: AppHeaderProps) {
   const navigate = useNavigate();
@@ -42,9 +43,8 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
   const view = currentView(location.pathname);
   const views = switchViews(profile);
   const canSwitch = views.length > 1;
-  // On a phone the switch already says which of its views this is, so the
-  // title gives way to it there (still the page's h1 for screen readers).
-  const titleGivesWay = canSwitch && !back && view !== null;
+  // On a phone the switch leaves room for the title or the logo, not both.
+  const phone = phoneTitleRoom({ back: !!back, canSwitch, view });
   // Notifications: only once the Worker says it sends them.
   const { data: push } = usePushConfig(!!profile && !applicant && typeof navigator !== 'undefined' && 'serviceWorker' in navigator);
   // ?notifications=1, so Back closes the sheet.
@@ -78,14 +78,15 @@ export default function AppHeader({ title, back, menuItems, profileItems = [], g
         {!applicant && <MainMenu profile={profile} page={menuItems} />}
         <Link
           to="/"
-          className="h-10 w-10 shrink-0 flex items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={`h-10 w-10 shrink-0 ${phone.logo ? 'flex' : 'hidden sm:flex'} items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
           title="Player view"
         >
           <img src="/assets/logo-plain.svg" alt="Eddy" className="h-7 w-7 sm:h-8 sm:w-8 object-contain" />
         </Link>
         <h1
+          title={title}
           className={`flex-1 min-w-0 text-base sm:text-lg font-semibold text-foreground truncate ${
-            titleGivesWay ? 'max-sm:text-transparent max-sm:select-none' : ''
+            phone.title ? '' : 'max-sm:text-transparent max-sm:select-none'
           }`}
         >
           {title}
@@ -131,7 +132,7 @@ function SwitchButton({ label, short, active, onClick }: { label: string; short:
       onClick={onClick}
       aria-pressed={active}
       aria-label={label}
-      className={`h-9 min-w-[3.25rem] px-2 sm:px-2.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+      className={`h-9 min-w-11 sm:min-w-[3.25rem] px-1.5 sm:px-2.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
       }`}
     >

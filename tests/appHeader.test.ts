@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { backTarget, canSwitchView, coachScreen, currentView, documentTitle, phoneControls, switchViews } from "../src/lib/header";
+import { backTarget, canSwitchView, coachScreen, currentView, documentTitle, phoneControls, phoneTitleRoom, switchViews } from "../src/lib/header";
 import { mainMenuGroups } from "../src/components/headerItems";
 
 const read = (file: string) => readFileSync(path.join(__dirname, "..", file), "utf8");
@@ -57,6 +57,17 @@ describe("header buttons on a phone", () => {
   it("a child screen's back arrow takes the switch's place", () => {
     expect(phoneControls({ back: true, canSwitch: true })).toEqual(["back", "menu", "profile"]);
     expect(phoneControls({ back: false, canSwitch: true })).toEqual(["menu", "switch", "profile"]);
+  });
+  it("beside the switch, an officer screen keeps its title and the logo gives way", () => {
+    expect(phoneTitleRoom({ back: false, canSwitch: true, view: null })).toEqual({ title: true, logo: false });
+  });
+  it("on the switch's own screens the title gives way to the switch", () => {
+    expect(phoneTitleRoom({ back: false, canSwitch: true, view: "coach" })).toEqual({ title: false, logo: true });
+    expect(phoneTitleRoom({ back: false, canSwitch: true, view: "player" })).toEqual({ title: false, logo: true });
+  });
+  it("without the switch, both show", () => {
+    expect(phoneTitleRoom({ back: false, canSwitch: false, view: null })).toEqual({ title: true, logo: true });
+    expect(phoneTitleRoom({ back: true, canSwitch: true, view: "coach" })).toEqual({ title: true, logo: true });
   });
 });
 
