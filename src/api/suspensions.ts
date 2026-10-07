@@ -72,7 +72,7 @@ export interface NewSuspension {
 export type SuspensionChange = Partial<Pick<SuspensionRow, 'matches' | 'fromDate' | 'reason'>>;
 
 export function getSuspensions(): Promise<SuspensionsBoard> {
-  return apiGet('/api/discipline/suspensions');
+  return apiGet('/api/discipline/suspension-list');
 }
 
 export function createSuspension(s: NewSuspension): Promise<{ ok: true; id: string }> {
