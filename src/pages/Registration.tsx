@@ -37,7 +37,7 @@ async function copy(label: string, value: string) {
   }
 }
 
-/** One detail, with a copy button for pasting into HockeyHK's forms. */
+/** One detail, with a copy button for pasting into HKHA's forms. */
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="min-w-0">
@@ -197,7 +197,7 @@ function PlayerItem({
             <span className="flex-1" />
             {p.reason ? (
               <button className={`${primaryButton} h-8 text-xs`} disabled={busy || !p.team} onClick={onRegistered}>
-                <Check className="h-3.5 w-3.5" /> Registered with HockeyHK
+                <Check className="h-3.5 w-3.5" /> Registered with HKHA
               </button>
             ) : (
               <button className="text-xs text-muted-foreground underline" disabled={busy} onClick={onUndo}>
@@ -212,10 +212,10 @@ function PlayerItem({
 }
 
 /**
- * HKHA registration (the Hockey Convenor only): every Active player's
+ * HKHA registration (the Men's Convenor only): every Active player's
  * registration details by registered team, who still needs registering
- * with HockeyHK this season and why, what's missing before they can be,
- * and a CSV for HockeyHK's spreadsheet.
+ * with HKHA this season and why, what's missing before they can be,
+ * and a CSV for HKHA's spreadsheet.
  */
 export default function Registration() {
   const queryClient = useQueryClient();
@@ -304,7 +304,7 @@ export default function Registration() {
 
   const body = () => {
     if (profileLoading || (allowed && isLoading)) return <Skeleton className="h-96 w-full" />;
-    if (!allowed) return <p className="text-center py-12 text-muted-foreground">This screen is for the Hockey Convenor.</p>;
+    if (!allowed) return <p className="text-center py-12 text-muted-foreground">This screen is for the Men's Convenor.</p>;
     if (error || !data) {
       return (
         <div className="text-center py-12 border border-dashed border-border rounded-xl">
@@ -394,7 +394,7 @@ export default function Registration() {
         {confirmTeam && (
           <ConfirmDialog
             title={`Mark ${confirmTeam.team} as registered?`}
-            message={`All ${confirmTeam.ids.length} players listed for ${confirmTeam.team}${q ? ' (matching your search)' : ''} come off the list as registered with HockeyHK for ${data.season}.`}
+            message={`All ${confirmTeam.ids.length} players listed for ${confirmTeam.team}${q ? ' (matching your search)' : ''} come off the list as registered with HKHA for ${data.season}.`}
             confirmLabel="Mark them registered"
             onCancel={() => setConfirmTeam(null)}
             onConfirm={() => {

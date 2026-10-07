@@ -131,7 +131,7 @@ const ADH = recId("Adh");
 const CAPTAIN = recId("Captain");
 /** Holds the Section Captain office, with no Teams link. */
 const VICE = recId("Vice");
-/** Holds the Hockey Convenor office (the Men's Convenor). */
+/** Holds the Men's Convenor office (hockeyConvenor). */
 const CONVENOR = recId("Convenor");
 
 const TOKENS = {
