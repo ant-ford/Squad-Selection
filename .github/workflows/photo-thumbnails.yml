@@ -1,0 +1,92 @@
+name: Photo thumbnails
+
+# Makes the 128 px WebP thumbnail of every person's photo that hasn't got one
+# (scripts/migration/backfill-photo-thumbnails.mjs, from #248). New photos get
+# theirs at upload; this covers the ones uploaded before, so the owner doesn't
+# need Node on their own computer.
+#
+# Run it as a dry run first (it only reads and reports counts), then again
+# with "apply" ticked. Re-running is safe: photos that already have a
+# thumbnail are skipped. The database is only read; thumbnails are written
+# next to each photo in R2 (eddy-files).
+#
+# Needs two secrets in the production environment, copied from
+# eddy-secrets.txt: R2_FILES_ACCESS_KEY_ID and R2_FILES_SECRET_ACCESS_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Write the thumbnails (leave unticked for a dry run)
+        type: boolean
+        default: false
+      limit:
+        description: At most this many thumbnails (blank = all)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: photo-thumbnails
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: scripts/migration
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the R2 secrets are set
+        env:
+          R2_FILES_ACCESS_KEY_ID: ${{ secrets.R2_FILES_ACCESS_KEY_ID }}
+          R2_FILES_SECRET_ACCESS_KEY: ${{ secrets.R2_FILES_SECRET_ACCESS_KEY }}
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          missing=""
+          [ -n "$R2_FILES_ACCESS_KEY_ID" ] || missing="$missing R2_FILES_ACCESS_KEY_ID"
+          [ -n "$R2_FILES_SECRET_ACCESS_KEY" ] || missing="$missing R2_FILES_SECRET_ACCESS_KEY"
+          [ -n "$PROD_DB_URL" ] || missing="$missing PROD_DB_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Add these secrets to the production environment (Settings > Environments > production):$missing"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/migration/package-lock.json
+
+      - name: Install the script's packages
+        run: npm ci --no-audit --no-fund
+
+      - name: Make thumbnails (${{ inputs.apply && 'apply' || 'dry run' }})
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+          R2_FILES_ACCESS_KEY_ID: ${{ secrets.R2_FILES_ACCESS_KEY_ID }}
+          R2_FILES_SECRET_ACCESS_KEY: ${{ secrets.R2_FILES_SECRET_ACCESS_KEY }}
+          # Secrets come from the environment above; no eddy-secrets.txt here.
+          EDDY_SECRETS_FILE: /dev/null
+          APPLY: ${{ inputs.apply }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args="--target=production --i-understand-this-writes-production"
+          if [ "$APPLY" = "true" ]; then args="$args --apply"; fi
+          if [ -n "$LIMIT" ]; then args="$args --limit=$LIMIT"; fi
+          node backfill-photo-thumbnails.mjs $args
+
+      - name: Keep the report (counts and file ids only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-thumbnails-report
+          path: scripts/migration/reports/photo-thumbnails-*.json
+          if-no-files-found: ignore
+          retention-days: 14
