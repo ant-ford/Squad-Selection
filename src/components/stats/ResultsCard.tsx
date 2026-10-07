@@ -66,7 +66,7 @@ export default function ResultsCard({
       <div className="lg:columns-2 xl:columns-3 lg:gap-x-8">
         {days.slice(0, shownDays).map((day) => (
           <section key={day.date} className="break-inside-avoid pb-3" aria-label={safeFormat(day.date, 'EEEE d MMMM yyyy')}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pb-1">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground pb-1">
               {safeFormat(day.date, multiSeason ? 'EEE d MMM yyyy' : 'EEE d MMM')}
             </h4>
             <ul>
@@ -79,7 +79,7 @@ export default function ResultsCard({
                   r.goals ? `${r.goals} ${r.goals === 1 ? 'goal' : 'goals'}` : null,
                 ].filter(Boolean);
                 return (
-                  <li key={`${r.home}-${r.away}-${i}`} className="grid grid-cols-[1.75rem_1fr] gap-2 items-center py-1.5 border-t border-border">
+                  <li key={`${r.home}-${r.away}-${i}`} className="grid grid-cols-[2rem_1fr] gap-2 items-center py-1.5 border-t border-border">
                     {o ? (
                       <span
                         className={`h-6 w-6 rounded text-xs font-semibold flex items-center justify-center ${OUTCOME[o].className}`}
@@ -89,7 +89,7 @@ export default function ResultsCard({
                         {OUTCOME[o].letter}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground text-center" title="HKFC derby">
+                      <span className="text-xs text-muted-foreground text-center" title="HKFC derby">
                         derby
                       </span>
                     )}
@@ -102,7 +102,7 @@ export default function ResultsCard({
                         <span className={r.away === side ? 'font-semibold' : ''}>{r.away}</span>
                       </span>
                       {details.length > 0 && (
-                        <span className="block truncate text-[11px] text-muted-foreground">{details.join(' · ')}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{details.join(' · ')}</span>
                       )}
                     </span>
                   </li>

@@ -19,13 +19,12 @@ const LEVEL_TONE: Record<string, string> = {
   some: 'bg-amber-500/15 text-amber-700',
   none: 'bg-rose-500/15 text-rose-700',
 };
-const badge = 'text-[11px] font-medium px-2 py-0.5 rounded-full';
+const badge = 'text-xs font-medium px-1.5 py-0.5 rounded-full';
 
 const FILTERS: { key: string; label: string; test: (p: SeasonPlanPlayer) => boolean }[] = [
   { key: 'all', label: 'Everyone', test: () => true },
   { key: 'part', label: 'Part of the season', test: (p) => !!p.plan?.availabilityHalf || p.plan?.availabilityLevel === 'some' || p.plan?.availabilityLevel === 'none' },
   { key: 'down', label: 'Next team down', test: (p) => shortPreference(p.plan?.playingPreference ?? null) === 'Next team down' },
-  { key: 'captain', label: 'Captaincy yes or maybe', test: (p) => p.plan?.captaincyInterest === 'Yes' || p.plan?.captaincyInterest === 'Maybe' },
   { key: 'missing', label: 'Not answered', test: (p) => !p.plan?.availabilityLevel },
 ];
 
@@ -42,8 +41,7 @@ function Summary({ players }: { players: SeasonPlanPlayer[] }) {
         <span className="text-foreground font-medium">{players.length} players:</span> {parts.join(' · ')}
       </p>
       <p>
-        {halves.join(' · ')} · {n((p) => shortPreference(p.plan?.playingPreference ?? null) === 'Next team down')} prefer the next team down · captaincy{' '}
-        {n((p) => p.plan?.captaincyInterest === 'Yes')} yes, {n((p) => p.plan?.captaincyInterest === 'Maybe')} maybe
+        {halves.join(' · ')} · {n((p) => shortPreference(p.plan?.playingPreference ?? null) === 'Next team down')} prefer the next team down
       </p>
     </div>
   );
@@ -65,15 +63,12 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
       </div>
       <div className="flex flex-wrap gap-1.5 mt-1">
         {level ? (
-          <span className={`${badge} ${LEVEL_TONE[level.key]}`}>{level.short}</span>
+          <span className={`${badge} ${LEVEL_TONE[level.key]}`}>{level.label}</span>
         ) : (
           <span className={`${badge} bg-muted text-muted-foreground`}>{plan ? 'How much not given' : 'Not answered'}</span>
         )}
         {half && <span className={`${badge} bg-violet-500/15 text-violet-700`}>{half.short} only</span>}
         {pref === 'Next team down' && <span className={`${badge} bg-muted text-foreground`}>Next team down</span>}
-        {(plan?.captaincyInterest === 'Yes' || plan?.captaincyInterest === 'Maybe') && (
-          <span className={`${badge} bg-primary-tint/10 text-primary`}>Captain: {plan.captaincyInterest}</span>
-        )}
       </div>
     </li>
   );
@@ -81,8 +76,9 @@ function PlayerRow({ p }: { p: SeasonPlanPlayer }) {
 
 /**
  * Season plans by team, to help allocate players: how much of the season
- * each Active player can play, who prefers the next team down, and who'd
- * captain. Section Captains see every team, a coach their own.
+ * each Active player expects to play and who prefers the next team down.
+ * Captaincy interest is collected but not shown here (owner, 2026-10-07).
+ * Section Captains see every team, a coach their own.
  */
 export default function SeasonPlans() {
   const [params, setParams] = useSearchParams();

@@ -81,4 +81,6 @@ export interface Env {
   SYSTEM_OWNER_IDS?: string;
   /** Where the system health alert goes (src/systemHealth.ts). */
   SYSTEM_ALERT_EMAIL?: string;
+  /** "off": the read-only switch for a restore (src/readOnly.ts). Anything else, or unset: writes on. */
+  WRITES?: string;
 }

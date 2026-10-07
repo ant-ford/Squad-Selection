@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { safeFormat, formatHkTime } from '@/lib/dateUtils';
 import { setMatchKit, type KitColour, type MatchInfo } from '@/api/getPlayersForMatch';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { History } from 'lucide-react';
 import HistorySheet from '@/components/HistorySheet';
 

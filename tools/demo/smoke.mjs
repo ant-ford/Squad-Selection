@@ -80,8 +80,8 @@ async function check(page, job) {
   page.on(listener);
   const url = `${base}${job.path}${job.path.includes('?') ? '&' : '?'}as=${job.as}`;
   await page.send('Page.navigate', { url });
-  const settled = await page.settle({ quietMs: 500, timeoutMs: 45_000 });
-  if (!settled) problems.push('still loading after 45 s');
+  const settled = await page.settle({ quietMs: 500, timeoutMs: 60_000 });
+  if (!settled) problems.push('still loading after 60 s');
   // A busy machine can pause between the code arriving and the screen drawing.
   for (let i = 0; i < 20 && !(await page.eval(`return !!document.querySelector('h1')`).catch(() => false)); i++) await page.settle({ timeoutMs: 1000 });
   const dom = await page.eval(`

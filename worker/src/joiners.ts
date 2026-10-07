@@ -6,7 +6,7 @@
  *
  *  - Section Captains (the Section Captains office) propose and edit new
  *    joiners and send the three emails.
- *  - The Kit Convenor and the Hockey Convenor see their request in My
+ *  - The Kit Convenor and the Men's Convenor see their request in My
  *    Tasks, open it (/joiner-task/:id) and mark it done.
  */
 import type { Env } from "./env";
@@ -164,9 +164,9 @@ async function checkOffices(env: Env, f: JoinerForm): Promise<void> {
   const want: [string, string, string][] = [
     [f.sponsorId, "sponsor", "sponsor"],
     [f.officerId, "membership_officer", "Membership Officer"],
-    [f.chairId, "section_chair", "Section Chair"],
+    [f.chairId, "section_chair", "Chairman"],
     [f.kitConvenorId, "kit_convenor", "Kit Convenor"],
-    [f.hockeyConvenorId, "hockey_convenor", "Hockey Convenor"],
+    [f.hockeyConvenorId, "hockey_convenor", "Men's Convenor"],
   ];
   const ids = want.map(([id]) => id).filter(Boolean);
   if (ids.some((id) => !/^[0-9a-f-]{36}$/.test(id))) throw new HttpError("Choose each office from the list.", 400, "INVALID_INPUT");
@@ -327,7 +327,10 @@ async function shirtNoOf(env: Env, p: Pick<JoinerRow, "shirt_number_id">): Promi
   return (await db(env).one<{ shirt_no: number }>("shirt_numbers", `select=shirt_no&id=${eq(p.shirt_number_id)}`))?.shirt_no ?? null;
 }
 
-const STEP_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Hockey Convenor" };
+/** Who each step waits on, as shown in messages. */
+const STEP_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Men's Convenor" };
+/** steps.waiting_on_role keeps the stored wording (the office title is a separate decision). */
+const STEP_WAITING_ROLE: Record<JoinerStepKey, string> = { kit: "Kit Convenor", registration: "Hockey Convenor" };
 
 /**
  * Opens (or re-points) the convenor's step, sends the email, and undoes a
@@ -353,7 +356,7 @@ async function request(
   await d.update("people", `id=${eq(p.id)}`, key === "kit" ? { sponsored_by_kit_convenor_id: convenor.id } : { sponsored_by_hockey_convenor_id: convenor.id });
 
   const open = await d.one<{ id: string }>("steps", `select=id&process=eq.new_joiner&step=eq.${key}&person_id=${eq(p.id)}&done_at=is.null`);
-  const waiting = { waiting_on_person_id: convenor.people.id, waiting_on_role: STEP_ROLE[key] };
+  const waiting = { waiting_on_person_id: convenor.people.id, waiting_on_role: STEP_WAITING_ROLE[key] };
   const stepId = open
     ? (await d.update<{ id: string }>("steps", `id=${eq(open.id)}`, { ...waiting, started_at: new Date().toISOString() }))[0].id
     : (await d.insert<{ id: string }>("steps", [{ process: "new_joiner", step: key, person_id: p.id, ...waiting }]))[0].id;
@@ -387,7 +390,7 @@ async function request(
   return { ok: true };
 }
 
-/** The details HockeyHK registration needs (the Fillout form's list). */
+/** The details HKHA registration needs (the Fillout form's list). */
 async function registrationRows(env: Env, p: JoinerRow): Promise<[string, string | null][]> {
   return [
     ["Team", p.registered_team],
@@ -462,7 +465,7 @@ export interface JoinerTask {
   applicant: string;
   startedAt: string;
   doneAt: string | null;
-  /** Kit: sizes and number. Registration: the HockeyHK details. */
+  /** Kit: sizes and number. Registration: the HKHA details. */
   rows: [string, string | null][];
   /** Registration: links to the photo and ID documents (valid for an hour or so). */
   files: { label: string; url: string }[];
@@ -517,7 +520,7 @@ export async function getJoinerTask(env: Env, user: AuthorizedUser, stepId: stri
 export async function completeJoinerTask(env: Env, user: AuthorizedUser, stepId: string): Promise<{ ok: true }> {
   const { step, me } = await loadStep(env, user, stepId);
   if (!step.done_at) await db(env).update("steps", `id=${eq(step.id)}&done_at=is.null`, { done_at: new Date().toISOString(), done_by_person_id: me });
-  // Registered with HockeyHK: off the Convenor's "Needs registering" list too.
+  // Registered with HKHA: off the Convenor's "Needs registering" list too.
   if (step.step === "registration") await recordRegistered(env, [step.person_id], me);
   invalidateCache(`joiner-tasks:${user.personId}`);
   return { ok: true };

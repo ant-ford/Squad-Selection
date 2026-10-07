@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Copy, Trash2 } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -60,7 +60,7 @@ export default function TrialSessionsPage() {
                   <li key={s.id} className="py-2 flex items-center gap-3">
                     <div className={`flex-1 min-w-0 ${past ? 'text-muted-foreground' : 'text-foreground'}`}>
                       <p className="text-sm">
-                        {safeFormat(s.startsAt, 'EEE d MMM yyyy, h:mm a')} · {s.place}
+                        {safeFormat(s.startsAt, 'EEE d MMM yyyy, HH:mm')} · {s.place}
                         {past && ' (passed)'}
                       </p>
                       <p className="text-xs text-muted-foreground">
