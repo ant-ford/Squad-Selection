@@ -145,6 +145,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 | Membership stages, applications, signing order | `shared/membershipStages.ts`, `worker/src/apply.ts`, `worker/src/applicationSigning.ts`, SQL `sign_application()` |
 | Commitment reviews and their emails | `worker/src/reviews.ts`, `worker/src/reviewEmails.ts`, `worker/src/reviewDrafts.ts` |
 | Data retention (13 months), Delete my profile | `worker/src/retention.ts`, SQL `retention_stamp()` / `erase_personal_data()`; `docs/DATA_RETENTION.md` |
+| Change history (audited: squad selections, fixture and kit changes, teams, Active, Opt-In Only, offices, answers coaches give for players; who and when, values for non-personal fields only, kept two seasons) | `match_selection_changes` (squads), `activity_log` written by officers' functions and by the `audit_row()` trigger (migration `20261007160004`, actor from the Worker's `x-eddy-actor` header); read by `worker/src/history.ts` (`GET /api/history?person=` / `?match=`) |
 | Displayed team (optics only) | `shared/displayTeam.ts`: Selected Team EOS, then SOS, then the true registered team |
 
 **Invariants. Don't break these:**

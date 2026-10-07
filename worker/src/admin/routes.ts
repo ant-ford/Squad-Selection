@@ -1,7 +1,8 @@
 /**
  * Routes for the officers' admin screens (Supabase backend):
  *
- *   GET  /api/history?person=<api id>         people section
+ *   GET  /api/history?person=<api id>         people section, or the person's coaches (history.ts)
+ *   GET  /api/history?match=<api id>          people section, or the fixture's coaches
  *   GET  /api/admin/people?q=<name>           people section
  *   GET  /api/admin/people/:id                people section
  *   POST /api/admin/people/:id/membership     membership section
@@ -16,9 +17,10 @@
  * again. Answers undefined for a path that isn't one of these.
  */
 import type { Env } from "../env";
-import { requireSection } from "../auth";
+import { requireAuthorizedUser, requireSection } from "../auth";
 import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
+import { getMatchHistory } from "../history";
 import { moveStage, saveMembership } from "./membership";
 import { addOffice, createOfficeHolder, editOffice, listOffices, listTeams, saveTeam } from "./club";
 
@@ -42,8 +44,11 @@ export async function adminRoute(request: Request, env: Env, url: URL): Promise<
   const method = request.method;
 
   if (method === "GET" && pathname === "/api/history") {
-    await requireSection(request, env, "people");
-    return getPersonHistory(env, url.searchParams.get("person") ?? "");
+    // Officers and coaches: each reader checks which of them may see it.
+    const user = await requireAuthorizedUser(request, env);
+    const match = url.searchParams.get("match");
+    if (match !== null) return getMatchHistory(env, user, match);
+    return getPersonHistory(env, url.searchParams.get("person") ?? "", user);
   }
   if (method === "GET" && pathname === "/api/admin/people") {
     await requireSection(request, env, "people");
