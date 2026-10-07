@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, RULE_IDS, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
+import { evaluatePlayerEligibility, computeCompletedLeagueMatchCounts, type EvaluationContext, type VirtualSelection } from "../worker/src/eligibility";
 import { linkId } from "../shared/airtableValueUtils";
 import type { Match, MatchCard, Team } from "../shared/schema/domainTypes";
 import { t, p, m, mc } from "./helpers/factories";
