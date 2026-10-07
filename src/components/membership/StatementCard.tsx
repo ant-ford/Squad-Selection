@@ -32,14 +32,14 @@ const firstOf = (name: string) => name.split(' ')[0] || name;
 
 /**
  * WhatsApp to the member. Once they have been emailed, the message is a
- * reminder to fill in the Commitment Form.
+ * reminder to fill in the Player Statement.
  */
 export function memberWhatsApp(card: Card): string | null {
   const first = firstOf(card.name);
   return whatsAppTo(
     card.mobileNo,
     card.stage === NOTIFIED
-      ? `Hi ${first}, a reminder to fill in the Commitment Form from the email about your HKFC commitment review.`
+      ? `Hi ${first}, a reminder to fill in the Player Statement from the email about your HKFC commitment review.`
       : `Hi ${first}, `,
   );
 }

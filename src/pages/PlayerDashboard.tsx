@@ -232,7 +232,7 @@ export default function PlayerDashboard() {
     if (!sharedFixtureId || !data) return;
     const f = allFixtures.find((x) => x.id === sharedFixtureId);
     if (f) openFixture(f);
-    else toast.info("That game isn't on your page any more");
+    else toast.info("That game isn't in Player view any more");
     setParams(
       (p) => {
         p.delete('fixture');
@@ -350,7 +350,7 @@ export default function PlayerDashboard() {
           )
         ) : (
           <>
-            <SectionHeader title="My Team" count={data.fixtures.length} />
+            <SectionHeader title="My team" count={data.fixtures.length} />
             {data.fixtures.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-border rounded-xl">
                 <p className="text-muted-foreground">No upcoming fixtures for your team</p>
@@ -373,7 +373,7 @@ export default function PlayerDashboard() {
                   onClick={() => setShowPlayUps((v) => !v)}
                   aria-expanded={showPlayUps}
                 >
-                  <SectionHeader title="Play-Up Opportunities" count={playUps.length} />
+                  <SectionHeader title="Play-up opportunities" count={playUps.length} />
                   <ChevronDown
                     className={`h-4 w-4 text-muted-foreground transition-transform ${showPlayUps ? 'rotate-180' : ''}`}
                   />
@@ -389,7 +389,7 @@ export default function PlayerDashboard() {
                   onClick={() => setShowSupport((v) => !v)}
                   aria-expanded={showSupport}
                 >
-                  <SectionHeader title="Support Fixtures" count={support.length} />
+                  <SectionHeader title="Support fixtures" count={support.length} />
                   <ChevronDown
                     className={`h-4 w-4 text-muted-foreground transition-transform ${showSupport ? 'rotate-180' : ''}`}
                   />
