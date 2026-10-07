@@ -4,6 +4,7 @@ import { getReferenceData, getExceptionsForMatches } from "../reference";
 import type { KitColour, Match, Player } from "../../../shared/schema/domainTypes";
 import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
+import { byKickOff } from "../../../shared/kickOff";
 import { fixtureChange } from "../../../shared/fixtureChange";
 import { firstName } from "../../../shared/personName";
 import type { AuthorizedUser } from "../auth";
@@ -55,7 +56,8 @@ export async function getUpcomingFixtures(
       if (key >= todayKey) return true;
       return opts.includePast === true && key >= pastCutoffKey;
     })
-    .sort((a, b) => (a.matchDate || "").localeCompare(b.matchDate || ""));
+    // A TBC time (midnight) after the day's timed games.
+    .sort((a, b) => byKickOff(a.matchDate, b.matchDate));
   const relevant = upcoming.filter((m) => {
     const home = m.homeTeam || ""; const away = m.awayTeam || "";
     if (opts.team) {

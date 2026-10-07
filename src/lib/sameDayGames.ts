@@ -1,4 +1,5 @@
 import { hkDateKey } from '@shared/hkDateKey';
+import { byKickOff } from '@shared/kickOff';
 import type { MyFixture } from '@/api/getMyFixtures';
 
 /**
@@ -19,7 +20,7 @@ export function otherGamesThatDay(fixture: MyFixture, all: MyFixture[]): MyFixtu
     seen.add(f.id);
     out.push(f);
   }
-  return out.sort((a, b) => a.date.localeCompare(b.date));
+  return out.sort((a, b) => byKickOff(a.date, b.date));
 }
 
 /** Fixtures by Hong Kong day, built once so each card only scans its own day. */

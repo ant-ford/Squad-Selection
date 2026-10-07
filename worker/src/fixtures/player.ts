@@ -6,6 +6,7 @@ import { HttpError } from "../http";
 import type { KitColour, Match, Player } from "../../../shared/schema/domainTypes";
 import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
+import { byKickOff } from "../../../shared/kickOff";
 import { fixtureChange } from "../../../shared/fixtureChange";
 import { isBirthdayOn } from "../../../shared/birthday";
 import { firstName, fullName } from "../../../shared/personName";
@@ -382,7 +383,8 @@ export async function buildPlayerFixtureView(
     const side = [sides.home, sides.away].find((x) => x && ownTeams.has(x.team));
     return side ? [{ side: { match: m, ...side, dateKey: hkDateKey(m.matchDate) }, category: "own" as const }] : [];
   });
-  const byDate = <T extends { date: string }>(cards: T[]) => cards.sort((a, b) => a.date.localeCompare(b.date));
+  // Kick-off order, a TBC time after the day's timed games (display only).
+  const byDate = <T extends { date: string }>(cards: T[]) => cards.sort((a, b) => byKickOff(a.date, b.date));
   return {
     displayTeam,
     specialGoalkeeperView: specialGoalkeeperView || undefined,

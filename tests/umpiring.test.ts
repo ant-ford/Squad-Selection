@@ -121,6 +121,44 @@ describe("umpiring messages", () => {
     expect(text.split("\n").slice(2)).toEqual(["11/10 0900 HKFC D ✅George", "11/10 1045 HKFC F 💰Pagey", "11/10 1800 HKFC A ❓"]);
   });
 
+  /** A week with a no-show, a paid and a free umpire, a walk-over, a gap and a TBC time (midnight HK). */
+  const mixedWeek = () => [
+    duty({ id: "tbc", matchDate: "2026-10-10T16:00:00.000Z", timeTbc: true, venue: null, dutyTeam: "HKFC G" }),
+    duty({ id: "late", matchDate: "2026-10-11T10:00:00.000Z", dutyTeam: "HKFC A", assignments: [assignment({ name: "Pagey", personId: null, external: true, paid: true })] }),
+    duty({ id: "free", assignments: [assignment({ name: "George" })] }),
+    duty({ id: "noshow", matchDate: "2026-10-11T02:45:00.000Z", dutyTeam: "HKFC F", assignments: [assignment({ name: "Ann", status: "no_show" })] }),
+    duty({ id: "walkover", matchDate: "2026-10-11T04:30:00.000Z", dutyTeam: "HKFC E", notNeeded: true }),
+    duty({ id: "sat", matchDate: "2026-10-10T07:00:00.000Z", dutyTeam: "HKFC B" }),
+  ];
+
+  it("lists a TBC time after the day's timed games, in both messages", () => {
+    expect(umpiresMessage(mixedWeek(), "https://x").split("\n").slice(2, 8)).toEqual([
+      "10/10 1500 HKFC B",
+      "11/10 0900 HKFC D ✅George",
+      "11/10 1045 HKFC F ✅Ann",
+      "11/10 1230 HKFC E Not needed",
+      "11/10 1800 HKFC A 💰Pagey",
+      "11/10 TBC TBC G",
+    ]);
+    expect(captainsMessage(mixedWeek()).split("\n").at(-1)).toBe("11/10 TBC TBC G ❓");
+  });
+
+  it("writes every message as clean text, no mojibake, for every kind of line", () => {
+    // UTF-8 read as Windows-1252 or Latin-1: "âœ…" for ✅, "ðŸ’°" for 💰, "Â" before a space.
+    const mojibake = /[ÂÃâð][\u0080-ÿŒœŠšŸŽžƒˆ˜–-…‰‹›€™]|�/;
+    const texts = [umpiresMessage(mixedWeek(), "https://app.eddy.global/umpiring?week=2026-10-05"), captainsMessage(mixedWeek())];
+    for (const text of texts) {
+      expect(text).not.toMatch(mojibake);
+      expect(text.normalize("NFC")).toBe(text);
+      // Survives the WhatsApp link's percent-encoding both ways.
+      expect(decodeURIComponent(encodeURIComponent(text))).toBe(text);
+    }
+    expect(texts.join("\n")).toContain("✅Ann");
+    // The pattern itself catches the garbling reported.
+    expect("11/10 1045 HKFC F âœ…Ann").toMatch(mojibake);
+    expect("ðŸ’°Pagey").toMatch(mojibake);
+  });
+
   it("weeks start on Monday, Hong Kong time", () => {
     expect(weekOf("2026-10-11T01:00:00.000Z")).toBe("2026-10-05"); // Sunday morning
     expect(weekOf("2026-10-11T16:30:00.000Z")).toBe("2026-10-12"); // 00:30 Monday in HK
@@ -470,9 +508,10 @@ describe("the season's record", () => {
     );
     expect(reportCsvRows(report)).toEqual([
       ["Date", "Time", "Venue", "Division", "Home", "Away", "Duty team", "Umpire", "Affiliation", "Type"],
-      ["2026-10-11", "TBC", "HKFC", "3", "HKFC F", "Elite B", "HKFC F", "", "", "Uncovered"], // a TBC time sorts first
       ["2026-10-11", "09:00", "HKFC", "3", "HKFC F", "Elite B", "HKFC D", "George", "HKFC", "Free"],
       ["2026-10-11", "09:00", "KP", "3", "HKFC F", "Elite B", "HKFC E", "Pagey", "Outside", "Paid (outside)"],
+      // A TBC time after the day's timed games (it sorted first while TBC was midnight).
+      ["2026-10-11", "TBC", "HKFC", "3", "HKFC F", "Elite B", "HKFC F", "", "", "Uncovered"],
     ]);
   });
 
