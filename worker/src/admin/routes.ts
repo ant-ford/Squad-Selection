@@ -16,10 +16,9 @@
  *
  * Each route checks its own section; the person page then shows only the
  * blocks the caller's offices open (people.ts canFor), and each save checks
- * again. Answers undefined for a path that isn't one of these.
+ * again. A part of the Worker's one route table (routes.ts).
  */
-import type { Env } from "../env";
-import { requireAuthorizedUser, requireSection } from "../auth";
+import { route, type Route } from "../router";
 import { HttpError } from "../http";
 import { getPersonAdmin, getPersonHistory, searchPeople } from "./people";
 import { getMatchHistory } from "../history";
@@ -38,57 +37,27 @@ export async function readBody(request: Request): Promise<Record<string, unknown
   return body as Record<string, unknown>;
 }
 
-export function isAdminPath(pathname: string): boolean {
-  return pathname === "/api/history" || pathname.startsWith("/api/admin/");
-}
+const ID = "[A-Za-z0-9-]{3,64}";
 
-export async function adminRoute(request: Request, env: Env, url: URL): Promise<unknown | undefined> {
-  const { pathname } = url;
-  const method = request.method;
-
-  if (method === "GET" && pathname === "/api/history") {
-    // Officers and coaches: each reader checks which of them may see it.
-    const user = await requireAuthorizedUser(request, env);
+export const ADMIN_ROUTES: readonly Route[] = [
+  // Officers and coaches: each reader checks which of them may see it.
+  route("GET", "/api/history", "signed-in", ({ env, user, url }) => {
     const match = url.searchParams.get("match");
     if (match !== null) return getMatchHistory(env, user, match);
     return getPersonHistory(env, url.searchParams.get("person") ?? "", user);
-  }
-  if (method === "GET" && pathname === "/api/admin/people") {
-    await requireSection(request, env, "people");
-    return { people: await searchPeople(env, url.searchParams.get("q") ?? "") };
-  }
-  const person = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})$/);
-  if (method === "GET" && person) {
-    const user = await requireSection(request, env, "people");
-    return getPersonAdmin(env, user, person[1]);
-  }
+  }),
+  route("GET", "/api/admin/people", "section:people", async ({ env, url }) => ({ people: await searchPeople(env, url.searchParams.get("q") ?? "") })),
+  route("GET", `/api/admin/people/:id(${ID})`, "section:people", ({ env, user, params }) => getPersonAdmin(env, user, params.id)),
   // Teams and position: the section check is per field (squad.ts).
-  const squad = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})\/squad$/);
-  if (method === "POST" && squad) {
-    const user = await requireSection(request, env, "people");
-    return saveSquad(env, user, squad[1], await readBody(request));
-  }
-  const membership = pathname.match(/^\/api\/admin\/people\/([A-Za-z0-9-]{3,64})\/(membership|stage)$/);
-  if (method === "POST" && membership) {
-    const user = await requireSection(request, env, "membership");
-    const body = await readBody(request);
-    return membership[2] === "membership" ? saveMembership(env, user, membership[1], body) : moveStage(env, user, membership[1], body);
-  }
+  route("POST", `/api/admin/people/:id(${ID})/squad`, "section:people", async ({ request, env, user, params }) => saveSquad(env, user, params.id, await readBody(request))),
+  route("POST", `/api/admin/people/:id(${ID})/membership`, "section:membership", async ({ request, env, user, params }) => saveMembership(env, user, params.id, await readBody(request))),
+  route("POST", `/api/admin/people/:id(${ID})/stage`, "section:membership", async ({ request, env, user, params }) => moveStage(env, user, params.id, await readBody(request))),
 
   // Offices and teams: Section Captains.
-  const office = pathname.match(/^\/api\/admin\/offices\/([A-Za-z0-9-]{3,64})$/);
-  const team = pathname.match(/^\/api\/admin\/teams\/([A-Za-z0-9-]{3,64})$/);
-  const club =
-    (method === "GET" && (pathname === "/api/admin/offices" || pathname === "/api/admin/teams")) ||
-    (method === "POST" && (pathname === "/api/admin/offices" || pathname === "/api/admin/people" || !!office || !!team));
-  if (club) {
-    const user = await requireSection(request, env, "club");
-    if (method === "GET") return pathname === "/api/admin/offices" ? listOffices(env) : listTeams(env);
-    const body = await readBody(request);
-    if (pathname === "/api/admin/offices") return addOffice(env, user, body);
-    if (pathname === "/api/admin/people") return createOfficeHolder(env, user, body);
-    if (office) return editOffice(env, user, office[1], body);
-    return saveTeam(env, user, team![1], body);
-  }
-  return undefined;
-}
+  route("GET", "/api/admin/offices", "section:club", ({ env }) => listOffices(env)),
+  route("GET", "/api/admin/teams", "section:club", ({ env }) => listTeams(env)),
+  route("POST", "/api/admin/offices", "section:club", async ({ request, env, user }) => addOffice(env, user, await readBody(request))),
+  route("POST", "/api/admin/people", "section:club", async ({ request, env, user }) => createOfficeHolder(env, user, await readBody(request))),
+  route("POST", `/api/admin/offices/:id(${ID})`, "section:club", async ({ request, env, user, params }) => editOffice(env, user, params.id, await readBody(request))),
+  route("POST", `/api/admin/teams/:id(${ID})`, "section:club", async ({ request, env, user, params }) => saveTeam(env, user, params.id, await readBody(request))),
+];
