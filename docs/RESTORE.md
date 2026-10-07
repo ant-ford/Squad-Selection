@@ -70,7 +70,7 @@ The restore leaves the `public` schema itself, its Supabase grants and default p
 - the daily jobs (review emails, retention, the health check) do nothing but log a line, and the Worker's 5xx answers aren't written to `error_log`;
 - `/health` answers `"writes": "off"`.
 
-What it doesn't stop: sign-in still stamps `people.last_seen_at` once a day per person (`auth_context()`), and anything that writes to Postgres directly (hkha-sync, the backup heartbeat, the Table Editor) is outside the Worker.
+Sign-in reads `auth_context_read()` instead of `auth_context()`, so it doesn't stamp `people.last_seen_at`. What it doesn't stop: anything that writes to Postgres directly (hkha-sync, the backup heartbeat, the Table Editor) is outside the Worker.
 
 **Switch it off, quickest:** Cloudflare dashboard, **Workers & Pages → hkfc-api → Settings → Variables and Secrets**, edit `WRITES` to `off` and deploy. It takes effect in seconds. The next `wrangler deploy` puts back the value in `wrangler.toml`, and CI deploys on every merge to `main`, so merge nothing while it's off. Switch it back the same way, to `on`.
 

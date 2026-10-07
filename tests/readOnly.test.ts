@@ -44,6 +44,7 @@ import worker from "../worker/src/index";
 import { RETENTION_CRON } from "../worker/src/retention";
 import { HEALTH_CRON } from "../worker/src/systemHealth";
 import type { Env } from "../worker/src/env";
+import { authContexts } from "../worker/src/authContext";
 
 const ORIGIN = "https://app.test";
 const BASE = {
@@ -173,5 +174,25 @@ describe("WRITES unset or on (the default)", () => {
     expect(mocks.runRetention).toHaveBeenCalledTimes(1);
     await worker.scheduled({ cron: HEALTH_CRON }, BASE);
     expect(mocks.runHealthCron).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sign-in while writes are off", () => {
+  const calledRpc = async (env: Env) => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      seen.push(new URL(String(input instanceof Request ? input.url : input)).pathname);
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    await authContexts(env).load("someone@example.com");
+    return seen;
+  };
+
+  it("reads auth_context_read, which doesn't stamp last_seen_at", async () => {
+    expect(await calledRpc(OFF)).toEqual(["/rest/v1/rpc/auth_context_read"]);
+  });
+
+  it("reads auth_context otherwise", async () => {
+    expect(await calledRpc(BASE)).toEqual(["/rest/v1/rpc/auth_context"]);
   });
 });
