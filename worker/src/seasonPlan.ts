@@ -140,9 +140,10 @@ export async function getSeasonPlanBoard(env: Env, user: AuthorizedUser): Promis
   for (const p of people) {
     const team = personTeam(p) || NO_TEAM;
     if (teams !== "all" && !teams.includes(team)) continue;
-    const plan = byPerson.get(p.id);
+    const row = byPerson.get(p.id);
+    const plan = row ? (({ captaincyInterest: _hidden, ...rest }) => rest)(toAnswers(row)) : null;
     const list = grouped.get(team) ?? [];
-    list.push({ id: p.api_id, name: personName(p), status: p.status ?? "", playingPosition: p.playing_position ?? "", plan: plan ? toAnswers(plan) : null });
+    list.push({ id: p.api_id, name: personName(p), status: p.status ?? "", playingPosition: p.playing_position ?? "", plan });
     grouped.set(team, list);
   }
   return {

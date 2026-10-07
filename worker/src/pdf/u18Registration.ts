@@ -1,8 +1,8 @@
 /**
- * HockeyHK's Player Registration Form for players under 18: filled when a
+ * HKHA's Player Registration Form for players under 18: filled when a
  * parent or guardian signs the waivers (declarations.ts), kept on the
  * player (files kind 'u18_registration_form', like the imported ones), and
- * emailed to the Hockey Convenor, who sends it on to HockeyHK (owner,
+ * emailed to the Men's Convenor, who sends it on to HKHA (owner,
  * 1 Oct 2026).
  *
  * The template is a flat page, so the text goes at measured positions:
@@ -154,10 +154,10 @@ export async function makeU18Registration(env: Env, personUuid: string): Promise
   });
   if (rendered.warnings.length) console.warn(`U18 form ${personUuid}: ${rendered.warnings.join("; ")}`);
   const playerName = [p.preferred_name || p.given_names, p.surname].filter(Boolean).join(" ");
-  const filename = documentFilename("HockeyHK U18 Registration", playerName);
+  const filename = documentFilename("HKHA U18 Registration", playerName);
   const fileId = await storeDocument(env, rendered.pdf, { kind: "u18_registration_form", filename, personId: p.id });
 
-  // The player's own Hockey Convenor, else the first active one.
+  // The player's own Men's Convenor, else the first active one.
   const convenors = await d.select<ConvenorRow>(
     "offices",
     "select=id,office_email,people!offices_person_id_fkey(id,preferred_name,given_names,email)&role=eq.hockey_convenor&status=eq.Active&order=created_at",
@@ -165,17 +165,17 @@ export async function makeU18Registration(env: Env, personUuid: string): Promise
   const convenor = convenors.find((o) => o.id === p.sponsored_by_hockey_convenor_id) ?? convenors.find((o) => o.people);
   const to = convenor?.office_email || convenor?.people?.email;
   if (!convenor?.people || !to) {
-    console.warn(`U18 form ${personUuid}: kept, but no active Hockey Convenor with an email to send it to`);
+    console.warn(`U18 form ${personUuid}: kept, but no active Men's Convenor with an email to send it to`);
     return fileId;
   }
   await sendEmail(env, {
     toPersonId: convenor.people.id,
     to,
-    subject: `HockeyHK U18 registration form: ${playerName}`,
+    subject: `HKHA U18 registration form: ${playerName}`,
     text: [
       `Hi ${convenor.people.preferred_name || convenor.people.given_names || "there"},`,
       "",
-      `${playerName}'s parent or guardian has signed HockeyHK's Player Registration Form for players under 18. It is attached, ready to send on to HockeyHK.`,
+      `${playerName}'s parent or guardian has signed HKHA's Player Registration Form for players under 18. It is attached, ready to send on to HKHA.`,
       "",
       `It is also kept on ${playerName}'s record in Eddy: ${appOrigin(env)}`,
       "",

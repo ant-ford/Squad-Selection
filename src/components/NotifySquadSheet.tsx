@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check, Copy, MessageCircle } from 'lucide-react';
 import {
   buildAvailabilityRequest,

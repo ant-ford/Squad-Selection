@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { StepShell, errorText, type StepProps } from '@/components/profile/steps';
 import { differs } from '@/lib/drafts';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { saveMyTrial, submitRegistration } from '@/api/trials';
 import type { MyTrial } from '@shared/trials';
 
@@ -63,7 +63,7 @@ export function TrialDatesStep({ trial, ...nav }: Omit<StepProps, 'details'> & {
               onChange={(e) => toggle(s.id, e.target.checked)}
             />
             <span>
-              {safeFormat(s.startsAt, 'EEE d MMM yyyy, h:mm a')} · {s.place}
+              {safeFormat(s.startsAt, 'EEE d MMM yyyy, HH:mm')} · {s.place}
               {s.notes && <span className="block text-xs text-muted-foreground">{s.notes}</span>}
             </span>
           </label>
@@ -110,7 +110,7 @@ export function RegisterStep({ trial, ...nav }: Omit<StepProps, 'details'> & { t
       {sent ? (
         <p className="text-sm text-foreground flex gap-2 items-start">
           <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-          Thanks, you're registered{trial.registeredAt ? ` (${safeFormat(trial.registeredAt, 'd MMM yyyy')})` : ''}. We will be in touch. You can come
+          Thanks, you're registered{trial.registeredAt ? ` (${safeFormat(trial.registeredAt, LONG_DATE)})` : ''}. We will be in touch. You can come
           back and change your details any time.
         </p>
       ) : (
