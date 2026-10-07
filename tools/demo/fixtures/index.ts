@@ -37,14 +37,16 @@ const compiled = Object.entries(ALL).map(([key, handler]) => {
 });
 
 export async function answer(r: { method: string; path: string; query: URLSearchParams; persona: string | null; body: unknown }): Promise<Reply> {
-  const persona = r.persona ? PERSONAS[r.persona] : undefined;
+  // "player:kit-offered": a persona, then any variants a fixture offers for screenshots.
+  const [key, ...variants] = (r.persona ?? '').split(':');
+  const persona = PERSONAS[key];
   if (!persona) return { status: 401, body: { error: 'UNAUTHORIZED', message: 'Not signed in (demo).' } };
   for (const route of compiled) {
     if (route.method !== r.method) continue;
     const m = route.re.exec(r.path);
     if (!m) continue;
     const params = Object.fromEntries(route.names.map((n, i) => [n, decodeURIComponent(m[i + 1])]));
-    const out = await route.handler({ method: r.method, path: r.path, query: r.query, as: r.persona!, persona, params, body: r.body });
+    const out = await route.handler({ method: r.method, path: r.path, query: r.query, as: key, persona, variants: new Set(variants), params, body: r.body });
     if (out === undefined) break;
     if (out && typeof out === 'object' && REPLY in out) {
       const o = out as unknown as Reply;

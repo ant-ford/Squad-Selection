@@ -93,7 +93,7 @@ function board(orderId: string | null): KitBoard {
   return { orders: [NEXT_ORDER, ORDER], order, sets: order === NEXT_ORDER ? onOrder : all, people: people(), teams: TEAMS };
 }
 
-function myKit(p: Persona): MyKit {
+function myKit(p: Persona, variants: Set<string>): MyKit {
   const all = sets();
   const holding = all
     .filter((s) => s.holder?.name === p.name && s.owner?.name !== p.name)
@@ -105,7 +105,8 @@ function myKit(p: Persona): MyKit {
       ? { id: own.id, shirtNo: own.shirtNo, sizes: own.sizes, holder: own.holder, heldSince: own.heldSince, place: own.place, pendingTo: own.pendingTo, supplier: 'Kukri', expectedOn: null }
       : null,
     holding,
-    incoming: [],
+    // kit-offered: the holder says they've handed it over; the owner confirms.
+    incoming: own && variants.has('kit-offered') ? [{ id: own.id, shirtNo: own.shirtNo, owner: own.owner, holder: own.holder, mine: true }] : [],
     convenors: [PERSONAS['kit-convenor'].name],
   };
 }
@@ -118,7 +119,7 @@ const MOVED: KitMoveResult = { moved: [], offered: [], conflicts: [] };
 
 export const routes: Routes = {
   'GET /api/kit/board': ({ query }) => board(query.get('order')),
-  'GET /api/kit/me': ({ persona }) => myKit(persona),
+  'GET /api/kit/me': ({ persona, variants }) => myKit(persona, variants),
   'GET /api/kit/sets/:id/history': (): KitMove[] => HISTORY,
   'POST /api/kit/move': () => MOVED,
 };

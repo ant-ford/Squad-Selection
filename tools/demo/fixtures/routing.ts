@@ -10,6 +10,8 @@ export interface DemoRequest {
   /** The `?as=` persona the tab signed in as. */
   as: string;
   persona: Persona;
+  /** Variants after the persona (`?as=player:kit-offered`), for screenshots of other states. */
+  variants: Set<string>;
   params: Record<string, string>;
   body: any;
 }

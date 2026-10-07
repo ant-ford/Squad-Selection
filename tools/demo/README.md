@@ -15,7 +15,7 @@ Nobody signs in, and nothing reaches a real API or database.
 node tools/demo/serve.mjs          # http://127.0.0.1:5190, or: node tools/demo/serve.mjs 5195
 ```
 
-Open any screen with `?as=<persona>`, for example http://127.0.0.1:5190/coach?as=coach. The tab keeps the persona as you move around, until another `?as=` changes it. Add `?signedout` to see the sign-in screen.
+Open any screen with `?as=<persona>`, for example http://127.0.0.1:5190/coach?as=coach. The tab keeps the persona as you move around, until another `?as=` changes it. Add `?signedout` to see the sign-in screen. A fixture can offer other states for screenshots as variants after a colon, for example `?as=player:kit-offered`.
 
 For the Claude desktop app, the `.claude/launch.json` entry is:
 
