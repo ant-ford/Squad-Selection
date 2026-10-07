@@ -5,7 +5,12 @@ import type { Env } from "../worker/src/env";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "k" } as Env;
 const STEP = "00000000-0000-4000-8000-000000000001";
-const captain = { personId: "recCAP", personUuid: "00000000-0000-4000-8000-0000000000aa" } as AuthorizedUser;
+const captain = {
+  personId: "recCAP",
+  personUuid: "00000000-0000-4000-8000-0000000000aa",
+  isSectionCaptain: false,
+  officerRoles: [{ office: "sectionCaptain", designation: null }],
+} as unknown as AuthorizedUser;
 
 function fake(reply: (url: URL, body: any) => { status?: number; body: unknown }) {
   const calls: { url: URL; body: any }[] = [];
@@ -41,6 +46,16 @@ describe("ask to be reactivated", () => {
     await expect(answerReactivation(env, captain, STEP, {})).rejects.toMatchObject({ status: 400 });
     expect(await answerReactivation(env, captain, STEP, { activate: true })).toEqual({ status: "activated" });
     expect(calls[0].body).toEqual({ p_step: STEP, p_actor: "recCAP", p_activate: true });
+  });
+
+  it("refuses someone who is no longer a Section Captain, before asking the database", async () => {
+    const calls = fake(() => ({ body: { status: "activated" } }));
+    const former = { ...captain, officerRoles: [] } as unknown as AuthorizedUser;
+    await expect(answerReactivation(env, former, STEP, { activate: true })).rejects.toMatchObject({ status: 403, code: "SECTION_CAPTAIN_REQUIRED" });
+    expect(calls).toHaveLength(0);
+    // A Teams-linked Section Captain still answers.
+    const linked = { ...former, isSectionCaptain: true } as unknown as AuthorizedUser;
+    expect(await answerReactivation(env, linked, STEP, { activate: false })).toEqual({ status: "activated" });
   });
 
   it("is 404 for a request that isn't theirs", async () => {

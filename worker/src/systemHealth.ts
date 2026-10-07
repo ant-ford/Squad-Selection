@@ -153,9 +153,18 @@ export function canViewSystem(env: Pick<Env, "SYSTEM_OWNER_IDS">, user: Pick<Aut
 
 const configured = (env: Env) => !!env.DATA_SUPABASE_URL && !!env.DATA_SUPABASE_SECRET_KEY;
 
-/** Email addresses blanked, length capped. */
+/**
+ * Email addresses, query strings (signed file links, calendar feed and
+ * check-in codes), HKID-like numbers and long digit runs (phone numbers)
+ * blanked; length capped. /system shows these to every Section Captain.
+ */
 export function scrub(text: string, max: number): string {
-  return text.replace(/[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[a-z]{2,}/gi, "[email]").slice(0, max);
+  return text
+    .replace(/[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[a-z]{2,}/gi, "[email]")
+    .replace(/\?[^\s"'<>()]+/g, "?[query]")
+    .replace(/\b[A-Z]{1,2}\d{6}\s*\(?[0-9A]\)?/g, "[id]")
+    .replace(/\+?\d[\d -]{6,}\d/g, (run) => (run.replace(/\D/g, "").length >= 8 ? "[number]" : run))
+    .slice(0, max);
 }
 
 /** A heartbeat row. Never throws: a job's result never depends on it. */
@@ -266,12 +275,37 @@ export function resetClientErrorLimiter(): void {
 
 const KINDS = new Set(["route", "error", "rejection"]);
 
+/** The body as text; 413 as soon as it passes `max` bytes, without reading the rest. */
+async function readAtMost(request: Request, max: number): Promise<string> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new HttpError("Too large", 413, "TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
 /** The report, at most CLIENT_ERROR_MAX_BYTES; 413 otherwise. */
 export async function readClientError(request: Request): Promise<{ kind: string; message: string; route: string; stack: string }> {
   const declared = Number(request.headers.get("Content-Length") ?? "0");
   if (declared > CLIENT_ERROR_MAX_BYTES) throw new HttpError("Too large", 413, "TOO_LARGE");
-  const text = await request.text();
-  if (text.length > CLIENT_ERROR_MAX_BYTES) throw new HttpError("Too large", 413, "TOO_LARGE");
+  // Read no more than the limit, whatever Content-Length said (or if it was missing).
+  const text = await readAtMost(request, CLIENT_ERROR_MAX_BYTES);
   let body: Record<string, unknown> = {};
   try {
     body = (JSON.parse(text) ?? {}) as Record<string, unknown>;

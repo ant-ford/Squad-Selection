@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { csvCell } from "../shared/csv";
 import { answersCsv, chargesCsv, type Guest, type PayerCharge, type ResponseStatus } from "../shared/events";
 import { topUpCsvText } from "../worker/src/kit";
 import type { KitSizes } from "../shared/kit";
@@ -93,5 +94,18 @@ describe("CSV downloads made from members' own text", () => {
     expect(csv).toBe(
       "Name,Status,Shirt No.,Socks Size,Shirt Size,Shorts Size,Goalie Smock Style,Goalie Smock Size,Team\r\n'@Al,'-Member,9,,'=L,M,,,'+HKFC A\r\n",
     );
+  });
+});
+
+// Security review, 7 Oct 2026: the forms the first guard missed.
+describe("csvCell", () => {
+  it("escapes a formula after leading spaces or a byte-order mark, a leading LF, and full-width signs", () => {
+    for (const v of [" =1+1", "  @SUM(A1)", "\uFEFF=1", "\nX", "\uFF1D1+1", "\uFF0BA", "\uFF0D2", "\uFF20x"]) {
+      expect(csvCell(v).replace(/^"/, "")).toMatch(/^'/);
+    }
+  });
+
+  it("leaves ordinary text alone, a dash or sign inside it included", () => {
+    for (const v of ["Dave Smith", "Smith-Jones", "a = b", " Lee", "7-11", "100%"]) expect(csvCell(v)).toBe(v);
   });
 });
