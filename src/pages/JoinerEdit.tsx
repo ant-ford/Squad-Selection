@@ -285,7 +285,7 @@ function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: J
         </div>
         <div className="sm:col-span-2">
           <dt className="text-xs uppercase tracking-wide text-muted-foreground">Trial sessions they can come to</dt>
-          <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, h:mm a')} (${s.place})`).join('; ') : 'None'}</dd>
+          <dd className="text-foreground">{t.sessions.length ? t.sessions.map((s) => `${safeFormat(s.startsAt, 'EEE d MMM, HH:mm')} (${s.place})`).join('; ') : 'None'}</dd>
         </div>
       </dl>
       <div className="space-y-2 pt-3 border-t border-border">
@@ -306,7 +306,7 @@ function TrialPanel({ view, options, onChanged }: { view: JoinerView; options: J
           </select>
           <input
             className={`${fieldInput} sm:col-span-2`}
-            placeholder="When and where, e.g. Tuesday 7 Oct, 8pm, HKFC pitch"
+            placeholder="When and where, e.g. Tuesday 7 Oct, 20:00, HKFC pitch"
             value={where}
             onChange={(e) => setWhere(e.target.value)}
           />

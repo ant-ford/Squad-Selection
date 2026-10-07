@@ -1,9 +1,9 @@
 import type { StatementCard as Card } from '@/api/membership';
-import { safeFormat } from '@/lib/dateUtils';
+import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { NOT_STARTED, NOTIFIED } from '@shared/statementStages';
 import { Avatar, WhatsAppIcon, ageTone, whatsAppTo } from './ApplicantCard';
 
-const date = (d?: string) => (d ? safeFormat(d, 'd MMM yyyy') : undefined);
+const date = (d?: string) => (d ? safeFormat(d, LONG_DATE) : undefined);
 
 /**
  * The line that matters on a Not Started review: when the automatic email
