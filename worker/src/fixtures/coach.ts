@@ -5,10 +5,10 @@ import type { KitColour, Match, Player } from "../../../shared/schema/domainType
 import { selectedDisplayTeam } from "../../../shared/displayTeam";
 import { hkDateKey } from "../../../shared/hkDateKey";
 import { fixtureChange } from "../../../shared/fixtureChange";
-import { POS_SHORT } from "../../../shared/positions";
 import type { AuthorizedUser } from "../auth";
 import { changedSinceNotice, noticesForMatches, type SquadNotice } from "../squadNotices";
 import { hkfcSides, type SideInfo } from "../match";
+import { POS_SHORT } from "../../../shared/positions";
 import { outcomeOf } from "../teamRecord";
 import { getScheduledMatches, getCalledOffMatches, PAST_FIXTURE_WINDOW_DAYS, getPlayedMatches } from "./matchReads";
 
