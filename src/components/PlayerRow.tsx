@@ -132,6 +132,14 @@ const PlayerRow = React.memo(function PlayerRow({
           <p className="text-sm font-medium text-foreground truncate">{player.preferredName}</p>
           {player.isU21 && <span className={`text-xs font-bold px-1 py-0.5 rounded-sm shrink-0 ${toneClasses('info', 'soft')}`}>U21</span>}
           {player.isVisitingPlayer && <span className="text-xs font-bold px-1 py-0.5 rounded-sm shrink-0 border border-border bg-muted text-foreground">VP</span>}
+          {player.notSeenWeeks != null && (
+            <span
+              className="text-xs px-1 py-0.5 rounded-sm shrink-0 bg-muted text-muted-foreground"
+              title={`Hasn't opened Eddy for ${player.notSeenWeeks} weeks or answered this fixture`}
+            >
+              not seen {player.notSeenWeeks} wks
+            </span>
+          )}
           <span className="text-xs text-muted-foreground shrink-0">{POS_SHORT[player.playingPosition] || '–'} · {player.playingAbility || '–'}</span>
         </div>
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">

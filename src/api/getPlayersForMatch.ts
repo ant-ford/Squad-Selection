@@ -23,6 +23,8 @@ export interface MatchPlayer {
    * they have not answered counts as Unavailable.
    */
   optInOnly?: boolean;
+  /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture. */
+  notSeenWeeks?: number | null;
   playerNotes: string;
   playUpCount: number;
   eligibilityStatus: 'eligible' | 'warning' | 'blocked';
