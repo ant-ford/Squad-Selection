@@ -19,7 +19,7 @@ type OpenPlayer = { id: string; name: string };
 
 /** How many took the field: a round count on the tile's corner, like an unread badge. */
 // z-[1]: above the next tile (painted later, so it would cover the corner),
-// below the sticky name column (z-10) when the grid scrolls under it.
+// below the sticky name column (z-raised) when the grid scrolls under it.
 function CardBadge({ count, className = 'absolute -top-1 -right-1 z-[1]' }: { count: number; className?: string }) {
   return (
     <span

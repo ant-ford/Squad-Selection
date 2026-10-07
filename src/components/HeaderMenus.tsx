@@ -1,5 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Suspense, lazy, useState } from 'react';
 import { CircleUserRound, HelpCircle, LogOut, Menu, UserPlus, type LucideIcon } from 'lucide-react';
 import type { ProfileData } from '@/api/getMyProfile';
 import { GUIDE_URLS } from '@/components/HelpLink';
@@ -10,93 +9,25 @@ export type { MenuEntry } from '@/components/headerItems';
 // Loaded when opened, not with every page that has the menu.
 const InviteDialog = lazy(() => import('@/components/InviteDialog'));
 
-/**
- * An icon button that drops down groups of entries, split by rules. Closes on
- * a pick, a tap outside or Escape.
- */
-function DropMenu({ label, icon: Icon, groups, align }: { label: string; icon: LucideIcon; groups: MenuEntry[][]; align: 'left' | 'right' }) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+export type DropMenuProps = { label: string; icon: LucideIcon; groups: MenuEntry[][]; align: 'left' | 'right' };
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('touchstart', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('touchstart', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+// The menus' code (Radix and its positioning) loads just after the page, in
+// its own file, so it isn't part of the first download. Until then the
+// button is drawn as it will look.
+const LazyDropMenu = lazy(() => import('@/components/HeaderDropMenu'));
 
-  const pick = (e: MenuEntry) => {
-    setOpen(false);
-    if (e.to) navigate(e.to);
-    else e.onSelect?.();
-  };
-  const row = 'w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-muted disabled:opacity-50';
-
+function DropMenu(props: DropMenuProps) {
+  const { label, icon: Icon } = props;
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={headerIconClass}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-        title={label}
-      >
-        <Icon className="h-5 w-5" />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} mt-1 w-60 rounded-md border border-border bg-card shadow-lg z-50 py-1`}
-        >
-          {groups
-            .filter((g) => g.length > 0)
-            .map((g, n) => (
-              <div key={n} className={n > 0 ? 'border-t border-border mt-1 pt-1' : ''}>
-                {g.map((e) =>
-                  e.href ? (
-                    <a
-                      key={e.label}
-                      role="menuitem"
-                      href={e.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={() => setOpen(false)}
-                      className={`${row} text-foreground`}
-                    >
-                      <e.icon className="h-4 w-4" />
-                      {e.label}
-                    </a>
-                  ) : (
-                    <button
-                      key={e.label}
-                      role="menuitem"
-                      disabled={e.disabled}
-                      onClick={() => pick(e)}
-                      aria-current={e.to && location.pathname === e.to ? 'page' : undefined}
-                      className={`${row} ${e.to && location.pathname === e.to ? 'text-primary font-medium' : 'text-foreground'}`}
-                    >
-                      <e.icon className="h-4 w-4" />
-                      {e.label}
-                    </button>
-                  ),
-                )}
-              </div>
-            ))}
-        </div>
-      )}
-    </div>
+    <Suspense
+      fallback={
+        <button type="button" className={headerIconClass} aria-haspopup="menu" aria-label={label} title={label}>
+          <Icon className="h-5 w-5" />
+        </button>
+      }
+    >
+      <LazyDropMenu {...props} />
+    </Suspense>
   );
 }
 

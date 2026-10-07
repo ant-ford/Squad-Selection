@@ -1,6 +1,6 @@
 import { formatHkTime } from '@/lib/dateUtils';
 import { useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SameDayConflict } from '@/lib/readiness';
 import type { UpcomingFixture } from '@/api/getUpcomingFixtures';
@@ -8,6 +8,7 @@ import { fixtureChangeText, isCalledOff } from '@shared/fixtureChange';
 import { availabilityClasses } from '@/lib/availabilityTone';
 import { toneClasses } from '@/lib/statusTone';
 import { isShortfallUrgent } from '@/lib/readiness';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 // Same wording and tones as the player's own past-fixture card, so a result
 // reads identically whichever side of the app you are on.
@@ -23,7 +24,7 @@ const OUTCOME_LABEL: Record<'win' | 'draw' | 'loss', string> = {
   loss: 'Lost',
 };
 
-/** Click-toggled name popover that positions above or below based on viewport space. */
+/** "N players" that lists the names in a popover. */
 function NamePopover({
   names,
   label,
@@ -34,48 +35,24 @@ function NamePopover({
   count: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [showBelow, setShowBelow] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    // If less than 120px above the trigger, show below instead
-    setShowBelow(rect.top < 120);
-  }, [open]);
 
   if (names.length === 0) {
     return <span>{count} {label}</span>;
   }
 
   return (
-    <div className="relative">
-      <button
-        ref={triggerRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        onClick={(e) => e.stopPropagation()}
         className="flex items-center gap-0.5 cursor-pointer py-3 -my-3"
-        aria-expanded={open}
       >
         {count} {label}
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-      </button>
-      {open && (
-        <>
-          {/* Backdrop to close on outside click */}
-          <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
-          <div
-            className={`absolute left-0 z-20 bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[120px] max-w-[200px] ${
-              showBelow ? 'top-full mt-1' : 'bottom-full mb-1'
-            }`}
-          >
-            {names.join(', ')}
-          </div>
-        </>
-      )}
-    </div>
+      </PopoverTrigger>
+      <PopoverContent label={`${count} ${label}`} className="whitespace-normal min-w-[120px] max-w-[200px]">
+        {names.join(', ')}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -87,48 +64,26 @@ function ClashIndicator({
   conflicts: SameDayConflict[];
   hkfcTeam: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [showBelow, setShowBelow] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    setShowBelow(triggerRef.current.getBoundingClientRect().top < 120);
-  }, [open]);
-
   return (
-    <span className="relative inline-flex">
-      <button
-        ref={triggerRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
+    <Popover>
+      <PopoverTrigger
+        onClick={(e) => e.stopPropagation()}
         className="ml-1 inline-flex cursor-pointer items-center"
         title={`${conflicts.length} player${conflicts.length > 1 ? 's' : ''} selected for two teams on the same day`}
         aria-label="Same-day clash warning"
       >
         <AlertTriangle className="h-3.5 w-3.5 text-warning-soft-foreground" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
-          <div
-            className={`absolute right-0 z-20 bg-card text-foreground text-xs rounded-md p-2 shadow-lg border border-border whitespace-normal min-w-[160px] max-w-[240px] ${
-              showBelow ? 'top-full mt-1' : 'bottom-full mb-1'
-            }`}
-          >
-            <p className="font-medium mb-1">Same-day clash</p>
-            <ul className="space-y-0.5">
-              {conflicts.map((c, idx) => {
-                const other = c.teams.find((t) => t !== hkfcTeam) ?? c.teams.join(' & ');
-                return <li key={idx}>{c.playerName} also selected for {other}</li>;
-              })}
-            </ul>
-          </div>
-        </>
-      )}
-    </span>
+      </PopoverTrigger>
+      <PopoverContent label="Same-day clash" align="end" className="whitespace-normal min-w-[160px] max-w-[240px]">
+        <p className="font-medium mb-1">Same-day clash</p>
+        <ul className="space-y-0.5">
+          {conflicts.map((c, idx) => {
+            const other = c.teams.find((t) => t !== hkfcTeam) ?? c.teams.join(' & ');
+            return <li key={idx}>{c.playerName} also selected for {other}</li>;
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 }
 
