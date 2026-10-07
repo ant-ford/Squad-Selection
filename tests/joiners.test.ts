@@ -195,7 +195,7 @@ describe("the emails' wording", () => {
     expect(kit.text).toContain("Shirt No: to allocate");
     expect(kit.text).toContain("Could you please help");
     const reg = registrationEmail({ convenorName: "Jimmy", preferredName: "Sam", rows: [["Team", "HKFC C"], ["HKID No.", null]], taskUrl: "t", sender });
-    expect(reg.subject).toBe("League Registration for Sam");
+    expect(reg.subject).toBe("HKHA registration for Sam");
     expect(reg.text).toMatch(/HKID No\.\s+–/);
   });
 });

@@ -38,7 +38,7 @@ export interface AuthorizedUser {
   coachTeams: string[];
   isSectionCaptain: boolean;
   /**
-   * Active Membership Officer, Section Chair and Section Captain rows linked
+   * Active Membership Officer, Chairman and Section Captain rows linked
    * to this person.
    * Empty for almost everyone. Holding any office grants application access
    * on its own, like a coach link: an officer need not be a playing member.
@@ -67,7 +67,7 @@ export interface AuthorizedUser {
  *  - coaches / section captains may be Active = false and are still allowed
  *  - the Teams table linked Coach / Section Captain fields are the ONLY
  *    source of coach access - computed once, here, for the whole request
- *  - an Active Membership Officer, Section Chair or Section Captain row
+ *  - an Active Membership Officer, Chairman or Section Captain row
  *    linked to the person also grants access with Active = false, and never
  *    grants coach access
  */
@@ -299,7 +299,7 @@ export async function requireSectionCaptain(request: Request, env: Env): Promise
  * one of the listed tables is enough.
  *
  *   membership - the membership board: Membership Officers, Section Captains
- *   chairman   - the chairman's email lists: Section Chairs, Section Captains
+ *   chairman   - the chairman's email lists: the Chairman, Section Captains
  *   kit        - kit orders, handing out and spares: the Kit Convenor and
  *                Section Captains (owner decision, 2026-09-30).
  *   planning   - every team's season plans: Section Captains (coaches see
@@ -309,7 +309,7 @@ export async function requireSectionCaptain(request: Request, env: Env): Promise
  *                Hockey (owner decision, 2026-10-04). Deciding on a
  *                registration stays with the Section Captains.
  *   registration - every Active player's HKHA registration details, HKID
- *                and passport numbers included: the Hockey Convenor ONLY,
+ *                and passport numbers included: the Men's Convenor ONLY,
  *                not the Section Captains (owner decision, 2026-10-06).
  *   people     - finding a person and their admin page and change history:
  *                the Membership Officer, the Men's Convenor and Section

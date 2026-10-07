@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, Fragment, Suspense, lazy } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type { MyFixture } from '@/api/getMyFixtures';
 import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/queries';
 import { safeFormat } from '@/lib/dateUtils';
@@ -13,7 +13,7 @@ import AvailabilityNoteSheet from '@/components/AvailabilityNoteSheet';
 import SameDayGamesPrompt from '@/components/SameDayGamesPrompt';
 import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
 import { DateHeading, SectionHeader } from '@/components/shared';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import AppFooter from '@/components/AppFooter';
 import AppHeader from '@/components/AppHeader';
 import PastFixtureCard from '@/components/PastFixtureCard';
@@ -23,6 +23,7 @@ import MyKitCard from '@/components/MyKitCard';
 import MyVolunteeringLink from '@/components/MyVolunteeringLink';
 import EventsSection from '@/components/events/EventsSection';
 import { useScrollMemory } from '@/lib/scrollMemory';
+import { useSheetParam } from '@/lib/useSheetParam';
 
 // Opened from the profile menu: loaded then, not with the page.
 const CalendarSyncSheet = lazy(() => import('@/components/CalendarSyncSheet'));
@@ -32,6 +33,17 @@ const AvailabilityRulesSheet = lazy(() => import('@/components/AvailabilityRules
 type AvailabilityStatus = 'Available' | 'Maybe' | 'Unavailable';
 
 const dateKey = (d: string) => hkDateKey(d);
+
+/**
+ * The fixture a sheet's ?fixture= / ?note= names. A derby lists one match
+ * for both HKFC teams, so the side that was tapped decides when known.
+ */
+function findFixture(list: MyFixture[], id: string, team?: string): MyFixture | null {
+  return list.find((f) => f.id === id && (!team || f.hkfcTeam === team)) ?? list.find((f) => f.id === id) ?? null;
+}
+
+const noteStatusOf = (status: string): 'Maybe' | 'Unavailable' | null =>
+  status === 'Maybe' || status === 'Unavailable' ? status : null;
 
 // "Keep as is" on the same-day prompt is remembered per fixture on this
 // device, so a player who really is free for the support game later that day
@@ -122,15 +134,21 @@ export default function PlayerDashboard() {
   const { data, isLoading: loading } = useMyFixtures(true);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
-  const [selectedFixture, setSelectedFixture] = useState<MyFixture | null>(null);
-  // Maybe / No just tapped on a card: offer the optional note.
-  const [notePrompt, setNotePrompt] = useState<{ fixture: MyFixture; status: 'Maybe' | 'Unavailable' } | null>(null);
-  const [showCalendarSync, setShowCalendarSync] = useState(false);
+  // The sheets live in the URL, so the phone's Back closes them: a fixture
+  // (?fixture=<match id>, also the link a coach shares on WhatsApp), the
+  // note offered after Maybe / No (?note=<match id>), and the profile menu's
+  // stats, availability preferences and calendar sync.
+  const fixtureSheet = useSheetParam('fixture');
+  const noteSheet = useSheetParam('note');
+  const statsSheet = useSheetParam('stats');
+  const rulesSheet = useSheetParam('preferences');
+  const calendarSheet = useSheetParam('calendar');
+  const [fixtureTeam, setFixtureTeam] = useState<string | undefined>();
+  // Maybe / No just tapped on a card: the answer the note goes with.
+  const [noteTap, setNoteTap] = useState<{ id: string; team: string; status: 'Maybe' | 'Unavailable' } | null>(null);
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
-  const [statsPlayerId, setStatsPlayerId] = useState<string | null>(null);
-  const [showRules, setShowRules] = useState(false);
   // Same-day prompts the player has started answering stay open (even once
   // every game reads No) until they press Done, so rows don't vanish under
   // their thumb. `dismissTick` re-renders after a dismissal is stored.
@@ -191,10 +209,14 @@ export default function PlayerDashboard() {
       return;
     }
     handleQuickAvailability(f.id, status, f.playerNotes);
-    setNotePrompt({ fixture: f, status });
+    setNoteTap({ id: f.id, team: f.hkfcTeam, status });
+    noteSheet.open(f.id);
   };
 
-  const openFixture = (f: MyFixture) => setSelectedFixture(f);
+  const openFixture = (f: MyFixture) => {
+    setFixtureTeam(f.hkfcTeam);
+    fixtureSheet.open(f.id);
+  };
 
   // Lowest-ranked-team goalkeepers see every upcoming HKFC fixture,
   // grouped by date.
@@ -221,26 +243,31 @@ export default function PlayerDashboard() {
     [data],
   );
   const fixturesByDay = useMemo(() => groupByHkDay(allFixtures), [allFixtures]);
+  // Every card on the page, postponed and cancelled ones included.
+  const everyFixture = useMemo(
+    () => (data ? [...data.fixtures, ...(data.playUpOpportunities ?? []), ...(data.supportFixtures ?? [])] : []),
+    [data],
+  );
 
-  // A fixture link the coach shared on WhatsApp (?fixture=<match id>) opens
-  // that fixture's sheet once the list has loaded. A game that isn't on
-  // their page (already played, or not their team) just says so.
-  const [params, setParams] = useSearchParams();
-  const sharedFixtureId = params.get('fixture');
+  const selectedFixture = fixtureSheet.value ? findFixture(everyFixture, fixtureSheet.value, fixtureTeam) : null;
+  const noteTapped = noteTap && noteTap.id === noteSheet.value ? noteTap : null;
+  const noteFixture = noteSheet.value ? findFixture(everyFixture, noteSheet.value, noteTapped?.team) : null;
+  const noteStatus = noteTapped?.status ?? (noteFixture ? noteStatusOf(noteFixture.availabilityStatus) : null);
+
+  // A fixture link the coach shared on WhatsApp opens that fixture's sheet
+  // once the list has loaded. A game that isn't on their page (already
+  // played, or not their team) just says so.
   useEffect(() => {
-    if (!sharedFixtureId || !data) return;
-    const f = allFixtures.find((x) => x.id === sharedFixtureId);
-    if (f) openFixture(f);
-    else toast.info("That game isn't in Player view any more");
-    setParams(
-      (p) => {
-        p.delete('fixture');
-        return p;
-      },
-      { replace: true },
-    );
+    if (!data || !fixtureSheet.value || selectedFixture) return;
+    toast.info("That game isn't in Player view any more");
+    fixtureSheet.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedFixtureId, data, allFixtures]);
+  }, [data, fixtureSheet.value, selectedFixture]);
+  // A note link for a game that's gone, or that they're not out for.
+  useEffect(() => {
+    if (data && noteSheet.value && !(noteFixture && noteStatus)) noteSheet.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, noteSheet.value, noteFixture, noteStatus]);
 
   // Back from a player's full stats (or the coach screens) lands where the
   // player left off rather than at the top.
@@ -298,9 +325,9 @@ export default function PlayerDashboard() {
         title="Player view"
         guide="player"
         profileItems={[
-          ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => setStatsPlayerId(data.playerId!) }] : []),
-          { label: 'Availability preferences', icon: Settings, onSelect: () => setShowRules(true) },
-          { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => setShowCalendarSync(true) },
+          ...(data.playerId ? [{ label: 'My season stats', icon: BarChart3, onSelect: () => statsSheet.open(data.playerId!) }] : []),
+          { label: 'Availability preferences', icon: Settings, onSelect: () => rulesSheet.open() },
+          { label: 'Sync to calendar', icon: CalendarDays, onSelect: () => calendarSheet.open() },
         ]}
       />
 
@@ -430,23 +457,22 @@ export default function PlayerDashboard() {
         <PlayerAvailabilitySheet
           fixture={selectedFixture}
           viewerId={data.playerId}
-          onClose={() => setSelectedFixture(null)}
+          onClose={fixtureSheet.close}
         />
       )}
-      {notePrompt && (
+      {noteFixture && noteStatus && (
         <AvailabilityNoteSheet
           // A second tap on another card starts a fresh note.
-          key={`${notePrompt.fixture.id}-${notePrompt.status}`}
-          fixture={notePrompt.fixture}
-          status={notePrompt.status}
-          conflictHint={supportConflictHint(notePrompt.fixture)}
+          key={`${noteFixture.id}-${noteStatus}`}
+          fixture={noteFixture}
+          status={noteStatus}
+          conflictHint={supportConflictHint(noteFixture)}
           busy={quickAvailability.isPending}
-          onClose={() => setNotePrompt(null)}
+          onClose={noteSheet.close}
           onSave={(notes) => {
-            const { fixture, status } = notePrompt;
-            setNotePrompt(null);
+            noteSheet.close();
             quickAvailability.mutate(
-              { fixtureId: fixture.id, status, notes },
+              { fixtureId: noteFixture.id, status: noteStatus, notes },
               {
                 onSuccess: () => toast.success('Note saved'),
                 onError: () => toast.error('Failed to save note'),
@@ -456,18 +482,19 @@ export default function PlayerDashboard() {
         />
       )}
       <Suspense fallback={null}>
-        {showCalendarSync && <CalendarSyncSheet onClose={() => setShowCalendarSync(false)} />}
+        {calendarSheet.value && <CalendarSyncSheet onClose={calendarSheet.close} />}
 
-        {statsPlayerId && (
+        {/* Their own stats, whatever id the link carries. */}
+        {statsSheet.value && data.playerId && (
           <SeasonStatsSheet
-            playerId={statsPlayerId}
+            playerId={data.playerId}
             playerName={data.playerName}
-            onClose={() => setStatsPlayerId(null)}
+            onClose={statsSheet.close}
           />
         )}
 
         {/* The sheet refetches the fixtures itself as it closes, if a rule changed. */}
-        {showRules && <AvailabilityRulesSheet onClose={() => setShowRules(false)} />}
+        {rulesSheet.value && <AvailabilityRulesSheet onClose={rulesSheet.close} />}
       </Suspense>
       <AppFooter />
     </div>

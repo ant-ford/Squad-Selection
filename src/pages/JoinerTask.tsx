@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check, ExternalLink } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -12,8 +12,8 @@ import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { completeJoinerTask, getJoinerTask } from '@/api/joiners';
 
 /**
- * A Section Captain's request to the Kit Convenor or the Hockey Convenor
- * for a new joiner: the details they need, the documents for HockeyHK, and
+ * A Section Captain's request to the Kit Convenor or the Men's Convenor
+ * for a new joiner: the details they need, the documents for HKHA, and
  * a Done button (there's nothing to fill in).
  */
 export default function JoinerTaskPage() {
@@ -45,11 +45,11 @@ export default function JoinerTaskPage() {
       );
     }
     const t = task.data;
-    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HockeyHK`;
+    const title = t.kind === 'kit' ? `Kit for ${t.applicant}` : `Register ${t.applicant} with HKHA`;
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, LONG_DATE)}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Asked {safeFormat(t.startedAt, LONG_DATE)}</p>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

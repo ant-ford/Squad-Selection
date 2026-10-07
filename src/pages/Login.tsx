@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { normalizeEmail } from '@shared/normalizeEmail';
 import { sendEmailErrorMessage, signInErrorMessage } from '@/lib/signInError';
 import { Turnstile, TURNSTILE_SITE_KEY, type TurnstileHandle } from '@/components/Turnstile';
