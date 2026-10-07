@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { ActionButton } from '@/components/ui/action-button';
 import { Field } from '@/components/ui/field';
 import { inputClass } from '@/components/ui/input';

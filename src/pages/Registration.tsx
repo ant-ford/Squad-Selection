@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { AlertTriangle, Check, ChevronDown, Copy, Download, FileText, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -25,7 +25,7 @@ const VIEWS: { key: View; label: string }[] = [
 const NO_TEAM = 'No registered team';
 const selectClass = inputClass.replace('w-full', 'w-auto');
 
-const chip = 'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full';
+const chip = 'inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full';
 const failed = (err: unknown) => toast.error(errorMessage(err, 'save'));
 
 async function copy(label: string, value: string) {
@@ -41,7 +41,7 @@ async function copy(label: string, value: string) {
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-1 text-sm text-foreground">
         {value ? (
           <>
@@ -69,7 +69,7 @@ function RegisteredName({ p, busy, onSave }: { p: RegistrationPlayer; busy: bool
   const value = tidyRegisteredName(draft) || null;
   return (
     <div className="space-y-1">
-      <label htmlFor={`rn-${p.id}`} className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <label htmlFor={`rn-${p.id}`} className="text-xs uppercase tracking-wide text-muted-foreground">
         Registered name
       </label>
       <div className="flex items-center gap-2">

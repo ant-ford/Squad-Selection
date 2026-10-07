@@ -15,7 +15,7 @@ const signOut = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../src/lib/supabase", () => ({ supabase: { auth } }));
 vi.mock("../src/lib/auth", () => ({ signOut }));
 vi.mock("../src/lib/accessDenied", () => ({ setAccessDenied: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("../src/lib/toast", () => ({ toast: { error: vi.fn() } }));
 
 let apiGet: typeof import("../src/lib/apiClient").apiGet;
 let apiPost: typeof import("../src/lib/apiClient").apiPost;

@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Check } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
@@ -38,7 +38,7 @@ export default function ReactivatePage() {
     return (
       <section className="rounded-xl border border-border bg-card p-4 space-y-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, LONG_DATE)}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Asked {safeFormat(r.askedAt, LONG_DATE)}</p>
           <h2 className="text-base font-semibold text-foreground">{r.name} asks to be reactivated</h2>
           <p className="text-sm text-muted-foreground">
             {[r.team, r.inactiveSince ? `inactive since ${safeFormat(r.inactiveSince, LONG_DATE)}` : null].filter(Boolean).join(' · ')}

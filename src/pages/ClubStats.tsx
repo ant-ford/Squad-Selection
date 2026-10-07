@@ -300,7 +300,7 @@ function CompetitionCard({
       <div className="space-y-3">
         {groups.map((g) => (
           <section key={g.key} aria-label={g.label}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{g.label}</h4>
             <HBars
               rows={g.teams.map((t) => ({ label: t.team, value: winPct(t) ?? 0, note: `${wdl(t)} · ${gamesText(games(t))}` }))}
               unit="won"

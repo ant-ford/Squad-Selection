@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { CheckCheck, Plus, QrCode, Search } from 'lucide-react';
 import { fieldInput } from '@/components/profile/ProfileFields';
 import { errorText, primary, secondary } from '@/components/profile/steps';
@@ -88,7 +88,7 @@ export default function RegisterSection({ event, responses }: { event: ManagedEv
                 onChange={(ev) => mark.mutate({ personId: r.personId, attended: ev.target.checked, guestsCame: ev.target.checked ? r.guests.length : undefined })}
               />
               <span className="truncate">{r.name}</span>
-              {r.checkedInAt && <span className="text-[11px] text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'HH:mm')}</span>}
+              {r.checkedInAt && <span className="text-xs text-muted-foreground shrink-0">checked in {safeFormat(r.checkedInAt, 'HH:mm')}</span>}
             </label>
             {r.guests.length > 0 && r.attended && (
               <select
