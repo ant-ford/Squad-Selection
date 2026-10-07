@@ -13,8 +13,11 @@ import { buildEvaluationContext, SEASON_INDEX_DEPS } from "./seasonContext";
 import { selectedDisplayTeam } from "../../shared/displayTeam";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { effectiveAvailability, getAllAvailabilityRules, indexRulesByPlayer } from "./availabilityRules";
+import { previousSquad, squadNotice } from "./squadNotices";
 import { hkfcSides } from "./match";
+import { notSeenWeeks } from "./lastSeen";
 
+import { fixtureChange } from "../../shared/fixtureChange";
 type MatchSide = "home" | "away";
 
 // ── Cached match-record fetch ───────────────────────────────────────────
@@ -75,12 +78,15 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
   // This match's own answers and notes come from the poll's read (one match,
   // narrow columns, the same versioned entry the 30 s poll uses), alongside
   // the context; the context itself no longer carries them.
-  const [heavyData, forMatch] = await Promise.all([
+  // The squad the players were last sent, for "changes since you notified" (squadNotices.ts).
+  const noticeSide = resolveHkfcSide(match, teamRankMap, side);
+  const [heavyData, forMatch, notice] = await Promise.all([
     getVersioned(env, cacheKey, [...SEASON_INDEX_DEPS, "availability_rules"], async () => {
       const { ctx } = await buildEvaluationContext(env, match, teamRankMap, teamMap, ref.players, hkfcTeam);
       return { ctx, allPlayers: ref.players };
     }),
     getAvailabilityForMatch(env, matchId),
+    squadNotice(env, matchId, noticeSide).catch(() => null),
   ]);
   const { ctx, allPlayers } = heavyData;
 
@@ -157,6 +163,8 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
        * that apart from a player who actually declined.
        */
       optInOnly: p.optInOnly === true,
+      /** Weeks since they last opened Eddy, when 6+ and they haven't answered this fixture (lastSeen.ts). */
+      notSeenWeeks: notSeenWeeks(p.lastSeenAt, exc !== undefined),
       supportUnavailable,
       playerNotes,
       playUpCount: eligibility.playUpCount,
@@ -203,6 +211,12 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
     // The version of the squad listed here, read from the same record, so
     // the two always agree. A save sends it back (POST /api/squad/changes).
     selectionVersion: (resolvedSide === "away" ? match.selectionVersionAway : match.selectionVersionHome) ?? 0,
+    /** The squad as last sent from Notify, or null (squadNotices.ts). */
+    notice,
+    /** The team's last squad this season, for "Start from last squad". */
+    lastSquad: previousSquad(ctx.matchesById.values(), match, hkfcTeam),
+    /** Moved or venue changed in the last 7 days: Notify offers a message about it. */
+    change: fixtureChange(match) ?? undefined,
   };
   return { match: matchInfo, players };
 }

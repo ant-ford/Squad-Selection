@@ -303,8 +303,17 @@ function checkColumn(rows: PgRow[], column: string, table: string, what: string)
 let uuidSeq = 0;
 const uuid = () => `00000000-0000-4000-9000-${String(++uuidSeq).padStart(12, "0")}`;
 
+/**
+ * RPCs whose usual answer is "nothing here", so a test that isn't about
+ * them needn't say so: an umpire's duties (my_duties, calendar feed).
+ */
+const DEFAULT_RPC: Record<string, (args: any, db: FakePostgrest) => unknown> = {
+  my_duties: () => [],
+};
+
 export function fakePostgrest(opts: PostgrestOptions = {}): FakePostgrest {
-  const tables: Record<string, PgRow[]> = opts.tables ?? {};
+  // Views a test that isn't about them needn't list: the squads last sent from Notify.
+  const tables: Record<string, PgRow[]> = { api_squad_notices: [], ...(opts.tables ?? {}) };
   const calls: PgCall[] = [];
   const problems: string[] = [];
 
@@ -465,7 +474,7 @@ export function fakePostgrest(opts: PostgrestOptions = {}): FakePostgrest {
 
     if (table.startsWith("rpc/")) {
       const fn = table.slice(4);
-      const impl = opts.rpc?.[fn];
+      const impl = opts.rpc?.[fn] ?? DEFAULT_RPC[fn];
       if (!impl) throw new Problem(`rpc "${fn}" has no handler in the fake's rpc option`);
       const result = impl(body ?? Object.fromEntries(params), db);
       return result instanceof Response ? result : json(result ?? null);

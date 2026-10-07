@@ -39,6 +39,8 @@ export interface RetentionResult {
   removed: number;
   failed: number;
   filesDeleted: number;
+  /** Change history rows older than two seasons, removed (prune_history). */
+  historyPruned: number;
 }
 
 export async function runRetention(env: Env): Promise<RetentionResult> {
@@ -60,7 +62,13 @@ export async function runRetention(env: Env): Promise<RetentionResult> {
   }
 
   const filesDeleted = await deleteQueuedFiles(env);
-  const result = { stamped, due: due.length, removed, failed, filesDeleted };
+  // Two seasons of change history (owner, 6 Oct 2026). A failure waits for
+  // tomorrow's run rather than failing this one.
+  const historyPruned = await d.rpc<number>("prune_history", {}).catch((err) => {
+    console.error("Change history not pruned:", err instanceof Error ? err.message : err);
+    return 0;
+  });
+  const result = { stamped, due: due.length, removed, failed, filesDeleted, historyPruned };
   console.log("retention " + JSON.stringify({ mode: env.RETENTION_MODE === "remove" ? "remove" : "report", ...result }));
   return result;
 }
