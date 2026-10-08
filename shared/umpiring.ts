@@ -309,8 +309,9 @@ export function dutyLine(duty: Pick<UmpireDuty, "matchDate" | "timeTbc" | "venue
   return [`${Number(p.day)}/${Number(p.month)}`, time, duty.venue || "TBC", letter].join(" ");
 }
 
-/** "✅George" for a club umpire, "💰Pagey" for a paid one. */
-export function umpireMark(a: Pick<DutyAssignment, "paid" | "name">): string {
+/** "✅George" for a club umpire, "💰Pagey" for a paid one, "✗Ann" for a no-show (as in the season grid). */
+export function umpireMark(a: Pick<DutyAssignment, "paid" | "name"> & { status?: AssignmentStatus }): string {
+  if (a.status === "no_show") return `✗${a.name}`;
   return `${a.paid ? "💰" : "✅"}${a.name}`;
 }
 

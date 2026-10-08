@@ -135,12 +135,14 @@ describe("umpiring messages", () => {
     expect(umpiresMessage(mixedWeek(), "https://x").split("\n").slice(2, 8)).toEqual([
       "10/10 1500 HKFC B",
       "11/10 0900 HKFC D ✅George",
-      "11/10 1045 HKFC F ✅Ann",
+      "11/10 1045 HKFC F ✗Ann",
       "11/10 1230 HKFC E Not needed",
       "11/10 1800 HKFC A 💰Pagey",
       "11/10 TBC TBC G",
     ]);
     expect(captainsMessage(mixedWeek()).split("\n").at(-1)).toBe("11/10 TBC TBC G ❓");
+    // A no-show is marked ✗ in both messages, as in the season grid.
+    expect(captainsMessage(mixedWeek())).toContain("11/10 1045 HKFC F ✗Ann");
   });
 
   it("writes every message as clean text, no mojibake, for every kind of line", () => {
@@ -153,7 +155,7 @@ describe("umpiring messages", () => {
       // Survives the WhatsApp link's percent-encoding both ways.
       expect(decodeURIComponent(encodeURIComponent(text))).toBe(text);
     }
-    expect(texts.join("\n")).toContain("✅Ann");
+    expect(texts.join("\n")).toContain("✗Ann");
     // The pattern itself catches the garbling reported.
     expect("11/10 1045 HKFC F âœ…Ann").toMatch(mojibake);
     expect("ðŸ’°Pagey").toMatch(mojibake);
