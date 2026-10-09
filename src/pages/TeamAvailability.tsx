@@ -78,7 +78,7 @@ function TeamCell({
       <span className="text-xs font-semibold tabular-nums leading-none">{available}</span>
       {maybe > 0 && <span className="mt-0.5 text-xs leading-none">+{maybe}?</span>}
       {f.past && f.cardCount ? <CardBadge count={f.cardCount} /> : null}
-      {!f.past && <CardBadge count={f.selectedCount} selected />}
+      {!f.past && f.selectedCount > 0 && <CardBadge count={f.selectedCount} selected />}
       {badge}
     </button>
   );
