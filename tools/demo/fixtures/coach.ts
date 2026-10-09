@@ -128,6 +128,15 @@ function teamAttendance(): TeamAttendance {
       cells: Object.fromEntries(offs.map((_, k) => [`demoTA${team.slice(-1)}${k}`, { status: status(i, k) as SquadPlayer['cells'][string]['status'], source: 'answer' as const }])),
     })),
   }));
+  for (const f of fixtures) {
+    const k = dates.indexOf(f.date);
+    const squad = squads.find((s) => s.team === f.team)!;
+    f.otherPlayers = k === 5 ? [] : SQUAD_PLAYERS.filter((p) => p.team !== f.team).slice(0, 2)
+      .map((p) => ({ id: p.id, name: p.name, team: p.team }));
+    const ownParticipants = squad.players.filter((p) => p.cells[f.matchId].status === (f.past ? 'played' : 'selected')).length;
+    if (f.past) f.cardCount = ownParticipants + f.otherPlayers.length;
+    else f.selectedCount = ownParticipants + f.otherPlayers.length;
+  }
   return { season: SEASON_SHORT, today: dateOnly(new Date().toISOString()), dates, teams: squads, fixtures };
 }
 

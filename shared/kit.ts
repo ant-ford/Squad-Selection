@@ -63,6 +63,8 @@ export interface KitSet {
   heldSince: string | null;
   /** The holder has passed it on and is waiting for this person to confirm they've got it. */
   pendingTo: KitPersonRef | null;
+  /** When the current handover was offered; optional for older API clients. */
+  pendingSince?: string | null;
   place: KitPlace;
   /** Items where the owner's own sizes differ from the set's, e.g. "Shorts: wants XL". */
   mismatches: string[];

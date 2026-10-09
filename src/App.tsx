@@ -9,7 +9,9 @@ import { recoverScreenLoad } from '@/lib/chunkRecovery';
 import { reportClientError, reportUnrecoveredScreenLoad } from '@/lib/clientErrors';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
-import EddyWordmark from '@/components/brand/EddyWordmark';
+import AppLoading from '@/components/AppLoading';
+import StartupLoadingGate, { StartupLoadingProvider } from '@/components/StartupLoadingGate';
+import { ErrorState } from '@/components/ui/error-state';
 
 // Only signed-out people see Login, and only someone without access sees
 // AccessNotActive, so a signed-in player never downloads either.
@@ -45,40 +47,29 @@ function Home() {
   // watches for the data, so it never refetches a variant that's off screen.
   usePrefetchQuery(myFixturesQuery(true));
   usePrefetchQuery(myTasksQuery);
-  const fixturesIn = useQuery({ ...myFixturesQuery(true), enabled: false }).data !== undefined;
+  const fixtures = useQuery({ ...myFixturesQuery(true), enabled: false });
+  const fixturesIn = fixtures.data !== undefined;
   const { data, isLoading } = useMyProfile();
   if (data?.applicant) return <Navigate to="/apply" replace />;
-  if (isLoading && !fixturesIn) return <AppLoading />;
+  // A fast profile response mustn't replace the ball with empty fixture tiles.
+  // Cached fixtures still open immediately; failed reads reach the retry screen.
+  if ((isLoading && !fixturesIn) || fixtures.isPending) return <AppLoading />;
+  // Don't mount another fixtures observer on an initial error: its automatic
+  // refetch would replace the retry controls with the loader all over again.
+  if (fixtures.isError && !fixturesIn) return <ErrorState variant="page" title="Could not load your fixtures" message="Check your connection and try again." onRetry={() => fixtures.refetch()} retrying={fixtures.isFetching} />;
   return <PlayerDashboard />;
-}
-
-/** Minimal skeleton shown while a lazy route loads. */
-function RouteSkeleton() {
-  return (
-    <div className="min-h-screen bg-background p-6 space-y-4">
-      <div className="animate-pulse space-y-3">
-        <div className="h-10 w-48 bg-muted rounded" />
-        <div className="h-6 w-32 bg-muted rounded" />
-        <div className="pt-4 space-y-3">
-          <div className="h-24 w-full bg-muted rounded-lg" />
-          <div className="h-24 w-full bg-muted rounded-lg" />
-          <div className="h-24 w-full bg-muted rounded-lg" />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /**
  * A screen loaded on its first visit, so Player view doesn't carry it. The
- * route skeleton shows while its chunk downloads; a chunk that fails to load
+ * loading screen stays visible while its chunk downloads; a chunk that fails to load
  * reaches RouteError, which recovers from a stale deploy.
  */
-function lazyPage(load: () => Promise<{ default: ComponentType }>) {
+function lazyPage(load: () => Promise<{ default: ComponentType }>, startup = true) {
   const Page = lazy(load);
   return (
-    <Suspense fallback={<RouteSkeleton />}>
-      <Page />
+    <Suspense fallback={<AppLoading />}>
+      {startup ? <StartupLoadingGate><Page /></StartupLoadingGate> : <Page />}
     </Suspense>
   );
 }
@@ -128,7 +119,7 @@ const router = createBrowserRouter([
     element: <AuthGate />,
     errorElement: <RouteError />,
     children: [
-      { path: '/', element: <Home /> },
+      { path: '/', element: <StartupLoadingGate><Home /></StartupLoadingGate> },
       { path: '/chairman', element: lazyPage(() => import('./pages/EmailLists')) },
       { path: '/stats', element: lazyPage(() => import('./pages/ClubStats')) },
       { path: '/membership', element: lazyPage(() => import('./pages/MembershipBoard')) },
@@ -172,7 +163,8 @@ const router = createBrowserRouter([
       // Coach view: fixtures, squad, ranking and team availability.
       {
         path: '/coach',
-        element: lazyPage(() => import('./components/CoachLayout')),
+        // The leaf screen completes startup; a layout's profile can arrive before its child's reads start.
+        element: lazyPage(() => import('./components/CoachLayout'), false),
         children: [
           { index: true, element: lazyPage(() => import('./pages/CoachDashboard')) },
           {
@@ -193,61 +185,12 @@ const router = createBrowserRouter([
   },
 ]);
 
-// index.html shows a static copy of this screen until the bundle runs. When
-// it did, carry on from it instead of fading the text in a second time.
-const textIn = document.getElementById('boot-loader') ? '' : 'animate-[fade-up_0.6s_ease-out_both]';
-
-function AppLoading() {
-  return (
-    <div className="min-h-screen relative flex flex-col items-center justify-center bg-background overflow-hidden">
-      <div
-        aria-hidden
-        className="absolute -top-48 left-1/2 -translate-x-1/2 h-[520px] w-[820px] rounded-full blur-3xl"
-        style={{ background: 'radial-gradient(closest-side, hsl(var(--primary-tint) / 0.12), transparent 70%)' }}
-      />
-      <svg
-        aria-hidden
-        className="absolute inset-0 h-full w-full text-primary opacity-[0.05]"
-        viewBox="0 0 914 550"
-        preserveAspectRatio="xMidYMid slice"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-      >
-        <rect x="4" y="4" width="906" height="542" />
-        <line x1="457" y1="4" x2="457" y2="546" />
-        <line x1="229" y1="4" x2="229" y2="546" />
-        <line x1="685" y1="4" x2="685" y2="546" />
-        <path d="M 4 129 A 146 146 0 0 1 4 421" />
-        <path d="M 910 129 A 146 146 0 0 0 910 421" />
-        <circle cx="150" cy="275" r="4" fill="currentColor" stroke="none" />
-        <circle cx="764" cy="275" r="4" fill="currentColor" stroke="none" />
-      </svg>
-      <div className="relative flex flex-col items-center">
-        <div
-          className="h-11 w-11 rounded-full animate-[ball-hop_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none"
-          style={{
-            backgroundImage:
-              'radial-gradient(hsl(var(--foreground) / 0.08) 1.2px, transparent 1.7px), radial-gradient(circle at 32% 28%, #ffffff 0%, #f4f4f5 48%, #cfcfd4 100%)',
-            backgroundSize: '9px 9px, 100% 100%',
-            boxShadow: 'inset -4px -5px 8px hsl(var(--foreground) / 0.14)',
-          }}
-        />
-        <div className="mt-4 h-2 w-11 rounded-[100%] bg-primary-tint/25 blur-[1px] animate-[ball-shadow_0.9s_cubic-bezier(0.35,0,0.65,1)_infinite] motion-reduce:animate-none" />
-        <div className="relative mt-10 text-center">
-          <p className={`text-[40px] leading-none text-foreground ${textIn}`}><EddyWordmark /></p>
-          <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground ${textIn} [animation-delay:120ms]`}>HKFC men's hockey</p>
-          <p className={`mt-6 font-mono text-xs tracking-widest text-muted-foreground ${textIn} [animation-delay:240ms]`}>warming up…</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <StartupLoadingProvider>
+        <RouterProvider router={router} />
+      </StartupLoadingProvider>
       <Toaster />
     </AuthProvider>
   );

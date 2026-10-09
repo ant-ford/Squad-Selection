@@ -20,6 +20,7 @@ import { useSheetParam } from '@/lib/useSheetParam';
 import { getKitBoard, getUncollectedKit, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
+import { byKitAction, kitActionAge, kitNextAction } from '@shared/kitActions';
 
 const FILTERS: { key: string; label: string; test: (s: KitSet) => boolean }[] = [
   { key: 'all', label: 'All', test: () => true },
@@ -32,7 +33,7 @@ const FILTERS: { key: string; label: string; test: (s: KitSet) => boolean }[] = 
 
 /**
  * The kit screens (Kit Convenor, Section Captains): every set in an order,
- * in box order (by number), where each one is, handing kit out, and who
+ * with the oldest outstanding actions first, where each one is, and who
  * still needs kit. Refreshes itself, since several people hand out at once.
  */
 export default function Kit() {
@@ -45,6 +46,7 @@ export default function Kit() {
   const filter = FILTERS.find((f) => f.key === params.get('show')) ?? FILTERS[0];
   const team = params.get('team') ?? '';
   const q = params.get('q') ?? '';
+  const numberOrder = params.get('sort') === 'number';
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -95,8 +97,8 @@ export default function Kit() {
         filter.test(s) &&
         (!team || s.owner?.team === team || (!s.owner && s.teamRange === team)) &&
         (!t || String(s.shirtNo) === t || (s.owner?.name ?? '').toLowerCase().includes(t) || (s.holder?.name ?? '').toLowerCase().includes(t)),
-    );
-  }, [board, filter, team, q]);
+    ).sort(numberOrder ? (a, b) => a.shirtNo - b.shirtNo : byKitAction(board?.order ?? null));
+  }, [board, filter, team, q, numberOrder]);
   const count = (key: string) => (board?.sets ?? []).filter(FILTERS.find((f) => f.key === key)!.test).length;
   const open = board?.sets.find((s) => s.id === openId) ?? null;
   const order = board?.order ?? null;
@@ -245,11 +247,20 @@ export default function Kit() {
               </select>
             </div>
 
-            <ul className="rounded-xl border border-border bg-card divide-y divide-border">
-              {sets.map((s) => (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{numberOrder ? 'Shirt number order' : 'Collections and handovers · oldest first'}</p>
+              <select className={inputClass.replace('w-full', 'w-auto max-w-full')} value={numberOrder ? 'number' : 'action'} onChange={(e) => setParam('sort', e.target.value === 'number' ? 'number' : null)} aria-label="Sort kit">
+                <option value="action">Needs action first</option>
+                <option value="number">Shirt number</option>
+              </select>
+            </div>
+            <ul aria-label="Kit sets" className="rounded-xl border border-border bg-card divide-y divide-border">
+              {sets.map((s) => {
+                const action = kitNextAction(s, order);
+                return (
                 <li key={s.id}>
-                  <button className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setSheet.open(s.id)}>
-                    <span className="w-9 text-right font-mono text-sm font-semibold">{s.shirtNo}</span>
+                  <button className="w-full grid grid-cols-[2.25rem_minmax(0,1fr)] sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2 text-left hover:bg-muted/50" onClick={() => setSheet.open(s.id)}>
+                    <span className="w-9 row-span-2 sm:row-span-1 text-right font-mono text-sm font-semibold">{s.shirtNo}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-foreground truncate">
                         {s.owner ? s.owner.name : <em className="text-muted-foreground">Spare</em>}
@@ -257,6 +268,11 @@ export default function Kit() {
                         {s.owner && s.owner.status !== 'Member' && <span className="text-xs text-muted-foreground"> · {s.owner.status}</span>}
                       </span>
                       <span className="block text-xs text-muted-foreground truncate">{sizesLine(s.sizes)}</span>
+                      {action && (
+                        <span className="block text-xs text-amber-700 mt-0.5">
+                          {action.label} · {kitActionAge(action)}
+                        </span>
+                      )}
                       {s.mismatches.length > 0 && (
                         <span className="flex items-center gap-1 text-xs text-amber-700 truncate">
                           <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden /> {s.mismatches.join('; ')}
@@ -266,10 +282,11 @@ export default function Kit() {
                         <span className="block text-xs text-primary">Swap available</span>
                       )}
                     </span>
-                    <PlaceBadge set={s} />
+                    <span className="col-start-2 sm:col-start-3"><PlaceBadge set={s} /></span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
               {sets.length === 0 && <li className="px-3 py-6 text-center text-sm text-muted-foreground">No sets match.</li>}
             </ul>
           </>
