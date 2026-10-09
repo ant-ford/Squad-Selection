@@ -28,7 +28,7 @@ import { db, eq, SupabaseError } from "./data/supabase";
 import { HttpError } from "./http";
 import { DAILY_LIMIT, sendEmail } from "./mailer";
 import { getCached } from "./cache";
-import type { HealthCheck, JobRow, SystemError, SystemView } from "../../shared/systemHealth";
+import type { HealthCheck, JobRow, SystemError, SystemErrorSummary, SystemView } from "../../shared/systemHealth";
 
 export type { HealthCheck, JobRow, SystemView } from "../../shared/systemHealth";
 
@@ -263,6 +263,23 @@ export function resetClientErrorLimiter(): void {
 
 const KINDS = new Set(["route", "error", "rejection"]);
 
+interface ClientErrorReport {
+  kind: string;
+  message: string;
+  route: string;
+  stack: string;
+  build?: string;
+  browser?: string;
+}
+
+/** Retain only bounded build ids and browser family/major version, never a raw user agent. */
+function clientDiagnostics(body: { build?: unknown; browser?: unknown }): { build?: string; browser?: string } {
+  return {
+    ...(typeof body.build === "string" && /^[a-zA-Z0-9._-]{1,80}$/.test(body.build) ? { build: body.build } : {}),
+    ...(typeof body.browser === "string" && /^(Chrome|Safari|Firefox|Edge) [0-9]{1,4}$/.test(body.browser) ? { browser: body.browser } : {}),
+  };
+}
+
 /** The body as text; 413 as soon as it passes `max` bytes, without reading the rest. */
 async function readAtMost(request: Request, max: number): Promise<string> {
   if (!request.body) return "";
@@ -289,7 +306,7 @@ async function readAtMost(request: Request, max: number): Promise<string> {
 }
 
 /** The report, at most CLIENT_ERROR_MAX_BYTES; 413 otherwise. */
-export async function readClientError(request: Request): Promise<{ kind: string; message: string; route: string; stack: string }> {
+export async function readClientError(request: Request): Promise<ClientErrorReport> {
   const declared = Number(request.headers.get("Content-Length") ?? "0");
   if (declared > CLIENT_ERROR_MAX_BYTES) throw new HttpError("Too large", 413, "TOO_LARGE");
   // Read no more than the limit, whatever Content-Length said (or if it was missing).
@@ -307,6 +324,7 @@ export async function readClientError(request: Request): Promise<{ kind: string;
     // The path only: a query string can carry anything.
     route: str(body.route).split(/[?#]/)[0],
     stack: str(body.stack),
+    ...clientDiagnostics(body),
   };
 }
 
@@ -314,7 +332,7 @@ export async function readClientError(request: Request): Promise<{ kind: string;
 export async function logClientError(
   env: Env,
   user: Pick<AuthorizedUser, "personId">,
-  report: { kind: string; message: string; route: string; stack: string },
+  report: ClientErrorReport,
 ): Promise<{ logged: boolean }> {
   if (!configured(env) || !allowClientError(user.personId)) return { logged: false };
   try {
@@ -322,7 +340,7 @@ export async function logClientError(
       p_person: user.personId,
       p_route: report.route.slice(0, 200),
       p_message: scrub(report.message, 500),
-      p_detail: { kind: report.kind, ...(report.stack ? { stack: scrub(report.stack, 1000) } : {}) },
+      p_detail: { kind: report.kind, ...(report.stack ? { stack: scrub(report.stack, 1000) } : {}), ...clientDiagnostics(report) },
       p_limit: CLIENT_ERRORS_PER_HOUR,
     });
     return { logged: logged === true };
@@ -339,12 +357,14 @@ async function snapshot(env: Env): Promise<HealthSnapshot> {
 }
 
 /** GET /api/system: the owner and the Section Captains. */
-export async function getSystemView(env: Env, user: AuthorizedUser): Promise<SystemView> {
+export async function getSystemView(env: Env, user: AuthorizedUser, period = "1"): Promise<SystemView> {
   if (!canViewSystem(env, user)) throw new HttpError("Officer access required.", 403, "OFFICER_ACCESS_REQUIRED");
+  if (!["1", "7", "30"].includes(period)) throw new HttpError("Choose 1, 7 or 30 days.", 400);
   const d = db(env);
-  const [snap, errors] = await Promise.all([
+  const [snap, errors, errorSummary] = await Promise.all([
     snapshot(env),
     d.select<SystemError>("error_log", "select=id,at,source,route,status,message,request_id&order=at.desc&limit=50"),
+    d.rpcRead<SystemErrorSummary>("system_error_groups", { p_days: Number(period) }),
   ]);
   const { ok, checks } = evaluateHealth(snap, { now: new Date() });
   return {
@@ -352,6 +372,7 @@ export async function getSystemView(env: Env, user: AuthorizedUser): Promise<Sys
     checks,
     jobs: snap.jobs,
     errors: errors.map(({ at, source, route, status, message, request_id }) => ({ at, source, route, status, message, request_id })),
+    errorSummary,
     serverErrors24h: snap.server_errors_24h,
     clientErrors24h: snap.client_errors_24h,
   };

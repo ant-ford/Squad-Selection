@@ -32,7 +32,8 @@ export function isChunkLoadError(error: unknown): boolean {
     /error loading dynamically imported module/i.test(message) ||
     /Importing a module script failed/i.test(message) ||
     /expected a JavaScript(?:-or-Wasm)? module/i.test(message) ||
-    /ChunkLoadError/i.test(message)
+    /ChunkLoadError/i.test(message) ||
+    /Unable to preload CSS/i.test(message)
   );
 }
 

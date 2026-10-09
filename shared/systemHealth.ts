@@ -28,6 +28,37 @@ export interface SystemError {
   status: number | null;
   message: string | null;
   request_id: string | null;
+  build?: string | null;
+  browser?: string | null;
+  stack?: string | null;
+}
+
+export type SystemErrorDays = 1 | 7 | 30;
+
+export interface SystemErrorGroup {
+  key: string;
+  kind: 'screen-load' | 'database' | 'server' | 'app' | 'scheduled';
+  source: string;
+  status: number | null;
+  message: string | null;
+  count: number;
+  recentCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  routes: string[];
+  routeCount: number;
+  buildCount: number;
+  builds: { build: string | null; count: number; lastSeen: string }[];
+  /** At most five recent examples, with no person ids or full user agents. */
+  samples: SystemError[];
+}
+
+export interface SystemErrorSummary {
+  days: SystemErrorDays;
+  totalGroups: number;
+  totalOccurrences: number;
+  /** At most 50 groups, most recently seen first; counts cover the full period. */
+  groups: SystemErrorGroup[];
 }
 
 /** GET /api/system. */
@@ -37,6 +68,8 @@ export interface SystemView {
   jobs: JobRow[];
   /** The latest 50, newest first. */
   errors: SystemError[];
+  /** Optional while an older API is still deployed. */
+  errorSummary?: SystemErrorSummary;
   serverErrors24h: number;
   clientErrors24h: number;
 }

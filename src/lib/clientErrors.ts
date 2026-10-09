@@ -6,6 +6,10 @@
 
 import { supabase } from './supabase';
 import { isChunkLoadError } from './staleDeploy';
+import { browserInfo } from './browserInfo';
+
+declare const __EDDY_BUILD__: string | undefined;
+const BUILD = typeof __EDDY_BUILD__ === 'string' ? __EDDY_BUILD__ : 'dev';
 
 const MAX_PER_LOAD = 5;
 const sent = new Set<string>();
@@ -23,10 +27,10 @@ export function describeError(error: unknown): { message: string; stack: string 
   return { message: `Non-Error ${type}`, stack: '' };
 }
 
-export function reportClientError(kind: 'route' | 'error' | 'rejection', error: unknown): void {
+export function reportClientError(kind: 'route' | 'error' | 'rejection', error: unknown, includeChunkError = false): void {
   try {
     // A stale deploy reloads itself (staleDeploy.ts); a failed API call is the Worker's to log.
-    if (isChunkLoadError(error) || (error instanceof Error && error.name === 'ApiError')) return;
+    if ((!includeChunkError && isChunkLoadError(error)) || (error instanceof Error && error.name === 'ApiError')) return;
     const { message, stack } = describeError(error);
     const key = `${kind}|${message}`;
     if (sent.has(key) || sent.size >= MAX_PER_LOAD) return;
@@ -36,6 +40,8 @@ export function reportClientError(kind: 'route' | 'error' | 'rejection', error: 
       message: message.slice(0, 500),
       route: window.location.pathname,
       stack: stack.split('\n').slice(0, 8).join('\n').slice(0, 1500),
+      build: BUILD,
+      browser: browserInfo(navigator.userAgent),
     });
     void supabase.auth
       .getSession()
@@ -53,6 +59,11 @@ export function reportClientError(kind: 'route' | 'error' | 'rejection', error: 
   } catch {
     // Reporting must never be the next crash.
   }
+}
+
+/** All recovery listeners share this kind, so an unrecovered import is logged once. */
+export function reportUnrecoveredScreenLoad(error: unknown): void {
+  reportClientError('route', error, true);
 }
 
 /** Uncaught errors and unhandled promise rejections, from startup (main.tsx). */

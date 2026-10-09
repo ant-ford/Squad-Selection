@@ -41,6 +41,16 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/smoke.mjs --out smoke-failures
 
+      - name: Failed screen downloads recover
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/recovery-smoke.mjs
+
+      - name: System error groups and history
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/system-smoke.mjs
+
       - name: Keep screenshots of failing screens
         if: failure()
         uses: actions/upload-artifact@v4

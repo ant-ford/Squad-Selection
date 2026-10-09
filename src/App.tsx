@@ -4,8 +4,9 @@ import { usePrefetchQuery, useQuery } from '@tanstack/react-query';
 import { myFixturesQuery, myTasksQuery, useMyProfile } from '@/lib/queries';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { isChunkLoadError, recoverFromStaleDeploy } from '@/lib/staleDeploy';
-import { reportClientError } from '@/lib/clientErrors';
+import { isChunkLoadError } from '@/lib/staleDeploy';
+import { recoverScreenLoad } from '@/lib/chunkRecovery';
+import { reportClientError, reportUnrecoveredScreenLoad } from '@/lib/clientErrors';
 import { getAccessDenied, subscribeAccessDenied } from '@/lib/accessDenied';
 import PlayerDashboard from './pages/PlayerDashboard';
 import EddyWordmark from '@/components/brand/EddyWordmark';
@@ -89,7 +90,7 @@ function RouteError() {
   // means this client is running a previous deploy. Recover (reload, then
   // clear the service worker) rather than leaving the skeleton up.
   useEffect(() => {
-    if (isChunkLoadError(error)) void recoverFromStaleDeploy();
+    if (isChunkLoadError(error)) void recoverScreenLoad(error, reportUnrecoveredScreenLoad);
     else reportClientError('route', error);
   }, [error]);
   return (
