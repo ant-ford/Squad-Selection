@@ -167,4 +167,92 @@ describe("computeTeamAttendance", () => {
     expect(off.cardCount).toBeUndefined();
     expect(res.teams[0].players[0].cells.m1.status).toBe("played");
   });
+
+  it("shows only selected players from other displayed squads on the correct upcoming derby side", () => {
+    const res = run({
+      players: [
+        player("recB1", "HKFC B"),
+        player("recMoved", "HKFC C", { selectedTeamEos: "HKFC B" }),
+        player("recC1", "HKFC C", { preferredName: "Chris", surname: "Lee", email: "private@example.com", mobileNo: "private-mobile" }),
+        player("recC2", "HKFC C"),
+        player("recA1", "HKFC A"),
+      ],
+      matches: [match("derby", "2026-10-04", {
+        awayTeam: "HKFC C", selectedPlayersHome: ["recB1", "recMoved", "recC1", "recC1"],
+        selectedPlayersAway: ["recC2", "recA1"],
+      })],
+    });
+    const home = res.fixtures.find((f) => f.team === "HKFC B")!;
+    const away = res.fixtures.find((f) => f.team === "HKFC C")!;
+    expect(home.selectedCount).toBe(3);
+    expect(home.otherPlayers).toEqual([{ id: "recC1", name: "Chris Lee", team: "HKFC C" }]);
+    expect(away.otherPlayers).toEqual([{ id: "recA1", name: "recA1", team: "HKFC A" }]);
+    expect(JSON.stringify(home.otherPlayers)).not.toContain("private");
+    const scoped = onlyTeams(res, ["HKFC B"]);
+    expect(scoped.fixtures).toHaveLength(1);
+    expect(scoped.fixtures[0].otherPlayers).toEqual(home.otherPlayers);
+    expect(scoped.teams.map((t) => t.team)).toEqual(["HKFC B"]);
+  });
+
+  it("uses actual match cards for past guests, excluding no-shows and other matches or seasons", () => {
+    const card = (id: string, who: string, matchId: string, team: string, season = SEASON): MatchCard =>
+      ({ id, player: [who], match: [matchId], team, season });
+    const res = run({
+      players: [player("recB1", "HKFC B"), player("recC1", "HKFC C"), player("recNoShow", "HKFC C")],
+      matches: [
+        match("past", "2026-09-20", { selectedPlayersHome: ["recC1", "recNoShow"] }),
+        match("elsewhere", "2026-09-20", { homeTeam: "HKFC A" }),
+      ],
+      cardsByPlayer: new Map([
+        ["recC1", [card("c1", "recC1", "past", "HKFC B"), card("c2", "recC1", "past", "HKFC B")]],
+        ["recNoShow", [card("c3", "recNoShow", "elsewhere", "HKFC A"), card("c4", "recNoShow", "past", "HKFC B", "2025-2026")]],
+      ]),
+    });
+    expect(res.fixtures.find((f) => f.matchId === "past")).toMatchObject({
+      cardCount: 1, otherPlayers: [{ id: "recC1", name: "recC1", team: "HKFC C" }],
+    });
+  });
+
+  it("keeps historical guests whose names and teams are recorded only on their match card", () => {
+    const res = run({
+      players: [player("recB1", "HKFC B")],
+      matches: [match("past", "2026-09-20")],
+      cardsByPlayer: new Map([["recFormer", [{
+        id: "card", player: ["recFormer"], match: ["past"], team: "HKFC B", season: SEASON,
+        rawPlayerName: "Former Player", playerTeam: "HKFC C",
+      }]]]),
+    });
+    expect(res.fixtures[0].otherPlayers).toEqual([{ id: "recFormer", name: "Former Player", team: "HKFC C" }]);
+  });
+
+  it("does not label past picks without match cards as played or show cancelled future picks", () => {
+    const res = run({
+      players: [player("recB1", "HKFC B"), player("recC1", "HKFC C")],
+      matches: [
+        match("uncarded", "2026-09-20", { selectedPlayersHome: ["recC1"] }),
+        match("cancelled", "2026-10-04", { matchStatus: "Cancelled", selectedPlayersHome: ["recC1"] }),
+      ],
+      cardedMatchIds: new Set(),
+    });
+    expect(res.fixtures.every((f) => f.otherPlayers?.length === 0)).toBe(true);
+    expect(res.fixtures[0].cardCount).toBeUndefined();
+  });
+
+  it("includes unlinked historical match-card names without losing appearances or mixing sides", () => {
+    const cards: MatchCard[] = [
+      { id: "oldCard", match: ["past"], team: "HKFC B", season: SEASON, rawPlayerName: "Former Guest", playerTeam: "HKFC C" },
+      { id: "awayCard", match: ["past"], team: "HKFC C", season: SEASON, rawPlayerName: "Away Guest", playerTeam: "HKFC A" },
+    ];
+    const res = run({
+      players: [player("recB1", "HKFC B"), player("recC1", "HKFC C")],
+      matches: [match("past", "2026-09-20", { awayTeam: "HKFC C" })],
+      cards: [...cards, cards[0]],
+    });
+    expect(res.fixtures.find((f) => f.team === "HKFC B")).toMatchObject({
+      cardCount: 1, otherPlayers: [{ id: "card:oldCard", name: "Former Guest", team: "HKFC C" }],
+    });
+    expect(res.fixtures.find((f) => f.team === "HKFC C")).toMatchObject({
+      cardCount: 1, otherPlayers: [{ id: "card:awayCard", name: "Away Guest", team: "HKFC A" }],
+    });
+  });
 });

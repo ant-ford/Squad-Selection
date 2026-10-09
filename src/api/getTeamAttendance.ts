@@ -21,6 +21,12 @@ export interface TeamSquad {
   players: SquadPlayer[];
 }
 
+export interface FixturePlayer {
+  id: string;
+  name: string;
+  team: string;
+}
+
 export interface TeamFixture {
   team: string;
   /** YYYY-MM-DD, Hong Kong. */
@@ -34,6 +40,8 @@ export interface TeamFixture {
   selectedCount: number;
   /** Players on this side's Match Card, from any squad. Absent when it has none. */
   cardCount?: number;
+  /** Past: on this side's match card. Upcoming: picked for this side. */
+  otherPlayers?: FixturePlayer[];
   goalsFor?: number;
   goalsAgainst?: number;
 }

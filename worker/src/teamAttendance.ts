@@ -43,6 +43,14 @@ export interface TeamSquad {
   players: SquadPlayer[];
 }
 
+/** A participant outside the fixture team's displayed squad, without notes or contact details. */
+export interface FixturePlayer {
+  id: string;
+  name: string;
+  /** Display team, falling back to the card's team snapshot for a former player. */
+  team: string;
+}
+
 export interface TeamFixture {
   team: string;
   /** YYYY-MM-DD, Hong Kong. */
@@ -58,6 +66,8 @@ export interface TeamFixture {
   selectedCount: number;
   /** Players on this side's Match Card, from any squad. Absent when it has none. */
   cardCount?: number;
+  /** Past: on this side's match card. Upcoming: picked for this side. */
+  otherPlayers?: FixturePlayer[];
   goalsFor?: number;
   goalsAgainst?: number;
 }
@@ -80,6 +90,8 @@ export interface TeamAttendanceInput {
   teamRankMap: Record<string, number>;
   matches: Match[];
   cardsByPlayer: Map<string, MatchCard[]>;
+  /** Full season cards, including historical appearances with no linked person. */
+  cards?: MatchCard[];
   cardedMatchIds: Set<string>;
   exceptions: Pick<AvailabilityException, "player" | "match" | "availabilityStatus">[];
   rules: AvailabilityRule[];
@@ -113,19 +125,34 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
 
   const seasonMatches = matches.filter((m) => (m.season || season) === season && hkDateKey(m.matchDate));
   const matchesById = new Map(seasonMatches.map((m) => [m.id, m]));
+  const playersById = new Map(players.map((p) => [p.id, p]));
+
+  const participant = (id: string, card?: MatchCard): FixturePlayer => {
+    const p = playersById.get(id);
+    return {
+      id,
+      name: p ? playerName(p) : card?.rawPlayerName?.trim() || 'Player name not recorded',
+      team: p ? selectedDisplayTeam(p) : card?.playerTeam || '',
+    };
+  };
 
   // Who is on each side's Match Card - play-ups and fill-ins included, so
   // the count is the side that took the field, not just the squad's share.
-  const carded = new Map<string, Set<string>>();
+  const carded = new Map<string, Map<string, FixturePlayer>>();
+  const addCard = (playerId: string, card: MatchCard) => {
+    if (card.season && card.season !== season) return;
+    const match = matchesById.get(linkId(card.match) ?? "");
+    if (!match) return;
+    const key = `${match.id}:${cardSide(card, match, isOurs)}`;
+    const participants = carded.get(key) ?? new Map<string, FixturePlayer>();
+    participants.set(playerId, participant(playerId, card));
+    carded.set(key, participants);
+  };
   for (const [playerId, cards] of cardsByPlayer) {
-    for (const card of cards) {
-      const match = matchesById.get(linkId(card.match) ?? "");
-      if (!match) continue;
-      const key = `${match.id}:${cardSide(card, match, isOurs)}`;
-      const players = carded.get(key) ?? new Set<string>();
-      players.add(playerId);
-      carded.set(key, players);
-    }
+    for (const card of cards) addCard(playerId, card);
+  }
+  for (const card of input.cards ?? []) {
+    if (!linkId(card.player)) addCard(`card:${card.id}`, card);
   }
 
   const fixtures: TeamFixture[] = [];
@@ -135,6 +162,7 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
     for (const side of [m.homeTeam, m.awayTeam]) {
       if (!isOurs(side)) continue;
       const isHome = side === m.homeTeam;
+      const selectedIds = [...new Set(isHome ? m.selectedPlayersHome : m.selectedPlayersAway)];
       const fixture: TeamFixture = {
         team: side,
         date,
@@ -144,10 +172,17 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
         past: played || date < today,
         friendly: isFriendly(m),
         off: OFF_STATUSES.has(m.matchStatus),
-        selectedCount: (isHome ? m.selectedPlayersHome : m.selectedPlayersAway)?.length ?? 0,
+        selectedCount: selectedIds.length,
       };
-      const cardCount = carded.get(`${m.id}:${side}`)?.size;
+      const cardPlayers = carded.get(`${m.id}:${side}`);
+      const cardCount = cardPlayers?.size;
       if (cardCount) fixture.cardCount = cardCount;
+      const participants = fixture.past
+        ? [...(cardPlayers?.values() ?? [])]
+        : fixture.off ? [] : selectedIds.map((id) => participant(id));
+      fixture.otherPlayers = participants
+        .filter((p) => p.team !== side)
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
       if (played && typeof m.homeTeamScore === "number" && typeof m.awayTeamScore === "number") {
         fixture.goalsFor = isHome ? m.homeTeamScore : m.awayTeamScore;
         fixture.goalsAgainst = isHome ? m.awayTeamScore : m.homeTeamScore;
@@ -228,6 +263,7 @@ export async function getTeamAttendance(env: Env, teams: readonly string[]): Pro
     teamRankMap: ref.teamRankMap,
     matches: ctx.allMatches,
     cardsByPlayer: ctx.matchCardsByPlayer,
+    cards: ctx.matchCards,
     cardedMatchIds: ctx.matchIdsWithCards,
     exceptions: ctx.exceptionsRaw,
     rules,

@@ -1,25 +1,20 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMyProfile } from '@/lib/queries';
-import { Skeleton } from '@/components/ui/skeleton';
+import AppLoading from '@/components/AppLoading';
+import { ErrorState } from '@/components/ui/error-state';
 import AppHeader from '@/components/AppHeader';
 import { coachScreen } from '@/lib/header';
 import { coachDashboardPath } from '@/lib/scrollMemory';
 
 export default function CoachLayout() {
   // AuthGate already guarantees a signed-in user before this route renders.
-  const { data: profile, isLoading: profileLoading } = useMyProfile();
+  const { data: profile, isLoading: profileLoading, refetch, isFetching } = useMyProfile();
   const { pathname } = useLocation();
   const screen = coachScreen(pathname);
   const header = <AppHeader title={screen.title} back={screen.child ? coachDashboardPath() : undefined} />;
 
-  if (profileLoading || !profile) {
-    return (
-      <div className="min-h-screen bg-background">
-        {header}
-        <LoadingSkeleton />
-      </div>
-    );
-  }
+  if (profileLoading) return <AppLoading />;
+  if (!profile) return <ErrorState variant="page" title="Could not load your profile" onRetry={() => refetch()} retrying={isFetching} />;
 
   if (!profile.isCoach) {
     return (
@@ -52,19 +47,6 @@ function NotCoach() {
         <button onClick={() => navigate('/')} className="min-h-10 px-3 text-sm text-primary underline">
           Player view
         </button>
-      </div>
-    </div>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="p-6 space-y-4">
-      <Skeleton className="h-6 w-32" />
-      <div className="space-y-3 pt-4">
-        <Skeleton className="h-24 w-full rounded-lg" />
-        <Skeleton className="h-24 w-full rounded-lg" />
-        <Skeleton className="h-24 w-full rounded-lg" />
       </div>
     </div>
   );

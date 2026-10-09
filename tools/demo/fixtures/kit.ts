@@ -5,7 +5,7 @@ import type { Persona } from '../personas.mjs';
 import type { Routes } from './routing';
 import { PERSONAS, TEAMS, at, day } from './data';
 
-const ORDER: KitOrder = { id: 'demoOrder1', supplier: 'Kukri', name: 'Kukri order 1', orderedOn: day(-50), receivedOn: day(-4), expectedOn: null };
+const ORDER: KitOrder = { id: 'demoOrder1', supplier: 'Kukri', name: 'Kukri order 1', orderedOn: day(-50), receivedOn: day(-21), expectedOn: null };
 const NEXT_ORDER: KitOrder = { id: 'demoOrder2', supplier: 'Kukri', name: 'Kukri order 2 (new joiners)', orderedOn: day(-6), receivedOn: null, expectedOn: day(24) };
 
 const sz = (shirt: string, shorts: string, socks: string, goalieSmock: string | null = null, goalieSmockStyle: string | null = null): KitSizes =>
@@ -57,8 +57,9 @@ function sets(): KitSet[] {
       owner: owner && team ? { id: idOf(owner), name: owner, team, status: 'Member' } : null,
       numberHeldBy: !owner && no === 11 ? { name: 'Chris Doyle', status: 'Applicant' } : null,
       holder: holderName ? { id: idOf(holderName), name: holderName } : null,
-      heldSince: holderName ? HELD_SINCE : null,
+      heldSince: holderName ? (no === 72 ? at(-18, 19, 40) : HELD_SINCE) : null,
       pendingTo: no === 103 && owner ? { id: idOf(owner), name: owner } : null,
+      pendingSince: no === 103 ? at(-2, 19, 40) : null,
       place: !holderName ? 'in_store' : holderName === owner ? 'with_owner' : 'with_holder',
       mismatches: owner && wanted ? ITEMS.filter(([k]) => wanted[k] && wanted[k] !== sizes[k]).map(([k, l]) => `${l}: ${sizes[k]}, wants ${wanted[k]}`) : [],
       wanted,
@@ -89,7 +90,7 @@ function board(orderId: string | null): KitBoard {
   const order = orderId === NEXT_ORDER.id ? NEXT_ORDER : ORDER;
   const all = sets();
   const onOrder = all.slice(0, 3).map((s, i): KitSet => ({
-    ...s, id: `demoNext${i}`, shirtNo: 120 + i, teamRange: 'HKFC D', place: 'on_order', holder: null, heldSince: null, pendingTo: null,
+    ...s, id: `demoNext${i}`, shirtNo: 120 + i, teamRange: 'HKFC D', place: 'on_order', holder: null, heldSince: null, pendingTo: null, pendingSince: null,
   }));
   return { orders: [NEXT_ORDER, ORDER], order, sets: order === NEXT_ORDER ? onOrder : all, people: people(), teams: TEAMS };
 }

@@ -51,6 +51,31 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/system-smoke.mjs
 
+      - name: Team availability counts and fixture details
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/team-availability-smoke.mjs --out smoke-failures/team-availability
+
+      - name: Kit and umpiring action priorities
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/action-priorities-smoke.mjs --out smoke-failures/action-priorities
+
+      - name: Startup loading handoff
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/startup-smoke.mjs
+
+      - name: Screenshots for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-review-screenshots
+          path: |
+            smoke-failures/team-availability/*.png
+            smoke-failures/action-priorities/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Keep screenshots of failing screens
         if: failure()
         uses: actions/upload-artifact@v4

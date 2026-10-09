@@ -17,13 +17,16 @@ const STICKY = 'sticky left-0 z-raised bg-background shadow-[0_0_0_3px_hsl(var(-
 
 type OpenPlayer = { id: string; name: string };
 
-/** How many took the field: a round count on the tile's corner, like an unread badge. */
+/** Match-card or selected count, including players from other squads. */
 // z-[1]: above the next tile (painted later, so it would cover the corner),
 // below the sticky name column (z-raised) when the grid scrolls under it.
-function CardBadge({ count, className = 'absolute -top-1 -right-1 z-[1]' }: { count: number; className?: string }) {
+function CardBadge({ count, selected = false, className = 'absolute -top-1 -right-1 z-[1]' }: { count: number; selected?: boolean; className?: string }) {
+  const label = `${count} ${selected ? 'selected' : 'on the match card'}`;
   return (
     <span
-      className={`${className} flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-px text-xs font-semibold tabular-nums leading-none text-info-foreground ring-2 ring-background`}
+      title={label}
+      aria-label={label}
+      className={`${className} flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[10px] font-semibold tabular-nums leading-none ring-2 ring-background ${selected ? 'bg-warning text-warning-foreground' : 'bg-info text-info-foreground'}`}
     >
       {count}
     </span>
@@ -48,7 +51,7 @@ function TeamCell({
   // Two fixtures that day (rare): the count goes top-left, leaving the
   // corner the match card badge uses.
   const badge = fixtures.length > 1 && (
-    <span className="absolute -top-1 -left-1 rounded-full bg-muted-foreground px-0.5 text-xs leading-none text-background">
+    <span className="absolute -top-1 -left-1 rounded-full bg-muted-foreground px-0.5 text-[10px] leading-none text-background" title={`${fixtures.length} fixtures on this date`}>
       {fixtures.length}
     </span>
   );
@@ -64,16 +67,18 @@ function TeamCell({
 
   const { available, maybe } = countSquad(squad.players, f.matchId);
   const tone = squadTone(available, squad.targetSquadSize);
+  const participants = f.past ? (f.cardCount ? `, ${f.cardCount} on the match card` : '') : `, ${f.selectedCount} selected`;
   return (
     <button
       onClick={onToggle}
       aria-expanded={open}
-      aria-label={`${squad.team} vs ${f.opponent}, ${safeFormat(f.date, 'd MMM')}: ${available} available${maybe ? `, ${maybe} maybe` : ''}`}
+      aria-label={`${squad.team} vs ${f.opponent}, ${safeFormat(f.date, 'd MMM')}: ${available} available${maybe ? `, ${maybe} maybe` : ''}${participants}`}
       className={`${base} ${toneClasses(tone, f.past ? 'faint' : 'solid')}`}
     >
       <span className="text-xs font-semibold tabular-nums leading-none">{available}</span>
       {maybe > 0 && <span className="mt-0.5 text-xs leading-none">+{maybe}?</span>}
       {f.past && f.cardCount ? <CardBadge count={f.cardCount} /> : null}
+      {!f.past && <CardBadge count={f.selectedCount} selected />}
       {badge}
     </button>
   );
@@ -108,6 +113,7 @@ function FixtureDetail({
           ([a, ga], [b, gb]) => order.indexOf(ga.cell.status) - order.indexOf(gb.cell.status) || a.localeCompare(b),
         );
         const scored = f.goalsFor !== undefined && f.goalsAgainst !== undefined;
+        const otherPlayers = f.otherPlayers ?? [];
         return (
           <div key={f.matchId} className="space-y-2">
             <p className="text-foreground">
@@ -142,6 +148,21 @@ function FixtureDetail({
                 </div>
               </div>
             ))}
+            {otherPlayers.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <p className="text-muted-foreground">
+                  {f.past ? 'Played from other squads' : 'Selected from other squads'} &middot; {otherPlayers.length}
+                </p>
+                <ul className="mt-1 space-y-1 text-foreground">
+                  {otherPlayers.map((p) => (
+                    <li key={p.id}>
+                      <span>{p.name}</span>
+                      <span className="text-muted-foreground"> &middot; {p.team || 'Team not recorded'}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         );
       })}
@@ -355,6 +376,12 @@ export default function TeamAvailability() {
               <CardBadge count={14} className="" />
             </span>
             On the match card (past games)
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="inline-flex w-4 shrink-0 justify-center">
+              <CardBadge count={14} selected className="" />
+            </span>
+            Selected (upcoming games, including other squads)
           </li>
           <li className="flex items-center gap-2">
             <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-xs leading-none">19</span>

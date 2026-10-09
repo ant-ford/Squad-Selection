@@ -52,6 +52,7 @@ interface SetRow {
   number_holder_active: boolean | null;
   pending_to_id: string | null;
   pending_to_name: string | null;
+  pending_since: string | null;
   expected_on: string | null;
 }
 
@@ -79,7 +80,7 @@ interface PersonRow {
 }
 
 const SET_COLUMNS =
-  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active,pending_to_id,pending_to_name,expected_on";
+  "id,order_id,supplier,received_on,shirt_no,team_range,ordered_for_name,shirt,shorts,socks,goalie_smock,goalie_smock_style,owner_id,owner_name,holder_id,holder_name,held_since,number_holder_name,number_holder_status,number_holder_active,pending_to_id,pending_to_name,pending_since,expected_on";
 
 /** Kit sizes rows use the database's item names. */
 const ITEM_COLUMN: Record<keyof KitSizes, string> = {
@@ -182,6 +183,7 @@ export async function getKitBoard(env: Env, orderId: string | null): Promise<Kit
       holder: r.holder_id ? { id: r.holder_id, name: r.holder_name ?? "" } : null,
       heldSince: r.held_since,
       pendingTo: pendingOf(r),
+      pendingSince: r.pending_since ?? null,
       place: placeOf(r),
       mismatches: owner ? mismatches(sizesOf(r), sizes.get(owner.id)) : [],
       wanted: owner ? sizes.get(owner.id) ?? null : null,

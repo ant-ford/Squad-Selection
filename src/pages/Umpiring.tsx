@@ -18,6 +18,7 @@ import { toneClasses } from '@/lib/statusTone';
 import { createUndoQueue, type UndoQueue } from '@/lib/undoQueue';
 import { hasPending, pendingKey, pendingLabel, withPending, type PendingAction, type PendingKind } from '@/lib/umpiringPending';
 import { hkDateKey } from '@shared/hkDateKey';
+import { umpiringAttention, umpiringDutyIsPast, type DutyAttention } from '@shared/umpiringAttention';
 import { toCsv } from '@shared/csv';
 import { saveCsv } from '@/lib/saveCsv';
 import { whatsAppShareLink } from '@shared/whatsapp';
@@ -57,7 +58,7 @@ const warningText = toneClasses('warning', 'text');
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 const noon = (day: string) => `${day}T12:00:00+08:00`;
 const weekLabel = (monday: string) => `${safeFormat(noon(monday), 'EEE d MMM')} – ${safeFormat(noon(weekEnd(monday)), 'EEE d MMM')}`;
-const isPast = (d: UmpireDuty) => new Date(d.matchDate).getTime() + (d.timeTbc ? 24 * 3600_000 : 0) <= Date.now();
+const isPast = umpiringDutyIsPast;
 
 function useUmpiringAction() {
   const queryClient = useQueryClient();
@@ -410,7 +411,7 @@ function CoordinatorActions({ duty, board }: { duty: UmpireDuty; board: Umpiring
   );
 }
 
-function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBoard }) {
+function DutyCard({ duty: loaded, board, attention }: { duty: UmpireDuty; board: UmpiringBoard; attention?: DutyAttention }) {
   const { pending } = useUndo();
   // While an Undo is open the duty shows as done, without its buttons.
   const busy = hasPending(loaded, pending);
@@ -432,6 +433,12 @@ function DutyCard({ duty: loaded, board }: { duty: UmpireDuty; board: UmpiringBo
         </div>
         <StatusChip>{duty.dutyTeam} duty</StatusChip>
       </div>
+      {attention && (
+        <div className="text-xs space-y-0.5" role="note">
+          {attention.uncovered && <p className={warningText}>Uncovered{duty.assignments.some((a) => a.status === 'offered') ? ' · offer awaiting confirmation' : ''}</p>}
+          {attention.conflicts.map((conflict) => <p key={conflict} className={warningText}>Timing conflict · {conflict}</p>)}
+        </div>
+      )}
       {/* Status and the buttons share a row, so more duties fit on a screen;
           the coordinator's assign form and paid offers take a row of their own. */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -659,6 +666,11 @@ export default function Umpiring() {
   const week = params.get('week');
   const tab = params.get('view') === 'season' ? 'season' : 'duties';
   const undo = useUndoable();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['umpiring', 'board', week],
     queryFn: () => getUmpiringBoard(week),
@@ -682,14 +694,28 @@ export default function Umpiring() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seen]);
 
+  const attention = useMemo(() => data ? umpiringAttention({
+    ...data, duties: data.duties.map((d) => withPending(d, undo.pending)),
+  }, now) : [], [data, undo.pending, now]);
+  const attentionById = new Map(attention.map((item) => [item.duty.id, item]));
   const byDay = useMemo(() => {
     const days = new Map<string, UmpireDuty[]>();
+    const urgentIds = new Set(attention.map((item) => item.duty.id));
     for (const d of data?.duties ?? []) {
+      if (urgentIds.has(d.id)) continue;
       const key = hkDateKey(d.matchDate);
       days.set(key, [...(days.get(key) ?? []), d]);
     }
     return [...days.entries()];
-  }, [data]);
+  }, [data, attention]);
+  const attentionDays = new Map<string, UmpireDuty[]>();
+  const loadedById = new Map((data?.duties ?? []).map((d) => [d.id, d]));
+  for (const item of attention) {
+    const day = hkDateKey(item.duty.matchDate);
+    // Keep the original assignments so DutyCard can disable buttons during Undo.
+    const loaded = loadedById.get(item.duty.id)!;
+    attentionDays.set(day, [...(attentionDays.get(day) ?? []), loaded]);
+  }
 
   const coordinator = data?.access === 'coordinator';
   const at = data ? data.weeks.indexOf(data.week) : -1;
@@ -740,20 +766,41 @@ export default function Umpiring() {
                     aria-label="Next week"
                   />
                 </div>
-                {byDay.length === 0 ? (
-                  <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">No duties this week.</p>
-                ) : (
-                  byDay.map(([day, duties]) => (
-                    <section key={day}>
-                      <DateHeading date={noon(day)} />
-                      <ul className="rounded-xl border border-border bg-card divide-y divide-border">
-                        {duties.map((d) => (
-                          <DutyCard key={d.id} duty={d} board={data} />
-                        ))}
-                      </ul>
-                    </section>
-                  ))
+                {attention.length > 0 && (
+                  <section aria-label="Duties needing attention" className="rounded-xl border border-warning/40 bg-warning/5 p-3 space-y-3">
+                    <div>
+                      <h2 className="text-sm font-semibold text-foreground">Needs attention</h2>
+                      <p className="text-xs text-muted-foreground">
+                        {attention.filter((item) => item.uncovered).length} uncovered · {attention.filter((item) => item.conflicts.length > 0).length} with timing conflicts · soonest first
+                      </p>
+                    </div>
+                    {[...attentionDays].map(([day, duties]) => (
+                      <section key={day}>
+                        <DateHeading date={noon(day)} />
+                        <ul className="rounded-xl border border-border bg-card divide-y divide-border">
+                          {duties.map((d) => <DutyCard key={d.id} duty={d} board={data} attention={attentionById.get(d.id)} />)}
+                        </ul>
+                      </section>
+                    ))}
+                  </section>
                 )}
+                {data.duties.length === 0 ? (
+                  <p className="rounded-xl border border-border bg-card px-3 py-6 text-center text-sm text-muted-foreground">No duties this week.</p>
+                ) : byDay.length > 0 ? (
+                  <section aria-label="Other duties" className="space-y-3">
+                    {attention.length > 0 && <h2 className="text-sm font-semibold text-foreground">Other duties this week</h2>}
+                    {byDay.map(([day, duties]) => (
+                      <section key={day}>
+                        <DateHeading date={noon(day)} />
+                        <ul className="rounded-xl border border-border bg-card divide-y divide-border">
+                          {duties.map((d) => (
+                            <DutyCard key={d.id} duty={d} board={data} />
+                          ))}
+                        </ul>
+                      </section>
+                    ))}
+                  </section>
+                ) : null}
                 {data.messages && <Messages board={data} />}
               </>
             )}

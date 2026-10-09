@@ -5,7 +5,8 @@ import { useMyFixtures, useQuickAvailability, useBulkAvailability } from '@/lib/
 import { safeFormat } from '@/lib/dateUtils';
 import { hkDateKey } from '@shared/hkDateKey';
 import { isCalledOff } from '@shared/fixtureChange';
-import { Skeleton } from '@/components/ui/skeleton';
+import AppLoading from '@/components/AppLoading';
+import { ErrorState } from '@/components/ui/error-state';
 import { BarChart3, CalendarDays, ChevronDown, Flag, Settings } from 'lucide-react';
 import PlayerFixtureCard from '@/components/PlayerFixtureCard';
 import { otherGamesThatDay, needsSameDayPrompt, groupByHkDay } from '@/lib/sameDayGames';
@@ -134,7 +135,7 @@ export default function PlayerDashboard() {
   // toggle never swaps the page back to the skeleton for a refetch. Home
   // (App.tsx) starts this same query alongside the profile.
   const [showPast, setShowPast] = useState(true);
-  const { data, isLoading: loading } = useMyFixtures(true);
+  const { data, isLoading: loading, refetch, isFetching } = useMyFixtures(true);
   const quickAvailability = useQuickAvailability();
   const bulkAvailability = useBulkAvailability();
   // The sheets live in the URL, so the phone's Back closes them: a fixture
@@ -277,7 +278,8 @@ export default function PlayerDashboard() {
   useScrollMemory('player-dashboard', !loading && !!data);
 
   // AuthGate already guarantees a signed-in user before this route renders.
-  if (loading || !data) return <DashboardSkeleton />;
+  if (loading) return <AppLoading />;
+  if (!data) return <ErrorState variant="page" title="Could not load your fixtures" message="Check your connection and try again." onRetry={() => refetch()} retrying={isFetching} />;
 
   const playUps = data.playUpOpportunities ?? [];
   const support = data.supportFixtures ?? [];
@@ -504,21 +506,6 @@ export default function PlayerDashboard() {
         {rulesSheet.value && <AvailabilityRulesSheet onClose={rulesSheet.close} />}
       </Suspense>
       <AppFooter />
-    </div>
-  );
-}
-
-function DashboardSkeleton() {
-  return (
-    <div className="min-h-screen bg-background">
-      <AppHeader title="Player view" guide="player" />
-      <div className="container mx-auto px-4 py-4 space-y-4">
-        <Skeleton className="h-20 w-full rounded-xl" />
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-      </div>
     </div>
   );
 }

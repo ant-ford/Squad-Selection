@@ -93,7 +93,7 @@ describe("kit", () => {
         { id: "u3", api_id: "recC", preferred_name: null, given_names: "Cy", surname: "Three", status: "Resigned", shirt_number_id: null },
       ],
       kit_sets_v: [
-        { id: "k1", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 1, team_range: "HKFC A", shirt: "L", shorts: "M", owner_id: "recA", owner_name: "Al One", holder_id: "recC", holder_name: "Cy Three" },
+        { id: "k1", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 1, team_range: "HKFC A", shirt: "L", shorts: "M", owner_id: "recA", owner_name: "Al One", holder_id: "recC", holder_name: "Cy Three", pending_to_id: "recA", pending_to_name: "Al One", pending_since: "2026-10-06T12:00:00+08:00" },
         { id: "k2", order_id: "o1", supplier: "Kukri", received_on: "2026-10-03", shirt_no: 2, team_range: "HKFC A", shirt: "XL", owner_id: null, holder_id: null, number_holder_name: "Ed Five", number_holder_status: "Applicant", number_holder_active: false },
       ],
       kit_sizes: [{ id: "z1", person_id: "u1", item: "shorts", size: "L" }],
@@ -101,6 +101,7 @@ describe("kit", () => {
     const board = await getKitBoard(env, null);
     expect(board.teams).toEqual(["HKFC A", "HKFC B"]);
     expect(board.sets[0]).toMatchObject({ shirtNo: 1, owner: { id: "recA", name: "Al One", team: "HKFC A" }, holder: { name: "Cy Three" }, place: "with_holder", mismatches: ["Shorts: M, wants L"] });
+    expect(board.sets[0]).toMatchObject({ pendingTo: { id: "recA", name: "Al One" }, pendingSince: "2026-10-06T12:00:00+08:00" });
     // A spare: its number is still held by someone who isn't Active.
     expect(board.sets[1]).toMatchObject({ shirtNo: 2, owner: null, place: "in_store", numberHeldBy: { name: "Ed Five", status: "Applicant" } });
     // Members and applicants only; Bo has a number but nothing in this order.
