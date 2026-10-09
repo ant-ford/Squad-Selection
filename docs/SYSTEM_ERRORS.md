@@ -71,6 +71,35 @@ no existing tables or stored data. Before applying anywhere, fetch main and
 check migration versions for collisions, following README's migration rules.
 Test the migration and Worker in preview first.
 
+### Run preview checks from GitHub
+
+No local Node, Supabase CLI or database client is needed. In GitHub Actions,
+open **Preview API**, select branch `fix/screen-recovery-system-errors`, and
+run/approve the workflow. Selecting this branch includes the migration and
+database tests automatically. Other branches keep their normal API preview
+steps. Use the existing workflow without new dispatch inputs so this is
+available before the feature branch is merged into main.
+
+The owner must put `PREVIEW_DB_URL` in the GitHub **preview** environment if
+it is not there already. Use the eddy-preview PostgreSQL connection URL
+(percent-encoded password), preferably the session pooler URL from Supabase's
+Connect panel. The backup-preview environment already uses a secret with
+this name; GitHub does not share secrets between environments. Do not put
+the URL in a workflow input, source file or issue.
+
+The workflow verifies recovery/System UI on fictional data, checks that the
+database URL identifies eddy-preview, and refuses other pending or unknown
+migration versions. It dry-runs and applies only the System migration using
+the pinned Supabase CLI, verifies recorded history, and runs its 24 pgTAP
+assertions. Test rows and any temporary pgTAP extension are rolled back.
+An already-applied migration is not applied again; its tests are rerun.
+Database output is withheld because error messages can include credentials
+or row values. A successful database check is required before API deployment.
+
+The same preview Worker is shared by all branches. Runs queue rather than
+interrupting a migration in progress. This workflow does not apply anything
+to production; the owner still applies the production migration before merge.
+
 The owner must apply this migration to production before merging/deploying
 the API that uses it. Production deploys remain CI only. Then deploy the API
 and frontend. New build/browser metadata appears only on new reports;
