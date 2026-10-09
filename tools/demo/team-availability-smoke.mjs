@@ -28,6 +28,7 @@ try {
   const badge = async (f) => page.eval(`
     const cell = [...document.querySelectorAll('table button[aria-label]')].find((el) => el.getAttribute('aria-label').startsWith(${JSON.stringify(cellLabel(f))}));
     const badge = cell.querySelector('span[aria-label]');
+    if (!badge) return null;
     const style = getComputedStyle(badge);
     return { text: badge.textContent.trim(), label: badge.getAttribute('aria-label'), font: style.fontSize, background: style.backgroundColor };
   `);
@@ -39,8 +40,8 @@ try {
   assert.equal(played.text, String(past.cardCount));
   assert.equal(played.font, '10px');
   assert.notEqual(selected.background, played.background);
-  assert.equal((await badge(empty)).text, '0');
-  console.log('ok   smaller badges distinguish selected counts (including zero) from match-card counts');
+  assert.equal(await badge(empty), null);
+  console.log('ok   smaller badges distinguish selected counts from match-card counts and hide zero selections');
 
   const text = () => page.eval('return document.body.innerText');
   await page.click(cellLabel(upcoming));
