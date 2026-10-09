@@ -4,8 +4,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, restorePersistedQueries } from './lib/queryClient';
 import App from "./App";
 import "./index.css";
-import { recoverFromStaleDeploy, isChunkLoadError } from './lib/staleDeploy';
-import { installClientErrorReporting } from './lib/clientErrors';
+import { installChunkRecovery } from './lib/chunkRecovery';
+import { installClientErrorReporting, reportUnrecoveredScreenLoad } from './lib/clientErrors';
 
 // Crashes go to the Worker's error_log, for /system.
 installClientErrorReporting();
@@ -14,17 +14,7 @@ installClientErrorReporting();
 // index.html from a previous deploy. recoverFromStaleDeploy reloads, and if
 // the same thing happens again drops the service worker and its caches before
 // reloading; it never goes further than that in one tab.
-window.addEventListener('vite:preloadError', (event) => {
-  event.preventDefault();
-  void recoverFromStaleDeploy();
-});
-
-// The preload event does not fire when the chunk request itself succeeds and
-// returns HTML, which is exactly what the SPA fallback does for a filename
-// that no longer exists. That surfaces as a rejected dynamic import instead.
-window.addEventListener('unhandledrejection', (event) => {
-  if (isChunkLoadError(event.reason)) void recoverFromStaleDeploy();
-});
+installChunkRecovery(reportUnrecoveredScreenLoad);
 
 // The person's own fixtures, profile and tasks from their last visit go into
 // the cache first (at most 200 ms, behind the boot loader), so the player page

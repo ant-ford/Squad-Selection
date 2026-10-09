@@ -1,23 +1,27 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Check, X } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
+import SystemErrors from '@/components/SystemErrors';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError, apiGet } from '@/lib/apiClient';
 import { safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
-import type { SystemView } from '@shared/systemHealth';
+import type { SystemErrorDays, SystemView } from '@shared/systemHealth';
 
 const when = (iso: string | null) => safeFormat(iso, 'd MMM HH:mm');
 const card = 'rounded-xl border border-border bg-card';
 
 /** System health: the owner and the Section Captains (worker/src/systemHealth.ts). */
 export default function System() {
+  const [days, setDays] = useState<SystemErrorDays>(1);
   const { data: profile, isLoading: profileLoading } = useMyProfile();
   const allowed = profile?.system ?? false;
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['system'],
-    queryFn: () => apiGet<SystemView>('/api/system'),
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ['system', days],
+    queryFn: () => apiGet<SystemView>(`/api/system?days=${days}`),
+    placeholderData: keepPreviousData,
     enabled: allowed,
     retry: false,
   });
@@ -54,27 +58,7 @@ export default function System() {
           </table>
         </section>
 
-        <section className={card}>
-          <h2 className="px-3 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Errors · 24h: {data.serverErrors24h} server, {data.clientErrors24h} app
-          </h2>
-          {data.errors.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">None.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {data.errors.map((e, i) => (
-                <li key={`${e.at}-${i}`} className="px-3 py-2 text-xs">
-                  <div className="flex gap-2 text-muted-foreground">
-                    <span>{when(e.at)}</span>
-                    <span>{e.source === 'client' ? 'app' : e.status}</span>
-                    <span className="truncate">{e.route}</span>
-                  </div>
-                  <p className="text-foreground break-words">{e.message}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <SystemErrors data={data} days={days} onDays={setDays} updating={isFetching} />
       </>
     );
   };

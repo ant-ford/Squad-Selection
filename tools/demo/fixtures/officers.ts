@@ -9,7 +9,7 @@ import { APPROVABLE_STAGE, PARKED_STAGES, PIPELINE_STAGES, SUBMITTED_STAGES, col
 import { REVIEW_STAGES, reviewColumnFor, reviewWaitingOn } from '@shared/statementStages';
 import { PLAYING_PREFERENCES, type SeasonPlanAnswers, type SeasonPlanBoard, type SeasonPlanPlayer } from '@shared/seasonPlan';
 import { EMPTY_ROLES, type Volunteer, type VolunteerRoles, type VolunteersBoard } from '@shared/volunteering';
-import type { JobRow, SystemError, SystemView } from '@shared/systemHealth';
+import type { JobRow, SystemError, SystemErrorDays, SystemErrorGroup, SystemView } from '@shared/systemHealth';
 import type { MessageTemplate } from '@/api/messages';
 import { reply, type Routes } from './routing';
 import { OTHERS, PERSONAS, SAT2, SEASON, SQUAD_PLAYERS, TEAMS, at, day, firstName, type Persona } from './data';
@@ -382,11 +382,42 @@ function volunteers(): VolunteersBoard {
 // ── System ──────────────────────────────────────────────────────────────
 
 /** GET /api/system. */
-function system(): SystemView {
+function system(days: SystemErrorDays = 1): SystemView {
   const job = (name: string, h: number): JobRow => ({ job: name, ran_at: hoursAgo(h), ok: true, detail: null, last_ok_at: hoursAgo(h) });
   const err = (h: number, source: string, route: string, status: number | null, message: string): SystemError => ({
     at: hoursAgo(h), source, route, status, message, request_id: `demo-req-${h}`,
   });
+  const examples = [
+    err(3, 'worker', '/api/match/demoM1/players', 503, 'Database error (selections, 503)'),
+    { ...err(9, 'client', '/coach/match/demoM1-home', null, 'TypeError: Failed to fetch dynamically imported module'), build: 'demo-current', browser: 'Safari 17' },
+    err(20, 'worker', '/api/upcoming-fixtures', 500, 'Database error (matches, 500)'),
+  ];
+  const groups: SystemErrorGroup[] = examples.map((sample, index) => ({
+    key: `demo-error-${index}`, kind: sample.source === 'client' ? 'screen-load' : 'database',
+    source: sample.source, status: sample.status, message: sample.message,
+    count: 1, recentCount: 1, firstSeen: sample.at, lastSeen: sample.at,
+    routes: [sample.route!], routeCount: 1, buildCount: 1,
+    builds: [{ build: sample.build ?? null, count: 1, lastSeen: sample.at }], samples: [sample],
+  }));
+  if (days > 1) {
+    const screen = groups[1];
+    const older = err(72, 'client', '/umpiring', null, "TypeError: Cannot read properties of undefined (reading 'default')");
+    screen.count = 17;
+    screen.firstSeen = older.at;
+    screen.routes.push('/umpiring', '/coach/availability');
+    screen.routeCount = 3;
+    screen.buildCount = 2;
+    screen.builds.push({ build: null, count: 16, lastSeen: hoursAgo(30) });
+    screen.samples.push(older);
+  }
+  if (days === 30) {
+    const older = err(240, 'client', '/club', null, 'TypeError: example historical app error');
+    groups.push({
+      key: 'demo-historical', kind: 'app', source: 'client', status: null, message: older.message,
+      count: 1, recentCount: 0, firstSeen: older.at, lastSeen: older.at, routes: ['/club'], routeCount: 1,
+      buildCount: 1, builds: [{ build: null, count: 1, lastSeen: older.at }], samples: [older],
+    });
+  }
   return {
     ok: true,
     checks: [
@@ -400,11 +431,8 @@ function system(): SystemView {
       { key: 'server-errors', label: 'Server errors', ok: true, note: '2 in 24h' },
     ],
     jobs: [job('hkha-sync', 2), job('backup', 6), job('health-check', 6), job('retention', 7), job('review-emails', 7)],
-    errors: [
-      err(3, 'worker', '/api/match/demoM1/players', 503, 'Database error (selections, 503)'),
-      err(9, 'client', '/coach/match/demoM1-home', null, 'TypeError: dynamically imported module did not load'),
-      err(20, 'worker', '/api/upcoming-fixtures', 500, 'Database error (matches, 500)'),
-    ],
+    errors: examples,
+    errorSummary: { days, totalGroups: groups.length, totalOccurrences: groups.reduce((sum, group) => sum + group.count, 0), groups },
     serverErrors24h: 2,
     clientErrors24h: 1,
   };
@@ -446,5 +474,5 @@ export const routes: Routes = {
   'POST /api/trials/sessions': () => ({ id: 'demoTrialNew' }),
   'POST /api/trials/sessions/:id/remove': () => ({ ok: true }),
   'GET /api/volunteering/board': () => volunteers(),
-  'GET /api/system': () => system(),
+  'GET /api/system': ({ query }) => system(Number(query.get('days') ?? '1') as SystemErrorDays),
 };

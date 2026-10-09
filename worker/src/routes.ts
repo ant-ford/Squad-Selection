@@ -371,7 +371,7 @@ export const ROUTES: readonly Route[] = [
   // A crash the app hit: signed-in only, small, rate-limited per person.
   route("POST", "/api/client-error", "signed-in", async ({ request, env, user }) => logClientError(env, user, await readClientError(request))),
   // The owner and the Section Captains (checked in getSystemView).
-  route("GET", "/api/system", "signed-in", ({ env, user }) => getSystemView(env, user)),
+  route("GET", "/api/system", "signed-in", ({ env, user, url }) => getSystemView(env, user, url.searchParams.get("days") ?? "1")),
   route("GET", "/api/my-fixtures", "signed-in", ({ env, user, url }) => {
     // Results are a meaningful amount of payload for a screen most players
     // open to answer an upcoming fixture, so they come only on request.

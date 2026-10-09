@@ -27,7 +27,8 @@ jobs:
     # A later run replaces an earlier one; there is only one preview Worker.
     concurrency:
       group: deploy-preview
-      cancel-in-progress: true
+      # A later run must not interrupt a database migration in flight.
+      cancel-in-progress: false
     steps:
       - name: Refuse main
         if: github.ref == 'refs/heads/main'
@@ -36,6 +37,8 @@ jobs:
           exit 1
 
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -46,6 +49,43 @@ jobs:
       # Cheap guard: a branch that does not typecheck is not worth looking at.
       - name: Typecheck API
         run: npm run typecheck:worker
+
+      - name: Check migration versions and preview guards
+        # This branch's approved preview run includes its migration checks.
+        # No new dispatch input is needed on main before this can be run.
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        run: |
+          node scripts/check-migrations.mjs --base origin/main
+          npx vitest run tests/previewSystemErrors.test.ts
+
+      - name: Check screen recovery and System UI
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          npx tsc -p tools/demo
+          node tools/demo/recovery-smoke.mjs
+          node tools/demo/system-smoke.mjs
+
+      - uses: supabase/setup-cli@v1
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        with:
+          version: 2.118.0
+
+      - name: Install PostgreSQL client if needed
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        run: |
+          command -v psql >/dev/null || { sudo apt-get -qq update >/dev/null && sudo apt-get -qq install -y postgresql-client >/dev/null; }
+
+      # This secret must be in the preview environment (the backup workflow
+      # also uses a PREVIEW_DB_URL, in backup-preview). No production secret
+      # is referenced. The script rejects connections to any other project,
+      # unexpected pending migrations, and failed or incomplete TAP results.
+      - name: Apply and test System migration on eddy-preview
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        env:
+          PREVIEW_DB_URL: ${{ secrets.PREVIEW_DB_URL }}
+        run: node scripts/preview-system-errors.mjs
 
       - name: Deploy API Worker (hkfc-api-preview)
         id: deploy

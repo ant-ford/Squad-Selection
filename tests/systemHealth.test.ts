@@ -9,6 +9,7 @@ import {
   allowClientError,
   canViewSystem,
   evaluateHealth,
+  getSystemView,
   isSystemOwner,
   logClientError,
   logServerError,
@@ -22,6 +23,7 @@ import {
 } from "../worker/src/systemHealth";
 import { DAILY_LIMIT } from "../worker/src/mailer";
 import worker from "../worker/src/index";
+import type { AuthorizedUser } from "../worker/src/auth";
 
 const NOW = new Date("2026-10-07T04:00:00Z");
 const hoursBefore = (h: number) => new Date(NOW.getTime() - h * 3600_000).toISOString();
@@ -205,6 +207,47 @@ describe("reading a crash report", () => {
   it("keeps the path only, and a known kind", async () => {
     const r = await readClientError(post(JSON.stringify({ kind: "nonsense", message: "m", route: "/review/1?token=abc#x" })));
     expect(r).toEqual({ kind: "error", message: "m", route: "/review/1", stack: "" });
+  });
+
+  it('keeps bounded build/browser metadata and rejects full user agents or other values', async () => {
+    const base = { message: 'boom', route: '/coach?private=1', build: 'build-123', browser: 'Safari 17' };
+    expect(await readClientError(post(JSON.stringify(base)))).toMatchObject({ build: 'build-123', browser: 'Safari 17', route: '/coach' });
+    const invalid = await readClientError(post(JSON.stringify({ ...base, build: 'a@b.com', browser: 'Mozilla/5.0 full UA', userAgent: 'secret' })));
+    expect(invalid).not.toHaveProperty('build');
+    expect(invalid).not.toHaveProperty('browser');
+    expect(invalid).not.toHaveProperty('userAgent');
+  });
+});
+
+describe('grouped System errors', () => {
+  const captain = { personId: 'captain', officerRoles: [{ office: 'sectionCaptain', designation: '' }] } as AuthorizedUser;
+
+  it('requires officer access before reading grouped errors', async () => {
+    const calls = fakeDb();
+    await expect(getSystemView(dataEnv, { personId: 'player', officerRoles: [] } as unknown as AuthorizedUser)).rejects.toMatchObject({ status: 403 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each(['0', '2', '31', '1.0', 'anything'])('rejects invalid periods (%s) before querying', async (period) => {
+    const calls = fakeDb();
+    await expect(getSystemView(dataEnv, captain, period)).rejects.toMatchObject({ status: 400 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each(['1', '7', '30'])('uses database aggregation over the full %s-day period', async (period) => {
+    const summary = { days: Number(period), totalGroups: 51, totalOccurrences: 150, groups: [] };
+    const calls = fakeDb((call) => call.path.endsWith('/system_health_snapshot') ? healthy()
+      : call.path.endsWith('/system_error_groups') ? summary : []);
+    const view = await getSystemView(dataEnv, captain, period);
+    expect(view.errorSummary).toEqual(summary);
+    expect(calls.find((call) => call.path.endsWith('/system_error_groups'))?.body).toEqual({ p_days: Number(period) });
+    expect(view.errors).toEqual([]); // retained for clients on an older build
+  });
+
+  it('stores valid diagnostics in the existing detail object', async () => {
+    const calls = fakeDb(() => true);
+    await logClientError(dataEnv, { personId: 'p1' }, { kind: 'route', message: 'boom', route: '/coach', stack: '', build: 'build-123', browser: 'Chrome 131' });
+    expect(calls[0].body.p_detail).toEqual({ kind: 'route', build: 'build-123', browser: 'Chrome 131' });
   });
 });
 
