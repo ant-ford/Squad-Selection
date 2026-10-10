@@ -53,7 +53,7 @@ const divisionLabel = (d?: string) => (d ? leagueLabel(d) : undefined);
 /**
  * Club and team statistics for every signed-in player (owner decision,
  * 2026-09-26). One season is one request; "All time" adds the seasons up
- * here. No player's cards appear on this page.
+ * here. Card totals are anonymous; individual players' cards stay private.
  */
 export default function ClubStats() {
   const [params, setParams] = useSearchParams();
@@ -302,6 +302,7 @@ function CompetitionCard({
       rows={groups.flatMap((g) => g.teams.map((t) => [g.label, t.team, games(t), t.w, t.d, t.l, t.gf, t.ga, pct(t)]))}
     />
   );
+  if (title === 'By league') return <ChartCard title={title} caption={caption}>{table}</ChartCard>;
   return (
     <ChartCard title={title} caption={caption} table={table}>
       <div className="space-y-3">

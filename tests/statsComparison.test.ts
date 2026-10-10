@@ -10,12 +10,52 @@ const summary = (season: string, results: MatchResult[]): SeasonSummary => ({
 });
 
 describe('Stats period comparisons', () => {
+  it('compares each of the past three seasons with its own date cutoff', () => {
+    const current = summary('2026-2027', [result('2027-01-31')]);
+    for (const yearsAgo of [1, 2, 3]) {
+      const start = 2026 - yearsAgo;
+      const previous = summary(precedingSeason(current.season, yearsAgo), [result(`${start + 1}-01-31`), result(`${start + 1}-02-01`)]);
+      const compared = compareSeasons(current, previous, '2027-01-31')!;
+      expect(compared.previousThrough).toBe(`${start + 1}-01-31`);
+      expect(compared.previous.games).toBe(1);
+    }
+  });
+
+  it('keeps full historical seasons and leap-day cutoffs correct three years back', () => {
+    expect(compareSeasons(summary('2025-2026', []), summary('2022-2023', []), '2026-10-10')).toMatchObject({ toDate: false, previousThrough: '2023-06-30' });
+    expect(compareSeasons(summary('2027-2028', []), summary('2024-2025', []), '2028-02-29')).toMatchObject({ previousThrough: '2025-02-28' });
+  });
+
+  it('counts clean sheets, conceded goals and side-specific card totals within the period', () => {
+    const first = result('2026-09-01', 'Valley A', 'HKFC A', 0, 3);
+    first.matchCards = { away: { yellow: 2, red: 1 } };
+    const derby = result('2026-09-02', 'HKFC A', 'HKFC B', 1, 0);
+    derby.matchCards = { home: { yellow: 1, red: 0 }, away: { yellow: 3, red: 1 } };
+    const later = result('2026-10-11');
+    later.matchCards = { home: { yellow: 99, red: 99 } };
+    const current = summary('2026-2027', [first, derby, later]);
+    const previous = summary('2023-2024', []);
+    expect(compareSeasons(current, previous, '2026-10-10')!.current).toMatchObject({ games: 1, ga: 0, cleanSheets: 1, cardedGames: 1, yellow: 2, red: 1 });
+    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC A')!.current).toMatchObject({ games: 2, ga: 0, cleanSheets: 2, cardedGames: 2, yellow: 3, red: 1 });
+    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC B')!.current).toMatchObject({ games: 1, ga: 1, cleanSheets: 0, cardedGames: 1, yellow: 3, red: 1 });
+  });
+
+  it('distinguishes recorded zero cards from games without any match-card data', () => {
+    const recorded = result('2026-09-01');
+    recorded.matchCards = { home: { yellow: 0, red: 0 } };
+    const current = summary('2026-2027', [recorded, result('2026-09-02')]);
+    const previous = summary('2025-2026', [result('2025-09-01')]);
+    const compared = compareSeasons(current, previous, '2026-10-10')!;
+    expect(compared.current).toMatchObject({ games: 2, cardedGames: 1, yellow: 0, red: 0 });
+    expect(compared.previous).toMatchObject({ games: 1, cardedGames: 0 });
+  });
+
   it('compares the ongoing season through the same date, rather than a full previous year', () => {
     const current = summary('2026-2027', [result('2026-09-01'), result('2026-10-10'), result('2026-10-11')]);
     const previous = summary('2025-2026', [result('2025-09-01'), result('2025-10-10'), result('2025-10-11'), result('2026-04-01')]);
     const comparison = compareSeasons(current, previous, '2026-10-10')!;
     expect(comparison).toMatchObject({ toDate: true, currentThrough: '2026-10-10', previousThrough: '2025-10-10' });
-    expect(comparison.current).toEqual({ games: 2, w: 2, d: 0, l: 0, gf: 6, ga: 2 });
+    expect(comparison.current).toMatchObject({ games: 2, w: 2, d: 0, l: 0, gf: 6, ga: 2 });
     expect(comparison.previous).toEqual(comparison.current);
   });
 
@@ -31,9 +71,9 @@ describe('Stats period comparisons', () => {
   it('excludes club derbies but counts each team’s own result, home or away', () => {
     const current = summary('2026-2027', [result('2026-09-01'), result('2026-09-02', 'KCC', 'HKFC A', 2, 0), result('2026-09-03', 'HKFC A', 'HKFC B', 0, 0)]);
     const previous = summary('2025-2026', []);
-    expect(compareSeasons(current, previous, '2026-10-10')!.current).toEqual({ games: 2, w: 1, d: 0, l: 1, gf: 3, ga: 3 });
-    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC A')!.current).toEqual({ games: 3, w: 1, d: 1, l: 1, gf: 3, ga: 3 });
-    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC B')!.current).toEqual({ games: 1, w: 0, d: 1, l: 0, gf: 0, ga: 0 });
+    expect(compareSeasons(current, previous, '2026-10-10')!.current).toMatchObject({ games: 2, w: 1, d: 0, l: 1, gf: 3, ga: 3 });
+    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC A')!.current).toMatchObject({ games: 3, w: 1, d: 1, l: 1, gf: 3, ga: 3 });
+    expect(compareSeasons(current, previous, '2026-10-10', 'HKFC B')!.current).toMatchObject({ games: 1, w: 0, d: 1, l: 0, gf: 0, ga: 0 });
   });
 
   it('compares completed seasons in full, even after their calendar cutoff has passed', () => {
@@ -56,14 +96,14 @@ describe('Stats period comparisons', () => {
   it('keeps an empty period empty so the view can explain why no comparison is possible', () => {
     const current = summary('2026-2027', [result('2026-10-01')]);
     const previous = summary('2025-2026', [result('2025-11-01')]);
-    expect(compareSeasons(current, previous, '2026-10-10')!.previous).toEqual({ games: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+    expect(compareSeasons(current, previous, '2026-10-10')!.previous).toMatchObject({ games: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 });
   });
 
   it('refuses comparisons with another period, missing dates or incomplete older summaries', () => {
     const current = summary('2026-2027', [result('2026-10-01')]);
     const previous = summary('2025-2026', [result('2025-10-01')]);
     expect(precedingSeason(current.season)).toBe(previous.season);
-    expect(compareSeasons(current, { ...previous, season: '2024-2025' }, '2026-10-10')).toBeNull();
+    expect(compareSeasons(current, { ...previous, season: '2026-2027' }, '2026-10-10')).toBeNull();
     expect(compareSeasons(current, { ...previous, results: undefined }, '2026-10-10')).toBeNull();
     expect(compareSeasons(current, summary('2025-2026', [result('')]), '2026-10-10')).toBeNull();
     expect(compareSeasons(current, { ...previous, matches: 2 }, '2026-10-10')).toBeNull();

@@ -81,6 +81,15 @@ export function useSeasonStats(season: string | null) {
   });
 }
 
+/** A fixed set of comparison seasons, sharing the season picker's cache. */
+export function useComparisonSeasons(seasons: string[]) {
+  return useQueries({ queries: seasons.map((season) => ({
+    queryKey: ['seasonStats', season],
+    queryFn: () => getSeasonStats(season),
+    staleTime: STATS_STALE_MS,
+  })) });
+}
+
 /**
  * Every season with games, newest first, for "All time". Up to
  * ALL_TIME_CONCURRENCY seasons are requested at once (allTimeStats.ts),

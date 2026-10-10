@@ -33,6 +33,14 @@ try {
       data.generatedAt = season === current ? `${year}-10-09T16:20:00Z` : `${year}-10-03T00:00:00Z`;
       if (season === previous && mode === 'empty') Object.assign(data, { matches: 0, derbies: 0, results: [], teams: [], players: [], umpires: [] });
       if (season === previous && mode === 'undated') delete data.results;
+      if (season === previous && mode === 'partial') {
+        data.results.forEach((result, i) => { if (i >= 4) delete result.matchCards; });
+      }
+      if (season === previous && mode === 'noCards') data.results.forEach((result) => { delete result.matchCards; });
+      if (season === previous && mode === 'failed') {
+        await page.send('Fetch.fulfillRequest', { requestId, responseCode: 503, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify({ error: 'Temporarily unavailable' })).toString('base64') });
+        return;
+      }
       await page.send('Fetch.fulfillRequest', {
         requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
         body: Buffer.from(JSON.stringify(data)).toString('base64'),
@@ -64,40 +72,75 @@ try {
 
   await goto('/stats?as=player');
   assert.match(await text(), new RegExp(`Stats compiled 10 Oct ${year}, 00:20 HKT`));
-  assert.match(await text(), new RegExp(`through 10 Oct ${year} and 10 Oct ${year - 1}`));
-  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '20', '0']); // Five weeks, not last season's 18 weeks.
-  assert.match((await comparisonRows())[1][3], /pp$/);
+  assert.match(await text(), new RegExp(`through 10 Oct ${year}, and the equivalent date in each past season`));
+  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '20', '20', '20']); // Five weeks, not last season's 18 weeks.
+  const headers = await page.eval(`return [...document.querySelectorAll('section[aria-label="Previous season comparison"] thead th')].map((c) => c.textContent.trim())`);
+  assert.deepEqual(headers, ['Measure', ...[0, 1, 2, 3].map((n) => seasonLabel(year - n))]);
+  assert.ok((await comparisonRows()).some((r) => r[0] === 'Goals conceded per game' && r.slice(1).every((v) => /^\d+\.\d$/.test(v))));
+  assert.ok((await comparisonRows()).some((r) => r[0] === 'Clean sheets' && r.slice(1).every((v) => /^\d+$/.test(v))));
+  assert.deepEqual((await comparisonRows()).find((r) => r[0] === 'Yellow (red) cards'), ['Yellow (red) cards', '8 (0)', '8 (0)', '8 (0)', '8 (0)']);
+  assert.ok(!(await comparisonRows()).some((r) => /attendance/i.test(r[0])));
+  const leagueCard = await page.eval(`const figure = [...document.querySelectorAll('figure')].find((f) => f.querySelector('h3')?.textContent === 'By league'); return { table: !!figure?.querySelector('table'), toggle: !!figure?.querySelector('button'), chart: !!figure?.querySelector('[role="img"]') };`);
+  assert.deepEqual(leagueCard, { table: true, toggle: false, chart: false });
   await page.screenshot(path.join(out, 'stats-club-mobile.png'));
   console.log('ok   Club Stats uses saved HKT compilation time and compares matched periods');
 
   await page.click('Teams', { selector: '[role=tab]', exact: true });
   assert.equal(await page.settle(), true);
-  assert.deepEqual((await comparisonRows())[0], ['Games', '5', '5', '0']);
+  assert.deepEqual((await comparisonRows())[0], ['Games', '5', '5', '5', '5']);
   await page.click('B', { selector: 'nav[aria-label="Team"] button', exact: true });
   assert.match(await text(), /HKFC B's games, including derbies/);
-  assert.deepEqual((await comparisonRows())[0], ['Games', '5', '5', '0']);
+  assert.deepEqual((await comparisonRows())[0], ['Games', '5', '5', '5', '5']);
   await page.screenshot(path.join(out, 'stats-team-mobile.png'));
   console.log('ok   Team comparisons follow the team picker');
 
   await chooseSeason(previous);
-  assert.match(await text(), /Both full seasons/);
-  assert.deepEqual((await comparisonRows())[0], ['Games', '18', '18', '0']);
+  assert.match(await text(), /Full seasons/);
+  assert.deepEqual((await comparisonRows())[0], ['Games', '18', '18', '18', '18']);
   assert.match(await text(), new RegExp(seasonLabel(year - 2)));
-  console.log('ok   Historical comparisons use two completed seasons');
+  console.log('ok   Historical comparisons use four completed seasons');
 
   mode = 'empty';
   await goto('/stats?as=player');
-  assert.match(await text(), new RegExp(`No recorded games in ${seasonLabel(year - 1)} against other clubs through 10 Oct ${year - 1} to compare`));
-  assert.equal((await comparisonRows()).length, 0);
+  assert.match(await text(), new RegExp(`${seasonLabel(year - 1)}: No recorded games in this period`));
+  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '0', '20', '20']);
+  assert.equal((await comparisonRows())[1][2], '—');
   assert.match(await text(), /W-D-L/); // Current figures remain available.
   assert.doesNotMatch(await text(), /NaN|Infinity/);
   console.log('ok   Empty prior periods explain the missing comparison');
 
   mode = 'undated';
   await goto('/stats?as=player');
-  assert.match(await text(), /comparison unavailable: dated results are missing/);
-  assert.equal((await comparisonRows()).length, 0);
+  assert.match(await text(), /Dated results missing/);
+  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '—', '20', '20']);
   console.log('ok   Older summaries without dated results do not invent a comparison');
+
+  mode = 'partial';
+  await goto('/stats?as=player');
+  assert.match(await text(), /4 of 20 games have match cards/);
+  assert.equal((await comparisonRows()).find((r) => r[0] === 'Yellow (red) cards')[2], '4 (0)*');
+  console.log('ok   Partial match-card coverage marks card counts');
+
+  mode = 'noCards';
+  await goto('/stats?as=player');
+  assert.match(await text(), /Card counts unavailable/);
+  assert.equal((await comparisonRows()).find((r) => r[0] === 'Yellow (red) cards')[2], '—');
+  assert.notEqual((await comparisonRows()).find((r) => r[0] === 'Clean sheets')[2], '—');
+  console.log('ok   Results-only history keeps results and labels missing match-card figures');
+
+  mode = 'failed';
+  await goto('/stats?as=player');
+  // React Query retries once before offering the per-season retry button.
+  for (let attempt = 0; attempt < 20 && !/Could not load/.test(await text()); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert.match(await text(), new RegExp(`${seasonLabel(year - 1)}: Could not load`));
+  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '—', '20', '20']);
+  mode = 'normal';
+  await page.click('Try again', { selector: 'section[aria-label="Previous season comparison"] button', exact: true });
+  assert.equal(await page.settle(), true);
+  assert.deepEqual((await comparisonRows())[0], ['Games', '20', '20', '20', '20']);
+  console.log('ok   A failed historical request preserves other seasons and retries');
 
   mode = 'normal';
   await goto('/stats?as=player&season=all');
@@ -118,7 +161,7 @@ try {
   console.log('ok   All time shows per-season freshness; Stats fits phone and desktop');
   assert.deepEqual(problems, []);
   await page.close();
-  console.log('7/7 Ranking and Stats browser scenarios passed.');
+  console.log('10/10 Ranking and Stats browser scenarios passed.');
 } finally {
   if (browser) await browser.close();
   await server.close();

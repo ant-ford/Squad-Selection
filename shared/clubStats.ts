@@ -5,13 +5,13 @@
  * page fetches one season per request and adds seasons up itself for "all
  * time".
  *
- * Nothing here carries another player's cards: owner decision, 2026-09-26,
- * cards show only on a player's own career page. The summary sent to the
- * page has none; the Worker adds the signed-in player's own on request.
+ * Individual card records remain private (owner decision, 2026-09-26).
+ * Club/team comparisons use anonymous side totals (requested 2026-10-10);
+ * the Worker adds only the signed-in player's personal totals on request.
  */
 
 /** Bump when the summary's shape or counting changes: stored summaries are keyed by it. */
-export const SUMMARY_VERSION = 9; // 9: each game's result; 8: rebuilt from Supabase at the switch-over; 7: games in goal are not play-ups
+export const SUMMARY_VERSION = 10; // 10: match-card coverage and anonymous card totals; 9: each game's result
 
 export interface WDL {
   w: number;
@@ -60,6 +60,12 @@ export interface PlayerSeason {
   played?: [number, number, 0 | 1][];
 }
 
+/** Anonymous totals from the match cards recorded for one HKFC side. */
+export interface MatchCardTotals {
+  yellow: number;
+  red: number;
+}
+
 /** One counted game as the score sheet reads, home side first: "HKFC D 5-4 Valley A". */
 export interface MatchResult {
   /** "YYYY-MM-DD", Hong Kong. */
@@ -71,6 +77,8 @@ export interface MatchResult {
   /** HKHA "Division": a league or a cup round. */
   division?: string;
   venue?: string;
+  /** HKFC side totals only. Absent side = no match cards recorded, not zero. */
+  matchCards?: { home?: MatchCardTotals; away?: MatchCardTotals };
 }
 
 export interface UmpireSeason {

@@ -12,9 +12,9 @@
  * Workers plan's fifty subrequests, which is why the page asks for one
  * season per request and adds seasons up itself.
  *
- * Other players' cards are never in a summary sent to the page (owner
- * decision, 2026-09-26); the stored summary keeps each player's card count
- * aside for their own career page.
+ * Individual players' cards stay private (owner decision, 2026-09-26).
+ * Anonymous club/team totals support season comparisons; the stored summary
+ * keeps each player's personal count aside for their own career page.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -187,6 +187,11 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
     // 2026-09-26): a sixth of 2021-25's appearances have no link.
     const personId = c.player?.[0] ?? (raw ? byFullName[canonicalKey(raw)] || undefined : undefined);
     const key = personId ?? (raw ? `raw:${canonicalKey(raw)}` : "");
+    const side = byId.get(matchId)!.homeTeam === team ? "home" : "away";
+    const matchResult = results[resultIndex.get(matchId)!];
+    const totals = ((matchResult.matchCards ??= {})[side] ??= { yellow: 0, red: 0 });
+    const parsedCards = (c.cards ?? []).map(parseCardValue).filter((card) => card !== null);
+    for (const card of parsedCards) totals[card.kind] += card.quantity;
     if (!key) continue;
     const p = players.get(key) ?? { key, name: (personId && names[personId]) || raw || "Unknown player", teams: {} };
     const line = (p.teams[team] ??= newLine());
@@ -201,9 +206,7 @@ export function buildSeasonSummary(input: SummaryInput): StoredSummary {
     (p.played ??= []).push([resultIndex.get(matchId)!, c.goals ?? 0, byId.get(matchId)!.homeTeam === team ? 0 : 1]);
     players.set(key, p);
 
-    for (const value of c.cards ?? []) {
-      const card = parseCardValue(value);
-      if (!card) continue;
+    for (const card of parsedCards) {
       const own = (cardsByPlayer[key] ??= { yellow: 0, red: 0 });
       own[card.kind] += card.quantity;
       cardsInMatch.set(matchId, (cardsInMatch.get(matchId) ?? 0) + card.quantity);
@@ -388,7 +391,7 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
   if (season === current) {
     const version = await currentVersion(env);
     // Built from rows read now, not the 30 s season caches: a copy older than the version would be kept under it.
-    const stored = await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS);
+    const stored = await getShared<StoredSummary>(env, `${STATS_CURRENT_KEY}:v${SUMMARY_VERSION}@${version}`, () => buildFor(env, season, true), CURRENT_TTL_MS);
     // Across 1 July the fixed key may still hold last season's summary.
     if (stored.summary.season === season && stored.summary.version === SUMMARY_VERSION) return stored;
     return buildFor(env, season);
@@ -397,7 +400,7 @@ export async function getStoredSummary(env: Env, season: string): Promise<Stored
 }
 
 /**
- * The summary for the page: no cards, bar the signed-in player's own, and
+ * The summary for the page: anonymous side totals and the signed-in player's own, and
  * which player row is theirs (their People record id), so their career page
  * can show those cards to them and nobody else.
  */

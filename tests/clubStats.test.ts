@@ -3,8 +3,8 @@ import * as cacheVersionsModule from "../worker/src/cacheVersions";
 
 // ---------------------------------------------------------------------------
 // Stats page: the per-season summary (built from Matches and Match Cards),
-// adding seasons up, and the route - including that no other player's cards
-// ever reach the page. The route runs on the Supabase backend's in-memory
+// adding seasons up, and the route - including that other players' individual
+// card records stay private. The route runs on the Supabase backend's in-memory
 // repositories.
 // ---------------------------------------------------------------------------
 
@@ -111,7 +111,7 @@ describe("a season's summary", () => {
 
   it("lists each counted game's result, oldest first, home side first", () => {
     const { results, players } = built().summary;
-    expect(results).toEqual([
+    expect(results!.map(({ matchCards: _cards, ...r }) => r)).toEqual([
       { date: "2025-10-05", home: "HKFC A", away: "Valley A", homeScore: 3, awayScore: 1, division: "Premier", venue: "HKFC" },
       { date: "2025-10-05", home: "KCC B", away: "HKFC B", homeScore: 2, awayScore: 2, venue: "KCC" },
       { date: "2025-10-05", home: "HKFC A", away: "HKFC B", homeScore: 1, awayScore: 0, venue: "HKFC" },
@@ -172,10 +172,26 @@ describe("a season's summary", () => {
     expect(summary.players.map((p) => p.key).sort()).toEqual(["raw:lee sam", "recP1"]);
   });
 
-  it("keeps cards out of the summary, aside for each player's own page", () => {
+  it("keeps individual card records private while exposing anonymous side totals", () => {
     const { summary, cardsByPlayer } = built();
-    expect(JSON.stringify(summary)).not.toMatch(/Y2|R1|"cards"|yellow|red/);
+    expect(JSON.stringify(summary.players)).not.toMatch(/Y2|R1|"cards"|yellow|red/);
+    expect(summary.results![0].matchCards).toEqual({ home: { yellow: 1, red: 0 } });
+    expect(summary.results![1].matchCards).toEqual({ away: { yellow: 0, red: 1 } });
+    expect(summary.results![2].matchCards).toEqual({ home: { yellow: 0, red: 0 }, away: { yellow: 0, red: 0 } });
     expect(cardsByPlayer).toEqual({ recP1: { yellow: 1, red: 0 }, "raw:old timer": { yellow: 0, red: 1 } });
+  });
+
+  it("counts quantities, unlinked and anonymous rows without mixing sides or unplayed games", () => {
+    const { summary, cardsByPlayer } = buildSeasonSummary({ season: "2025-2026", matches: MATCHES, names: NAMES, today: "2026-09-26", cards: [
+      card("unlinked", "m3", "HKFC A", { rawPlayerName: "Old TIMER", cards: ["Y2 (2)", "R1", "unknown"] }),
+      card("anonymous", "m3", "HKFC B", { cards: ["Y1"] }),
+      card("friendly", "m4", "HKFC A", { player: ["recP1"], cards: ["R1"] }),
+      card("cancelled", "m7", "HKFC A", { player: ["recP1"], cards: ["R1"] }),
+      card("wrong-side", "m3", "Valley A", { player: ["recP1"], cards: ["R1"] }),
+    ] });
+    expect(summary.results!.find((r) => r.home === "HKFC A" && r.away === "HKFC B")!.matchCards).toEqual({ home: { yellow: 2, red: 1 }, away: { yellow: 1, red: 0 } });
+    expect(summary.results!.find((r) => r.away === "Valley A")!.matchCards).toBeUndefined();
+    expect(cardsByPlayer).toEqual({ "raw:old timer": { yellow: 2, red: 1 } });
   });
 
   it("gives each umpire their HKFC games, results and cards, leaving derbies out of the results", () => {
@@ -365,8 +381,10 @@ describe("the season route", () => {
     expect(body.players.map((p: any) => p.name).sort()).toEqual(["Kim Keeper", "Pat Player"]);
     const text = JSON.stringify(body);
     expect(text).not.toContain("Y1");
-    // Kim's yellow is nowhere: no card counts at all bar Pat's own.
-    expect(text.match(/"yellow"/g)).toHaveLength(1);
+    // Kim's personal count is private; only the team's aggregate is shared.
+    expect(JSON.stringify(body.players)).not.toMatch(/yellow|red|cards/);
+    expect(body.results[0].matchCards).toEqual({ home: { yellow: 2, red: 0 } });
+    expect(body.cardsByPlayer).toBeUndefined();
     expect(text).not.toContain("A123456");
   });
 
@@ -464,6 +482,20 @@ describe("the current season on Supabase", () => {
     vi.spyOn(cacheVersionsModule, "readCacheVersions").mockImplementation(async () => cacheVersionsModule.parseCacheVersions({ ...versions }));
   }
 
+  it("rebuilds an old summary shape once, then reuses the versioned current-season cache", async () => {
+    const kv = fakeKv();
+    postgrest({ matches: 40, match_cards: 12, people: 7 });
+    const season = currentSeason();
+    kv.store.set("stats-summary:current@40.12", { value: JSON.stringify({ summary: { version: 9, season }, cardsByPlayer: {} }) });
+    const builds = () => db.callsTo("matches", "listForSeason").length;
+    const stored = await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(stored.summary.version).toBe(10);
+    expect(builds()).toBe(1);
+    invalidateAll();
+    await getStoredSummary({ ...env, CACHE: kv }, season);
+    expect(builds()).toBe(1);
+  });
+
   it("rebuilds as soon as a result or card changes, and not before", async () => {
     const kv = fakeKv();
     const versions = { matches: 40, match_cards: 12, people: 7 };
@@ -489,6 +521,6 @@ describe("the current season on Supabase", () => {
     const stored = await getStoredSummary({ ...env, CACHE: kv }, season);
     expect(builds()).toBe(2);
     expect(stored.summary.season).toBe(season);
-    expect(kv.writes.filter((k) => k.startsWith("stats-summary:current@"))).toHaveLength(2);
+    expect(kv.writes.filter((k) => k.startsWith(`stats-summary:current:v${stored.summary.version}@`))).toHaveLength(2);
   });
 });
