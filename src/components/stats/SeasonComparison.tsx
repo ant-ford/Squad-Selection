@@ -5,7 +5,7 @@ import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import type { SeasonSummary } from '@shared/clubStats';
 
 const perGame = (n: number, games: number) => games ? (n / games).toFixed(1) : '—';
-const cardFigure = (r: ComparisonRecord, value: string) => r.cardedGames ? `${value}${r.cardedGames < r.games ? '*' : ''}` : '—';
+const cardFigure = (r: ComparisonRecord, value: string) => r.cardedGames ? value : '—';
 const measures: [string, (r: ComparisonRecord) => string | number][] = [
   ['Games', (r) => r.games],
   ['Win rate', (r) => r.games ? `${Math.round(100 * r.w / r.games)}%` : '—'],
@@ -47,18 +47,17 @@ export default function SeasonComparison({ summary, today, team }: { summary: Se
           </tr></thead>
           <tbody>{measures.map(([label, value]) => <tr key={label} className="border-t border-border">
             <th className="text-left py-1.5 pr-2 font-normal sticky left-0 bg-card" scope="row">{label}</th>
-            {columns.map((c, i) => <td key={c.season} className={`text-right pl-1 whitespace-nowrap ${i === 0 ? 'font-medium' : 'text-muted-foreground'}`}>{c.record ? value(c.record) : '—'}</td>)}
+            {columns.map((c, i) => <td key={c.season} title={label === 'Yellow (red) cards' && c.record && c.record.cardedGames > 0 && c.record.cardedGames < c.record.games ? `Card counts from ${c.record.cardedGames} of ${c.record.games} games with recorded match cards.` : undefined} className={`text-right pl-1 whitespace-nowrap ${i === 0 ? 'font-medium' : 'text-muted-foreground'}`}>{c.record ? value(c.record) : '—'}</td>)}
           </tr>)}</tbody>
         </table>
       </div>
       <p className="text-xs text-muted-foreground hidden max-[380px]:block">Swipe the table to see all seasons.</p>
-      {columns.some((c) => c.state || !c.record?.games || c.record.cardedGames < c.record.games) && <ul className="text-xs text-muted-foreground space-y-1" aria-label="Comparison data coverage">
+      {columns.some((c) => c.state || !c.record?.games || !c.record.cardedGames) && <ul className="text-xs text-muted-foreground space-y-1" aria-label="Comparison data coverage">
         {columns.map((c) => {
-          const note = c.state || (!c.record?.games ? 'No recorded games in this period.' : c.record.cardedGames < c.record.games ? `${c.record.cardedGames} of ${c.record.games} games have match cards. ${c.record.cardedGames ? '* Card counts use those games only.' : 'Card counts unavailable.'}` : '');
+          const note = c.state || (!c.record?.games ? 'No recorded games in this period.' : !c.record.cardedGames ? 'Card counts unavailable.' : '');
           return note ? <li key={c.season}>{shortSeason(c.season)}: {note} {c.retry && <button className="underline" onClick={c.retry}>Try again</button>}</li> : null;
         })}
       </ul>}
-      <p className="text-xs text-muted-foreground">Cards are counts, with red cards in brackets. Recorded games may differ between seasons.</p>
     </section>
   );
 }

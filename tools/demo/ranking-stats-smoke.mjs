@@ -117,9 +117,9 @@ try {
 
   mode = 'partial';
   await goto('/stats?as=player');
-  assert.match(await text(), /4 of 20 games have match cards/);
-  assert.equal((await comparisonRows()).find((r) => r[0] === 'Yellow (red) cards')[2], '4 (0)*');
-  console.log('ok   Partial match-card coverage marks card counts');
+  assert.doesNotMatch(await text(), /games have match cards|Card counts use those games only|Cards are counts, with red cards in brackets|Recorded games may differ between seasons/);
+  assert.equal((await comparisonRows()).find((r) => r[0] === 'Yellow (red) cards')[2], '4 (0)');
+  console.log('ok   Partial card totals remain visible without coverage notes or the footer');
 
   mode = 'noCards';
   await goto('/stats?as=player');
