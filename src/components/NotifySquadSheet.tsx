@@ -16,6 +16,7 @@ import EddyWordmark from '@/components/brand/EddyWordmark';
 import { safeFormat } from '@/lib/dateUtils';
 import { apiPost } from '@/lib/apiClient';
 import { usePushConfig } from '@/lib/queries';
+import { squadPushMessage, type SquadPushResult } from '@shared/squadPush';
 
 export interface NotifyTarget {
   id: string;
@@ -38,7 +39,8 @@ export interface NotifyTarget {
  * for the team group carrying the fixture link, so the coach can share it
  * before picking anyone.
  *
- * Nothing is sent by the app. A player whose stored number cannot be
+ * WhatsApp messages open for the coach to send; the explicit app button
+ * sends push alerts to the saved squad. A player whose stored number cannot be
  * normalised is listed as unreachable rather than given a link that would
  * open WhatsApp with no recipient and look like it worked.
  */
@@ -63,13 +65,20 @@ export default function NotifySquadSheet({
   const [copied, setCopied] = useState(false);
   const { data: push } = usePushConfig(!!appSend);
   const [sending, setSending] = useState(false);
+  const [appResult, setAppResult] = useState<SquadPushResult | null>(null);
   const sendToApp = async () => {
     if (!appSend) return;
     setSending(true);
+    setAppResult(null);
     try {
-      const r = await apiPost<{ reached: number }>('/api/push/squad', appSend);
-      if (r.reached > 0) onNotified?.();
-      toast.success(`Sent to ${r.reached} player${r.reached === 1 ? '' : 's'}`);
+      const r = await apiPost<SquadPushResult>('/api/push/squad', appSend);
+      setAppResult(r);
+      if (r.reached > 0) {
+        onNotified?.();
+        toast.success(squadPushMessage(r));
+      } else {
+        toast.warning(squadPushMessage(r));
+      }
     } catch {
       toast.error("Couldn't send. Try again.");
     } finally {
@@ -211,13 +220,17 @@ export default function NotifySquadSheet({
               {copied ? 'Copied' : 'Copy for team group'}
             </button>
             {appSend && push?.enabled && !askingAvailability && (
-              <button
-                onClick={() => void sendToApp()}
-                disabled={sending}
-                className="mt-2 w-full inline-flex items-center justify-center gap-2 border border-border py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-              >
-                <Bell className="h-4 w-4" /> <span>Send to <EddyWordmark /> app</span>
-              </button>
+              <>
+                <button
+                  aria-label="Send to Eddy app"
+                  onClick={() => void sendToApp()}
+                  disabled={sending}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 border border-border py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                >
+                  <Bell className="h-4 w-4" /> <span>Send to <EddyWordmark /> app</span>
+                </button>
+                {appResult && <p role="status" className="mt-2 text-xs text-muted-foreground">{squadPushMessage(appResult)}</p>}
+              </>
             )}
           </section>
 

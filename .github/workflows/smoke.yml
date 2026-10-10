@@ -66,6 +66,11 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/startup-smoke.mjs
 
+      - name: Squad notification results
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/notifications-smoke.mjs
+
       - name: Screenshots for review
         uses: actions/upload-artifact@v4
         with:

@@ -266,11 +266,36 @@ describe("push routes", () => {
     });
   }
 
-  it("sends the squad to that side's selected players and says how many it reached", async () => {
+  it("sends to every selected player on that side, including the coach who presses Send", async () => {
     squadTables();
     const r = await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" });
-    expect(r).toEqual({ players: 2, reached: 2, devices: 3 });
-    expect(sent.map((s) => s.url).sort()).toEqual(["https://push.example/1", "https://push.example/2", "https://push.example/3"]);
+    expect(r).toEqual({ players: 3, people: 3, reached: 3, devices: 4, pruned: 0, skipped: 0 });
+    expect(sent.map((s) => s.url).sort()).toEqual(["https://push.example/1", "https://push.example/2", "https://push.example/3", "https://push.example/5"]);
+  });
+
+  it("reaches a selected coach even when they're the only subscribed selected player", async () => {
+    squadTables();
+    pg.tables.push_subscriptions = [device(5, COACH)];
+    expect(await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" })).toMatchObject({ players: 3, people: 1, devices: 1, reached: 1 });
+    expect(sent.map((s) => s.url)).toEqual(["https://push.example/5"]);
+  });
+
+  it("doesn't send a copy to a coach who isn't selected", async () => {
+    squadTables();
+    pg.tables.match_selections = pg.tables.match_selections.filter((s) => s.person_id !== COACH);
+    expect(await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" })).toMatchObject({ players: 2, reached: 2 });
+    expect(sent.map((s) => s.url)).not.toContain("https://push.example/5");
+  });
+
+  it("distinguishes unregistered players from rejected or expired device sends", async () => {
+    squadTables();
+    pg.tables.push_subscriptions = [];
+    expect(await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" })).toEqual({ players: 3, people: 0, devices: 0, reached: 0, pruned: 0, skipped: 0 });
+    squadTables();
+    answer = Object.fromEntries([1, 2, 3, 5].map((n) => [`https://push.example/${n}`, 503]));
+    expect(await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" })).toMatchObject({ people: 3, devices: 4, reached: 0, pruned: 0 });
+    answer = Object.fromEntries([1, 2, 3, 5].map((n) => [`https://push.example/${n}`, 410]));
+    expect(await pushSquad(env(), coachUser(), { matchId: "recMatch000000001", side: "home" })).toMatchObject({ people: 3, devices: 4, reached: 0, pruned: 4 });
   });
 
   it("is only for that team's coaches", async () => {
