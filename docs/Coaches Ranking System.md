@@ -4,6 +4,7 @@
 > - Storage is now Postgres (`people.section_rank`, `ability_group_config`), so the "Airtable Changes" section is history.
 > - "Move To Rank" and "Move Relative To Another Player" have no screen.
 > - Rank changes are recorded in `ranking_events`, which supersedes "Audit Trail Features" under Out of Scope.
+> - Team and positional ranks remain derived, but their `T#` and `P#` labels are no longer shown on the ranking list (owner decision, 10 October 2026). Rows show section rank, position, registered team and ability.
 
 ## Objective
 

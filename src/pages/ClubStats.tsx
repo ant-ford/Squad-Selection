@@ -9,6 +9,8 @@ import { useAllSeasonStats, useSeasonStats } from '@/lib/queries';
 import PlayersTab from '@/components/stats/PlayersTab';
 import { CharmsTab, UmpiresTab } from '@/components/stats/LuckTabs';
 import ResultsCard from '@/components/stats/ResultsCard';
+import StatsFreshness from '@/components/stats/StatsFreshness';
+import SeasonComparison from '@/components/stats/SeasonComparison';
 import { hkDateKey } from '@shared/hkDateKey';
 import { seasonStartYear } from '@shared/membershipInsights';
 import {
@@ -23,6 +25,7 @@ import {
   winPct,
   type LeaderRow,
   type PeriodStats,
+  type SeasonSummary,
   type WDL,
 } from '@shared/clubStats';
 
@@ -128,6 +131,8 @@ export default function ClubStats() {
           </select>
         </div>
 
+        <StatsFreshness summaries={periodSummaries} />
+
         {period === 'all' && !all.done && (
           <p className="text-xs text-muted-foreground" role="status">
             Adding up past seasons… {all.loadedCount} loaded. The first look at a season takes a few seconds; after that
@@ -153,7 +158,7 @@ export default function ClubStats() {
             <p className="text-muted-foreground">No games recorded for {period === 'all' ? 'any season' : shortSeason(period)} yet.</p>
           </div>
         ) : tab === 'club' ? (
-          <ClubTab stats={stats} allTime={period === 'all'} summaries={all.summaries} />
+          <ClubTab stats={stats} allTime={period === 'all'} summaries={all.summaries} summary={period === 'all' ? undefined : one.data} today={today} />
         ) : tab === 'umpires' ? (
           <UmpiresTab summaries={periodSummaries} allTime={period === 'all'} />
         ) : tab === 'charms' ? (
@@ -175,6 +180,8 @@ export default function ClubStats() {
             team={params.get('team')}
             onTeam={(t) => set({ team: t })}
             summaries={period === 'all' ? all.summaries : []}
+            summary={period === 'all' ? undefined : one.data}
+            today={today}
           />
         )}
       </main>
@@ -348,10 +355,14 @@ function ClubTab({
   stats,
   allTime,
   summaries,
+  summary,
+  today,
 }: {
   stats: PeriodStats;
   allTime: boolean;
   summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[];
+  summary?: SeasonSummary;
+  today: string;
 }) {
   const record = clubRecord(stats);
   const splits = splitsAcrossTeams(stats.teams);
@@ -366,6 +377,8 @@ function ClubTab({
         <StatTile label="Goals per game" value={perGame(record.gf, record.games)} hint={`Conceded ${perGame(record.ga, record.games)}`} />
         <StatTile label="Clean sheets" value={cleanSheets} hint={`In ${teamGames} team games`} />
       </div>
+
+      {summary && <SeasonComparison summary={summary} today={today} />}
 
       {allTime && summaries.length > 1 && <SeasonBySeason summaries={summaries} />}
 
@@ -407,12 +420,16 @@ function TeamsTab({
   team,
   onTeam,
   summaries,
+  summary,
+  today,
 }: {
   stats: PeriodStats;
   team: string | null;
   onTeam: (t: string) => void;
   /** All time only: every season, for the team's season-by-season chart. */
   summaries: { season: string; teams: PeriodStats['teams']; derbies: number }[];
+  summary?: SeasonSummary;
+  today: string;
 }) {
   const names = teamOrder(stats.teams);
   const chosen = names.includes(team ?? '') ? team! : names[0];
@@ -445,6 +462,8 @@ function TeamsTab({
         <StatTile label="Goals" value={`${t.gf}-${t.ga}`} hint={`${perGame(t.gf, t.played)} per game`} />
         <StatTile label="Clean sheets" value={t.cleanSheets} />
       </div>
+
+      {summary && <SeasonComparison summary={summary} today={today} team={t.team} />}
 
       {summaries.length > 1 && <SeasonBySeason summaries={summaries} team={t.team} />}
 
