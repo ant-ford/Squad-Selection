@@ -147,7 +147,7 @@ export function RankingRow(
           )}
         </div>
         <p className="text-xs text-muted-foreground truncate leading-tight">
-          {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'} · T#{player.teamRank ?? '–'} · P#{player.positionalRank ?? '–'}
+          {POS_SHORT[player.playingPosition ?? ''] ?? '–'} · {player.registeredTeam ?? '–'}
         </p>
         {showCv && player.sportsBackground && (
           <div className="mt-1.5 text-xs text-foreground whitespace-pre-wrap bg-muted/50 border border-border rounded p-2">{player.sportsBackground}</div>

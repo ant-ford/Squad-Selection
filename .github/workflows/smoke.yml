@@ -71,6 +71,11 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/notifications-smoke.mjs
 
+      - name: Ranking and Stats period comparisons
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/ranking-stats-smoke.mjs --out smoke-failures/ranking-stats
+
       - name: Screenshots for review
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +83,7 @@ jobs:
           path: |
             smoke-failures/team-availability/*.png
             smoke-failures/action-priorities/*.png
+            smoke-failures/ranking-stats/*.png
           if-no-files-found: ignore
           retention-days: 7
 
