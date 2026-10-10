@@ -22,6 +22,7 @@
  * failure never fails the change that caused it.
  */
 import type { Env } from "./env";
+import type { SquadPushResult } from "../../shared/squadPush";
 import type { AuthorizedUser } from "./auth";
 import { HttpError } from "./http";
 import { db, eq, inList } from "./data/supabase";
@@ -395,7 +396,7 @@ export async function pushUnsubscribe(env: Env, user: AuthorizedUser, body: Reco
  * that side's coaches (Section Captains and the Assistant Director coach
  * every team). Sent now, so the coach sees how many it reached.
  */
-export async function pushSquad(env: Env, user: AuthorizedUser, body: Record<string, unknown>) {
+export async function pushSquad(env: Env, user: AuthorizedUser, body: Record<string, unknown>): Promise<SquadPushResult> {
   if (user.role !== "coach") throw new HttpError("Coach access required.", 403, "COACH_ACCESS_REQUIRED");
   const matchId = typeof body.matchId === "string" ? body.matchId : "";
   const side = typeof body.side === "string" ? body.side : "";
@@ -414,13 +415,15 @@ export async function pushSquad(env: Env, user: AuthorizedUser, body: Record<str
     `select=person_id&match_id=${eq(match.id)}&side=${eq(side)}`,
     "person_id",
   );
-  const players = squad.map((s) => s.person_id).filter((id) => id !== user.personUuid);
-  if (players.length === 0) return { players: 0, reached: 0, devices: 0 };
+  // This explicit squad announcement includes the sending coach when they're
+  // selected. Automatic change alerts still skip their actor in notifyLater().
+  const players = [...new Set(squad.map((s) => s.person_id))];
+  if (players.length === 0) return { players: 0, ...NOTHING };
   const result = await send(env, { uuids: players }, {
     title: "You're selected",
     body: `${match.home_team} vs ${match.away_team} · ${when(match.match_date)}`,
     url: "/",
     tag: `squad-${match.api_id}-${side}`,
   });
-  return { players: players.length, reached: result.reached, devices: result.devices };
+  return { players: players.length, ...result };
 }

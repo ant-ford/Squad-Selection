@@ -6,6 +6,7 @@ import type { TeamAttendance, TeamFixture, SquadPlayer } from '@/api/getTeamAtte
 import type { RankingChange, TeamAvailability } from '@/lib/queries';
 import type { InactiveRankingEntry, RankingList } from '@shared/schema/domainTypes';
 import type { Routes } from './routing';
+import type { SquadPushResult } from '@shared/squadPush';
 import { OTHERS, PERSONAS, SQUAD_PLAYERS, SAT1, SAT2, SAT3, WED, SEASON_SHORT, at, dateOnly, day } from './data';
 
 const ME = PERSONAS.player.id;
@@ -169,4 +170,6 @@ export const routes: Routes = {
   'GET /api/recent-changes': () => ({ changes: CHANGES }),
   'GET /api/team-attendance': () => teamAttendance(),
   'POST /api/match/:id/auto-select': () => ({ success: true }),
+  'POST /api/push/squad': (): SquadPushResult => ({ players: SELECTED.size, people: SELECTED.size, reached: SELECTED.size, devices: SELECTED.size, pruned: 0, skipped: 0 }),
+  'POST /api/squad/notified': () => ({ at: new Date().toISOString(), squad: SQUAD_PLAYERS.filter((_, i) => SELECTED.has(i)).map((p) => p.id) }),
 };
