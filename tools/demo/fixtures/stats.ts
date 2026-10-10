@@ -80,6 +80,7 @@ function seasonStats(season: string, me: Persona): SeasonStats {
         umpires.set(u, e);
       }
       const lineup = roster.filter((_, i) => r() < (i < 8 ? 0.92 : 0.6)).slice(0, 14);
+      results[index].matchCards = { [home ? 'home' : 'away']: { yellow: g % 3 === 0 ? 1 : 0, red: g === 12 ? 1 : 0 } };
       let goalsLeft = gf;
       lineup.forEach((name, i) => {
         const key = keyOf(name);
