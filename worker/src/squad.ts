@@ -93,7 +93,7 @@ export async function getPlayersForMatch(env: Env, matchId: string, side?: "home
       isSupport: thisTeamRank > playerRank,
     }, { optInOnly: p.optInOnly });
     const availabilityStatus = effective.status;
-    const playerNotes = exc?.note || exc?.playerNotes || "";
+    const playerNotes = exc?.note || exc?.playerNotes || effective.notes || "";
     const eligibility = evaluatePlayerEligibility(p, match, ctx);
     const name = [p.preferredName, p.surname].filter(Boolean).join(" ") || p.givenNames || "Player";
     // Blocks carry the stable internal ruleId alongside the exact reason string.

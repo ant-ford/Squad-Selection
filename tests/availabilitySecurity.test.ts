@@ -16,6 +16,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 import { setMyAvailability, setMyAvailabilityForDate } from "../worker/src/availability";
+import { createAvailabilityRule } from '../worker/src/availabilityRules';
+import { AVAILABILITY_NOTE_REQUIRED } from '../shared/availabilityNotes';
 import { invalidateAll } from "../worker/src/cache";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
@@ -104,6 +106,7 @@ describe("normal availability - identity boundary", () => {
       email: "player-a@example.com",
       matchId: M1,
       status: "Unavailable",
+      notes: "Away",
     });
 
     // Bill's exception is untouched.
@@ -142,9 +145,58 @@ describe("normal availability - identity boundary", () => {
   });
 });
 
+describe('player availability notes', () => {
+  const blankOrInvalid = [undefined, null, '', '  \n\t', 123, {}, []];
+
+  it.each(['Maybe', 'Unavailable'] as const)('rejects %s without a text note before changing an existing answer', async (status) => {
+    stored().push({ ...exception(recId('EA'), A, M1, 'Maybe'), note: 'Work, confirm Thursday' });
+    const before = structuredClone(stored());
+    for (const notes of blankOrInvalid) {
+      await expect(setMyAvailability(ENV, { email: 'player-a@example.com', matchId: M1, status, notes: notes as any })).rejects.toMatchObject({ status: 400 });
+    }
+    expect(stored()).toEqual(before);
+    expect(db.callsTo('availabilityExceptions', 'set')).toHaveLength(0);
+    await expect(setMyAvailability(ENV, { email: 'player-a@example.com', matchId: M1, status })).rejects.toMatchObject({ message: AVAILABILITY_NOTE_REQUIRED });
+  });
+
+  it.each(['Maybe', 'Unavailable'] as const)('rejects a whole-day %s without a text note before updating any fixture', async (status) => {
+    for (const notes of blankOrInvalid) {
+      await expect(setMyAvailabilityForDate(ENV, { email: 'gk-a@example.com', date: DATE_KEY, status, notes: notes as any })).rejects.toMatchObject({ status: 400 });
+    }
+    expect(stored()).toHaveLength(0);
+    expect(db.callsTo('availabilityExceptions', 'setForDate')).toHaveLength(0);
+  });
+
+  it.each(['Maybe', 'Unavailable'] as const)('rejects a standing %s preference without a text note', async (availability) => {
+    for (const notes of blankOrInvalid) {
+      await expect(createAvailabilityRule(ENV, A, { ruleType: 'Midweek', availability, notes: notes as any })).rejects.toMatchObject({ status: 400 });
+    }
+    expect(db.state.availabilityRules).toHaveLength(0);
+    expect(db.callsTo('availabilityRules', 'create')).toHaveLength(0);
+  });
+
+  it('saves the status and trimmed note together, and keeps that note on every whole-day answer', async () => {
+    await setMyAvailability(ENV, { email: 'player-a@example.com', matchId: M1, status: 'Maybe', notes: '  Work, confirm Thursday  ' });
+    expect(stored()[0]).toMatchObject({ availabilityStatus: 'Maybe', note: 'Work, confirm Thursday' });
+    await setMyAvailabilityForDate(ENV, { email: 'gk-a@example.com', date: DATE_KEY, status: 'Unavailable', notes: '  Away all day  ' });
+    const keeper = stored().filter((e) => e.player?.[0] === GKA);
+    expect(keeper).toHaveLength(3);
+    expect(keeper.every((e) => e.availabilityStatus === 'Unavailable' && e.note === 'Away all day')).toBe(true);
+  });
+
+  it('saves a preference’s note, while Available still needs no note', async () => {
+    await createAvailabilityRule(ENV, A, { ruleType: 'Midweek', availability: 'Maybe', notes: '  Work, confirm Thursday  ' });
+    expect(db.state.availabilityRules[0].notes).toBe('Work, confirm Thursday');
+    await createAvailabilityRule(ENV, A, { ruleType: 'Play-ups', availability: 'Available' });
+    expect(db.state.availabilityRules).toHaveLength(2);
+    const answer = await setMyAvailability(ENV, { email: 'player-a@example.com', matchId: M1, status: 'Available' });
+    expect(answer.success).toBe(true);
+  });
+});
+
 describe("goalkeeper bulk availability - identity boundary", () => {
   it("an eligible H goalkeeper bulk-updates their OWN fixtures (legitimate)", async () => {
-    const out = await setMyAvailabilityForDate(ENV, { email: "gk-a@example.com", date: DATE_KEY, status: "Unavailable" });
+    const out = await setMyAvailabilityForDate(ENV, { email: "gk-a@example.com", date: DATE_KEY, status: "Unavailable", notes: "Away" });
     expect(out.success).toBe(true);
     expect(out.updated).toBe(3); // every HKFC fixture on the date
     expect(stored()).toHaveLength(3);
@@ -156,7 +208,7 @@ describe("goalkeeper bulk availability - identity boundary", () => {
     stored().push(exception(EB1, GKB, M1, "Maybe"), exception(EB2, GKB, M2, "Unavailable"));
 
     // KeeperA's session performs the bulk update for the date.
-    await setMyAvailabilityForDate(ENV, { email: "gk-a@example.com", date: DATE_KEY, status: "Unavailable" });
+    await setMyAvailabilityForDate(ENV, { email: "gk-a@example.com", date: DATE_KEY, status: "Unavailable", notes: "Away" });
 
     // KeeperB's exceptions are untouched.
     for (const id of [EB1, EB2]) {

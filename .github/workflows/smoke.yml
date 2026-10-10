@@ -76,6 +76,11 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/ranking-stats-smoke.mjs --out smoke-failures/ranking-stats
 
+      - name: Coach attendance and required player notes
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/availability-notes-smoke.mjs --out smoke-failures/availability-notes
+
       - name: Screenshots for review
         uses: actions/upload-artifact@v4
         with:
@@ -84,6 +89,7 @@ jobs:
             smoke-failures/team-availability/*.png
             smoke-failures/action-priorities/*.png
             smoke-failures/ranking-stats/*.png
+            smoke-failures/availability-notes/*.png
           if-no-files-found: ignore
           retention-days: 7
 

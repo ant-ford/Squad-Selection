@@ -7,6 +7,7 @@ import { HttpError } from "./http";
 import { alertIfNowOut } from "./push";
 import { notYourTeam } from "./auth";
 import type { Player } from "../../shared/schema/domainTypes";
+import { playerAvailabilityNote } from './availabilityNotes';
 
 type ExceptionStatus = "Available" | "Maybe" | "Unavailable";
 type AvailabilityStatus = ExceptionStatus;
@@ -125,6 +126,7 @@ export interface SetMyAvailabilityInput {
 export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput) {
   if (!input.email || !input.matchId) throw new HttpError("email and matchId are required", 400);
   validateStatus(input.status);
+  const notes = playerAvailabilityNote(input.status, input.notes);
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
 
@@ -132,7 +134,7 @@ export async function setMyAvailability(env: Env, input: SetMyAvailabilityInput)
     playerId: user.id,
     matchIds: [input.matchId],
     status: input.status,
-    notes: input.notes,
+    notes,
   });
   return { success: true, exceptionId: results[0]?.exceptionId ?? null };
 }
@@ -205,6 +207,7 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
     throw new HttpError("date must be formatted YYYY-MM-DD", 400);
   }
   validateStatus(input.status);
+  const notes = playerAvailabilityNote(input.status, input.notes);
   const user = await getPlayerByEmail(env, input.email);
   if (!user) throw new HttpError("Player record not found for this email", 404);
 
@@ -214,7 +217,7 @@ export async function setMyAvailabilityForDate(env: Env, input: SetMyAvailabilit
       playerId: user.id,
       date: input.date,
       status: input.status,
-      notes: input.notes,
+      notes,
     });
   } catch (err) {
     throw notFound(err);

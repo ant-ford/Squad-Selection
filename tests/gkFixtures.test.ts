@@ -14,7 +14,8 @@ import type { ReferenceData } from "../worker/src/reference";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { useFakeRepos } from "./helpers/fakeRepos";
 import { fakePostgrest, SUPABASE_TEST_ENV } from "./helpers/postgrest";
-import { exception, match, person, recId, team } from "./helpers/factories";
+import { exception, match, person, recId, rule, team } from "./helpers/factories";
+import { getPlayersForMatch } from '../worker/src/squad';
 
 function authUser(email: string): AuthorizedUser {
   return db.signedIn(email);
@@ -205,6 +206,17 @@ describe("getMyFixtures - special goalkeeper view", () => {
     expect(m4.availabilityStatus).toBe("Maybe");
     expect(m4.playerNotes).toBe("Work");
     expect(m4.availabilityExceptionId).toBe(E1);
+  });
+
+  it('shows the applicable preference note to the player and their coach, while explicit notes still win', async () => {
+    db.state.availabilityRules.push(rule({ id: recId('Rule'), player: [P2], ruleType: 'All future', availability: 'Unavailable', active: true, notes: 'Away this season' }));
+    const out = await getMyFixtures(ENV, authUser('bob@hkfc.com'));
+    expect(out.fixtures.find((f: any) => f.id === M1)).toMatchObject({ availabilityStatus: 'Unavailable', availabilityFromRule: true, playerNotes: 'Away this season' });
+    expect(out.fixtures.find((f: any) => f.id === M4)).toMatchObject({ availabilityStatus: 'Maybe', availabilityFromRule: false, playerNotes: 'Work' });
+    const squad = await getPlayersForMatch(ENV, M1);
+    expect(squad.players.find((p: any) => p.id === P2)).toMatchObject({ availabilityStatus: 'Unavailable', playerNotes: 'Away this season' });
+    const answered = await getPlayersForMatch(ENV, M4, 'away');
+    expect(answered.players.find((p: any) => p.id === P2)).toMatchObject({ availabilityStatus: 'Maybe', playerNotes: 'Work' });
   });
 
   it("takes the player's own answers from their season context - never once per fixture, no read of their own", async () => {

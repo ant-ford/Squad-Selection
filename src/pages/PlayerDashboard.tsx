@@ -140,7 +140,7 @@ export default function PlayerDashboard() {
   const bulkAvailability = useBulkAvailability();
   // The sheets live in the URL, so the phone's Back closes them: a fixture
   // (?fixture=<match id>, also the link a coach shares on WhatsApp), the
-  // note offered after Maybe / No (?note=<match id>), and the profile menu's
+  // note required before Maybe / No (?note=<match id>), and the profile menu's
   // stats, availability preferences and calendar sync.
   const fixtureSheet = useSheetParam('fixture');
   const noteSheet = useSheetParam('note');
@@ -149,7 +149,7 @@ export default function PlayerDashboard() {
   const calendarSheet = useSheetParam('calendar');
   const [fixtureTeam, setFixtureTeam] = useState<string | undefined>();
   // Maybe / No just tapped on a card: the answer the note goes with.
-  const [noteTap, setNoteTap] = useState<{ id: string; team: string; status: 'Maybe' | 'Unavailable' } | null>(null);
+  const [noteTap, setNoteTap] = useState<{ id: string; team: string; status: 'Maybe' | 'Unavailable'; allDay?: boolean } | null>(null);
   const [showPlayUps, setShowPlayUps] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -185,6 +185,13 @@ export default function PlayerDashboard() {
   // and support lists have to be patched alongside "My Team" - otherwise a
   // player marks themselves out and the play-up cards still read Available.
   const handleBulkAvailability = (date: string, status: AvailabilityStatus) => {
+    if (status !== 'Available') {
+      const fixture = everyFixture.find((f) => dateKey(f.date) === date && !isCalledOff(f.change));
+      if (!fixture) return;
+      setNoteTap({ id: fixture.id, team: fixture.hkfcTeam, status, allDay: true });
+      noteSheet.open(fixture.id);
+      return;
+    }
     setBulkBusy(date + status);
     bulkAvailability.mutate(
       { date, status },
@@ -205,14 +212,12 @@ export default function PlayerDashboard() {
     return ownAvailable ? data?.displayTeam || data?.registeredTeam || '' : undefined;
   };
 
-  // A card's own Maybe / No: saved at once (keeping any note already there),
-  // then the note pop-up offers to add or change it.
+  // Maybe / No stays a draft until the required note is saved with it.
   const handleCardAvailability = (f: MyFixture, status: AvailabilityStatus) => {
     if (status === 'Available') {
       handleQuickAvailability(f.id, status);
       return;
     }
-    handleQuickAvailability(f.id, status, f.playerNotes);
     setNoteTap({ id: f.id, team: f.hkfcTeam, status });
     noteSheet.open(f.id);
   };
@@ -291,6 +296,7 @@ export default function PlayerDashboard() {
       fixture={f}
       onTap={() => openFixture(f)}
       onAvailabilityChange={(status) => handleCardAvailability(f, status)}
+      busy={quickAvailability.isPending || bulkAvailability.isPending}
     />
   );
 
@@ -307,10 +313,11 @@ export default function PlayerDashboard() {
         <SameDayGamesPrompt
           fixture={f}
           others={others}
-          busy={bulkBusy !== null}
+          busy={quickAvailability.isPending || bulkAvailability.isPending}
           onSet={(id, status) => {
             keepPromptOpen(f.id, true);
-            handleQuickAvailability(id, status);
+            const target = allFixtures.find((other) => other.id === id);
+            if (target) handleCardAvailability(target, status);
           }}
           onOutAllDay={() => {
             keepPromptOpen(f.id, false);
@@ -476,16 +483,27 @@ export default function PlayerDashboard() {
             key={`${noteFixture.id}-${noteStatus}`}
             fixture={noteFixture}
             status={noteStatus}
+            allDay={noteTapped?.allDay}
             conflictHint={supportConflictHint(noteFixture)}
-            busy={quickAvailability.isPending}
+            busy={quickAvailability.isPending || bulkAvailability.isPending}
             onClose={noteSheet.close}
             onSave={(notes) => {
-              noteSheet.close();
+              if (noteTapped?.allDay) {
+                const date = dateKey(noteFixture.date);
+                setBulkBusy(date + noteStatus);
+                bulkAvailability.mutate({ date, status: noteStatus, notes }, {
+                  onSuccess: () => { noteSheet.close(); toast.success('Answers saved'); },
+                  onError: () => toast.error('Could not save your answers. Try again.'),
+                  onSettled: () => setBulkBusy(null),
+                });
+                return;
+              }
+              if (noteStatus === 'Unavailable') setPromptDismissed(noteFixture.id, false);
               quickAvailability.mutate(
                 { fixtureId: noteFixture.id, status: noteStatus, notes },
                 {
-                  onSuccess: () => toast.success('Note saved'),
-                  onError: () => toast.error('Failed to save note'),
+                  onSuccess: () => { noteSheet.close(); toast.success('Answer saved'); },
+                  onError: () => toast.error('Could not save your answer. Try again.'),
                 },
               );
             }}

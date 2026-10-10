@@ -3,6 +3,7 @@ import { availabilityRules, type NewAvailabilityRule } from "./data/availability
 import type { Env } from "./env";
 import { getVersioned } from "./cache";
 import type { AvailabilityRule, AvailabilityRuleType } from "../../shared/schema/domainTypes";
+import { playerAvailabilityNote } from './availabilityNotes';
 
 /**
  * Standing availability rules.
@@ -77,10 +78,10 @@ function matches(rule: AvailabilityRule, fixture: RuleFixtureContext): boolean {
  * Ties within the same specificity are broken by Last Modified, so the most
  * recent statement wins - which is what a player changing their mind expects.
  */
-export function resolveRuleStatus(
+function resolveRule(
   rules: AvailabilityRule[],
   fixture: RuleFixtureContext,
-): ResolvedStatus | null {
+): AvailabilityRule | undefined {
   const applicable = rules
     .filter((r) => r.active && r.availability && matches(r, fixture))
     .sort((a, b) => {
@@ -91,7 +92,11 @@ export function resolveRuleStatus(
       return (b.lastModified || "").localeCompare(a.lastModified || "");
     });
 
-  return (applicable[0]?.availability as ResolvedStatus) ?? null;
+  return applicable[0];
+}
+
+export function resolveRuleStatus(rules: AvailabilityRule[], fixture: RuleFixtureContext): ResolvedStatus | null {
+  return (resolveRule(rules, fixture)?.availability as ResolvedStatus) ?? null;
 }
 
 /**
@@ -115,13 +120,13 @@ export function effectiveAvailability(
   rules: AvailabilityRule[],
   fixture: RuleFixtureContext,
   opts: { optInOnly?: boolean } = {},
-): { status: ResolvedStatus; fromRule: boolean } {
+): { status: ResolvedStatus; fromRule: boolean; notes?: string } {
   if (explicitStatus) {
     return { status: explicitStatus as ResolvedStatus, fromRule: false };
   }
   if (opts.optInOnly) return { status: "Unavailable", fromRule: true };
-  const ruleStatus = resolveRuleStatus(rules, fixture);
-  if (ruleStatus) return { status: ruleStatus, fromRule: true };
+  const rule = resolveRule(rules, fixture);
+  if (rule) return { status: rule.availability as ResolvedStatus, fromRule: true, ...(rule.notes ? { notes: rule.notes } : {}) };
   return { status: "Available", fromRule: false };
 }
 
@@ -247,7 +252,7 @@ export async function createAvailabilityRule(
     availability: input.availability as NewAvailabilityRule["availability"],
     startDate: input.startDate,
     endDate: input.endDate,
-    notes: input.notes,
+    notes: playerAvailabilityNote(input.availability, input.notes),
   });
   return created;
 }

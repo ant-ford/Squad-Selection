@@ -96,7 +96,7 @@ describe("the rules cache across isolates", () => {
 
     // Isolate B saves a new rule. It now exists in the database.
     invalidateAll();
-    await createAvailabilityRule(env, P1, { ruleType: "Midweek", availability: "Unavailable" });
+    await createAvailabilityRule(env, P1, { ruleType: "Midweek", availability: "Unavailable", notes: "Working evenings" });
 
     // Isolate C, which has never read anything, must see both.
     invalidateAll();

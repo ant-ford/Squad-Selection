@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import { setPlayerAvailability, type AvailabilityStatus } from '@/api/setPlayerAvailability';
 import { setPlayerOptInOnly } from '@/api/setPlayerOptInOnly';
+import AttendanceGrid from '@/components/AttendanceGrid';
 
 const OPTIONS: { value: AvailabilityStatus; label: string; Icon: typeof CheckCircle2 }[] = [
   { value: 'Available', label: 'Available', Icon: CheckCircle2 },
@@ -67,6 +68,8 @@ export default function CoachAvailabilitySheet({
       toast.success(next ? `${player.name} is now opt-in only` : `${player.name} is back to the normal default`);
       queryClient.invalidateQueries({ queryKey: ['playersForMatch'] });
       queryClient.invalidateQueries({ queryKey: ['availabilityPoll'] });
+      queryClient.invalidateQueries({ queryKey: ['playerAttendance', player.id] });
+      queryClient.invalidateQueries({ queryKey: ['teamAttendance'] });
     } catch (err: unknown) {
       setOptInOnly(!next);
       toast.error(err instanceof Error ? err.message : 'Could not change the default');
@@ -79,6 +82,8 @@ export default function CoachAvailabilitySheet({
     setSaving(true);
     try {
       const result = await setPlayerAvailability(matchId, player.id, status, notes);
+      queryClient.invalidateQueries({ queryKey: ['playerAttendance', player.id] });
+      queryClient.invalidateQueries({ queryKey: ['teamAttendance'] });
       toast.success(`${player.name}: ${status}`);
       onSaved(status, notes, result.exceptionId);
     } catch (err: unknown) {
@@ -153,6 +158,11 @@ export default function CoachAvailabilitySheet({
           <ActionButton variant="outline" onClick={save} loading={saving} fullWidth className="mt-3">
             Save for {player.name}
           </ActionButton>
+
+          <section className="mt-5 pt-4 border-t border-border" aria-label="Season attendance and availability">
+            <h3 className="text-sm font-medium mb-3">Season attendance and availability</h3>
+            <AttendanceGrid playerId={player.id} />
+          </section>
 
           {/* Season-long, and about the player rather than this fixture, so
               it sits below a divider instead of among the three answers. */}

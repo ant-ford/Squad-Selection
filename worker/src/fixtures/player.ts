@@ -351,7 +351,7 @@ export async function buildPlayerFixtureView(
       availabilityStatus: effective.status,
       /** True when the status came from a standing rule, not a tap. */
       availabilityFromRule: effective.fromRule,
-      playerNotes: exc?.note || "",
+      playerNotes: exc?.note || effective.notes || "",
       availabilityExceptionId: exc?.id || "", selectionStatus: s.selectedIds.includes(playerId) ? "Selected" : "",
       selectionNotes: "", selectedCount: s.selectedIds.length, targetSquadSize: team?.targetSquadSize || 16,
       ...(opts.withSquad

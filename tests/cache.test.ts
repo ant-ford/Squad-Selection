@@ -187,7 +187,7 @@ describe("the player's own answers on the dashboard", () => {
     await request(() => getMyFixtures(ENV, dave()));
     expect(exceptionFetches()).toBe(afterFirst);
 
-    await request(() => setMyAvailability(ENV, { email: "dave@hkfc.com", matchId: M5, status: "Unavailable" }));
+    await request(() => setMyAvailability(ENV, { email: "dave@hkfc.com", matchId: M5, status: "Unavailable", notes: "Away" }));
     const before = exceptionFetches();
     const out = await request(() => getMyFixtures(ENV, dave()));
     expect(exceptionFetches()).toBeGreaterThan(before);
@@ -212,7 +212,7 @@ describe("availability poll cache", () => {
     const request = <T>(fn: () => Promise<T>) => runWithRequestContext({ stats: newRequestStats() }, fn);
     await request(() => getAvailabilityForMatch(ENV, M4));
     const afterRead = exceptionFetches();
-    await request(() => setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable" }));
+    await request(() => setMyAvailability(ENV, { email: "bob@hkfc.com", matchId: M4, status: "Unavailable", notes: "Away" }));
     const r = await request(() => getAvailabilityForMatch(ENV, M4));
     // One extra read: the post-write poll, under the new version. The write
     // itself reads nothing here - its read-modify-write happens inside
@@ -380,6 +380,7 @@ describe("availability writes read past the cache", () => {
       email: "dave@hkfc.com",
       matchId: M1,
       status: "Maybe",
+      notes: "Work, will confirm Thursday",
     });
     // A second row for the same player and match is a data problem, not
     // just a display one: two answers, and whichever is read first wins.

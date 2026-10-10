@@ -48,7 +48,7 @@ For: developers (Claude sessions) and the section's officers. Counts are rough a
 | Availability preference | A standing rule ("Play-ups", "Support games", "Midweek games", "Between dates", "All future fixtures") that gives the default for fixtures not answered one by one. | "Rule" on screen | `AvailabilityRule`, `shared/schema/domainTypes.ts` |
 | Default | The default is Available for any fixture with no answer and no preference (opt-out). | | |
 | Opt-in only | Set by a coach for one player. That player counts as No for any fixture they have not answered. | "Opt-In Only" | `People."Opt-In Only"`. CoachAvailabilitySheet.tsx already uses sentence case. |
-| Note | The optional text added to a Maybe or No. | "Comment", "reason" | |
+| Note | Required when a player answers Maybe or No, including whole-day answers and standing preferences. Optional for Available and when a coach records an answer on the player's behalf. | "Comment", "reason" | `shared/availabilityNotes.ts` |
 | Event answers | Special events use a different scale: **Going**, **Maybe**, **Not going** (`RESPONSE_LABEL`, `shared/events.ts`). | Using fixture words for events | |
 
 ## Teams and selection

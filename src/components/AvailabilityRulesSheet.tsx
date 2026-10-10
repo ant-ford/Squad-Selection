@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import { Plus, Trash2 } from 'lucide-react';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { availabilityClasses, availabilityLabel } from '@/lib/availabilityTone';
+import { Textarea } from '@/components/ui/textarea';
+import { availabilityNeedsNote, AVAILABILITY_NOTE_REQUIRED } from '@shared/availabilityNotes';
 import {
   createMyAvailabilityRule,
   deleteMyAvailabilityRule,
@@ -57,7 +59,11 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   useEffect(() => {
     const flag = changed;
     return () => {
-      if (flag.current) queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
+      if (flag.current) {
+        queryClient.invalidateQueries({ queryKey: ['myFixtures'] });
+        queryClient.invalidateQueries({ queryKey: ['playerAttendance'] });
+        queryClient.invalidateQueries({ queryKey: ['teamAttendance'] });
+      }
     };
   }, [queryClient]);
   const [rules, setRules] = useState<AvailabilityRule[] | null>(null);
@@ -67,6 +73,9 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   const [availability, setAvailability] = useState<RuleAvailability>('Unavailable');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const noteId = useId();
+  const needsNote = availabilityNeedsNote(availability);
 
   const load = () => {
     getMyAvailabilityRules()
@@ -82,6 +91,10 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   const needsDates = ruleType === 'Date range';
 
   const add = async () => {
+    if (needsNote && !notes.trim()) {
+      toast.error(AVAILABILITY_NOTE_REQUIRED);
+      return;
+    }
     if (needsDates && !startDate && !endDate) {
       toast.error('Add a start date, an end date, or both');
       return;
@@ -97,12 +110,14 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
         availability,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
+        notes: notes.trim(),
       });
       toast.success('Preference saved');
       changed.current = true;
       setAdding(false);
       setStartDate('');
       setEndDate('');
+      setNotes('');
       load();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not save that preference');
@@ -125,7 +140,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
   };
 
   return (
-    <Sheet open dirty={adding && !saving && !!(startDate || endDate)} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open dirty={adding && !saving && !!(startDate || endDate || notes.trim())} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom">
         <SheetHeader onClose={onClose} closeLabel="Close availability preferences">
           <SheetTitle>Availability preferences</SheetTitle>
@@ -178,7 +193,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
 
         {!adding ? (
           <button
-            onClick={() => setAdding(true)}
+            onClick={() => { setNotes(''); setAdding(true); }}
             className="mt-3 w-full inline-flex items-center justify-center gap-2 border border-border rounded-lg py-2 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
           >
             <Plus className="h-4 w-4" />
@@ -249,6 +264,11 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
               </div>
             )}
 
+            <div>
+              <label htmlFor={noteId} className="text-xs text-muted-foreground">Note for the coaches ({needsNote ? 'required' : 'optional'})</label>
+              <Textarea id={noteId} value={notes} onChange={(e) => setNotes(e.target.value)} required={needsNote} rows={2} className="mt-1" placeholder="Explain what affects your availability and, for Maybe, when you expect to confirm." />
+            </div>
+
             <div className="flex gap-2">
               <button
                 onClick={() => setAdding(false)}
@@ -258,7 +278,7 @@ export default function AvailabilityRulesSheet({ onClose }: { onClose: () => voi
               </button>
               <button
                 onClick={add}
-                disabled={saving}
+                disabled={saving || (needsNote && !notes.trim())}
                 className="flex-1 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
                 {saving ? 'Saving…' : 'Save'}

@@ -20,7 +20,13 @@ export default [
   { name: 'fixture-sheet', as: 'player', path: '/', steps: (page) => page.eval(`${card('Valley B')}.click()`) },
   {
     name: 'same-day', as: 'player', path: '/',
-    steps: async (page) => { await page.eval(cardButton('Valley B', 'No')); await page.settle(); await page.sleep(500); await page.click('Skip', { exact: true }).catch(() => {}); },
+    steps: async (page) => {
+      await page.eval(cardButton('Valley B', 'No'));
+      await page.settle();
+      await page.eval(`const el = document.querySelector('[role=dialog] textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, 'Away all day'); el.dispatchEvent(new Event('input', { bubbles: true }));`);
+      await page.click('Save answer', { exact: true });
+      await page.settle();
+    },
     el: `[...document.querySelectorAll('div,section')].filter((e) => /^(Other games on|You're out for all of)/.test(e.innerText ?? '')).pop()`, pad: 10,
   },
   {

@@ -140,6 +140,21 @@ describe("effectiveAvailability", () => {
       fromRule: false,
     });
   });
+
+  it('uses the winning preference’s explanation, including specificity and recency', () => {
+    const rules = [
+      rule({ id: 'all', availability: 'Unavailable', notes: 'Away this season' }),
+      rule({ id: 'old', ruleType: 'Date range', startDate: SATURDAY, endDate: SATURDAY, availability: 'Maybe', notes: 'Old plan', lastModified: '2026-09-01' }),
+      rule({ id: 'new', ruleType: 'Date range', startDate: SATURDAY, endDate: SATURDAY, availability: 'Maybe', notes: 'Work, confirm Thursday', lastModified: '2026-09-02' }),
+    ];
+    expect(effectiveAvailability('', rules, fixture())).toEqual({ status: 'Maybe', fromRule: true, notes: 'Work, confirm Thursday' });
+  });
+
+  it('does not attach a preference’s explanation to an explicit answer or an opt-in-only default', () => {
+    const rules = [rule({ notes: 'Away this season' })];
+    expect(effectiveAvailability('Maybe', rules, fixture())).toEqual({ status: 'Maybe', fromRule: false });
+    expect(effectiveAvailability('', rules, fixture(), { optInOnly: true })).toEqual({ status: 'Unavailable', fromRule: true });
+  });
 });
 
 describe("indexRulesByPlayer", () => {

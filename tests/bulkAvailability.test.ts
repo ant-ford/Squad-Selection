@@ -70,7 +70,7 @@ afterEach(() => {
 
 describe("setMyAvailabilityForDate", () => {
   it("bulk Unavailable creates one exception per HKFC fixture on the date", async () => {
-    const out = await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: DATE_KEY, status: "Unavailable" });
+    const out = await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: DATE_KEY, status: "Unavailable", notes: "Away" });
     expect(out.success).toBe(true);
     expect(out.updated).toBe(2); // M1 + M2; the no-HKFC-side match is excluded
     expect(out.results.map((r) => r.matchId).sort()).toEqual([M1, M2].sort());
@@ -80,7 +80,7 @@ describe("setMyAvailabilityForDate", () => {
   });
 
   it("bulk Maybe upserts exceptions for the date", async () => {
-    await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: DATE_KEY, status: "Maybe" });
+    await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: DATE_KEY, status: "Maybe", notes: "Work, will confirm Thursday" });
     expect(stored()).toHaveLength(2);
     expect(stored().every((e) => e.availabilityStatus === "Maybe")).toBe(true);
   });
@@ -111,7 +111,7 @@ describe("setMyAvailabilityForDate", () => {
   });
 
   it("excludes matches with no HKFC side and returns 0 updates when nothing matches", async () => {
-    const out = await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: "2030-01-01", status: "Unavailable" });
+    const out = await setMyAvailabilityForDate(ENV, { email: "gk@hkfc.com", date: "2030-01-01", status: "Unavailable", notes: "Away" });
     expect(out.success).toBe(true);
     expect(out.updated).toBe(0);
     expect(stored()).toHaveLength(0);
@@ -122,7 +122,7 @@ describe("setMyAvailabilityForDate", () => {
   // the most common thing a player needs to say, and it should not take one
   // tap per fixture.
   it("allows an outfield player to clear a whole date", async () => {
-    const out = await setMyAvailabilityForDate(ENV, { email: "dave@hkfc.com", date: DATE_KEY, status: "Unavailable" });
+    const out = await setMyAvailabilityForDate(ENV, { email: "dave@hkfc.com", date: DATE_KEY, status: "Unavailable", notes: "Away" });
     expect(out.success).toBe(true);
     expect(out.updated).toBe(2); // M1 + M2; the no-HKFC-side match is excluded
     expect(stored()).toHaveLength(2);
@@ -131,7 +131,7 @@ describe("setMyAvailabilityForDate", () => {
 
   it("still refuses an email with no People record", async () => {
     await expect(
-      setMyAvailabilityForDate(ENV, { email: "nobody@example.com", date: DATE_KEY, status: "Unavailable" }),
+      setMyAvailabilityForDate(ENV, { email: "nobody@example.com", date: DATE_KEY, status: "Unavailable", notes: "Away" }),
     ).rejects.toMatchObject({ status: 404 });
     expect(stored()).toHaveLength(0);
   });

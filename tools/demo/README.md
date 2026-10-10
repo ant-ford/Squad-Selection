@@ -72,6 +72,8 @@ node tools/demo/smoke.mjs --only coach --as section-captain   # a subset, by pat
 
 `node tools/demo/ranking-stats-smoke.mjs` checks the simplified ranking rows, saved stats compilation times in HKT, comparisons through the same date last season, completed seasons and missing prior-period data. CI runs it and saves phone and desktop screenshots in `ui-review-screenshots`.
 
+`node tools/demo/availability-notes-smoke.mjs` checks the coach's attendance grid and required player notes: drafts, cancellation, failed-save retry, same-day choices, whole-day and goalkeeper shortcuts, and availability preferences. Every write uses fictional responses. CI runs it and saves review screenshots in `ui-review-screenshots`.
+
 - In Git Bash, `--only /people` is rewritten into a Windows path: use `--only People`, or set `MSYS_NO_PATHCONV=1`.
 - Screenshots of failing screens go to `--out` (default `<temp>/eddy-smoke`).
 - `CHROME_PATH` picks the browser. The driver, `cdp.mjs`, talks the DevTools protocol over Node's built-in WebSocket, so it needs no npm package.

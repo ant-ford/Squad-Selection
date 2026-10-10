@@ -9,9 +9,10 @@ interface Props {
   fixture: MyFixture;
   onTap: () => void;
   onAvailabilityChange: (status: 'Available' | 'Maybe' | 'Unavailable') => void;
+  busy?: boolean;
 }
 
-export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange }: Props) {
+export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange, busy = false }: Props) {
   const isSelected = fixture.selectionStatus === 'Selected';
   const isUnavailable = fixture.availabilityStatus === 'Unavailable';
   const isMaybe = fixture.availabilityStatus === 'Maybe';
@@ -117,6 +118,8 @@ export default function PlayerFixtureCard({ fixture, onTap, onAvailabilityChange
               return (
                 <button
                   key={value}
+                  disabled={busy}
+                  aria-pressed={active}
                   onClick={(e) => {
                     e.stopPropagation();
                     onAvailabilityChange(value as any);

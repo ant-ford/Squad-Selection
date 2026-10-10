@@ -100,12 +100,12 @@ describe("an availability tap on the wire", () => {
     await warmPlayerLookup();
     const before = pg.calls.length;
     const { out, stats } = await counted(() =>
-      setMyAvailabilityForDate(ENV, { email: "alice@hkfc.com", date: "2026-10-10", status: "Unavailable" }),
+      setMyAvailabilityForDate(ENV, { email: "alice@hkfc.com", date: "2026-10-10", status: "Unavailable", notes: "Away" }),
     );
     expect(out.updated).toBe(2);
     expect(stats.dbCalls).toBe(1);
     expect(pg.calls.slice(before).map((c) => c.table)).toEqual(["rpc/set_availability_for_date"]);
-    expect(pg.rpcCalls("set_availability_for_date")[0]).toEqual({ p_player: ALICE, p_date: "2026-10-10", p_status: "Unavailable", p_notes: null });
+    expect(pg.rpcCalls("set_availability_for_date")[0]).toEqual({ p_player: ALICE, p_date: "2026-10-10", p_status: "Unavailable", p_notes: "Away" });
   });
 });
 

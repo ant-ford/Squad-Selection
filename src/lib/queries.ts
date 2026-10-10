@@ -297,6 +297,8 @@ export function useQuickAvailability() {
       );
       // The fixture sheet lists this player too.
       queryClient.invalidateQueries({ queryKey: ['teamAvailability', fixtureId] });
+      queryClient.invalidateQueries({ queryKey: ['playerAttendance'] });
+      queryClient.invalidateQueries({ queryKey: ['teamAttendance'] });
     },
     onError: (_err, _vars, context) => {
       for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);
@@ -312,13 +314,13 @@ export function useQuickAvailability() {
 export function useBulkAvailability() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ date, status }: { date: string; status: 'Available' | 'Maybe' | 'Unavailable' }) =>
-      setMyAvailabilityForDate(date, status),
-    onMutate: async ({ date, status }) => {
+    mutationFn: ({ date, status, notes }: { date: string; status: 'Available' | 'Maybe' | 'Unavailable'; notes?: string }) =>
+      setMyAvailabilityForDate(date, status, notes),
+    onMutate: async ({ date, status, notes }) => {
       await queryClient.cancelQueries({ queryKey: ['myFixtures'] });
       const previousData = queryClient.getQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] });
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
-        patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status, availabilityFromRule: false })),
+        patchFixturesForDate(old, date, (f) => ({ ...f, availabilityStatus: status, playerNotes: notes ?? '', availabilityFromRule: false })),
       );
       return { previousData };
     },
@@ -326,10 +328,12 @@ export function useBulkAvailability() {
       queryClient.setQueriesData<GetMyFixturesOutput>({ queryKey: ['myFixtures'] }, (old) =>
         patchFixturesForDate(old, date, (f) => {
           const r = result.results.find((x) => x.matchId === f.id);
-          return { ...f, availabilityStatus: status, availabilityExceptionId: r?.exceptionId || f.availabilityExceptionId };
+          return { ...f, availabilityStatus: status, availabilityExceptionId: r ? r.exceptionId ?? '' : f.availabilityExceptionId };
         }),
       );
       queryClient.invalidateQueries({ queryKey: ['teamAvailability'] });
+      queryClient.invalidateQueries({ queryKey: ['playerAttendance'] });
+      queryClient.invalidateQueries({ queryKey: ['teamAttendance'] });
     },
     onError: (_err, _vars, context) => {
       for (const [key, data] of context?.previousData ?? []) queryClient.setQueryData(key, data);
