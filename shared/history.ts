@@ -34,6 +34,7 @@ export const ACTION_LABELS: Record<string, string> = {
   // People admin (worker/src/admin/)
   "admin-membership": "Membership details changed",
   "admin-stage": "Stage changed",
+  "admin-registered-name": "HockeyHK registered name changed",
   "admin-squad": "Teams or position changed",
   "admin-junior-route": "Started the junior route",
   "admin-suspension-set": "Suspended",

@@ -19,7 +19,7 @@ const adh = as("assistantDirector");
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const personRow = (more: Record<string, unknown> = {}) => ({
-  api_id: "recP1", preferred_name: "Sam", given_names: "Samuel", surname: "Lee", registered_team: "HKFC C", status: "Member",
+  api_id: "recP1", preferred_name: "Sam", given_names: "Samuel", surname: "Lee", registered_name: "LEE Samuel", registered_team: "HKFC C", status: "Member",
   applicant_stage: null, active: true, member_type: "Main", category_type: "Sports Preferred", membership_no: "M1",
   join_date: "2024-09-01", commitment_end_date: "2027-08-31", selected_team_sos: "HKFC C", selected_team_eos: "", playing_position: "Defender",
   ...more,
@@ -61,17 +61,17 @@ describe("what each officer may do to a person", () => {
   const p = personRow({ status: "Applicant", applicant_stage: "2. Section Captain Invitation" }) as any;
   it("the Membership Officer: membership, stage; not squad, suspensions or active", () => {
     expect(canFor(officer, p)).toEqual({
-      membership: true, stage: true, squad: false, registeredTeam: false, suspend: false, activate: false, juniorRoute: false,
+      membership: true, stage: true, squad: false, registeredTeam: false, registeredName: false, suspend: false, activate: false, juniorRoute: false,
     });
   });
   it("the Men's Convenor: the registered team and suspensions; not membership or active", () => {
     expect(canFor(convenor, p)).toEqual({
-      membership: false, stage: false, squad: true, registeredTeam: true, suspend: true, activate: false, juniorRoute: false,
+      membership: false, stage: false, squad: true, registeredTeam: true, registeredName: true, suspend: true, activate: false, juniorRoute: false,
     });
   });
   it("a Section Captain: membership, stage, selected teams and active; not the registered team or suspensions", () => {
     expect(canFor(captain, p)).toEqual({
-      membership: true, stage: true, squad: true, registeredTeam: false, suspend: false, activate: true, juniorRoute: false,
+      membership: true, stage: true, squad: true, registeredTeam: false, registeredName: false, suspend: false, activate: true, juniorRoute: false,
     });
   });
   it("a Teams-linked Section Captain may make people active or inactive", () => {
@@ -119,10 +119,10 @@ describe("GET /api/admin/people?q=", () => {
   it("asks for every word in any name, at most 20", async () => {
     const calls = fake({ people: [personRow({ applicant_stage: "" })] });
     const rows = await searchPeople(env, "  sam o'neil ");
-    expect(rows).toEqual([{ id: "recP1", name: "Sam Lee", team: "HKFC C", status: "Member", stage: null, active: true }]);
+    expect(rows).toEqual([{ id: "recP1", name: "Sam Lee", registeredName: "LEE Samuel", team: "HKFC C", status: "Member", stage: null, active: true }]);
     const q = calls[0].url.searchParams;
     expect(q.get("and")).toBe(
-      `(or(preferred_name.ilike."*sam*",given_names.ilike."*sam*",surname.ilike."*sam*"),or(preferred_name.ilike."*o'neil*",given_names.ilike."*o'neil*",surname.ilike."*o'neil*"))`,
+      `(or(preferred_name.ilike."*sam*",given_names.ilike."*sam*",surname.ilike."*sam*",registered_name.ilike."*sam*"),or(preferred_name.ilike."*o'neil*",given_names.ilike."*o'neil*",surname.ilike."*o'neil*",registered_name.ilike."*o'neil*"))`,
     );
     expect(q.get("limit")).toBe("20");
   });
@@ -235,7 +235,7 @@ describe("admin people routes", () => {
     mocks.requireSection.mockResolvedValue(officer);
     const res = await get("/api/admin/people?q=sam");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ people: [{ id: "recP1", name: "Sam Lee", team: "HKFC C", status: "Member", stage: null, active: true }] });
+    expect(await res.json()).toEqual({ people: [{ id: "recP1", name: "Sam Lee", registeredName: "LEE Samuel", team: "HKFC C", status: "Member", stage: null, active: true }] });
   });
 });
 

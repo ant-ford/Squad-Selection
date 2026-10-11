@@ -85,6 +85,10 @@ describe("refused saves", () => {
     expect(stage.message).toMatch(/stage changed/i);
   });
 
+  it("shows a duplicate registered name as a correctable refusal rather than a stale edit", () => {
+    expect(saveRefusal(new FakeApiError("Another player already has this registered name.", 409, "NAME_TAKEN"))).toEqual({ kind: "other", message: "Another player already has this registered name." });
+  });
+
   it("never shows a server or network failure's own text", () => {
     expect(saveRefusal(new FakeApiError("TypeError: boom", 500)).message).toMatch(/^Not saved/);
     expect(saveRefusal(new Error("Failed to fetch")).message).toMatch(/^Not saved/);

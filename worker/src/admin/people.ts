@@ -27,6 +27,7 @@ interface NameCols {
 }
 
 interface SearchRowDb extends NameCols {
+  registered_name: string | null;
   api_id: string;
   registered_team: string | null;
   status: string | null;
@@ -38,7 +39,7 @@ const blank = (v: string | null | undefined) => (v == null || v === "" ? null : 
 
 /**
  * Name search: every word must start-or-contain-match a preferred, given or
- * surname (case-insensitive). At most 20, by surname.
+ * surname or registered name (case-insensitive). At most 20, by surname.
  */
 export async function searchPeople(env: Env, q: string): Promise<PersonSearchRow[]> {
   const words = q.trim().split(/\s+/).filter(Boolean).slice(0, 4);
@@ -50,16 +51,17 @@ export async function searchPeople(env: Env, q: string): Promise<PersonSearchRow
   // pattern can't hold PostgREST's wildcard or separators (SEARCH above).
   const word = (w: string) => {
     const v = `"*${w}*"`;
-    return `or(preferred_name.ilike.${v},given_names.ilike.${v},surname.ilike.${v})`;
+    return `or(preferred_name.ilike.${v},given_names.ilike.${v},surname.ilike.${v},registered_name.ilike.${v})`;
   };
   const filter = encodeURIComponent(`(${words.map(word).join(",")})`);
   const rows = await db(env).select<SearchRowDb>(
     "people",
-    `select=api_id,preferred_name,given_names,surname,registered_team,status,applicant_stage,active&and=${filter}&order=surname,preferred_name&limit=${MAX_RESULTS}`,
+    `select=api_id,preferred_name,given_names,surname,registered_name,registered_team,status,applicant_stage,active&and=${filter}&order=surname,preferred_name&limit=${MAX_RESULTS}`,
   );
   return rows.slice(0, MAX_RESULTS).map((p) => ({
     id: p.api_id,
     name: displayName(p),
+    registeredName: blank(p.registered_name),
     team: blank(p.registered_team),
     status: blank(p.status),
     stage: blank(p.applicant_stage),
@@ -79,7 +81,7 @@ interface PersonDb extends SearchRowDb {
 }
 
 export const PERSON_COLUMNS =
-  "api_id,preferred_name,given_names,surname,registered_team,status,applicant_stage,active,member_type,category_type,membership_no,join_date,commitment_end_date,selected_team_sos,selected_team_eos,playing_position";
+  "api_id,preferred_name,given_names,surname,registered_name,registered_team,status,applicant_stage,active,member_type,category_type,membership_no,join_date,commitment_end_date,selected_team_sos,selected_team_eos,playing_position";
 
 /** Child members and both Junior categories, with no application under way. */
 export function isJuniorMember(p: Pick<PersonDb, "status" | "applicant_stage" | "member_type" | "category_type">): boolean {
@@ -109,6 +111,7 @@ export function canFor(user: AuthorizedUser, p: PersonDb): PersonAdminCan {
     stage: membership && stageTargets(p.status, p.applicant_stage).length > 0,
     squad: sections.includes("club") || registeredTeam,
     registeredTeam,
+    registeredName: registeredTeam,
     suspend: offices.has("hockeyConvenor"),
     activate: offices.has("sectionCaptain") || user.isSectionCaptain,
     juniorRoute: membership && isJuniorMember(p),
@@ -128,6 +131,7 @@ export async function getPersonAdmin(env: Env, user: AuthorizedUser, id: string)
   const view: PersonAdminView = {
     id: p.api_id,
     name: displayName(p),
+    registeredName: blank(p.registered_name),
     status: blank(p.status),
     stage: blank(p.applicant_stage),
     active: p.active === true,

@@ -105,6 +105,7 @@ const later = vi.hoisted(() => {
   const ok = () => vi.fn(async () => ({ ok: true }));
   return {
     searchPeople: ok(), getPersonAdmin: ok(), getPersonHistory: ok(), getMatchHistory: ok(),
+    getRegisteredNameSuggestions: ok(), saveRegisteredName: ok(),
     saveSquad: ok(), saveMembership: ok(), moveStage: ok(),
     listOffices: ok(), listTeams: ok(), addOffice: ok(), editOffice: ok(), createOfficeHolder: ok(), saveTeam: ok(),
     getDataChecks: ok(), linkMatchCard: ok(), resolveRegistrationEvent: ok(),
@@ -124,6 +125,7 @@ vi.mock("../worker/src/history", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../worker/src/history")>()),
   getMatchHistory: later.getMatchHistory,
 }));
+vi.mock("../worker/src/admin/registeredName", () => ({ getRegisteredNameSuggestions: later.getRegisteredNameSuggestions, saveRegisteredName: later.saveRegisteredName }));
 vi.mock("../worker/src/admin/squad", () => ({ saveSquad: later.saveSquad }));
 vi.mock("../worker/src/admin/membership", () => ({ saveMembership: later.saveMembership, moveStage: later.moveStage }));
 vi.mock("../worker/src/admin/club", () => ({
@@ -1379,6 +1381,8 @@ describe("routes added since the 6 Oct review", () => {
     { method: "GET", path: "/api/admin/people?q=Smith", who: PEOPLE, handler: () => later.searchPeople },
     { method: "GET", path: `/api/admin/people/${PLAYER}`, who: PEOPLE, handler: () => later.getPersonAdmin },
     // The route opens to the people section; squad.ts then checks each field (adminSquad.test.ts).
+    { method: "GET", path: `/api/admin/people/${PLAYER}/registered-name-suggestions`, who: REGISTRATION, handler: () => later.getRegisteredNameSuggestions },
+    { method: "POST", path: `/api/admin/people/${PLAYER}/registered-name`, who: REGISTRATION, handler: () => later.saveRegisteredName },
     { method: "POST", path: `/api/admin/people/${PLAYER}/squad`, who: PEOPLE, handler: () => later.saveSquad },
     { method: "POST", path: `/api/admin/people/${PLAYER}/membership`, who: MEMBERSHIP, handler: () => later.saveMembership },
     { method: "POST", path: `/api/admin/people/${PLAYER}/stage`, who: MEMBERSHIP, handler: () => later.moveStage },

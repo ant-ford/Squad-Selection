@@ -11,6 +11,7 @@ import { apiGet, apiPost } from '@/lib/apiClient';
 export interface PersonSearchRow {
   id: string;
   name: string;
+  registeredName: string | null;
   team: string | null;
   status: string | null;
   stage: string | null;
@@ -32,6 +33,7 @@ export interface PersonAdminCan {
   stage: boolean;
   squad: boolean;
   registeredTeam: boolean;
+  registeredName: boolean;
   suspend: boolean;
   activate: boolean;
   juniorRoute: boolean;
@@ -40,6 +42,7 @@ export interface PersonAdminCan {
 export interface PersonAdminView {
   id: string;
   name: string;
+  registeredName: string | null;
   status: string | null;
   stage: string | null;
   active: boolean;
@@ -122,4 +125,19 @@ export function moveStage(id: string, stage: string, from: string | null): Promi
 /** Section Captains only (the ranking endpoints). */
 export function setPlayerActive(id: string, active: boolean): Promise<unknown> {
   return apiPost(active ? '/api/ranking/activate' : '/api/ranking/deactivate', { playerId: id });
+}
+
+export interface RegisteredNameSuggestion {
+  name: string;
+  source: 'matchCard' | 'format';
+  cards: number;
+  teams: string[];
+}
+
+export function getRegisteredNameSuggestions(id: string): Promise<{ suggestions: RegisteredNameSuggestion[] }> {
+  return apiGet(`/api/admin/people/${encodeURIComponent(id)}/registered-name-suggestions`);
+}
+
+export function saveRegisteredName(id: string, registeredName: string | null, expected: string | null): Promise<{ ok: true; linked: number }> {
+  return apiPost(`/api/admin/people/${encodeURIComponent(id)}/registered-name`, { registeredName, expect: { registeredName: expected } });
 }

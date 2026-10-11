@@ -73,6 +73,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 
 A new screen here also needs a line in `tools/demo/screens.mjs`, and fixtures for the calls it makes, so the screen smoke test opens it ([Testing](#testing)).
 
+People search includes the HockeyHK registered name. Open a person to view it; the Men's Convenor can edit or clear it in **HockeyHK registration**. When blank, the dropdown ranks matching names from this season's imported match cards, with a clearly labelled surname/given-name format as a fallback. Choosing fills the draft; Save confirms it and links matching unlinked cards from this season. This changes Eddy's recorded name, not the official registration held by HockeyHK. Names already held by another person are refused, and a stale edit asks for Reload. The existing `people.registered_name` column and admin audit function are reused; no migration is needed.
+
 ---
 
 ## Data model (Supabase Postgres)
@@ -142,7 +144,7 @@ The data access seam is `worker/src/data/`: one repository per module (people, t
 | Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts`, SQL `set_availability()` / `availability_rule_status()`. The rule cases are pinned on both sides: `tests/availabilityRuleCases.test.ts` and `scripts/availability-rule-checks.mjs` |
 | Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` (`SECTION_OFFICES`), `worker/src/authContext.ts`, SQL `auth_context()` |
 | Coaches act only on their own teams (a match's HKFC side, a derby's written side, a team, a player's shown or registered team); Section Captains and the Assistant Director on every team; `403 NOT_YOUR_TEAM` | `worker/src/coachAccess.ts` (`requireCoachOfMatch`, `requireCoachOfMatchSide`), `worker/src/auth.ts` (`coachesEveryTeam`, `requireCoachOfTeam`, `coachesPlayer`) |
-| Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name (`worker/src/registration.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
+| Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name in Registration or People (`worker/src/registration.ts`, `worker/src/admin/registeredName.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
 | Data checks (unlinked cards, shared Registered Names, re-registrations to review, incomplete players, likely duplicates) | `worker/src/dataChecks.ts`, `shared/dataChecks.ts` |
 | Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`); granting or ending a Men's Convenor, Section Captain, Membership Officer or Chairman office, or giving yourself any office, emails `SYSTEM_ALERT_EMAIL` | `worker/src/admin/*` (the alert: `officeAlert.ts`), SQL `admin_*()`; a person's history: `GET /api/history` |
 | System health | `worker/src/systemHealth.ts`: 5xx errors and app crashes go to `error_log`, each scheduled job writes `heartbeats`, a daily check runs, and `/system` shows the results |

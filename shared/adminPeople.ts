@@ -10,6 +10,7 @@ import { fullName } from "./personName";
 export interface PersonSearchRow {
   id: string;
   name: string;
+  registeredName: string | null;
   team: string | null;
   status: string | null;
   stage: string | null;
@@ -42,6 +43,8 @@ export interface PersonAdminCan {
   squad: boolean;
   /** The registered team: the Men's Convenor only. */
   registeredTeam: boolean;
+  /** The HockeyHK registered name: the Men's Convenor only. */
+  registeredName: boolean;
   /** Manual suspensions: the Men's Convenor only. */
   suspend: boolean;
   /** Make active or inactive: Section Captains only. */
@@ -53,6 +56,7 @@ export interface PersonAdminCan {
 export interface PersonAdminView {
   id: string;
   name: string;
+  registeredName: string | null;
   status: string | null;
   stage: string | null;
   active: boolean;
