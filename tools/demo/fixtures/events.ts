@@ -19,6 +19,8 @@ import {
   type ResponseDetails,
 } from '@shared/events';
 import type { Selection } from '@shared/emailLists';
+import type { MyTask } from '@/api/getMyTasks';
+import { cleanDateAnswers, isDatePoll, type DateAnswers } from '@shared/eventDates';
 import { reply, type DemoRequest, type Routes } from './routing';
 import { OTHERS, PERSONAS, SQUAD_PLAYERS, SAT1, SAT3, SAT4, TEAMS, at, idOf, personaTeam, type Persona } from './data';
 
@@ -61,6 +63,7 @@ interface DemoEvent {
 }
 
 const PLAYING: Selection = { status: ['Member'], active: ['Active player'] };
+const DATE_ROWS: Record<string, { personId: string; name: string; answers: DateAnswers }[]> = {};
 
 const EVENTS: DemoEvent[] = [
   // Start of Season drinks three weeks ago: free, register taken.
@@ -292,6 +295,7 @@ const rowsOf = (e: DemoEvent) => ROWS[e.details.id] ?? [];
 
 /** Invited, no answer yet, while answers are open: the rest of the team for a team's event, a few names otherwise. */
 function notAnswered(e: DemoEvent): { personId: string; name: string }[] {
+  if (isDatePoll(e.details)) return Object.values(PERSONAS).filter((p) => invitedTo(e, p) && !DATE_ROWS[e.details.id]?.some((r) => r.personId === p.id)).map((p) => ({ personId: p.id, name: p.name }));
   if (e.details.type === 'admin_meeting') {
     return e.details.status === 'draft' ? [] : Object.values(PERSONAS).filter((p) => invitedTo(e, p) && !rowsOf(e).some((r) => r.personId === p.id)).map((p) => ({ personId: p.id, name: p.name }));
   }
@@ -343,6 +347,7 @@ function managed(e: DemoEvent, p: Persona): ManagedEvent {
     chargesSentAt: e.chargesSentAt,
     registerTakenAt: e.registerTakenAt,
     counts: { ...counts(rowsOf(e)), ...CLUB_COUNTS[e.details.id] },
+    dateReplies: DATE_ROWS[e.details.id]?.length ?? 0,
   };
 }
 
@@ -351,6 +356,12 @@ function managed(e: DemoEvent, p: Persona): ManagedEvent {
 /** Section Captains keep every event; a team social secretary keeps their team's. */
 const isClub = (p: Persona) => p.offices.includes('sectionCaptain');
 const managesEvent = (p: Persona, e: DemoEvent) => isClub(p) || (!!e.details.team && !!p.socialSecretaryOf?.includes(e.details.team));
+
+export function demoDateTasks(p: Persona): MyTask[] {
+  return EVENTS.filter((e) => e.details.dateOptions?.length && e.details.status === 'published' && Date.now() < Date.parse(e.details.respondBy ?? e.details.startsAt) && invitedTo(e, p)
+    && !(isDatePoll(e.details) ? DATE_ROWS[e.details.id]?.some((r) => r.personId === p.id) : rowsOf(e).some((r) => r.personId === p.id)))
+    .map((e) => ({ id: `event:${e.details.id}`, key: 'event', subject: e.details.title, url: `/?event=${e.details.id}`, due: e.details.respondBy ?? e.details.startsAt }));
+}
 
 const SOCIAL_SECRETARIES: Record<string, string[]> = {
   'HKFC B': ['Jonah Fung'],
@@ -399,7 +410,7 @@ function manageView(req: DemoRequest): ManageView | Refusal {
 function responses(req: DemoRequest): EventResponses | Refusal {
   const e = byId(req.params.id);
   if (!e || !managesEvent(req.persona, e)) return notFound();
-  return { event: managed(e, req.persona), responses: rowsOf(e), notAnswered: notAnswered(e) };
+  return { event: managed(e, req.persona), responses: rowsOf(e), notAnswered: notAnswered(e), dateResponses: DATE_ROWS[e.details.id] ?? [] };
 }
 
 // ── Payments ─────────────────────────────────────────────────────────────
@@ -469,6 +480,7 @@ function myEvents(req: DemoRequest): { events: MyEvent[] } {
         open: d.status === 'published' && now < Date.parse(d.respondBy ?? d.startsAt),
         manager: managesEvent(p, e),
         mine: mine ? answerOf(mine) : null,
+        myDateAnswers: DATE_ROWS[e.details.id]?.find((r) => r.personId === p.id)?.answers ?? null,
         signedUp: signedUp.map((r) => ({ personId: r.personId, name: r.name, ...answerOf(r) })),
         bill: bill ? { lines: bill.lines, total: bill.total, payment: bill.payment } : null,
       },
@@ -553,14 +565,14 @@ export const routes: Routes = {
   },
   'POST /api/events/social-secretaries': () => ok,
   'POST /api/events': (req): { id: string } => {
-    if (req.body?.type !== 'admin_meeting') return { id: typeof req.body?.id === 'string' ? req.body.id : 'demoEv6' };
+    if (req.body?.type !== 'admin_meeting' && !(req.body?.dateOptions as unknown[] | undefined)?.length) return { id: typeof req.body?.id === 'string' ? req.body.id : 'demoEv6' };
     const b = req.body as unknown as EventInput;
-    const id = b.id ?? 'demoMeeting';
+    const id = b.id ?? (b.dateOptions?.length ? 'demoPoll' : 'demoMeeting');
     const old = byId(id);
     const e: DemoEvent = {
       details: { ...base, id, type: b.type, title: b.title, startsAt: b.startsAt, endsAt: b.endsAt ?? null,
         respondBy: b.respondBy ?? null, description: b.description ?? null, location: b.location ?? null,
-        linkUrl: b.linkUrl ?? null, team: b.team ?? null, questions: b.questions ?? [], status: old?.details.status ?? 'draft' },
+        linkUrl: b.linkUrl ?? null, team: b.team ?? null, questions: b.questions ?? [], status: old?.details.status ?? 'draft', dateOptions: b.dateOptions ?? [], chosenDateId: old?.details.chosenDateId ?? null },
       audience: b.audience ?? {}, invited: 0, chargesSentAt: null, registerTakenAt: null,
     };
     e.invited = Object.values(PERSONAS).filter((p) => invitedTo(e, p)).length;
@@ -577,10 +589,43 @@ export const routes: Routes = {
   'GET /api/events/:id/checkin-link': (req): { url: string } => ({ url: `https://app.eddy.global/checkin/${req.params.id}?c=demo3f9a1c7e5b2d` }),
   'GET /api/events/:id/checkin': (req): CheckInView | Refusal => checkInView(req),
   'POST /api/events/:id/checkin': (req): { ok: true; checkedIn: number } => ({ ok: true, checkedIn: Array.isArray(req.body?.people) ? req.body.people.length : 1 }),
-  'POST /api/events/:id/respond': () => ok,
+  'POST /api/events/:id/respond': (req) => {
+    const e = byId(req.params.id);
+    if (!e?.details.dateOptions?.length) return ok;
+    if (isDatePoll(e.details)) return reply(409, { error: 'DATE_NOT_CHOSEN', message: 'Choose the event date first.' });
+    const rows = ROWS[e.details.id] ??= [];
+    const answer = { ...row(req.persona.name, new Date().toISOString(), resp(req.body?.status as ResponseDetails['status'])), personId: req.persona.id };
+    const old = rows.find((r) => r.personId === req.persona.id);
+    if (old) Object.assign(old, answer); else rows.push(answer);
+    return ok;
+  },
+  'POST /api/events/:id/date-response': (req) => {
+    const e = byId(req.params.id);
+    if (!e || !isDatePoll(e.details) || e.details.status !== 'published' || !invitedTo(e, req.persona)) return notFound();
+    const answers = cleanDateAnswers(req.body?.answers, e.details.dateOptions!);
+    if (typeof answers === 'string') return reply(400, { message: answers, error: 'INVALID_INPUT' });
+    const rows = DATE_ROWS[e.details.id] ??= [];
+    const row = { personId: req.persona.id, name: req.persona.name, answers };
+    const old = rows.find((r) => r.personId === req.persona.id);
+    if (old) Object.assign(old, row); else rows.push(row);
+    return ok;
+  },
+  'POST /api/events/:id/choose-date': (req) => {
+    const e = byId(req.params.id);
+    const o = e?.details.dateOptions?.find((o) => o.id === req.body?.optionId);
+    if (!e || !o || !managesEvent(req.persona, e)) return notFound();
+    Object.assign(e.details, { chosenDateId: o.id, startsAt: o.startsAt, endsAt: o.endsAt, respondBy: null });
+    const attendance = ROWS[e.details.id] ??= [];
+    for (const r of DATE_ROWS[e.details.id] ?? []) {
+      if (r.answers[o.id] === 'available' && !attendance.some((a) => a.personId === r.personId)) {
+        attendance.push({ ...row(r.name, new Date().toISOString(), resp('going')), personId: r.personId });
+      }
+    }
+    return ok;
+  },
   'POST /api/events/:id/status': (req) => {
     const e = byId(req.params.id);
-    if (e?.details.type === 'admin_meeting' && ['draft', 'published', 'cancelled'].includes(String(req.body?.status))) e.details.status = req.body?.status as EventDetails['status'];
+    if ((e?.details.type === 'admin_meeting' || e?.details.dateOptions?.length) && ['draft', 'published', 'cancelled'].includes(String(req.body?.status))) e!.details.status = req.body?.status as EventDetails['status'];
     return ok;
   },
   'POST /api/events/:id/delete': () => ok,

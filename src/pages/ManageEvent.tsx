@@ -23,6 +23,8 @@ import { saveCsv } from '@/lib/saveCsv';
 import PosterImage from '@/components/events/PosterImage';
 import RegisterSection from '@/components/events/RegisterSection';
 import CheckInQrSheet from '@/components/events/CheckInQrSheet';
+import DatePollResults from '@/components/events/DatePollResults';
+import { cleanDateOptions, isDatePoll, MAX_EVENT_DATES, type EventDateOption } from '@shared/eventDates';
 import { differs } from '@/lib/drafts';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { errorMessage } from '@/lib/errorMessages';
@@ -95,6 +97,8 @@ type Form = {
   dietaryRequired: boolean;
   ownQuestions: { label: string; required: boolean }[];
   audience: Selection;
+  dateOptions: EventDateOption[];
+  chosenDateId: string | null;
 };
 
 const num = (v: number | null) => (v == null ? '' : String(v));
@@ -122,7 +126,12 @@ const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   dietaryRequired: !!e?.questions.find((q) => q.key === DIETARY.key)?.required,
   ownQuestions: e?.questions.filter((q) => q.key !== DIETARY.key).map((q) => ({ label: q.label, required: !!q.required })) ?? [],
   audience: e?.audience ?? DEFAULT_AUDIENCE,
+  dateOptions: (e?.dateOptions ?? []).map((o) => ({ ...o, startsAt: toLocalInput(o.startsAt), endsAt: toLocalInput(o.endsAt) })),
+  chosenDateId: e?.chosenDateId ?? null,
 });
+
+const datesOf = (f: Form) => f.dateOptions.map((o) => ({ ...o, startsAt: fromLocalInput(o.startsAt) ?? '', endsAt: fromLocalInput(o.endsAt ?? '') })).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+const firstStart = (f: Form) => isDatePoll(f) ? f.dateOptions.map((o) => o.startsAt).filter(Boolean).sort()[0] ?? '' : f.startsAt;
 
 const inputOf = (f: Form, id: string | null): EventInput => ({
   ...(id ? { id } : {}),
@@ -130,8 +139,8 @@ const inputOf = (f: Form, id: string | null): EventInput => ({
   title: f.title,
   socialFunction: f.type === 'social_function' && f.socialFunction ? (f.socialFunction as EventInput['socialFunction']) : null,
   team: f.team || null,
-  startsAt: fromLocalInput(f.startsAt) ?? '',
-  endsAt: fromLocalInput(f.endsAt),
+  startsAt: isDatePoll(f) ? datesOf(f)[0]?.startsAt ?? '' : fromLocalInput(f.startsAt) ?? '',
+  endsAt: isDatePoll(f) ? datesOf(f)[0]?.endsAt ?? null : fromLocalInput(f.endsAt),
   respondBy: fromLocalInput(f.respondBy),
   location: f.location,
   description: f.description,
@@ -149,6 +158,8 @@ const inputOf = (f: Form, id: string | null): EventInput => ({
     ...f.ownQuestions.filter((q) => q.label.trim()).map((q, i) => ({ key: `q${i + 1}`, label: q.label, required: q.required })),
   ],
   audience: f.audience,
+  dateOptions: datesOf(f),
+  expectedChosenDateId: f.chosenDateId,
 });
 
 /** A datetime-local value an hour later (read and written on the Hong Kong clock). */
@@ -159,7 +170,7 @@ const priceOrNull = (v: string) => (v.trim() === '' ? null : Number(v));
 const checkbox = 'h-4 w-4 accent-[hsl(var(--primary))]';
 
 /** The event's fields. Controlled: the page holds the values, so switching tabs keeps them. */
-function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch: Partial<Form>) => void }) {
+function EventFields({ view, f, set, datesLocked }: { view: ManageView; f: Form; set: (patch: Partial<Form>) => void; datesLocked: boolean }) {
   const [count, setCount] = useState<number | null>(null);
   // The start the end was last defaulted from: picking the end after the start changes fills in an hour later.
   const [endFrom, setEndFrom] = useState(f.startsAt);
@@ -169,7 +180,7 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
     set({ endsAt: plusHour(f.startsAt) });
   };
   const endBeforeStart = !!f.startsAt && !!f.endsAt && f.endsAt < f.startsAt;
-  const lateDeadline = !!f.respondBy && !!f.startsAt && f.respondBy > (f.endsAt || f.startsAt);
+  const lateDeadline = !!f.respondBy && !!firstStart(f) && f.respondBy > (isDatePoll(f) ? firstStart(f) : f.endsAt || f.startsAt);
   // The invited count, a moment after the groups change.
   useEffect(() => {
     const t = setTimeout(() => {
@@ -246,15 +257,41 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
       <Field label="Title" id="event-title" required>
         <Input name="title" value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="e.g. Christmas Party" />
       </Field>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <Field label="Date">
+        <select aria-label="Event scheduling" className={inputClass} disabled={datesLocked || !!f.chosenDateId} value={isDatePoll(f) ? 'poll' : 'fixed'} onChange={(e) => set({ dateOptions: e.target.value === 'poll' ? [{ id: crypto.randomUUID(), startsAt: f.startsAt, endsAt: f.endsAt || null }, { id: crypto.randomUUID(), startsAt: '', endsAt: null }] : [] })}>
+          <option value="fixed">Date already agreed</option>
+          <option value="poll">Find a date</option>
+        </select>
+      </Field>
+      {isDatePoll(f) && (
+        <fieldset className="space-y-3" id="event-proposed-dates">
+          <legend className="text-sm font-semibold mb-2">Proposed dates</legend>
+          <p className="text-xs text-muted-foreground">Offer two to six dates. Invitees answer Available, Maybe or No for each. Dates stay fixed once published; choose the final date from the replies.</p>
+          {f.dateOptions.map((o, i) => (
+            <div key={o.id} className="rounded-lg border border-border p-3 space-y-2">
+              <div className="flex items-center justify-between"><p className="text-sm font-medium">Option {i + 1}</p>
+                {!datesLocked && f.dateOptions.length > 2 && <ActionButton variant="ghost" iconOnly icon={<X />} aria-label={`Remove date ${i + 1}`} onClick={() => set({ dateOptions: f.dateOptions.filter((d) => d.id !== o.id) })} />}
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Field label="Starts" id={`event-date-${i}-start`} required><Input type="datetime-local" disabled={datesLocked} value={o.startsAt} onChange={(e) => set({ dateOptions: f.dateOptions.map((d) => d.id === o.id ? { ...d, startsAt: e.target.value } : d) })} /></Field>
+                <Field label="Ends" id={`event-date-${i}-end`}><Input type="datetime-local" disabled={datesLocked} value={o.endsAt ?? ''} min={o.startsAt || undefined} onChange={(e) => set({ dateOptions: f.dateOptions.map((d) => d.id === o.id ? { ...d, endsAt: e.target.value || null } : d) })} /></Field>
+              </div>
+            </div>
+          ))}
+          {!datesLocked && f.dateOptions.length < MAX_EVENT_DATES && <ActionButton variant="outline" icon={<Plus />} onClick={() => set({ dateOptions: [...f.dateOptions, { id: crypto.randomUUID(), startsAt: '', endsAt: null }] })}>Add a date</ActionButton>}
+        </fieldset>
+      )}
+      <div className={`grid ${isDatePoll(f) ? '' : 'sm:grid-cols-3'} gap-3`}>
+        {!isDatePoll(f) && <>
         <Field label="Starts" id="event-starts" required>
-          <Input type="datetime-local" value={f.startsAt} onChange={(e) => set({ startsAt: e.target.value })} />
+          <Input type="datetime-local" disabled={!!f.chosenDateId} value={f.startsAt} onChange={(e) => set({ startsAt: e.target.value })} />
         </Field>
         <Field label="Ends" id="event-ends" error={endBeforeStart ? "It can't end before it starts." : undefined}>
-          <Input type="datetime-local" value={f.endsAt} min={f.startsAt || undefined} onFocus={defaultEnd} onChange={(e) => set({ endsAt: e.target.value })} />
+          <Input type="datetime-local" disabled={!!f.chosenDateId} value={f.endsAt} min={f.startsAt || undefined} onFocus={defaultEnd} onChange={(e) => set({ endsAt: e.target.value })} />
         </Field>
+        </>}
         <Field label="Answer by" id="event-answer-by" error={lateDeadline ? 'Must be before the event ends.' : undefined}>
-          <Input type="datetime-local" value={f.respondBy} max={f.startsAt || undefined} onChange={(e) => set({ respondBy: e.target.value })} />
+          <Input type="datetime-local" value={f.respondBy} max={firstStart(f) || undefined} onChange={(e) => set({ respondBy: e.target.value })} />
         </Field>
       </div>
       <Field label="Location">
@@ -457,7 +494,7 @@ function StatusAndPoster({ e, data, onDeleted }: { e: ManagedEvent; data: Respon
             Copy link for WhatsApp
           </ActionButton>
         )}
-        {e.status === 'published' && (
+        {e.status === 'published' && !isDatePoll(e) && (
           <ActionButton variant="outline" icon={<QrCode />} onClick={() => setQr(true)}>
             Check-in QR code
           </ActionButton>
@@ -467,7 +504,7 @@ function StatusAndPoster({ e, data, onDeleted }: { e: ManagedEvent; data: Respon
             Reopen
           </ActionButton>
         )}
-        {e.status === 'published' && data.responses.length === 0 && (
+        {e.status === 'published' && data.responses.length === 0 && !data.dateResponses?.length && (
           <ActionButton variant="outline" disabled={status.isPending} onClick={() => status.mutate('draft')}>
             Back to draft
           </ActionButton>
@@ -662,7 +699,7 @@ function AnswersPanel({ e, data }: { e: ManagedEvent; data: ResponsesView }) {
   );
 }
 
-type TabKey = 'details' | 'answers' | 'payments' | 'register';
+type TabKey = 'details' | 'dates' | 'answers' | 'payments' | 'register';
 
 /**
  * One event: its details (editable), then for a saved event the answers,
@@ -680,6 +717,12 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
   const [problem, setProblem] = useState<string | null>(null);
   const dirty = differs(f, baseline);
   const leave = useUnsavedChanges(dirty);
+  useEffect(() => {
+    if (!e?.chosenDateId || e.chosenDateId === f.chosenDateId) return;
+    const patch = { chosenDateId: e.chosenDateId, startsAt: toLocalInput(e.startsAt), endsAt: toLocalInput(e.endsAt), respondBy: toLocalInput(e.respondBy) };
+    setF((x) => ({ ...x, ...patch }));
+    setBaseline((x) => ({ ...x, ...patch }));
+  }, [e?.chosenDateId, e?.startsAt, e?.endsAt, e?.respondBy, f.chosenDateId]);
 
   const save = useMutation({
     mutationFn: () => saveEvent(inputOf(f, e?.id ?? null)),
@@ -697,12 +740,14 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
     },
     onError: (err) => setProblem(errorMessage(err, 'save')),
   });
-  const endBeforeStart = !!f.startsAt && !!f.endsAt && f.endsAt < f.startsAt;
-  const lateDeadline = !!f.respondBy && !!f.startsAt && f.respondBy > (f.endsAt || f.startsAt);
+  const endBeforeStart = !isDatePoll(f) && !!f.startsAt && !!f.endsAt && f.endsAt < f.startsAt;
+  const lateDeadline = !!f.respondBy && !!firstStart(f) && f.respondBy > (isDatePoll(f) ? firstStart(f) : f.endsAt || f.startsAt);
+  const dateProblem = isDatePoll(f) ? cleanDateOptions(datesOf(f)) : null;
   const gaps = useFormGaps(
     formGaps([
       [!f.title.trim(), { id: 'event-title', label: 'Title' }],
-      [!f.startsAt, { id: 'event-starts', label: 'Starts' }],
+      [!isDatePoll(f) && !f.startsAt, { id: 'event-starts', label: 'Starts' }],
+      [typeof dateProblem === 'string', { id: 'event-proposed-dates', label: typeof dateProblem === 'string' ? dateProblem : 'Proposed dates' }],
       [f.type === 'admin_meeting' && !Object.values(f.audience).some((v) => v.length), { id: 'event-audience', label: "Who's invited" }],
       [endBeforeStart, { id: 'event-ends', label: 'An end after the start' }],
       [lateDeadline, { id: 'event-answer-by', label: 'An answer-by date before it ends' }],
@@ -714,8 +759,9 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
   const tabs: TabItem<TabKey>[] = e
     ? [
         { value: 'details', label: 'Details' },
-        ...(e.status !== 'draft' ? [{ value: 'answers' as const, label: `Answers (${data!.responses.length})` }] : []),
-        ...(e.status !== 'draft' && billed(e.paymentMode) ? [{ value: 'payments' as const, label: 'Payments' }] : []),
+        ...(e.status !== 'draft' && e.dateOptions?.length ? [{ value: 'dates' as const, label: `Date replies (${data!.dateResponses?.length ?? 0})` }] : []),
+        ...(e.status !== 'draft' && !isDatePoll(e) ? [{ value: 'answers' as const, label: `Answers (${data!.responses.length})` }] : []),
+        ...(e.status !== 'draft' && !isDatePoll(e) && billed(e.paymentMode) ? [{ value: 'payments' as const, label: 'Payments' }] : []),
         ...(e.status === 'published' && registerOpen(e) ? [{ value: 'register' as const, label: 'Register' }] : []),
       ]
     : [];
@@ -743,7 +789,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
           }}
         />
       )}
-      <EventFields view={view} f={f} set={set} />
+      <EventFields view={view} f={f} set={set} datesLocked={!!e && e.status !== 'draft'} />
       {(gaps.summary || problem) && (
         <p role="alert" className="text-xs font-medium text-danger-soft-foreground whitespace-pre-line">
           {gaps.summary || problem}
@@ -788,6 +834,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
         {tabs.length > 1 ? (
           <TabPanel tabsId="event" value={tab}>
             {tab === 'details' && details}
+            {tab === 'dates' && e && data && <DatePollResults data={data} />}
             {tab === 'answers' && e && data && <AnswersPanel e={e} data={data} />}
             {tab === 'payments' && e && <PaymentsSection event={e} />}
             {tab === 'register' && e && data && <RegisterSection event={e} responses={data.responses} />}

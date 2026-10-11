@@ -1,7 +1,9 @@
 import type { Env } from "../env";
 import type { AuthorizedUser } from "../auth";
 import { HttpError } from "../http";
-import { db, eq, inList } from "../data/supabase";
+import { db, eq, inList, SupabaseError } from "../data/supabase";
+import { cleanDateOptions, isDatePoll } from "../../../shared/eventDates";
+import { DATE_RESPONSE_COLS, DATE_RESPONSE_KEY, dateResponseOf, type DateResponseRow } from "./dates";
 import { photoLink } from "../data/supabase/files";
 import { invalidateCache, invalidateCachePrefix } from "../cache";
 import { managesEvent } from "../eventAccess";
@@ -72,7 +74,7 @@ function counts(rs: { status: ResponseStatus; guests: Guest[] | null; can_help: 
   return c;
 }
 
-function toManaged(r: EventRow & { event_responses?: ResponseRow[] }, poster: string | null, dir: DirectoryPerson[], viewer: string): ManagedEvent {
+function toManaged(r: EventRow & { event_responses?: ResponseRow[]; event_date_responses?: { person_id: string }[] }, poster: string | null, dir: DirectoryPerson[], viewer: string): ManagedEvent {
   const invited = invitedFrom(dir, r);
   return {
     ...toDetails(r, poster),
@@ -82,6 +84,7 @@ function toManaged(r: EventRow & { event_responses?: ResponseRow[] }, poster: st
     chargesSentAt: r.charges_sent_at,
     registerTakenAt: r.register_taken_at,
     counts: counts(r.event_responses ?? []),
+    dateReplies: r.event_date_responses?.length ?? 0,
   };
 }
 
@@ -96,9 +99,9 @@ export async function getManageView(env: Env, user: AuthorizedUser): Promise<Man
   const since = encodeURIComponent(new Date(Date.now() - 60 * 86_400_000).toISOString());
   const scope = rights.club ? "" : `&team_id=${inList(rights.teams.map((t) => t.id))}&event_type=neq.admin_meeting`;
   const [rows, dir, teams] = await Promise.all([
-    d.select<EventRow & { event_responses: ResponseRow[] }>(
+    d.select<EventRow & { event_responses: ResponseRow[]; event_date_responses: { person_id: string }[] }>(
       "events",
-      `select=${EVENT_COLS},event_responses(status,guests,can_help,attended)&starts_at=gte.${since}${scope}&order=starts_at`,
+      `select=${EVENT_COLS},event_responses(status,guests,can_help,attended),event_date_responses(person_id)&starts_at=gte.${since}${scope}&order=starts_at`,
     ),
     directory(env),
     rights.club ? activeTeams(env) : Promise.resolve([]),
@@ -146,6 +149,8 @@ const toPrice = (v: unknown): number | null => {
 
 /** The columns an EventInput sets, checked. */
 export function eventColumns(body: Partial<EventInput>): Record<string, unknown> {
+  const dates = body.dateOptions === undefined ? undefined : cleanDateOptions(body.dateOptions);
+  if (typeof dates === "string") throw new HttpError(dates, 400, "INVALID_INPUT");
   const type = body.type as EventType;
   if (!EVENT_TYPES.includes(type)) throw new HttpError("Choose the type of event.", 400, "INVALID_INPUT");
   const title = text(body.title, 120);
@@ -157,6 +162,7 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
   const endsAt = toIso(body.endsAt, "end date and time", false);
   if (endsAt && endsAt < startsAt) throw new HttpError("It can't end before it starts.", 400, "INVALID_INPUT");
   const respondBy = toIso(body.respondBy, "deadline", false);
+  if (dates?.length && respondBy && respondBy >= dates[0].startsAt) throw new HttpError("The date poll deadline must be before the first proposed date.", 400, "INVALID_INPUT");
   if (respondBy && respondBy > (endsAt ?? startsAt)) throw new HttpError("The deadline must be before the event ends.", 400, "INVALID_INPUT");
   const paymentMode = (body.paymentMode ?? "free") as PaymentMode;
   if (!PAYMENT_MODES_OFFERED.includes(paymentMode)) throw new HttpError("Choose how it's paid for.", 400, "INVALID_INPUT");
@@ -191,6 +197,7 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
     questions: cleanQuestions(body.questions),
     social_function: socialFunction,
     audience: body.audience === undefined ? DEFAULT_AUDIENCE : cleanAudience(body.audience),
+    ...(dates ? { date_options: dates } : {}),
   };
 }
 
@@ -215,11 +222,24 @@ export async function saveEvent(env: Env, user: AuthorizedUser, body: Record<str
   const id = text(body.id, 40);
   if (id) {
     const { event } = await requireManages(env, user, id);
-    await d.update("events", `id=${eq(event.id)}`, { ...cols, team_id: teamId });
+    const oldDates = event.date_options ?? [];
+    if (oldDates.length && body.expectedChosenDateId !== (event.chosen_date_id ?? null)) throw new HttpError("The event's date has changed. Reload before saving.", 409, "DATE_POLL_CHANGED");
+    if (cols.date_options !== undefined && JSON.stringify(cleanDateOptions(oldDates)) !== JSON.stringify(cols.date_options) && event.status !== "draft") throw new HttpError("Proposed dates cannot change after publishing.", 409, "DATE_POLL_CHANGED");
+    const dates = (cols.date_options ?? oldDates) as EventRow['date_options'];
+    if (dates?.length && !event.chosen_date_id) { cols.starts_at = dates[0].startsAt; cols.ends_at = dates[0].endsAt; }
+    if (event.chosen_date_id && (Date.parse(String(cols.starts_at)) !== Date.parse(event.starts_at) || (cols.ends_at == null ? null : Date.parse(String(cols.ends_at))) !== (event.ends_at == null ? null : Date.parse(event.ends_at)))) throw new HttpError("This date was chosen from the poll. Keep the chosen date when editing the details.", 409, "DATE_POLL_CHANGED");
+    const phaseGuard = oldDates.length ? `&chosen_date_id=${event.chosen_date_id ? eq(event.chosen_date_id) : 'is.null'}` : '';
+    try {
+      const [saved] = await d.update("events", `id=${eq(event.id)}${phaseGuard}`, { ...cols, team_id: teamId });
+      if (!saved) throw new HttpError("The event's date has changed. Reload before saving.", 409, "DATE_POLL_CHANGED");
+    }
+    catch (err) { if (err instanceof SupabaseError && err.code === "40001") throw new HttpError(err.message, 409, "DATE_POLL_CHANGED"); throw err; }
     invalidateCachePrefix("event-tasks:");
     invalidateCache("events:open");
     return { id: event.id };
   }
+  const dates = cols.date_options as EventRow['date_options'];
+  if (dates?.length) { cols.starts_at = dates[0].startsAt; cols.ends_at = dates[0].endsAt; }
   if (Date.parse(cols.starts_at as string) < Date.now()) throw new HttpError("That's in the past.", 400, "INVALID_INPUT");
   const [row] = await d.insert<{ id: string }>("events", [{ ...cols, team_id: teamId, status: "draft", created_by: rights.personUuid || null, checkin_code: newCheckinCode() }]);
   return { id: row.id };
@@ -231,9 +251,12 @@ export async function setEventStatus(env: Env, user: AuthorizedUser, id: string,
   const status = body.status as EventStatus;
   if (!["draft", "published", "cancelled"].includes(status)) throw new HttpError("Unknown status.", 400, "INVALID_INPUT");
   const d = db(env);
+  if (status === "published" && isDatePoll(toDetails(event, null)) && Date.parse(event.starts_at) <= Date.now()) throw new HttpError("All proposed dates must be in the future before publishing.", 400, "INVALID_INPUT");
   if (status === "draft") {
     const any = await d.one<{ event_id: string }>("event_responses", `select=event_id&event_id=${eq(event.id)}&limit=1`);
     if (any) throw new HttpError("People have already answered: cancel it instead.", 409, "HAS_RESPONSES");
+    const dateReply = event.date_options?.length ? await d.one<{ event_id: string }>("event_date_responses", `select=event_id&event_id=${eq(event.id)}&limit=1`) : null;
+    if (dateReply) throw new HttpError("People have already answered: cancel it instead.", 409, "HAS_RESPONSES");
   }
   await d.update("events", `id=${eq(event.id)}`, { status });
   invalidateCachePrefix("event-tasks:");
@@ -276,17 +299,19 @@ export async function uploadPoster(env: Env, user: AuthorizedUser, id: string, b
 /** Everyone's answers, and who hasn't answered yet. */
 export async function getEventResponses(env: Env, user: AuthorizedUser, id: string): Promise<EventResponses> {
   const { event } = await requireManages(env, user, id);
-  const [rows, dir, posters] = await Promise.all([
+  const [rows, dir, posters, dateRows] = await Promise.all([
     db(env).select<ResponseRow>("event_responses", `select=${RESPONSE_COLS}&event_id=${eq(event.id)}`, RESPONSE_KEY),
     directory(env),
     posterLinks(env, [event.id]),
+    event.date_options?.length ? db(env).select<DateResponseRow>("event_date_responses", `select=${DATE_RESPONSE_COLS}&event_id=${eq(event.id)}`, DATE_RESPONSE_KEY) : Promise.resolve([]),
   ]);
   const responses: EventResponseRow[] = rows
     .map((r) => ({ personId: r.person?.api_id ?? "", name: nameOf(r.person), membershipNo: r.person?.membership_no ?? null, updatedAt: r.updated_at, ...toResponse(r) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const answered = new Set(responses.map((r) => r.personId));
+  const dateResponses = dateRows.map(dateResponseOf).sort((a, b) => a.name.localeCompare(b.name));
+  const answered = new Set((isDatePoll(toDetails(event, null)) ? dateResponses : responses).map((r) => r.personId));
   const notAnswered = event.status === "draft" ? [] : invitedFrom(dir, event).filter((p) => !answered.has(p.id)).map((p) => ({ personId: p.id, name: p.name })).sort((a, b) => a.name.localeCompare(b.name));
-  return { event: toManaged({ ...event, event_responses: rows }, posters[event.id] ?? null, dir, user.personId), responses, notAnswered };
+  return { event: toManaged({ ...event, event_responses: rows, event_date_responses: dateRows }, posters[event.id] ?? null, dir, user.personId), responses, notAnswered, dateResponses };
 }
 
 /** How many a set of groups invites, as the form changes. */

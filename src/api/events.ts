@@ -1,6 +1,7 @@
 import { apiGet, apiPost } from '@/lib/apiClient';
 import type { ChargeList, CheckInInput, CheckInView, EventInput, EventPerson, EventResponses, ManageView, MyEvent, PaymentInfo, RespondInput } from '@shared/events';
 import type { Selection } from '@shared/emailLists';
+import type { DateAnswers, EventDateOption } from '@shared/eventDates';
 
 /** Special events (worker/src/events.ts). */
 
@@ -18,6 +19,14 @@ export function searchEventPeople(id: string, q: string): Promise<{ people: Even
 
 export function getManageView(): Promise<ManageView> {
   return apiGet('/api/events/manage');
+}
+
+export function answerEventDates(id: string, answers: DateAnswers): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/date-response`, { answers });
+}
+
+export function chooseEventDate(id: string, optionId: string, expectedOptions: EventDateOption[]): Promise<{ ok: true }> {
+  return apiPost(`/api/events/${id}/choose-date`, { optionId, expectedOptions });
 }
 
 export function saveEvent(input: EventInput): Promise<{ id: string }> {

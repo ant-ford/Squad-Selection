@@ -3,6 +3,7 @@ import type { ProfileData } from '@/api/getMyProfile';
 import type { GetMyFixturesOutput, MyFixture, PastFixture } from '@/api/getMyFixtures';
 import { missingRegisteredNameDemoTasks } from './people';
 import type { MyTask } from '@/api/getMyTasks';
+import { demoDateTasks } from './events';
 import type { AvailabilityRule } from '@/api/availabilityRules';
 import type { PlayerSeasonStats } from '@/api/getPlayerStats';
 import type { AttendanceCell, PlayerAttendance } from '@/api/getPlayerAttendance';
@@ -204,7 +205,7 @@ export const routes: Routes = {
   'GET /api/my-fixtures': ({ persona, query }) => myFixtures(persona, query.get('past') === '1'),
   // Push is off until the owner switches it on, so the demo matches production: no Notifications entry.
   'GET /api/push/config': (): PushConfig => ({ enabled: false, publicKey: null }),
-  'GET /api/my-tasks': ({ persona }) => ({ tasks: tasks(persona) }),
+  'GET /api/my-tasks': ({ persona }) => ({ tasks: [...tasks(persona), ...demoDateTasks(persona)] }),
   'GET /api/my-availability-rules': () => ({ rules: RULES }),
   'GET /api/player-stats/:id': ({ params }) => stats(params.id),
   'GET /api/player-attendance/:id': ({ params }) => attendance(params.id),

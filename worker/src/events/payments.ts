@@ -19,6 +19,7 @@ import {
   toPayment,
   loadEvent,
   requireManages,
+  requireChosenDate,
 } from "./shared";
 
 // ── Paying (step 2) ──────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ import {
 export async function uploadPaymentProof(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<PaymentInfo> {
   if (!env.FILES) throw new HttpError("File storage is not configured.", 500, "SERVER_MISCONFIGURED");
   const [rights, ev] = await Promise.all([eventRights(env, user), loadEvent(env, id)]);
+  requireChosenDate(ev);
   if (ev.payment_mode !== "payme_fps" || ev.status !== "published") throw new HttpError("This event isn't paid by PayMe or FPS.", 409, "NOT_PAYME");
   const me = rights.personUuid;
   const d = db(env);
@@ -87,6 +89,7 @@ export async function uploadPaymentProof(env: Env, user: AuthorizedUser, id: str
 /** Who owes what, with each payer's proof; and, once sent to the treasurer, what changed since. */
 export async function getCharges(env: Env, user: AuthorizedUser, id: string): Promise<ChargeList> {
   const { event } = await requireManages(env, user, id);
+  requireChosenDate(event);
   const d = db(env);
   const [rows, payments] = await Promise.all([
     d.select<ResponseRow>("event_responses", `select=${RESPONSE_COLS}&event_id=${eq(event.id)}`, RESPONSE_KEY),
@@ -111,6 +114,7 @@ export async function getCharges(env: Env, user: AuthorizedUser, id: string): Pr
 /** The charge list has gone to the treasurer (membership account events). */
 export async function markChargesSent(env: Env, user: AuthorizedUser, id: string): Promise<{ ok: true }> {
   const { event } = await requireManages(env, user, id);
+  requireChosenDate(event);
   if (event.payment_mode !== "account") throw new HttpError("Only membership account events go to the treasurer.", 409, "NOT_ACCOUNT");
   await db(env).update("events", `id=${eq(event.id)}`, { charges_sent_at: new Date().toISOString() });
   return { ok: true };
@@ -119,6 +123,7 @@ export async function markChargesSent(env: Env, user: AuthorizedUser, id: string
 /** The social secretary checked a payer's proof against the real PayMe or bank record (or takes that back). */
 export async function confirmPayment(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true }> {
   const { rights, event } = await requireManages(env, user, id);
+  requireChosenDate(event);
   const d = db(env);
   const payer = await d.one<{ id: string }>("people", `select=id&api_id=${eq(text(body.personId, 40))}`);
   if (!payer) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");
@@ -134,6 +139,7 @@ export async function confirmPayment(env: Env, user: AuthorizedUser, id: string,
 /** Lets someone off the charge, guests included (or charges them again). */
 export async function waiveCharge(env: Env, user: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true }> {
   const { event } = await requireManages(env, user, id);
+  requireChosenDate(event);
   const d = db(env);
   const person = await d.one<{ id: string }>("people", `select=id&api_id=${eq(text(body.personId, 40))}`);
   if (!person) throw new HttpError("That person wasn't found.", 404, "NOT_FOUND");

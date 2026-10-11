@@ -22,6 +22,7 @@ import {
   RESPONSE_COLS,
   RESPONSE_KEY,
   toDetails,
+  requireChosenDate,
   toResponse,
   loadEvent,
   requireManages,
@@ -46,6 +47,7 @@ async function checkinCodeOf(env: Env, event: EventRow): Promise<string> {
 /** The link in the check-in QR code. */
 export async function checkinLink(env: Env, user: AuthorizedUser, id: string): Promise<{ url: string }> {
   const { event } = await requireManages(env, user, id);
+  requireChosenDate(event);
   return { url: `${appOrigin(env)}/checkin/${event.id}?c=${await checkinCodeOf(env, event)}` };
 }
 

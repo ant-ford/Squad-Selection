@@ -25,6 +25,7 @@ export const CACHE_VERSION_KEYS = [
   "offices",
   "events",
   "event_responses",
+  "event_date_responses",
   "suspensions",
 ] as const;
 
