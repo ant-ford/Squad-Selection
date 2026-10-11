@@ -10,6 +10,7 @@ import { groupOptions, matches, type DirectoryPerson } from "../../../shared/ema
 import {
   DEFAULT_AUDIENCE,
   EVENT_GROUP_KEYS,
+  EVENT_ROLES,
   EVENT_TYPES,
   PAYMENT_MODES_OFFERED,
   SOCIAL_FUNCTIONS,
@@ -93,7 +94,7 @@ export async function getManageView(env: Env, user: AuthorizedUser): Promise<Man
   const rights = await requireManager(env, user);
   const d = db(env);
   const since = encodeURIComponent(new Date(Date.now() - 60 * 86_400_000).toISOString());
-  const scope = rights.club ? "" : `&team_id=${inList(rights.teams.map((t) => t.id))}`;
+  const scope = rights.club ? "" : `&team_id=${inList(rights.teams.map((t) => t.id))}&event_type=neq.admin_meeting`;
   const [rows, dir, teams] = await Promise.all([
     d.select<EventRow & { event_responses: ResponseRow[] }>(
       "events",
@@ -120,7 +121,7 @@ export async function getManageView(env: Env, user: AuthorizedUser): Promise<Man
     events: rows.map((r) => toManaged(r, posters[r.id] ?? null, dir, user.personId)),
     club: rights.club,
     teams: rights.club ? teams.map((t) => t.team_name) : rights.teams.map((t) => t.name),
-    groups: pick(EVENT_GROUP_KEYS)(groupOptions(dir)),
+    groups: { ...pick(EVENT_GROUP_KEYS)(groupOptions(dir)), eventRoles: Object.values(EVENT_ROLES) },
     socialSecretaries,
   };
 }
@@ -149,6 +150,9 @@ export function eventColumns(body: Partial<EventInput>): Record<string, unknown>
   if (!EVENT_TYPES.includes(type)) throw new HttpError("Choose the type of event.", 400, "INVALID_INPUT");
   const title = text(body.title, 120);
   if (!title) throw new HttpError("Give the event a title.", 400, "INVALID_INPUT");
+  if (type === "admin_meeting" && !Object.keys(cleanAudience(body.audience)).length) {
+    throw new HttpError("Choose who's invited to this meeting.", 400, "INVALID_INPUT");
+  }
   const startsAt = toIso(body.startsAt, "start date and time", true)!;
   const endsAt = toIso(body.endsAt, "end date and time", false);
   if (endsAt && endsAt < startsAt) throw new HttpError("It can't end before it starts.", 400, "INVALID_INPUT");
@@ -195,6 +199,9 @@ export async function saveEvent(env: Env, user: AuthorizedUser, body: Record<str
   const rights = await requireManager(env, user);
   const d = db(env);
   const cols = eventColumns(body as Partial<EventInput>);
+  if (cols.event_type === "admin_meeting" && !rights.club) {
+    throw new HttpError("Admin meetings are kept by the Social Secretary and Section Captains.", 403, "OFFICER_ACCESS_REQUIRED");
+  }
   const teamName = text(body.team, 60);
   let teamId: string | null = null;
   if (teamName) {

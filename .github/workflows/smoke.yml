@@ -76,6 +76,11 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/ranking-stats-smoke.mjs --out smoke-failures/ranking-stats
 
+      - name: Admin meetings and invitation groups
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/admin-meetings-smoke.mjs --out smoke-failures/admin-meetings
+
       - name: People HockeyHK registered names
         env:
           CHROME_PATH: /usr/bin/google-chrome
@@ -86,6 +91,7 @@ jobs:
         with:
           name: ui-review-screenshots
           path: |
+            smoke-failures/admin-meetings/*.png
             smoke-failures/team-availability/*.png
             smoke-failures/action-priorities/*.png
             smoke-failures/ranking-stats/*.png

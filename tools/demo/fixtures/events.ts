@@ -3,6 +3,8 @@
 // register), and the check-in page. Fictional events and people only.
 import {
   billed,
+  EVENT_ROLES,
+  type EventInput,
   computeCharges,
   type ChargeList,
   type CheckInView,
@@ -290,6 +292,9 @@ const rowsOf = (e: DemoEvent) => ROWS[e.details.id] ?? [];
 
 /** Invited, no answer yet, while answers are open: the rest of the team for a team's event, a few names otherwise. */
 function notAnswered(e: DemoEvent): { personId: string; name: string }[] {
+  if (e.details.type === 'admin_meeting') {
+    return e.details.status === 'draft' ? [] : Object.values(PERSONAS).filter((p) => invitedTo(e, p) && !rowsOf(e).some((r) => r.personId === p.id)).map((p) => ({ personId: p.id, name: p.name }));
+  }
   const d = e.details;
   if (d.status !== 'published' || Date.parse(d.respondBy ?? d.startsAt) < Date.now() || e.audience.tourInterest) return [];
   const answered = new Set(rowsOf(e).map((r) => r.name));
@@ -318,9 +323,15 @@ const CLUB_COUNTS: Record<string, Partial<ManagedEvent['counts']>> = {
 
 /** Is this persona in the event's invite list? */
 function invitedTo(e: DemoEvent, p: Persona): boolean {
+  if (e.audience.eventRoles && !meetingRoles(p).some((r) => e.audience.eventRoles.includes(r))) return false;
   if (e.details.team) return personaTeam(p) === e.details.team;
   if (e.audience.tourInterest) return rowsOf(e).some((r) => r.name === p.name);
   return true;
+}
+
+function meetingRoles(p: Persona): string[] {
+  const officeRoles: Record<string, string> = { sectionCaptain: 'section_captain', assistantDirector: 'assistant_director', hockeyConvenor: 'hockey_convenor', membershipOfficer: 'membership_officer', kitConvenor: 'kit_convenor' };
+  return p.offices.flatMap((o) => officeRoles[o] ? [EVENT_ROLES[officeRoles[o]]] : []);
 }
 
 function managed(e: DemoEvent, p: Persona): ManagedEvent {
@@ -350,6 +361,7 @@ const SOCIAL_SECRETARIES: Record<string, string[]> = {
 
 /** The options in each invite group, as the directory would offer them. */
 const GROUP_OPTIONS: Record<string, string[]> = {
+  eventRoles: Object.values(EVENT_ROLES),
   status: ['Member', 'Applicant'],
   active: ['Active player', 'Not an active player'],
   team: TEAMS,
@@ -535,10 +547,27 @@ export const routes: Routes = {
   'POST /api/events/audience': (req): { count: number } => {
     const team = typeof req.body?.team === 'string' && req.body.team ? req.body.team : null;
     const ticked = Object.values((req.body?.audience ?? {}) as Selection).reduce((n, v) => n + (v?.length ?? 0), 0);
+    const roles = (req.body?.audience as Selection | undefined)?.eventRoles;
+    if (roles) return { count: Object.values(PERSONAS).filter((p) => meetingRoles(p).some((r) => roles.includes(r))).length };
     return { count: team ? 14 : Math.max(9, 130 - ticked * 11) };
   },
   'POST /api/events/social-secretaries': () => ok,
-  'POST /api/events': (req): { id: string } => ({ id: typeof req.body?.id === 'string' ? req.body.id : 'demoEv6' }),
+  'POST /api/events': (req): { id: string } => {
+    if (req.body?.type !== 'admin_meeting') return { id: typeof req.body?.id === 'string' ? req.body.id : 'demoEv6' };
+    const b = req.body as unknown as EventInput;
+    const id = b.id ?? 'demoMeeting';
+    const old = byId(id);
+    const e: DemoEvent = {
+      details: { ...base, id, type: b.type, title: b.title, startsAt: b.startsAt, endsAt: b.endsAt ?? null,
+        respondBy: b.respondBy ?? null, description: b.description ?? null, location: b.location ?? null,
+        linkUrl: b.linkUrl ?? null, team: b.team ?? null, questions: b.questions ?? [], status: old?.details.status ?? 'draft' },
+      audience: b.audience ?? {}, invited: 0, chargesSentAt: null, registerTakenAt: null,
+    };
+    e.invited = Object.values(PERSONAS).filter((p) => invitedTo(e, p)).length;
+    if (old) Object.assign(old, e);
+    else EVENTS.push(e);
+    return { id };
+  },
   'GET /api/events/:id/responses': (req): EventResponses | Refusal => responses(req),
   'GET /api/events/:id/people': (req) => eventPeople(req),
   'GET /api/events/:id/charges': (req): ChargeList | Refusal => {
@@ -549,7 +578,11 @@ export const routes: Routes = {
   'GET /api/events/:id/checkin': (req): CheckInView | Refusal => checkInView(req),
   'POST /api/events/:id/checkin': (req): { ok: true; checkedIn: number } => ({ ok: true, checkedIn: Array.isArray(req.body?.people) ? req.body.people.length : 1 }),
   'POST /api/events/:id/respond': () => ok,
-  'POST /api/events/:id/status': () => ok,
+  'POST /api/events/:id/status': (req) => {
+    const e = byId(req.params.id);
+    if (e?.details.type === 'admin_meeting' && ['draft', 'published', 'cancelled'].includes(String(req.body?.status))) e.details.status = req.body?.status as EventDetails['status'];
+    return ok;
+  },
   'POST /api/events/:id/delete': () => ok,
   'POST /api/events/:id/poster': (): { url: string } => ({ url: '/demo-assets/christmas.svg' }),
   'POST /api/events/:id/charges-sent': () => ok,
