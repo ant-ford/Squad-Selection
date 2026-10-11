@@ -67,13 +67,19 @@ jobs:
           node tools/demo/recovery-smoke.mjs
           node tools/demo/system-smoke.mjs
 
+      - name: Check event migration versions and preview guards
+        if: github.ref == 'refs/heads/feat/event-date-polls'
+        run: |
+          node scripts/check-migrations.mjs --base origin/main
+          npx vitest run tests/previewEventDates.test.ts tests/previewSystemErrors.test.ts
+
       - uses: supabase/setup-cli@v1
-        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors' || github.ref == 'refs/heads/feat/event-date-polls'
         with:
           version: 2.118.0
 
       - name: Install PostgreSQL client if needed
-        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors'
+        if: github.ref == 'refs/heads/fix/screen-recovery-system-errors' || github.ref == 'refs/heads/feat/event-date-polls'
         run: |
           command -v psql >/dev/null || { sudo apt-get -qq update >/dev/null && sudo apt-get -qq install -y postgresql-client >/dev/null; }
 
@@ -86,6 +92,12 @@ jobs:
         env:
           PREVIEW_DB_URL: ${{ secrets.PREVIEW_DB_URL }}
         run: node scripts/preview-system-errors.mjs
+
+      - name: Apply and test Events migrations on eddy-preview
+        if: github.ref == 'refs/heads/feat/event-date-polls'
+        env:
+          PREVIEW_DB_URL: ${{ secrets.PREVIEW_DB_URL }}
+        run: node scripts/preview-event-dates.mjs
 
       - name: Deploy API Worker (hkfc-api-preview)
         id: deploy
