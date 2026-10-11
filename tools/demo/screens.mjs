@@ -11,7 +11,7 @@ export const SCREENS = [
   { screen: 'Coach view', path: '/coach', who: COACHES },
   { screen: 'Squad selection', path: '/coach/match/demoM1-home', who: COACHES },
   { screen: 'Ranking', path: '/coach/ranking', who: COACHES },
-  { screen: 'Team availability', path: '/coach/availability', who: COACHES },
+  { screen: 'Team availability', path: '/team-availability', who: EVERYONE },
   { screen: 'Umpire view', path: '/umpiring', who: ['umpire', 'umpire-coordinator', 'section-captain'] },
   { screen: 'Membership', path: '/membership', who: ['membership-officer', 'section-captain'] },
   { screen: 'Email lists', path: '/chairman', who: ['section-captain'] },

@@ -230,6 +230,11 @@ export async function requireCoach(request: Request, env: Env): Promise<Authoriz
   return user;
 }
 
+/** Read-only team availability is shared with active players and existing coaches. */
+export function canReadTeamAttendance(user: Pick<AuthorizedUser, "person" | "role">): boolean {
+  return user.person.active === true || user.role === "coach";
+}
+
 /**
  * Coaches every team: a Section Captain's team link or the Assistant
  * Director of Hockey office (owner decisions, 2026-10-04 and 2026-10-07).

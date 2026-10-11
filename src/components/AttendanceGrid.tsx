@@ -166,8 +166,8 @@ const DATE_COL = 'w-10 min-w-10';
  * weeks still visible - the recent past and near future are what a coach
  * weighing up a selection is looking for.
  */
-export default function AttendanceGrid({ playerId }: { playerId: string }) {
-  const { data, isLoading, isError } = usePlayerAttendance(playerId);
+export default function AttendanceGrid({ playerId, teamAvailability = false }: { playerId: string; teamAvailability?: boolean }) {
+  const { data, isLoading, isError } = usePlayerAttendance(playerId, teamAvailability);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayRef = useRef<HTMLTableCellElement>(null);

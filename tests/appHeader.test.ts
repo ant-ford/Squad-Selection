@@ -86,10 +86,11 @@ describe("coach area headers", () => {
 
 describe("burger menu", () => {
   const labels = (groups: { label: string }[][]) => groups.map((g) => g.map((e) => e.label));
-  it("has Ranking and Team availability for coaches; Umpire view is on the switch, not the menu", () => {
+  it("has Ranking for coaches and Team availability for active players; Umpire view is on the switch", () => {
     expect(labels(mainMenuGroups({ isCoach: false })).flat()).not.toContain("Ranking");
-    expect(labels(mainMenuGroups({ isCoach: false })).flat()).not.toContain("Team availability");
-    expect(labels(mainMenuGroups({ isCoach: true, umpiring: "umpire" }))[0]).toEqual(["Ranking", "Team availability"]);
+    expect(labels(mainMenuGroups({ isCoach: false, teamAvailability: true })).flat()).toContain("Team availability");
+    expect(labels(mainMenuGroups({ isCoach: false, teamAvailability: false })).flat()).not.toContain("Team availability");
+    expect(labels(mainMenuGroups({ isCoach: true, umpiring: "umpire" }))[0]).toEqual(["Ranking"]);
     expect(labels(mainMenuGroups({ umpiring: "coordinator" })).flat()).not.toContain("Umpire view");
   });
   it("puts the screen's own actions first", () => {
@@ -107,7 +108,7 @@ describe("burger menu", () => {
 
 describe("one header on every signed-in screen", () => {
   // Public screens, and the coach screens that CoachLayout gives its header.
-  const exempt = new Set(["Login.tsx", "Join.tsx", "CoachDashboard.tsx", "SquadSelection.tsx", "PlayerRanking.tsx", "TeamAvailability.tsx", "FixtureList.tsx"]);
+  const exempt = new Set(["Login.tsx", "Join.tsx", "CoachDashboard.tsx", "SquadSelection.tsx", "PlayerRanking.tsx", "FixtureList.tsx"]);
   const pages = readdirSync(path.join(__dirname, "..", "src/pages")).filter((f) => f.endsWith(".tsx") && !exempt.has(f));
 
   it.each(pages)("%s uses AppHeader with a title", (f) => {

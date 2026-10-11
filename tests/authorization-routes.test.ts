@@ -796,15 +796,12 @@ describe("coaches act only on their own teams", () => {
     }
   });
 
-  it("the team availability dashboard: the coach's own squads; every squad for those who coach every team", async () => {
+  it("the team availability dashboard returns all teams for active players and coaches", async () => {
     mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
-    signInAs(TOKENS.coach);
-    await call("/api/team-attendance");
-    expect(mocks.getTeamAttendance).toHaveBeenLastCalledWith(ENV, ["Men's 1s"]);
-    for (const token of [TOKENS.captain, TOKENS.adh]) {
+    for (const token of [TOKENS.player, TOKENS.coach, TOKENS.captain, TOKENS.adh]) {
       signInAs(token);
-      await call("/api/team-attendance");
-      expect([...mocks.getTeamAttendance.mock.lastCall![1]].sort()).toEqual(["Men's 1s", "Men's 3s"]);
+      expect((await call("/api/team-attendance")).status).toBe(200);
+      expect(mocks.getTeamAttendance).toHaveBeenLastCalledWith(ENV);
     }
   });
 
@@ -904,6 +901,31 @@ describe("misc routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("read routes require authentication", () => {
+  it.each(["/api/team-attendance", `/api/team-attendance/player/${GK_A}`])("rejects unauthenticated shared availability reads: %s", async (path) => {
+    signOut();
+    expect((await call(path)).status).toBe(401);
+    expect(mocks.getTeamAttendance).not.toHaveBeenCalled();
+  });
+
+  it.each(["/api/team-attendance", `/api/team-attendance/player/${GK_A}`])("rejects inactive non-playing officers: %s", async (path) => {
+    signInAs(TOKENS.chair);
+    const res = await call(path);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "ACTIVE_PLAYER_ACCESS_REQUIRED" });
+    expect(mocks.getTeamAttendance).not.toHaveBeenCalled();
+  });
+
+  it("lets an active player drill into another active player's attendance without private data", async () => {
+    const shared = await call(`/api/team-attendance/player/${GK_A}`);
+    expect(shared.status).toBe(200);
+    const body = await shared.json() as any;
+    expect(body).toHaveProperty("cells");
+    expect(JSON.stringify(body)).not.toMatch(/"notes"|"email"|"mobile"|"playingAbility"|"cards"/);
+    expect((await call(`/api/player-attendance/${GK_A}`)).status).toBe(403);
+    expect((await call(`/api/player-stats/${GK_A}`)).status).toBe(403);
+    expect((await call(`/api/team-attendance/player/${CHAIR}`)).status).toBe(404);
+  });
+
   it("lets an authorized player read a fixture's team availability, forwarding ?side=", async () => {
     mocks.getTeamAvailabilityForMatch.mockResolvedValue({ selected: [], restOfTeam: [], suggestions: [] });
     const res = await call("/api/match/recM1/team-availability?side=away");
@@ -926,7 +948,6 @@ describe("read routes require authentication", () => {
     ["/api/ranking", () => mocks.getActiveRanking],
     ["/api/ranking/inactive", () => mocks.getInactiveRanking],
     ["/api/recent-changes", () => mocks.getRecentChanges],
-    ["/api/team-attendance", () => mocks.getTeamAttendance],
   ])("denies %s to a non-coach", async (path, handler) => {
     const res = await call(path);
     expect(res.status).toBe(403);
@@ -968,8 +989,7 @@ describe("read routes require authentication", () => {
     mocks.getTeamAttendance.mockResolvedValue({ season: "", today: "", dates: [], teams: [], fixtures: [] });
     const res = await call("/api/team-attendance");
     expect(res.status).toBe(200);
-    // Their own squads only.
-    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV, ["Men's 1s"]);
+    expect(mocks.getTeamAttendance).toHaveBeenCalledWith(ENV);
   });
 
   it("allows a coach through to recent-changes", async () => {

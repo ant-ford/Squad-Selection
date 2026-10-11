@@ -48,6 +48,13 @@ function run(overrides: Partial<TeamAttendanceInput>) {
 }
 
 describe("computeTeamAttendance", () => {
+  it("lists all teams and their players before any fixtures exist", () => {
+    const res = run({ players: [player("recB1", "HKFC B")] });
+    expect(res.teams.map((t) => t.team)).toEqual(["HKFC A", "HKFC B", "HKFC C"]);
+    expect(res.teams[1].players[0].cells).toEqual({});
+    expect(res.dates).toEqual([]);
+  });
+
   it("groups players by their Selected Team and orders teams by rank", () => {
     const res = run({
       players: [
@@ -67,8 +74,7 @@ describe("computeTeamAttendance", () => {
     expect(res.dates).toEqual(["2026-10-04", "2026-10-11"]);
   });
 
-  // Coaches see only their own squads (owner decision, 7 Oct 2026); those
-  // who coach every team are handed every name.
+  // Narrowing remains available as a pure helper; the shared page uses all teams.
   it("narrows to the coach's teams: their squads, fixtures and dates only", () => {
     const res = onlyTeams(run({
       players: [player("recA1", "HKFC A"), player("recB1", "HKFC B"), player("recC1", "HKFC C")],
@@ -89,18 +95,20 @@ describe("computeTeamAttendance", () => {
       players: [player("recB1", "HKFC B", { preferredName: "Matt", surname: "Lowe" }), player("recB2", "HKFC B", { preferredName: "", givenNames: "Matthew", surname: "Archer" })],
       matches: [match("m1", "2026-10-04")],
     });
-    expect(res.teams[0].players.map((p) => p.name)).toEqual(["Matt Lowe", "Matthew Archer"]);
+    expect(res.teams[1].players.map((p) => p.name)).toEqual(["Matt Lowe", "Matthew Archer"]);
   });
 
-  it("leaves out teams with no squad, and a squad's other teams' fixtures", () => {
+  it("keeps every active team, including teams with no players or fixtures", () => {
     const res = run({
       players: [player("recB1", "HKFC B")],
       matches: [match("m1", "2026-10-04"), match("m2", "2026-10-11", { homeTeam: "HKFC A" })],
     });
-    expect(res.teams.map((t) => t.team)).toEqual(["HKFC B"]);
-    expect(res.fixtures.map((f) => f.matchId)).toEqual(["m1"]);
-    expect(res.dates).toEqual(["2026-10-04"]);
-    expect(Object.keys(res.teams[0].players[0].cells)).toEqual(["m1"]);
+    expect(res.teams.map((t) => t.team)).toEqual(["HKFC A", "HKFC B", "HKFC C"]);
+    expect(res.teams[0].players).toEqual([]);
+    expect(res.teams[2].players).toEqual([]);
+    expect(res.fixtures.map((f) => f.matchId)).toEqual(["m1", "m2"]);
+    expect(res.dates).toEqual(["2026-10-04", "2026-10-11"]);
+    expect(Object.keys(res.teams[1].players[0].cells)).toEqual(["m1"]);
   });
 
   it("resolves each player's status as their own attendance grid does", () => {
@@ -124,7 +132,7 @@ describe("computeTeamAttendance", () => {
       exceptions: [{ player: ["recB2"], match: ["m1"], availabilityStatus: "Maybe" }],
       rules,
     });
-    const cells = Object.fromEntries(res.teams[0].players.map((p) => [p.id, p.cells.m1]));
+    const cells = Object.fromEntries(res.teams[1].players.map((p) => [p.id, p.cells.m1]));
     expect(cells.recB1).toEqual({ status: "available", source: "default" });
     expect(cells.recB2).toEqual({ status: "maybe", source: "answer" });
     expect(cells.recB3).toEqual({ status: "unavailable", source: "rule" });
@@ -165,7 +173,7 @@ describe("computeTeamAttendance", () => {
     expect(played).toMatchObject({ past: true, isHome: false, goalsFor: 3, goalsAgainst: 1, off: false, cardCount: 1 });
     expect(off).toMatchObject({ past: false, off: true });
     expect(off.cardCount).toBeUndefined();
-    expect(res.teams[0].players[0].cells.m1.status).toBe("played");
+    expect(res.teams[1].players[0].cells.m1.status).toBe("played");
   });
 
   it("shows only selected players from other displayed squads on the correct upcoming derby side", () => {

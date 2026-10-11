@@ -52,7 +52,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Screen | Route | Who |
 |---|---|---|
 | Player view | `/` | Everyone signed in. Applicants at stages 1–2 go to `/apply` instead. |
-| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
+| Coach view: fixtures, squad, ranking | `/coach`, `/coach/match/:id`, `/coach/ranking` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
+| Team availability | `/team-availability` (old `/coach/availability` links redirect) | Active players and coaches, all active teams. Read-only attendance and availability, with no private notes. |
 | Umpire view | `/umpiring` | The club's umpires. The Umpire Coordinator and Section Captains run the duties. |
 | Membership | `/membership` | Membership Officer, Section Captains |
 | Email lists | `/chairman` | Chairman, Section Captains |

@@ -7,7 +7,7 @@ import type { RankingChange, TeamAvailability } from '@/lib/queries';
 import type { InactiveRankingEntry, RankingList } from '@shared/schema/domainTypes';
 import type { Routes } from './routing';
 import type { SquadPushResult } from '@shared/squadPush';
-import { OTHERS, PERSONAS, SQUAD_PLAYERS, SAT1, SAT2, SAT3, WED, SEASON_SHORT, at, dateOnly, day } from './data';
+import { OTHERS, PERSONAS, SQUAD_PLAYERS, TEAMS, SAT1, SAT2, SAT3, WED, SEASON_SHORT, at, dateOnly, day } from './data';
 
 const ME = PERSONAS.player.id;
 
@@ -138,7 +138,7 @@ function teamAttendance(): TeamAttendance {
     if (f.past) f.cardCount = ownParticipants + f.otherPlayers.length;
     else f.selectedCount = ownParticipants + f.otherPlayers.length;
   }
-  return { season: SEASON_SHORT, today: dateOnly(new Date().toISOString()), dates, teams: squads, fixtures };
+  return { season: SEASON_SHORT, today: dateOnly(new Date().toISOString()), dates, teams: TEAMS.map((team) => squads.find((s) => s.team === team) ?? { team, targetSquadSize: 16, players: [] }), fixtures };
 }
 
 function teamAvailability(matchId: string): TeamAvailability {

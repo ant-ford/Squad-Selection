@@ -14,12 +14,26 @@ try {
   browser = await launchBrowser({ port: 9338 });
   const page = await browser.newPage({ scale: 1 });
   const problems = [];
+  const requests = [];
   page.on((message) => {
+    if (message.method === 'Network.requestWillBeSent') requests.push(message.params.request.url);
     if (message.method === 'Runtime.exceptionThrown') problems.push('Uncaught browser exception');
     if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') problems.push('Browser console error');
   });
-  await page.goto('http://127.0.0.1:5195/coach/availability?as=coach');
-  const data = await page.eval("return await (await fetch('/demo-api/api/team-attendance', { headers: { Authorization: 'Bearer demo.coach' } })).json()");
+  await page.goto('http://127.0.0.1:5195/?as=player');
+  // Radix opens on pointer-down or keyboard, rather than a DOM click().
+  await page.eval(`document.querySelector('button[aria-label="Menu"]').focus()`);
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  assert.equal(await page.settle(), true);
+  await page.click('Team availability', { exact: true });
+  assert.equal(await page.settle(), true);
+  assert.equal(await page.eval('return location.pathname'), '/team-availability');
+  assert.doesNotMatch(await page.eval('return document.body.innerText'), /Coach access required/);
+  const shownTeams = await page.eval(`return [...document.querySelectorAll('table tbody > tr:first-child th button > span:first-of-type')].map((el) => el.textContent.trim())`);
+  assert.deepEqual(shownTeams, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+  console.log('ok   an ordinary active player opens Team availability from the menu and sees all eight teams');
+  const data = await page.eval("return await (await fetch('/demo-api/api/team-attendance', { headers: { Authorization: 'Bearer demo.player' } })).json()");
   const upcoming = data.fixtures.find((f) => f.team === 'HKFC C' && !f.past && f.selectedCount > 0);
   const past = data.fixtures.find((f) => f.team === 'HKFC C' && f.past);
   const empty = data.fixtures.find((f) => f.team === 'HKFC C' && !f.past && f.selectedCount === 0);
@@ -61,10 +75,26 @@ try {
     assert.equal(await page.eval('return document.documentElement.scrollWidth > innerWidth'), false, `page overflow at ${width}px`);
   }
   await page.fullPage(path.join(out, 'past-desktop.png'));
+  await page.setViewport(390, 844, 1);
+  await page.click('Expand all', { exact: true });
+  const otherPlayer = data.teams.find((t) => t.team === 'HKFC D').players[0];
+  await page.click(otherPlayer.name, { selector: 'th button', exact: true });
+  assert.equal(await page.settle(), true);
+  assert.equal(await page.eval(`return !!document.querySelector('[role="dialog"] table')`), true);
+  assert.ok(requests.some((url) => url.includes(`/api/team-attendance/player/${otherPlayer.id}`)));
+  assert.ok(!requests.some((url) => url.includes(`/api/player-attendance/${otherPlayer.id}`)));
+  await page.fullPage(path.join(out, 'player-attendance-mobile.png'));
+  await page.click('Close attendance', { selector: 'button', exact: true });
+  console.log('ok   an ordinary player opens another squad member’s read-only attendance grid');
+
+  await page.goto('http://127.0.0.1:5195/coach/availability?as=player');
+  assert.equal(await page.eval('return location.pathname'), '/team-availability');
+  assert.match(await text(), /Team availability/);
+  console.log('ok   old Team availability bookmarks redirect without requiring coach permissions');
   assert.deepEqual(problems, []);
   console.log('ok   details fit mobile and desktop without page overflow or browser errors');
   await page.close();
-  console.log('4/4 Team availability browser scenarios passed.');
+  console.log('7/7 Team availability browser scenarios passed.');
 } finally {
   if (browser) await browser.close();
   await server.close();
