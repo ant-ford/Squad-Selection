@@ -11,7 +11,8 @@ type Appointment = { role: string; people: { api_id: string } | null; teams?: { 
 async function appointedRoles(env: Env, personId?: string): Promise<Map<string, string[]>> {
   const person = personId ? `&people.api_id=${eq(personId)}` : "";
   const [offices, links] = await Promise.all([
-    db(env).select<Appointment>("offices", `select=role,people!inner(api_id)&status=eq.Active&role=in.(section_captain,assistant_director,hockey_convenor,membership_officer,kit_convenor)${person}`),
+    // People also reference sponsoring offices; select the office holder FK.
+    db(env).select<Appointment>("offices", `select=role,people!offices_person_id_fkey!inner(api_id)&status=eq.Active&role=in.(section_captain,assistant_director,hockey_convenor,membership_officer,kit_convenor)${person}`),
     db(env).select<Appointment>("team_people", `select=role,people!inner(api_id),teams!inner(active)&role=in.(team_captain,section_captain)${person}`, "team_id,role,person_id"),
   ]);
   const roles = new Map<string, string[]>();

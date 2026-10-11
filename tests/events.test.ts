@@ -29,6 +29,8 @@ import { EVENT_ROLES, MEETING_PRESETS } from "../shared/events";
 import { answerEventDates, chooseEventDate, getEventResponses, checkinLink, calendarEventsFor } from "../worker/src/events";
 import { type EventDateOption } from "../shared/eventDates";
 import { signedIn } from "./helpers/factories";
+import { getManageView } from "../worker/src/events";
+import { eventDirectoryPerson } from "../worker/src/events/audience";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 /**
@@ -90,8 +92,9 @@ const event = (over: Record<string, unknown> = {}) => ({
 });
 
 type Call = { url: URL; method: string; body: any };
+type Appointment = { role: string; people: { api_id: string }; teams?: { active: boolean } };
 /** A fake PostgREST: `events`, `responses` (rows for event_responses), offices and team_people per uuid. */
-function fake(opts: { events?: unknown[]; responses?: unknown[]; dateResponses?: unknown[]; updates?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
+function fake(opts: { events?: unknown[]; responses?: unknown[]; dateResponses?: unknown[]; updates?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; appointments?: { offices: Appointment[]; links: Appointment[] }; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
   const calls: Call[] = [];
   rights = { offices: opts.offices, teamPeople: opts.teamPeople };
   vi.stubGlobal(
@@ -107,14 +110,25 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; dateResponses?:
       if (method !== "GET") return reply([{ id: "new-id" }]);
       const q = url.searchParams;
       const eqOf = (k: string) => q.get(k)?.replace(/^eq\./, "");
+      const appointments = (rows: Appointment[]) => {
+        const person = eqOf("people.api_id");
+        return reply(person ? rows.filter((r) => r.people.api_id === person) : rows);
+      };
       switch (table) {
         case "people": {
           const api = eqOf("api_id")!;
           return reply(UUID[api] ? [{ id: UUID[api], preferred_name: null, given_names: DIR.find((p) => p.id === api)?.name.split(" ")[0], surname: "Smith" }] : []);
         }
         case "offices":
+          // Offices have several relationships with People: a bare embed is
+          // ambiguous in PostgREST, even when a mock would return no rows.
+          if (q.get("select")?.includes("people") && !q.get("select")?.includes("!offices_person_id_fkey")) {
+            return new Response(JSON.stringify({ code: "PGRST201", message: "More than one relationship found for offices and people" }), { status: 300 });
+          }
+          if (opts.appointments) return appointments(opts.appointments.offices);
           return reply(opts.offices?.[eqOf("person_id")!] ?? []);
         case "team_people":
+          if (opts.appointments && q.get("select")?.includes("people!inner")) return appointments(opts.appointments.links);
           return reply(opts.teamPeople?.[eqOf("person_id")!] ?? []);
         case "teams":
           return reply(opts.teams ?? []);
@@ -424,6 +438,29 @@ describe("keeping events", () => {
 });
 
 describe("meeting invitations", () => {
+  const appointments = {
+    offices: [{ role: "section_captain", people: { api_id: "recDAD" } }, { role: "membership_officer", people: { api_id: "recSEC" } }],
+    links: [{ role: "team_captain", people: { api_id: "recSON" }, teams: { active: true } }, { role: "team_captain", people: { api_id: "recAPP" }, teams: { active: false } }],
+  };
+
+  it("opens Events and counts current meeting invitees using the office holder relationship", async () => {
+    const calls = fake({ appointments, events: [event(), event({ title: "Captains' Meeting", event_type: "admin_meeting", audience: MEETING_PRESETS[0].audience })] });
+    const view = await getManageView(env, userOf("recDAD", { isSectionCaptain: true }));
+    expect(view.events).toHaveLength(2);
+    expect(view.events[0].invited).toBe(3);
+    expect(view.events[1]).toMatchObject({ invited: 2, includesMe: true });
+    expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("reads another invitee's appointments without losing the person filter", async () => {
+    const calls = fake({ appointments });
+    const invitee = await eventDirectoryPerson(env, "recSEC", userOf("recDAD"));
+    expect(invitee?.values.eventRoles).toEqual([EVENT_ROLES.membership_officer]);
+    const officeRead = calls.find((c) => c.url.pathname.endsWith("/offices"))!;
+    expect(officeRead.url.searchParams.get("people.api_id")).toBe("eq.recSEC");
+    expect(directoryReads.whole).toBe(0);
+  });
+
   it.each([
     ["team captain", { captainTeams: ["HKFC C"] }, true, false],
     ["linked Section Captain", { isSectionCaptain: true }, true, true],
