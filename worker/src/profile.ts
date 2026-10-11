@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { getActiveTeams, UNRANKED_TEAM_RANK } from "./reference";
-import { sectionsFor, type AuthorizedUser } from "./auth";
+import { canReadTeamAttendance, sectionsFor, type AuthorizedUser } from "./auth";
 import { canSeeSeasonPlans } from "./seasonPlan";
 import { canSeeVolunteers } from "./volunteerAccess";
 import { canManageEvents } from "./eventAccess";
@@ -58,6 +58,7 @@ export async function getMyProfile(env: Env, authUser: AuthorizedUser) {
       : [],
 
     isCoach: authUser.role === "coach",
+    teamAvailability: canReadTeamAttendance(authUser),
 
     isSectionCaptain: authUser.isSectionCaptain,
 

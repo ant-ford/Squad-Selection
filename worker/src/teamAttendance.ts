@@ -11,7 +11,7 @@ import { linkId } from "../../shared/airtableValueUtils";
 import { fullName } from "../../shared/personName";
 
 /**
- * Every squad's season as one grid, for the coach view: teams down the side,
+ * Every squad's season as one grid, as a shared read-only view: teams down the side,
  * match dates across the top, and under each team the players whose
  * Selected Team it is.
  *
@@ -77,7 +77,7 @@ export interface TeamAttendance {
   today: string;
   /** Every date with a fixture for one of the teams, ascending. */
   dates: string[];
-  /** By team rank. Only teams with both a squad and a fixture this season. */
+  /** By team rank. Every active team, including empty squads and teams without fixtures. */
   teams: TeamSquad[];
   fixtures: TeamFixture[];
 }
@@ -190,17 +190,16 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
       fixtures.push(fixture);
     }
   }
-  const teamsWithFixtures = new Set(fixtures.map((f) => f.team));
 
   // Exceptions and rules are read once for the club, then handed to each
   // player's computation already narrowed to them.
   const exceptionsByPlayer = groupByPlayer(exceptions);
   const rulesByPlayer = groupByPlayer(rules);
 
-  const squads = new Map<string, SquadPlayer[]>();
+  const squads = new Map<string, SquadPlayer[]>(Object.keys(teamRankMap).map((team) => [team, []]));
   for (const p of players) {
     const team = selectedDisplayTeam(p);
-    if (!teamsWithFixtures.has(team)) continue;
+    if (!isOurs(team)) continue;
     const attendance = computePlayerAttendance({
       player: p,
       team,
@@ -244,10 +243,9 @@ export function computeTeamAttendance(input: TeamAttendanceInput): TeamAttendanc
 }
 
 /**
- * The grid for these teams (a coach's own; every team for those who coach
- * every team), read off the shared (cached) season context. Coach only.
+ * Every active team's grid, read off the shared (cached) season context.
  */
-export async function getTeamAttendance(env: Env, teams: readonly string[]): Promise<TeamAttendance> {
+export async function getTeamAttendance(env: Env): Promise<TeamAttendance> {
   const season = currentSeason();
   const [ref, ctx, rules] = await Promise.all([
     getReferenceData(env),
@@ -255,7 +253,7 @@ export async function getTeamAttendance(env: Env, teams: readonly string[]): Pro
     getAllAvailabilityRules(env),
   ]);
 
-  return onlyTeams(computeTeamAttendance({
+  return computeTeamAttendance({
     players: ref.players,
     teams: ref.teams,
     season,
@@ -267,7 +265,7 @@ export async function getTeamAttendance(env: Env, teams: readonly string[]): Pro
     cardedMatchIds: ctx.matchIdsWithCards,
     exceptions: ctx.exceptionsRaw,
     rules,
-  }), teams);
+  });
 }
 
 /** The grid narrowed to these teams' squads and fixtures, and their dates. */

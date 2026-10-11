@@ -29,7 +29,7 @@ export interface MenuEntry {
   disabled?: boolean;
 }
 
-type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'umpiring' | 'system'>>;
+type MenuProfile = Partial<Pick<ProfileData, 'sections' | 'seasonPlans' | 'volunteers' | 'events' | 'isCoach' | 'teamAvailability' | 'umpiring' | 'system'>>;
 
 /** The officers' screens a person may open, in a fixed order, from what the Worker says. */
 export function officerItems(p: MenuProfile): MenuEntry[] {
@@ -52,21 +52,21 @@ export function officerItems(p: MenuProfile): MenuEntry[] {
   return all.filter((i): i is MenuEntry => !!i);
 }
 
-/** Screens a person opens often that used to be header buttons: the coaches' ranking and team availability. Umpire view is on the header switch. */
+/** Screens a person opens often that used to be header buttons: the coaches' ranking. Umpire view is on the header switch. */
 export function viewItems(p: MenuProfile): MenuEntry[] {
   return [
     ...(p.isCoach
       ? [
           { to: '/coach/ranking', label: 'Ranking', icon: ListChecks },
-          { to: '/coach/availability', label: 'Team availability', icon: CalendarCheck },
         ]
       : []),
   ];
 }
 
 /** Screens that aren't an office: the club stats and the quizzes. */
-export function everyoneItems(): MenuEntry[] {
+export function everyoneItems(p: MenuProfile): MenuEntry[] {
   return [
+    ...(p.teamAvailability || p.isCoach ? [{ to: '/team-availability', label: 'Team availability', icon: CalendarCheck }] : []),
     { to: '/stats', label: 'Stats', icon: Trophy },
     { to: '/quizzes', label: 'Hockey rules quizzes', icon: BookOpenCheck },
   ];
@@ -78,7 +78,7 @@ export function everyoneItems(): MenuEntry[] {
  * Inviting someone is added by the menu itself.
  */
 export function mainMenuGroups(p: MenuProfile | undefined, page: MenuEntry[] = []): MenuEntry[][] {
-  return [page, viewItems(p ?? {}), everyoneItems(), officerItems(p ?? {})].filter((g) => g.length > 0);
+  return [page, viewItems(p ?? {}), everyoneItems(p ?? {}), officerItems(p ?? {})].filter((g) => g.length > 0);
 }
 
 /** An icon-only header button: a 40 px square. */

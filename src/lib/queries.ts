@@ -202,10 +202,10 @@ export function usePlayerStats(playerId: string) {
   });
 }
 
-export function usePlayerAttendance(playerId: string) {
+export function usePlayerAttendance(playerId: string, teamAvailability = false) {
   return useQuery({
     queryKey: ['playerAttendance', playerId],
-    queryFn: () => getPlayerAttendance(playerId),
+    queryFn: () => teamAvailability ? apiGet<Awaited<ReturnType<typeof getPlayerAttendance>>>(`/api/team-attendance/player/${encodeURIComponent(playerId)}`) : getPlayerAttendance(playerId),
     enabled: !!playerId,
     staleTime: 60_000,
   });

@@ -4,6 +4,8 @@ export interface ProfileData {
   preferredName: string;
   roles: string[];
   isCoach: boolean;
+  /** Shared read-only team availability. */
+  teamAvailability?: boolean;
 
   isSectionCaptain: boolean;
   /** Active Membership Officer / Chairman / Section Captain rows. Empty for almost everyone. */

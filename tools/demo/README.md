@@ -70,6 +70,8 @@ A new endpoint that a screen calls on load needs a fixture, or the smoke test fa
 node tools/demo/smoke.mjs --only coach --as section-captain   # a subset, by path or screen name
 ```
 
+`node tools/demo/team-availability-smoke.mjs` checks an active player's menu access, all eight teams, selection/match-card badges, cross-squad fixture details, another player's read-only attendance grid and old coach-area bookmark redirects. CI saves phone and desktop screenshots in `ui-review-screenshots`.
+
 `node tools/demo/ranking-stats-smoke.mjs` checks the simplified ranking rows, saved stats compilation times in HKT, table-only league figures and comparisons with three past seasons. It covers matched date cutoffs, completed seasons, goals conceded, clean sheets, yellow/red totals and missing or failed historical data with retry. CI runs it and saves phone and desktop screenshots in `ui-review-screenshots`.
 
 - In Git Bash, `--only /people` is rewritten into a Windows path: use `--only People`, or set `MSYS_NO_PATHCONV=1`.

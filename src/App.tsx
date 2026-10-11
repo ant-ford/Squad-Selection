@@ -122,6 +122,8 @@ const router = createBrowserRouter([
       { path: '/', element: <StartupLoadingGate><Home /></StartupLoadingGate> },
       { path: '/chairman', element: lazyPage(() => import('./pages/EmailLists')) },
       { path: '/stats', element: lazyPage(() => import('./pages/ClubStats')) },
+      { path: '/team-availability', element: lazyPage(() => import('./pages/TeamAvailability')) },
+      { path: '/coach/availability', element: <Navigate to="/team-availability" replace /> },
       { path: '/membership', element: lazyPage(() => import('./pages/MembershipBoard')) },
       { path: '/joiners/new', element: lazyPage(() => import('./pages/JoinerEdit')) },
       { path: '/joiners/:id', element: lazyPage(() => import('./pages/JoinerEdit')) },
@@ -160,7 +162,7 @@ const router = createBrowserRouter([
       { path: '/waivers', element: lazyPage(() => import('./pages/Waivers')) },
       // A commitment review: the member, their sponsor or a Membership Officer.
       { path: '/review/:reviewId', element: lazyPage(() => import('./pages/CommitmentReview')) },
-      // Coach view: fixtures, squad, ranking and team availability.
+      // Coach view: fixtures, squad and ranking.
       {
         path: '/coach',
         // The leaf screen completes startup; a layout's profile can arrive before its child's reads start.
@@ -176,7 +178,6 @@ const router = createBrowserRouter([
           },
           { path: 'match/:matchId', element: lazyPage(() => import('./pages/SquadSelection')) },
           { path: 'ranking', element: lazyPage(() => import('./pages/PlayerRanking')) },
-          { path: 'availability', element: lazyPage(() => import('./pages/TeamAvailability')) },
         ],
       },
       // An address Eddy doesn't have (an old link, a typo) lands on the player page.
