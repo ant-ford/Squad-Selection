@@ -85,11 +85,13 @@ export function AttendanceSheet({
   playerId,
   playerName,
   onClose,
+  teamAvailability = false,
 }: {
   /** Null closes the sheet; the fetch is keyed off this id. */
   playerId: string | null;
   playerName?: string;
   onClose: () => void;
+  teamAvailability?: boolean;
 }) {
   return (
     <PlayerDrillSheet
@@ -98,7 +100,7 @@ export function AttendanceSheet({
       closeLabel="Close attendance"
       onClose={onClose}
     >
-      {playerId && <AttendanceGrid playerId={playerId} />}
+      {playerId && <AttendanceGrid playerId={playerId} teamAvailability={teamAvailability} />}
     </PlayerDrillSheet>
   );
 }

@@ -214,6 +214,9 @@ function tokenSimilarity(a: Token, b: Token): number {
   return (2 * shared) / (a.grams.size + b.grams.size);
 }
 
+/** The same name score used for People's registered-name suggestions. */
+export const nameMatchScore = (a: string, b: string): number => nameSimilarity(toTokens(a), toTokens(b));
+
 /** Words of two letters or more, by their first two: only people sharing one with the card are scored. */
 const prefixOf = (t: string) => (t.length >= 2 ? t.slice(0, 2) : null);
 

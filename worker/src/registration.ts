@@ -23,6 +23,7 @@ import {
   REGISTRATION_CSV_HEADER,
   registrationCsvRow,
   tidyRegisteredName,
+  registeredNameProblem,
   type RegistrationBoard,
   type RegistrationPlayer,
   type RegistrationReason,
@@ -230,14 +231,6 @@ export async function markRegistered(env: Env, actor: AuthorizedUser, body: Reco
   return { ok: true, count };
 }
 
-/**
- * Letters (any script), spaces and the punctuation names carry. Nothing a
- * PostgREST ilike pattern treats as a wildcard (* % _), so the clash check
- * below is a plain comparison.
- */
-const REGISTERED_NAME = /^[\p{L}\p{M}][\p{L}\p{M} .,'’()-]*$/u;
-const MAX_NAME = 80;
-
 export interface DetailsChange {
   id: string;
   /** null clears it; undefined leaves it. */
@@ -254,8 +247,8 @@ export function parseDetailsChange(body: Record<string, unknown>): DetailsChange
     const v = body.registeredName;
     if (v !== null && typeof v !== "string") throw new HttpError("Registered name must be text.", 400, "INVALID_INPUT");
     const name = tidyRegisteredName(v ?? "");
-    if (name.length > MAX_NAME) throw new HttpError(`Registered name: at most ${MAX_NAME} characters.`, 400, "INVALID_INPUT");
-    if (name && !REGISTERED_NAME.test(name)) throw new HttpError("Registered name: letters, spaces, hyphens and apostrophes only.", 400, "INVALID_INPUT");
+    const problem = registeredNameProblem(name);
+    if (problem) throw new HttpError(problem, 400, "INVALID_INPUT");
     change.registeredName = name || null;
   }
   if ("visiting" in body) {
@@ -264,6 +257,21 @@ export function parseDetailsChange(body: Record<string, unknown>): DetailsChange
   }
   if (change.registeredName === undefined && change.visiting === undefined) throw new HttpError("Nothing to save.", 400, "INVALID_INPUT");
   return change;
+}
+
+/** Reject names already held by anyone else, including inactive people. */
+export async function requireUniqueRegisteredName(env: Env, personUuid: string, name: string): Promise<void> {
+  const d = db(env);
+  // Existing names are stored trimmed (checked on preview, 6 Oct 2026), so
+  // ilike without wildcards is the trigger's lower(trim()) comparison.
+  const [holder] = await d.select<{ preferred_name: string | null; given_names: string | null; surname: string | null; active: boolean }>(
+    "people",
+    `select=id,preferred_name,given_names,surname,active&registered_name=ilike.${encodeURIComponent(name)}&id=neq.${personUuid}`,
+  );
+  if (holder) {
+    const who = fullName(holder) || "Another player";
+    throw new HttpError(`${who}${holder.active ? "" : " (not active)"} already has this registered name.`, 409, "NAME_TAKEN");
+  }
 }
 
 /**
@@ -291,16 +299,7 @@ export async function saveRegistrationDetails(
   const patch: Record<string, unknown> = {};
   if (change.registeredName !== undefined && change.registeredName !== (p.registered_name || null)) {
     if (change.registeredName && nameKey(change.registeredName) !== nameKey(p.registered_name)) {
-      // Existing names are stored trimmed (checked on preview, 6 Oct 2026), so
-      // ilike without wildcards is the trigger's lower(trim()) comparison.
-      const [holder] = await d.select<{ preferred_name: string | null; given_names: string | null; surname: string | null; active: boolean }>(
-        "people",
-        `select=id,preferred_name,given_names,surname,active&registered_name=ilike.${encodeURIComponent(change.registeredName)}&id=neq.${p.id}`,
-      );
-      if (holder) {
-        const who = fullName(holder) || "Another player";
-        throw new HttpError(`${who}${holder.active ? "" : " (not active)"} already has this registered name.`, 409, "NAME_TAKEN");
-      }
+      await requireUniqueRegisteredName(env, p.id, change.registeredName);
     }
     patch.registered_name = change.registeredName;
   }

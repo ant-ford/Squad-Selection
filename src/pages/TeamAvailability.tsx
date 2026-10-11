@@ -1,5 +1,7 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
+import AppFooter from '@/components/AppFooter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AttendanceSheet } from '@/components/SeasonStatsSheet';
 import { AttendanceLegend, CellGlyph, Swatch, lookFor, type CellLookInput } from '@/components/AttendanceGrid';
@@ -178,6 +180,14 @@ function FixtureDetail({
  * play for. Teams start closed, so the first view is the whole club.
  */
 export default function TeamAvailability() {
+  return <div className="min-h-screen bg-background flex flex-col">
+    <AppHeader title="Team availability" />
+    <main className="flex-1"><TeamAvailabilityGrid /></main>
+    <AppFooter />
+  </div>;
+}
+
+function TeamAvailabilityGrid() {
   const { data, isLoading, isError } = useTeamAttendance();
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(openTeamAvailability()));
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -217,8 +227,8 @@ export default function TeamAvailability() {
   if (isError || !data) {
     return <p className="p-4 text-sm text-muted-foreground">Team availability could not be loaded.</p>;
   }
-  if (data.dates.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">No fixtures this season yet.</p>;
+  if (data.teams.length === 0) {
+    return <p className="p-4 text-sm text-muted-foreground">No active teams yet.</p>;
   }
 
   const toggleTeam = (team: string) =>
@@ -245,6 +255,7 @@ export default function TeamAvailability() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pt-4 pb-8">
+      {data.dates.length === 0 && <p className="mb-3 text-sm text-muted-foreground">No fixtures this season yet.</p>}
       {/* pr: room for the last column's match card badge, which overhangs the tile. */}
       <div ref={scrollRef} className="overflow-x-auto pb-1 pr-1.5">
         <table className="border-separate border-spacing-0.5 text-xs">
@@ -392,6 +403,7 @@ export default function TeamAvailability() {
       </details>
 
       <AttendanceSheet
+        teamAvailability
         playerId={openPlayer?.id ?? null}
         playerName={openPlayer?.name}
         onClose={() => setOpenPlayer(null)}

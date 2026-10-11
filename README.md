@@ -52,7 +52,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Screen | Route | Who |
 |---|---|---|
 | Player view | `/` | Everyone signed in. Applicants at stages 1–2 go to `/apply` instead. |
-| Coach view: fixtures, squad, ranking, team availability | `/coach`, `/coach/match/:id`, `/coach/ranking`, `/coach/availability` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
+| Coach view: fixtures, squad, ranking | `/coach`, `/coach/match/:id`, `/coach/ranking` | Coaches, for their teams. Section Captains and the Assistant Director, for every team. The ranking is the whole section's: every coach sees it, and a coach moves only their own teams' players. Only Section Captains make players inactive. |
+| Team availability | `/team-availability` (old `/coach/availability` links redirect) | Active players and coaches, all active teams. Read-only attendance and availability, with no private notes. |
 | Umpire view | `/umpiring` | The club's umpires. The Umpire Coordinator and Section Captains run the duties. |
 | Membership | `/membership` | Membership Officer, Section Captains |
 | Email lists | `/chairman` | Chairman, Section Captains |
@@ -72,6 +73,8 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 "Men's Convenor" is the `hockeyConvenor` office, and "Chairman" is `sectionChair` (see the glossary).
 
 A new screen here also needs a line in `tools/demo/screens.mjs`, and fixtures for the calls it makes, so the screen smoke test opens it ([Testing](#testing)).
+
+People search includes the HockeyHK registered name. Open a person to view it; the Men's Convenor and Section Captains can edit or clear it in **HockeyHK registration**. When blank, the dropdown ranks matching names from this season's imported match cards, with a clearly labelled surname/given-name format as a fallback. Choosing fills the draft; Save confirms it and links matching unlinked cards from this season. This changes Eddy's recorded name, not the official registration held by HockeyHK. Names already held by another person are refused, and a stale edit asks for Reload. The Men's Convenor's My tasks lists every active player whose registered name is blank, opening their People editor; a saved name or making the player inactive removes the task. The existing `people.registered_name` column and admin audit function are reused; no migration is needed.
 
 ---
 
@@ -144,7 +147,7 @@ Events' **Admin meeting** type offers editable defaults for Captains' Meeting (c
 | Availability (exception-based, standing rules, Opt-In Only) | `worker/src/availability.ts`, `worker/src/availabilityRules.ts`, SQL `set_availability()` / `availability_rule_status()`. The rule cases are pinned on both sides: `tests/availabilityRuleCases.test.ts` and `scripts/availability-rule-checks.mjs` |
 | Sign-in and access (who is a player, coach, officer, applicant) | `worker/src/auth.ts` (`SECTION_OFFICES`), `worker/src/authContext.ts`, SQL `auth_context()` |
 | Coaches act only on their own teams (a match's HKFC side, a derby's written side, a team, a player's shown or registered team); Section Captains and the Assistant Director on every team; `403 NOT_YOUR_TEAM` | `worker/src/coachAccess.ts` (`requireCoachOfMatch`, `requireCoachOfMatchSide`), `worker/src/auth.ts` (`coachesEveryTeam`, `requireCoachOfTeam`, `coachesPlayer`) |
-| Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when the Men's Convenor saves a name (`worker/src/registration.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
+| Registered Names and match-card linking | trigger `match_cards_link_person`; `link_match_cards_by_name()` when a name is saved in Registration (Men's Convenor) or People (Men's Convenor and Section Captains) (`worker/src/registration.ts`, `worker/src/admin/registeredName.ts`); `link_match_card()` by hand on Data checks (`worker/src/matchCardLink.ts`) |
 | Data checks (unlinked cards, shared Registered Names, re-registrations to review, incomplete players, likely duplicates) | `worker/src/dataChecks.ts`, `shared/dataChecks.ts` |
 | Officer edits (people, offices, teams): each writes an `activity_log` row; one Membership Officer and one Chairman at a time (`offices_one_holder_idx`); granting or ending a Men's Convenor, Section Captain, Membership Officer or Chairman office, or giving yourself any office, emails `SYSTEM_ALERT_EMAIL` | `worker/src/admin/*` (the alert: `officeAlert.ts`), SQL `admin_*()`; a person's history: `GET /api/history` |
 | System health | `worker/src/systemHealth.ts`: 5xx errors and app crashes go to `error_log`, each scheduled job writes `heartbeats`, a daily check runs, and `/system` shows the results |

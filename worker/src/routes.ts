@@ -21,7 +21,7 @@ import { listTemplates, logMessage } from "./messages";
 import { noteSquadNotified } from "./squadNotices";
 import { pushConfig, pushSquad, pushSubscribe, pushUnsubscribe } from "./push";
 import { answerReactivation, askToBeReactivated, getReactivationRequest, reactivationStatus } from "./reactivation";
-import { coachesEveryTeam, coachesPlayer, requireCoachOfTeam } from "./auth";
+import { canReadTeamAttendance, coachesEveryTeam, coachesPlayer, requireCoachOfTeam } from "./auth";
 import { requireCoachOfMatchSide } from "./coachAccess";
 import { approveApplicant, getActiveMembersCsv, getMembershipBoard, getMembershipInsights, getNumberHolders } from "./membership";
 import { getFormsDue } from "./formsDue";
@@ -356,10 +356,16 @@ export const ROUTES: readonly Route[] = [
   // Past attendance and future availability per fixture; same gate as stats.
   route("GET", "/api/player-attendance/:id", "self-or-coach", ({ env, params }) => getPlayerAttendance(env, params.id)),
 
-  // ── Team Availability Dashboard (Read - Coach) ─────────────────────────
-  // The coach's own squads' grids at once (every squad for those who coach
-  // every team): names and statuses only, no notes.
-  route("GET", "/api/team-attendance", "coach", ({ env, user }) => getTeamAttendance(env, user.coachTeams)),
+  // Shared read-only availability for active players and existing coaches.
+  // Every team: names and statuses, never private notes or contact details.
+  route("GET", "/api/team-attendance", "signed-in", ({ env, user }) => {
+    if (!canReadTeamAttendance(user)) throw new HttpError("Active player access required.", 403, "ACTIVE_PLAYER_ACCESS_REQUIRED");
+    return getTeamAttendance(env);
+  }),
+  route("GET", "/api/team-attendance/player/:id", "signed-in", ({ env, user, params }) => {
+    if (!canReadTeamAttendance(user)) throw new HttpError("Active player access required.", 403, "ACTIVE_PLAYER_ACCESS_REQUIRED");
+    return getPlayerAttendance(env, params.id);
+  }),
 
   // Player-facing routes: identity always comes from the verified Supabase
   // session, never from client-supplied email query parameters.

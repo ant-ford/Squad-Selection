@@ -70,6 +70,8 @@ A new endpoint that a screen calls on load needs a fixture, or the smoke test fa
 node tools/demo/smoke.mjs --only coach --as section-captain   # a subset, by path or screen name
 ```
 
+`node tools/demo/team-availability-smoke.mjs` checks an active player's menu access, all eight teams, selection/match-card badges, cross-squad fixture details, another player's read-only attendance grid and old coach-area bookmark redirects. CI saves phone and desktop screenshots in `ui-review-screenshots`.
+
 `node tools/demo/ranking-stats-smoke.mjs` checks the simplified ranking rows, saved stats compilation times in HKT, table-only league figures and comparisons with three past seasons. It covers matched date cutoffs, completed seasons, goals conceded, clean sheets, yellow/red totals and missing or failed historical data with retry. CI runs it and saves phone and desktop screenshots in `ui-review-screenshots`.
 
 - In Git Bash, `--only /people` is rewritten into a Windows path: use `--only People`, or set `MSYS_NO_PATHCONV=1`.
@@ -93,3 +95,11 @@ Each guide has a spec in `shots/`: a list of shots, each with a persona, a path,
 - **Windows:** the repo path must be the long name (`anthony.ford`, not `ANTHON~1.FOR`), or Vite's file watcher crashes. `server.mjs` resolves it.
 - **Worktrees:** a worktree with a `node_modules` junction works. `server.mjs` allows Vite to serve the junction's target.
 - **Builds:** don't run `vite build` in the same checkout while the demo server runs, because the build hangs.
+
+The People registered-name editor has an interaction check:
+
+```sh
+node tools/demo/registered-name-smoke.mjs --out /tmp/eddy-registered-names
+```
+
+It covers Section Captain editing and the Men's Convenor's missing-name tasks, ranked suggestions filling a draft, confirmed saves and linked-card feedback, editing/clearing, duplicate refusals, stale edits and Reload, read-only officers, suggestion retry with manual entry, and mobile/desktop layout. It runs automatically in the Screen smoke test workflow and saves review screenshots. Every save uses fictional demo People only.

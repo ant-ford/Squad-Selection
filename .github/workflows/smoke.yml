@@ -81,6 +81,11 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/admin-meetings-smoke.mjs --out smoke-failures/admin-meetings
 
+      - name: People HockeyHK registered names
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/registered-name-smoke.mjs --out smoke-failures/registered-names
+
       - name: Screenshots for review
         uses: actions/upload-artifact@v4
         with:
@@ -90,6 +95,7 @@ jobs:
             smoke-failures/team-availability/*.png
             smoke-failures/action-priorities/*.png
             smoke-failures/ranking-stats/*.png
+            smoke-failures/registered-names/*.png
           if-no-files-found: ignore
           retention-days: 7
 

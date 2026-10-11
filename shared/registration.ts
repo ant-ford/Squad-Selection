@@ -90,6 +90,15 @@ export const isVisiting = (p: Pick<RegistrationPlayer, "hkidNo" | "passportNo">)
 /** Trimmed, with runs of spaces (non-breaking ones too) made single, as hkha-sync stores a card's name. */
 export const tidyRegisteredName = (v: string): string => v.replace(/\s+/g, " ").trim();
 
+/** A name that the registration editor can save; null means valid (including clearing). */
+export function registeredNameProblem(name: string): string | null {
+  if (name.length > 80) return 'Registered name: at most 80 characters.';
+  if (name && !/^[\p{L}\p{M}][\p{L}\p{M} .,'’()-]*$/u.test(name)) {
+    return 'Registered name: letters, spaces, hyphens and apostrophes only.';
+  }
+  return null;
+}
+
 /**
  * A Registered Name in the format the club's existing ones use, as HKHA
  * prints it on match cards: "SURNAME Given Names". Only a suggestion: many

@@ -10,6 +10,7 @@ import { AdminBlock } from '@/components/admin/AdminBlock';
 import MembershipBlock from '@/components/admin/MembershipBlock';
 import StageBlock from '@/components/admin/StageBlock';
 import ActiveBlock from '@/components/admin/ActiveBlock';
+import RegisteredNameBlock from '@/components/admin/RegisteredNameBlock';
 import SquadBlock from '@/components/admin/SquadBlock';
 import PersonSuspensions from '@/components/admin/PersonSuspensions';
 import HistoryList, { historyKey } from '@/components/admin/HistoryList';
@@ -67,6 +68,14 @@ export default function PersonAdmin() {
           <p className="text-sm text-muted-foreground">{person.team ?? 'No registered team'}</p>
           {chip && <StatusChip tone={chip.tone}>{chip.label}</StatusChip>}
         </div>
+        <RegisteredNameBlock
+          key={`${person.id}:${person.registeredName ?? ''}`}
+          personId={person.id}
+          registeredName={person.registeredName}
+          editable={can.registeredName}
+          onSaved={saved}
+          onReload={reload}
+        />
         {can.membership && person.membership && (
           <MembershipBlock personId={person.id} membership={person.membership} onSaved={saved} onReload={reload} />
         )}
