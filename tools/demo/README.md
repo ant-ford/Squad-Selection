@@ -95,3 +95,11 @@ Each guide has a spec in `shots/`: a list of shots, each with a persona, a path,
 - **Windows:** the repo path must be the long name (`anthony.ford`, not `ANTHON~1.FOR`), or Vite's file watcher crashes. `server.mjs` resolves it.
 - **Worktrees:** a worktree with a `node_modules` junction works. `server.mjs` allows Vite to serve the junction's target.
 - **Builds:** don't run `vite build` in the same checkout while the demo server runs, because the build hangs.
+
+The People registered-name editor has an interaction check:
+
+```sh
+node tools/demo/registered-name-smoke.mjs --out /tmp/eddy-registered-names
+```
+
+It covers Section Captain editing and the Men's Convenor's missing-name tasks, ranked suggestions filling a draft, confirmed saves and linked-card feedback, editing/clearing, duplicate refusals, stale edits and Reload, read-only officers, suggestion retry with manual entry, and mobile/desktop layout. It runs automatically in the Screen smoke test workflow and saves review screenshots. Every save uses fictional demo People only.

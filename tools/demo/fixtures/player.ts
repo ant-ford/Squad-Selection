@@ -1,6 +1,7 @@
 // Player view: profile, fixtures, tasks, availability rules, stats, details.
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetMyFixturesOutput, MyFixture, PastFixture } from '@/api/getMyFixtures';
+import { missingRegisteredNameDemoTasks } from './people';
 import type { MyTask } from '@/api/getMyTasks';
 import type { AvailabilityRule } from '@/api/availabilityRules';
 import type { PlayerSeasonStats } from '@/api/getPlayerStats';
@@ -128,7 +129,7 @@ function tasks(p: Persona): MyTask[] {
   const out: MyTask[] = [{ id: 'demoTask1', key: 'details', url: '/my-details' }];
   if (p.offices.includes('membershipOfficer')) out.push({ id: 'demoTask2', key: 'accept', subject: 'Lucas Moreau', role: 'Membership Officer', url: '/membership' });
   if (p.umpiring) out.push({ id: 'demoTask3', key: 'duty', url: '/umpiring' });
-  return out;
+  return [...out, ...missingRegisteredNameDemoTasks(p)];
 }
 
 const RULES: AvailabilityRule[] = [

@@ -91,6 +91,7 @@ export function saveRefusal(err: unknown): SaveRefusal {
   if (!isApiError(err)) return { kind: 'other', message: FAILED };
   if (err.code === 'SHARED_MEMBERSHIP_NO') return { kind: 'shared', message: err.message };
   if (err.code === 'STAGE_CHANGED') return { kind: 'changed', message: STAGE_CHANGED };
+  if (err.code === 'NAME_TAKEN') return { kind: 'other', message: err.message };
   if (err.status === 409) return { kind: 'changed', message: CHANGED };
   if (err.status === 403) return { kind: 'other', message: "You can't change this." };
   if (err.status === 404) return { kind: 'other', message: 'This person is no longer on record.' };

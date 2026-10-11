@@ -77,6 +77,7 @@ export default function People() {
                   >
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-medium text-foreground truncate">{p.name}</span>
+                      {p.registeredName && <span className="block text-xs text-muted-foreground truncate">HockeyHK: {p.registeredName}</span>}
                       {p.team && <span className="block text-xs text-muted-foreground">{p.team}</span>}
                     </span>
                     {chip && <StatusChip tone={chip.tone}>{chip.label}</StatusChip>}

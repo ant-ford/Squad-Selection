@@ -202,6 +202,8 @@ const EXPECTED_ROUTES = [
   "GET /api/history signed-in",
   "GET /api/admin/people section:people",
   "GET /api/admin/people/:id([A-Za-z0-9-]{3,64}) section:people",
+  "GET /api/admin/people/:id([A-Za-z0-9-]{3,64})/registered-name-suggestions section:dataChecks",
+  "POST /api/admin/people/:id([A-Za-z0-9-]{3,64})/registered-name section:dataChecks",
   "POST /api/admin/people/:id([A-Za-z0-9-]{3,64})/squad section:people",
   "POST /api/admin/people/:id([A-Za-z0-9-]{3,64})/membership section:membership",
   "POST /api/admin/people/:id([A-Za-z0-9-]{3,64})/stage section:membership",
