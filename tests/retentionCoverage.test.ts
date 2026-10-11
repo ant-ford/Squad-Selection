@@ -42,6 +42,7 @@ const PEOPLE_FKS: Record<string, Classification> = {
   "suspensions.person_id": "erased",
   // Devices for Web Push: deleted by a trigger on personal_data_removed_at (20261007180005).
   "push_subscriptions.person_id": { erasedBy: "push_subscriptions_erase" },
+  "event_date_responses.person_id": { erasedBy: "event_dates_erase" },
 
   // ── The playing record ──
   "match_selections.person_id": { kept: "playing record: who was picked for which match" },

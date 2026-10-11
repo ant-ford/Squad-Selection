@@ -13,6 +13,8 @@ import { EVENT_TYPE_LABEL, RESPONSE_LABEL, asksDietary, billed, linkLabel, missi
 import { eventWhen, priceLines, statusChip } from './eventText';
 import BillBox from './BillBox';
 import PosterImage from './PosterImage';
+import DatePollEditor from './DatePollEditor';
+import { isDatePoll } from '@shared/eventDates';
 
 export { statusChip };
 
@@ -243,7 +245,8 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               )}
             </div>
 
-            {!cancelled && (
+            {!cancelled && isDatePoll(event) && <DatePollEditor event={event} onDirtyChange={setEditorDirty} />}
+            {!cancelled && !isDatePoll(event) && (
               <section className="rounded-xl border border-border p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-foreground">Are you coming?</h3>
@@ -278,9 +281,9 @@ export default function EventSheet({ event, onClose }: { event: MyEvent; onClose
               </section>
             )}
 
-            {event.bill && billed(event.paymentMode) && !cancelled && <BillBox event={event} />}
+            {event.bill && billed(event.paymentMode) && !cancelled && !isDatePoll(event) && <BillBox event={event} />}
 
-            {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && (
+            {(event.signedUp.length > 0 || (event.open && event.invited)) && !cancelled && !isDatePoll(event) && (
               <section className="rounded-xl border border-border p-3 space-y-2">
                 <h3 className="text-sm font-semibold text-foreground">Other players you're signing up</h3>
                 {billed(event.paymentMode) && <p className="text-xs text-muted-foreground">You pay for anyone you sign up.</p>}

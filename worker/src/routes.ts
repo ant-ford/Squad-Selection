@@ -65,6 +65,8 @@ import {
   getEventResponses,
   getManageView,
   getMyEvents,
+  answerEventDates,
+  chooseEventDate,
   respondToEvent,
   saveEvent,
   searchEventPeople,
@@ -650,6 +652,8 @@ export const ROUTES: readonly Route[] = [
   route("POST", "/api/events/audience", "signed-in", async ({ request, env, user }) => countAudience(env, user, await readBodyOrEmpty(request))),
   route("POST", "/api/events/social-secretaries", "signed-in", async ({ request, env, user }) => setSocialSecretaries(env, user, await readBodyOrEmpty(request))),
   route("POST", `/api/events/:id(${UUID})/respond`, "signed-in", async ({ request, env, user, params }) => respondToEvent(env, user, params.id, await readBodyOrEmpty(request))),
+  route("POST", `/api/events/:id(${UUID})/date-response`, "signed-in", async ({ request, env, user, params }) => answerEventDates(env, user, params.id, await readBodyOrEmpty(request))),
+  route("POST", `/api/events/:id(${UUID})/choose-date`, "signed-in", async ({ request, env, user, params }) => chooseEventDate(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", `/api/events/:id(${UUID})/status`, "signed-in", async ({ request, env, user, params }) => setEventStatus(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", `/api/events/:id(${UUID})/poster`, "signed-in", async ({ request, env, user, params }) => uploadPoster(env, user, params.id, await readBodyOrEmpty(request))),
   route("POST", `/api/events/:id(${UUID})/delete`, "signed-in", async ({ request, env, user, params }) => {

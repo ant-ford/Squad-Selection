@@ -18,6 +18,7 @@
  */
 
 export { getMyEvents, respondToEvent, searchEventPeople } from "./player";
+export { answerEventDates, chooseEventDate } from "./dates";
 export { eventTasks } from "./tasks";
 export type { EventTask } from "./tasks";
 export { calendarEventsFor } from "./calendarFeed";

@@ -9,6 +9,7 @@
 import { ANY, GROUPS, type GroupDef, type Selection } from "./emailLists";
 import { SOCIAL_FUNCTIONS } from "./commitmentReview";
 import { csvCell } from "./csv";
+import { isDatePoll, type DateAnswers, type EventDateOption } from "./eventDates";
 
 export const EVENT_TYPES = ["social_function", "team_social", "admin_meeting", "tournament", "tour", "trial"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -254,16 +255,16 @@ const HOUR = 3_600_000;
 export const eventEnds = (e: { startsAt: string; endsAt: string | null }) => Date.parse(e.endsAt ?? e.startsAt) + (e.endsAt ? 0 : 3 * HOUR);
 
 /** The register opens an hour before the start and stays open for corrections. */
-export const registerOpen = (e: { startsAt: string }, now = Date.now()) => now >= Date.parse(e.startsAt) - HOUR;
+export const registerOpen = (e: { startsAt: string; dateOptions?: EventDateOption[]; chosenDateId?: string | null }, now = Date.now()) => !isDatePoll(e) && now >= Date.parse(e.startsAt) - HOUR;
 
 /** Members can check themselves in from an hour before the start until an hour after the end. */
-export function checkInOpen(e: { status: EventStatus; startsAt: string; endsAt: string | null }, now = Date.now()): boolean {
+export function checkInOpen(e: { status: EventStatus; startsAt: string; endsAt: string | null; dateOptions?: EventDateOption[]; chosenDateId?: string | null }, now = Date.now()): boolean {
   return e.status === "published" && registerOpen(e, now) && now <= eventEnds(e) + HOUR;
 }
 
 /** Over, and nobody has marked the register taken: a My Tasks line for whoever keeps it. */
-export function needsRegister(e: { status: EventStatus; startsAt: string; endsAt: string | null; registerTakenAt: string | null }, now = Date.now()): boolean {
-  return e.status === "published" && !e.registerTakenAt && now > eventEnds(e);
+export function needsRegister(e: { status: EventStatus; startsAt: string; endsAt: string | null; registerTakenAt: string | null; dateOptions?: EventDateOption[]; chosenDateId?: string | null }, now = Date.now()): boolean {
+  return !isDatePoll(e) && e.status === "published" && !e.registerTakenAt && now > eventEnds(e);
 }
 
 /** How many of a member's guests can be ticked as having come. */
@@ -330,6 +331,8 @@ export interface EventDetails {
   team: string | null;
   status: EventStatus;
   posterUrl: string | null;
+  dateOptions?: EventDateOption[];
+  chosenDateId?: string | null;
 }
 
 export interface ResponseDetails {
@@ -358,6 +361,7 @@ export interface MyEvent extends EventDetails {
   /** Whether they keep this event (a social secretary or Section Captain). */
   manager: boolean;
   mine: ResponseDetails | null;
+  myDateAnswers?: DateAnswers | null;
   /** The people they've signed up. */
   signedUp: ({ personId: string; name: string } & ResponseDetails)[];
   /** What they owe, when they're a payer on a paid event. */
@@ -396,6 +400,7 @@ export interface ManagedEvent extends EventDetails {
   chargesSentAt: string | null;
   /** When the register was marked taken. */
   registerTakenAt: string | null;
+  dateReplies?: number;
   counts: { going: number; maybe: number; notGoing: number; adultGuests: number; childGuests: number; canHelp: number; came: number };
 }
 
@@ -434,6 +439,8 @@ export interface EventInput {
   socialFunction?: SocialFunction | null;
   team?: string | null;
   audience?: Selection;
+  dateOptions?: EventDateOption[];
+  expectedChosenDateId?: string | null;
 }
 
 /** GET /api/events/:id/responses. */
@@ -449,6 +456,7 @@ export interface EventResponses {
   responses: EventResponseRow[];
   /** Invited, no answer yet: for chasing on WhatsApp. */
   notAnswered: { personId: string; name: string }[];
+  dateResponses?: { personId: string; name: string; answers: DateAnswers }[];
 }
 
 // ── Paying (step 2) ──────────────────────────────────────────────────────

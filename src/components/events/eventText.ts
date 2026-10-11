@@ -2,6 +2,7 @@ import { safeFormat } from '@/lib/dateUtils';
 import { toneClasses } from '@/lib/statusTone';
 import { PAYMENT_LABEL, priceText, type EventDetails, type ManagedEvent, type ResponseStatus } from '@shared/events';
 import type { StatusTone } from '@/lib/statusTone';
+import { isDatePoll, type EventDateOption } from '@shared/eventDates';
 
 export const statusChip: Record<ResponseStatus, string> = {
   going: toneClasses('success'),
@@ -15,13 +16,15 @@ export const eventStatusTone = (s: ManagedEvent['status']): StatusTone => (s ===
 
 /** "41 going · 6 maybe · 20 guests · 112 invited" */
 export function countsLine(e: ManagedEvent): string {
+  if (isDatePoll(e)) return `${e.dateReplies ?? 0} date replies · ${e.invited} invited`;
   const c = e.counts;
   const guests = c.adultGuests + c.childGuests;
   return [`${c.going} going`, `${c.maybe} maybe`, guests ? `${guests} guest${guests === 1 ? '' : 's'}` : '', `${e.invited} invited`].filter(Boolean).join(' · ');
 }
 
 /** "Sat 12 Dec, 19:00 – 23:00", or across days "Fri 3 Apr, 18:00 – Sun 5 Apr" (24-hour, as the glossary says). */
-export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'>): string {
+export function eventWhen(e: Pick<EventDetails, 'startsAt' | 'endsAt'> & { dateOptions?: EventDateOption[]; chosenDateId?: string | null }): string {
+  if (isDatePoll(e)) return `Date to be agreed · ${e.dateOptions!.length} options`;
   const start = safeFormat(e.startsAt, 'EEE d MMM, HH:mm');
   if (!e.endsAt) return start;
   const sameDay = safeFormat(e.startsAt, 'yyyy-MM-dd') === safeFormat(e.endsAt, 'yyyy-MM-dd');

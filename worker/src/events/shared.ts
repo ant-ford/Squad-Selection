@@ -8,6 +8,7 @@ import { fileLink, photoLink } from "../data/supabase/files";
 import { eventRights, managesEvent, type EventRights } from "../eventAccess";
 import { matches, type DirectoryPerson, type Selection } from "../../../shared/emailLists";
 import { fullName } from "../../../shared/personName";
+import { isDatePoll, type EventDateOption } from "../../../shared/eventDates";
 import {
   cleanQuestions,
   cleanAudience,
@@ -61,9 +62,11 @@ export interface EventRow {
   audience: unknown;
   status: EventStatus;
   team: { team_name: string } | null;
+  date_options?: EventDateOption[];
+  chosen_date_id?: string | null;
 }
 export const EVENT_COLS =
-  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,link_url,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,team:teams(team_name)";
+  "id,event_type,title,description,location,starts_at,ends_at,respond_by,member_price,guest_adult_price,guest_child_price,payment_mode,payment_details,link_url,charges_sent_at,register_taken_at,checkin_code,guests_allowed,max_guests,help_needed,questions,social_function,team_id,audience,status,date_options,chosen_date_id,team:teams(team_name)";
 
 export interface ResponseRow {
   event_id: string;
@@ -114,6 +117,8 @@ export function toDetails(r: EventRow, posterUrl: string | null): EventDetails {
     team: r.team?.team_name ?? null,
     status: r.status,
     posterUrl,
+    dateOptions: r.date_options ?? [],
+    chosenDateId: r.chosen_date_id ?? null,
   };
 }
 
@@ -222,4 +227,8 @@ export async function requireManages(env: Env, user: AuthorizedUser, id: string)
   const event = await loadEvent(env, id);
   if (!managesEvent(rights, event)) throw new HttpError("That event is kept by another team's social secretary.", 403, "OFFICER_ACCESS_REQUIRED");
   return { rights, event };
+}
+
+export function requireChosenDate(event: EventRow): void {
+  if (isDatePoll(toDetails(event, null))) throw new HttpError("Choose the event date first.", 409, "DATE_NOT_CHOSEN");
 }

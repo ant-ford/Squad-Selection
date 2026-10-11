@@ -175,6 +175,8 @@ const EXPECTED_ROUTES = [
   "POST /api/events/audience signed-in",
   "POST /api/events/social-secretaries signed-in",
   "POST /api/events/:id([0-9a-f-]{36})/respond signed-in",
+  "POST /api/events/:id([0-9a-f-]{36})/date-response signed-in",
+  "POST /api/events/:id([0-9a-f-]{36})/choose-date signed-in",
   "POST /api/events/:id([0-9a-f-]{36})/status signed-in",
   "POST /api/events/:id([0-9a-f-]{36})/poster signed-in",
   "POST /api/events/:id([0-9a-f-]{36})/delete signed-in",

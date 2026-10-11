@@ -90,7 +90,7 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
 | Trials and joiners | `trial_sessions`, `trial_availability`, `applicant_trials` |
 | Season | `season_plans`, `season_plan_options`, `course_signups`, `season_rollovers`, `season_rollover_people` |
 | Kit | `kit_orders`, `kit_sets`, `kit_moves`, `kit_sizes` |
-| Events | `events`, `event_responses`, `event_payments` |
+| Events | `events`, `event_responses`, `event_payments`, `event_date_responses` |
 | Umpiring and HKHA | `umpire_duties`, `umpire_assignments`, `umpire_pool`, `hkha_registrations` |
 | Quizzes | `quizzes`, `quiz_scores` |
 | Messages and logs | `email_log`, `message_templates`, `message_log`, `push_subscriptions` (Web Push devices), `activity_log`, `files`, `r2_deletions` |
@@ -128,6 +128,8 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
 The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
 
 Events' **Admin meeting** type offers editable defaults for Captains' Meeting (current team captains, Section Captains and Assistant Director of Hockey), Men's Sub-Committee Meeting (Section Captains, Men's Convenor and Membership Officer; add Kit Convenor when needed), and Hockey Committee Meeting (the existing committee answers). Appointed roles use Active offices and current team links, with team captains limited to active teams. They do not require the person to be an active player. The meeting link accepts Teams or Zoom links; published meetings use the existing RSVP tasks and calendar feed for Going/Maybe responses, and do not count as commitment social functions.
+
+Every event type also offers **Find a date**: publish two to six proposed dates to the event's audience. Each invitee answers Available, Maybe or No for every date; organisers compare totals and names in **Date replies**, then choose a future option with confirmation. Options stay fixed once published. Choosing closes the poll, preserves its replies and carries Available replies for that date over as Going in the same transaction. Maybe, No and unanswered invitees can RSVP, and everyone can change their answer afterwards; proposed dates never enter calendars or billing. Replies and selection serialize on the same event row, and stale edits cannot replace a chosen date. Date availability is removed with personal data and has its own cache-version counter.
 
 ---
 

@@ -5,6 +5,7 @@ import { db, eq, inList } from "../data/supabase";
 import { invalidateCache } from "../cache";
 import { eventRights, managesEvent } from "../eventAccess";
 import { eventDirectoryPerson } from "./audience";
+import { DATE_RESPONSE_KEY, type DateResponseRow } from "./dates";
 import { matches, type DirectoryPerson } from "../../../shared/emailLists";
 import {
   answerRefusal,
@@ -40,6 +41,7 @@ import {
   invitedFrom,
   loadEvent,
   posterLinks,
+  requireChosenDate,
 } from "./shared";
 
 // ── The player page ──────────────────────────────────────────────────────
@@ -61,17 +63,19 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
   ]);
   if (!rows.length) return { events: [] };
   const ids = rows.map((r) => r.id);
-  const [responses, posters, payments] = await Promise.all([
+  const [responses, posters, payments, dateResponses] = await Promise.all([
     d.select<ResponseRow>("event_responses", `select=${RESPONSE_COLS}&event_id=${inList(ids)}&or=(person_id.eq.${me},signed_up_by_id.eq.${me})`, RESPONSE_KEY),
     posterLinks(env, ids),
     d.select<PaymentRow>("event_payments", `select=${PAYMENT_COLS}&payer_id=${eq(me)}&event_id=${inList(ids)}`),
+    rows.some((r) => r.date_options?.length) ? d.select<DateResponseRow>("event_date_responses", `select=event_id,person_id,answers&person_id=${eq(me)}&event_id=${inList(ids)}`, DATE_RESPONSE_KEY) : Promise.resolve([]),
   ]);
   const now = Date.now();
   const events = await Promise.all(rows.map(async (r): Promise<MyEvent | null> => {
     const invited = !!person && matches(person, audienceOf(r));
     const mine = responses.find((x) => x.event_id === r.id && x.person_id === me);
     const signedUp = responses.filter((x) => x.event_id === r.id && x.person_id !== me && x.signed_up_by_id === me);
-    if (!mine && !signedUp.length && (!invited || r.status === "cancelled")) return null;
+    const dates = dateResponses.find((x) => x.event_id === r.id);
+    if (!mine && !dates && !signedUp.length && (!invited || r.status === "cancelled")) return null;
     const details = toDetails(r, posters[r.id] ?? null);
     // Their bill: their own place unless someone else signed them up, and everyone they signed up.
     const paying = [...(mine && !mine.signed_up_by_id ? [mine] : []), ...signedUp];
@@ -83,6 +87,7 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
         open: isOpen(details, now),
         manager: managesEvent(rights, r),
         mine: mine ? toResponse(mine) : null,
+        myDateAnswers: dates?.answers ?? null,
         signedUp: signedUp
           .map((x) => ({ personId: x.person?.api_id ?? "", name: nameOf(x.person), ...toResponse(x) }))
           .sort((a, b) => a.name.localeCompare(b.name)),
@@ -114,6 +119,7 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
   if (!rights.personUuid) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
   if (ev.status === "draft") throw new HttpError("Event not found.", 404, "NOT_FOUND");
   if (ev.status === "cancelled") throw new HttpError("This event has been cancelled.", 409, "EVENT_CANCELLED");
+  requireChosenDate(ev);
   const manager = managesEvent(rights, ev);
   const details = toDetails(ev, null);
   if (!manager && !isOpen(details)) throw new HttpError("Answers for this event have closed. Ask the social secretary.", 409, "EVENT_CLOSED");

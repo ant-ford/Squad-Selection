@@ -81,11 +81,17 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: node tools/demo/admin-meetings-smoke.mjs --out smoke-failures/admin-meetings
 
+      - name: Event date polls and choosing a date
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tools/demo/event-dates-smoke.mjs --out smoke-failures/event-dates
+
       - name: Screenshots for review
         uses: actions/upload-artifact@v4
         with:
           name: ui-review-screenshots
           path: |
+            smoke-failures/event-dates/*.png
             smoke-failures/admin-meetings/*.png
             smoke-failures/team-availability/*.png
             smoke-failures/action-priorities/*.png

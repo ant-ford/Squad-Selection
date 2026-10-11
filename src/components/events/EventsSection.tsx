@@ -7,6 +7,7 @@ import { RESPONSE_LABEL, type ResponseStatus } from '@shared/events';
 import type { StatusTone } from '@/lib/statusTone';
 import { useSheetParam } from '@/lib/useSheetParam';
 import { eventWhen } from './eventText';
+import { isDatePoll } from '@shared/eventDates';
 
 const ANSWER_TONE: Record<ResponseStatus, StatusTone> = { going: 'success', maybe: 'warning', not_going: 'neutral' };
 
@@ -36,7 +37,7 @@ export default function EventsSection() {
   }, [openId, data, open]);
 
   if (!events.length) return null;
-  const toAnswer = events.filter((e) => e.status !== 'cancelled' && !e.mine?.status && e.open && e.invited).length;
+  const toAnswer = events.filter((e) => e.status !== 'cancelled' && !(isDatePoll(e) ? e.myDateAnswers : e.mine?.status) && e.open && e.invited).length;
   return (
     <section aria-label="Events" className="mt-6">
       <button
@@ -70,6 +71,8 @@ export default function EventsSection() {
                 </div>
                 {e.status === 'cancelled' ? (
                   <StatusChip tone="danger">Cancelled</StatusChip>
+                ) : isDatePoll(e) && e.myDateAnswers ? (
+                  <StatusChip tone="success">Dates saved</StatusChip>
                 ) : answer ? (
                   <StatusChip tone={ANSWER_TONE[answer]}>{RESPONSE_LABEL[answer]}</StatusChip>
                 ) : e.open && e.invited ? (

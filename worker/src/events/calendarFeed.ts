@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { db, eq } from "../data/supabase";
 import type { EventDetails, Guest } from "../../../shared/events";
+import { isDatePoll } from "../../../shared/eventDates";
 import { type EventRow, EVENT_COLS, RESPONSE_KEY, toDetails } from "./shared";
 
 // ── The calendar feed ────────────────────────────────────────────────────
@@ -21,5 +22,5 @@ export async function calendarEventsFor(env: Env, personApiId: string): Promise<
     `select=status,guests,event:events!inner(${EVENT_COLS})&person_id=${eq(p.id)}&status=in.(going,maybe)&event.status=in.(published,cancelled)&event.starts_at=gte.${since}`,
     RESPONSE_KEY,
   );
-  return rows.flatMap((r) => (r.event ? [{ ...toDetails(r.event, null), answer: r.status, guests: Array.isArray(r.guests) ? r.guests.length : 0 }] : []));
+  return rows.flatMap((r) => (r.event && !isDatePoll(toDetails(r.event, null)) ? [{ ...toDetails(r.event, null), answer: r.status, guests: Array.isArray(r.guests) ? r.guests.length : 0 }] : []));
 }

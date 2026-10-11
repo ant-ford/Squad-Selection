@@ -26,6 +26,8 @@ import { invalidateAll } from "../worker/src/cache";
 import { billed, cleanLink, linkLabel, checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
 import { EVENT_ROLES, MEETING_PRESETS } from "../shared/events";
+import { answerEventDates, chooseEventDate, getEventResponses, checkinLink, calendarEventsFor } from "../worker/src/events";
+import { type EventDateOption } from "../shared/eventDates";
 import { signedIn } from "./helpers/factories";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -89,7 +91,7 @@ const event = (over: Record<string, unknown> = {}) => ({
 
 type Call = { url: URL; method: string; body: any };
 /** A fake PostgREST: `events`, `responses` (rows for event_responses), offices and team_people per uuid. */
-function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
+function fake(opts: { events?: unknown[]; responses?: unknown[]; dateResponses?: unknown[]; updates?: unknown[]; offices?: Record<string, unknown[]>; teamPeople?: Record<string, unknown[]>; teams?: unknown[]; payments?: unknown[]; used?: unknown[]; ai?: string } = {}) {
   const calls: Call[] = [];
   rights = { offices: opts.offices, teamPeople: opts.teamPeople };
   vi.stubGlobal(
@@ -101,6 +103,7 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
       const table = url.pathname.split("/").pop()!;
       const reply = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
       if (url.host === "openrouter.ai") return reply({ choices: [{ message: { content: opts.ai ?? "{}" } }] });
+      if (method === "PATCH" && opts.updates) return reply(opts.updates);
       if (method !== "GET") return reply([{ id: "new-id" }]);
       const q = url.searchParams;
       const eqOf = (k: string) => q.get(k)?.replace(/^eq\./, "");
@@ -124,6 +127,11 @@ function fake(opts: { events?: unknown[]; responses?: unknown[]; offices?: Recor
         }
         case "event_payments":
           return reply(q.get("reference") ? (opts.used ?? []) : (opts.payments ?? []));
+        case "event_date_responses": {
+          const rows = (opts.dateResponses ?? []) as { person_id: string }[];
+          const pid = eqOf("person_id");
+          return reply(pid ? rows.filter((r) => r.person_id === pid) : rows);
+        }
         default:
           return reply([]);
       }
@@ -270,6 +278,96 @@ describe("the player page and My Tasks", () => {
     await respondToEvent(env, userOf("recDAD"), EVENT_ID, { personId: "recSON", status: "going" });
     expect(directoryReads.whole).toBe(0);
     expect(directoryReads.one).toEqual(["recDAD", "recDAD", "recDAD", "recDAD", "recSON"]);
+  });
+});
+
+describe("date polling in Events", () => {
+  const dates: EventDateOption[] = [
+    { id: "one", startsAt: new Date(Date.now() + 5 * day).toISOString(), endsAt: null },
+    { id: "two", startsAt: new Date(Date.now() + 7 * day).toISOString(), endsAt: null },
+  ];
+  const poll = (extra: Record<string, unknown> = {}) => event({ starts_at: dates[0].startsAt, date_options: dates, chosen_date_id: null, ...extra });
+  const reply = { event_id: EVENT_ID, person_id: "uuid-dad", answers: { one: "available", two: "unavailable" }, person: { api_id: "recDAD", preferred_name: null, given_names: "Dave", surname: "Smith" } };
+
+  it("lets invited people answer dates without creating an attendance RSVP or bill", async () => {
+    const calls = fake({ events: [poll()] });
+    await answerEventDates(env, userOf("recDAD"), EVENT_ID, { answers: reply.answers });
+    expect(calls.find((c) => c.url.pathname.endsWith("/rpc/save_event_date_answers"))?.body).toEqual({ p_event_id: EVENT_ID, p_person_id: "uuid-dad", p_answers: reply.answers });
+    expect(calls.filter((c) => c.method === "POST" && c.url.pathname.endsWith("/event_responses"))).toEqual([]);
+    await expect(respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going" })).rejects.toThrow(/Choose the event date/);
+  });
+
+  it("requires all current date answers and enforces audience, deadline and chosen-date checks", async () => {
+    fake({ events: [poll()] });
+    await expect(answerEventDates(env, userOf("recAPP"), EVENT_ID, { answers: reply.answers })).rejects.toThrow(/isn't for you/);
+    await expect(answerEventDates(env, userOf("recDAD"), EVENT_ID, { answers: { one: "available" } })).rejects.toThrow(/each/);
+    fake({ events: [poll({ respond_by: new Date(Date.now() - day).toISOString() })] });
+    await expect(answerEventDates(env, userOf("recDAD"), EVENT_ID, { answers: reply.answers })).rejects.toThrow(/closed/);
+    fake({ events: [poll({ chosen_date_id: "two" })] });
+    await expect(answerEventDates(env, userOf("recDAD"), EVENT_ID, { answers: reply.answers })).rejects.toThrow(/date has been chosen/);
+  });
+
+  it("shows a person's saved availability and switches tasks back to attendance after choosing", async () => {
+    fake({ events: [poll()], dateResponses: [reply] });
+    const mine = (await getMyEvents(env, userOf("recDAD"))).events[0];
+    expect(mine.myDateAnswers).toEqual(reply.answers);
+    expect(mine.mine).toBeNull();
+    expect(mine.bill).toBeNull();
+    expect(await eventTasks(env, userOf("recDAD"))).toEqual([]);
+    invalidateAll();
+    fake({ events: [poll({ chosen_date_id: "two", starts_at: dates[1].startsAt, respond_by: null })], dateResponses: [reply] });
+    expect(await eventTasks(env, userOf("recDAD"))).toHaveLength(1);
+  });
+
+  it("shows names to the organiser and counts date replies separately from attendance", async () => {
+    fake({ events: [poll()], dateResponses: [reply] });
+    const view = await getEventResponses(env, userOf("recSEC", { isSectionCaptain: true }), EVENT_ID);
+    expect(view.event.dateReplies).toBe(1);
+    expect(view.event.counts.going).toBe(0);
+    expect(view.dateResponses).toEqual([{ personId: "recDAD", name: "Dave Smith", answers: reply.answers }]);
+    expect(view.notAnswered.map((p) => p.personId)).not.toContain("recDAD");
+    expect(view.notAnswered.map((p) => p.personId)).toContain("recSON");
+  });
+
+  it("allows only the organiser to choose a current option and submits the expected dates atomically", async () => {
+    const calls = fake({ events: [poll()] });
+    await expect(chooseEventDate(env, userOf("recDAD"), EVENT_ID, { optionId: "two", expectedOptions: dates })).rejects.toThrow(/social secretaries/);
+    const manager = userOf("recSEC", { isSectionCaptain: true });
+    await expect(chooseEventDate(env, manager, EVENT_ID, { optionId: "missing", expectedOptions: dates })).rejects.toThrow(/future proposed date/);
+    await expect(chooseEventDate(env, manager, EVENT_ID, { optionId: "two", expectedOptions: [] })).rejects.toThrow(/changed/);
+    await chooseEventDate(env, manager, EVENT_ID, { optionId: "two", expectedOptions: dates });
+    expect(calls.find((c) => c.url.pathname.endsWith("/rpc/choose_event_date"))?.body).toEqual({ p_event_id: EVENT_ID, p_option_id: "two", p_expected_options: dates });
+    fake({ events: [poll({ chosen_date_id: "one" })] });
+    await expect(chooseEventDate(env, manager, EVENT_ID, { optionId: "two", expectedOptions: dates })).rejects.toThrow(/no longer waiting/);
+  });
+
+  it("keeps proposed dates out of calendar feeds and blocks check-in links", async () => {
+    fake({ events: [poll()], responses: [{ person_id: "uuid-dad", status: "going", guests: [], event: poll() }] });
+    expect(await calendarEventsFor(env, "recDAD")).toEqual([]);
+    await expect(checkinLink(env, userOf("recSEC", { isSectionCaptain: true }), EVENT_ID)).rejects.toThrow(/Choose the event date/);
+    fake({ responses: [{ person_id: "uuid-dad", status: "going", guests: [], event: poll({ chosen_date_id: "two", starts_at: dates[1].startsAt }) }] });
+    expect(await calendarEventsFor(env, "recDAD")).toHaveLength(1);
+  });
+
+  it("derives a new poll's sorting date from the earliest option, and refuses a late deadline", async () => {
+    const calls = fake();
+    const body = { type: "team_social", title: "Date for drinks", startsAt: dates[1].startsAt, dateOptions: dates };
+    const manager = userOf("recSEC", { isSectionCaptain: true });
+    await saveEvent(env, manager, body);
+    expect(calls.find((c) => c.method === "POST" && c.url.pathname.endsWith("/events"))?.body[0]).toMatchObject({ starts_at: dates[0].startsAt, date_options: dates });
+    await expect(saveEvent(env, manager, { ...body, respondBy: dates[1].startsAt })).rejects.toThrow(/before the first/);
+  });
+
+  it("refuses published option edits and a stale edit after a date is chosen", async () => {
+    const manager = userOf("recSEC", { isSectionCaptain: true });
+    const body = { id: EVENT_ID, type: "team_social", title: "Drinks", startsAt: dates[0].startsAt, dateOptions: dates, expectedChosenDateId: null };
+    fake({ events: [poll()] });
+    await expect(saveEvent(env, manager, { ...body, dateOptions: [{ ...dates[0], startsAt: new Date(Date.now() + 4 * day).toISOString() }, dates[1]] })).rejects.toThrow(/cannot change after publishing/);
+    fake({ events: [poll({ chosen_date_id: "two", starts_at: dates[1].startsAt })] });
+    await expect(saveEvent(env, manager, body)).rejects.toThrow(/date has changed/);
+    const calls = fake({ events: [poll()], updates: [] });
+    await expect(saveEvent(env, manager, body)).rejects.toThrow(/date has changed/);
+    expect(calls.find((c) => c.method === "PATCH")?.url.searchParams.get("chosen_date_id")).toBe("is.null");
   });
 });
 
