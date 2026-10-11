@@ -128,7 +128,7 @@ function canFor(persona: Persona, p: Person): PersonAdminCan {
     stage: membership && stageTargets(p.status, p.stage).length > 0,
     squad: sections.includes('club') || registeredTeam,
     registeredTeam,
-    registeredName: registeredTeam,
+    registeredName: sections.includes('dataChecks'),
     suspend: persona.offices.includes('hockeyConvenor'),
     activate: persona.offices.includes('sectionCaptain'),
     juniorRoute: membership && isJuniorMember(p),
@@ -154,6 +154,14 @@ function personView(persona: Persona, id: string) {
     view.teamOptions = TEAMS;
   }
   return view;
+}
+
+/** Live demo task projection, so saves in People remove the task just as in the Worker. */
+export function missingRegisteredNameDemoTasks(persona: Persona): import('@/api/getMyTasks').MyTask[] {
+  if (!persona.offices.includes('hockeyConvenor')) return [];
+  return PEOPLE.filter((p) => p.active && !p.registeredName?.trim()).map((p) => ({
+    id: `registered-name:${p.id}`, key: 'registered-name', subject: p.name, url: `/people/${p.id}`,
+  }));
 }
 
 // ── History ─────────────────────────────────────────────────────────────
@@ -403,7 +411,7 @@ export const routes: Routes = {
   'GET /api/history': ({ query }) => history(query.get('person'), query.get('match')),
   'POST /api/admin/people': () => ({ ...ok, id: 'demoNewPerson' }),
   'GET /api/admin/people/:id/registered-name-suggestions': ({ persona, params }) => {
-    if (!sectionsOf(persona).includes('registration')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
+    if (!sectionsOf(persona).includes('dataChecks')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
     const p = byId(params.id);
     if (!p) return reply(404, { error: 'NOT_FOUND', message: 'Person not found.' });
     return { suggestions: p.registeredName ? [] : [
@@ -412,7 +420,7 @@ export const routes: Routes = {
     ] };
   },
   'POST /api/admin/people/:id/registered-name': ({ persona, params, body }) => {
-    if (!sectionsOf(persona).includes('registration')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
+    if (!sectionsOf(persona).includes('dataChecks')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
     const p = byId(params.id);
     if (!p) return reply(404, { error: 'NOT_FOUND', message: 'Person not found.' });
     if ((body?.expect as { registeredName?: unknown } | undefined)?.registeredName !== p.registeredName) return reply(409, { error: 'CHANGED', message: 'Someone else changed this while you had it open. Reload and try again.' });

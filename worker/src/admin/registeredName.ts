@@ -11,9 +11,9 @@ import { registeredNameKey } from '../../../shared/dataChecks';
 import { adminRpc } from './rpc';
 import { API_ID } from './people';
 
-function requireRegistration(actor: AuthorizedUser): void {
-  if (!sectionsFor(actor).includes('registration')) {
-    throw new HttpError("Only the Men's Convenor can change the HockeyHK registered name.", 403, 'FORBIDDEN');
+function requireRegisteredNameAccess(actor: AuthorizedUser): void {
+  if (!sectionsFor(actor).includes('dataChecks')) {
+    throw new HttpError("Only the Men's Convenor and Section Captains can change the HockeyHK registered name.", 403, 'FORBIDDEN');
   }
 }
 
@@ -27,7 +27,7 @@ async function readNamePerson(env: Env, id: string): Promise<NameSuggestionPerso
 
 /** Read only when the People field is blank; names from this season's HKFC cards. */
 export async function getRegisteredNameSuggestions(env: Env, actor: AuthorizedUser, id: string): Promise<{ suggestions: RegisteredNameSuggestion[] }> {
-  requireRegistration(actor);
+  requireRegisteredNameAccess(actor);
   const p = await readNamePerson(env, id);
   if (p.registered_name?.trim()) return { suggestions: [] };
   const d = db(env);
@@ -47,7 +47,7 @@ export async function getRegisteredNameSuggestions(env: Env, actor: AuthorizedUs
  * Inactive players can also be corrected here before they return to playing.
  */
 export async function saveRegisteredName(env: Env, actor: AuthorizedUser, id: string, body: Record<string, unknown>): Promise<{ ok: true; linked: number }> {
-  requireRegistration(actor);
+  requireRegisteredNameAccess(actor);
   const change = parseDetailsChange({ id, registeredName: body.registeredName });
   const expected = body.expect;
   if (!expected || typeof expected !== 'object' || Array.isArray(expected) ||

@@ -78,7 +78,7 @@ try {
   assert.equal(await field(), 'REID Thomas James');
   console.log('ok   an edit saved by someone else requires Reload and preserves their name');
 
-  for (const as of ['membership-officer', 'section-captain']) {
+  for (const as of ['membership-officer']) {
     requests.length = 0;
     await goto(as);
     assert.match(await text(), /REID Thomas James/);
@@ -88,13 +88,36 @@ try {
   await page.fullPage(path.join(out, 'read-only-mobile.png'));
   console.log('ok   other People officers see the recorded name without editor or suggestion requests');
 
-  await goto('mens-convenor');
+  await goto('section-captain');
   await type('');
   await page.click('Save registered name', { exact: true });
   await page.settle();
   assert.equal(await field(), '');
   assert.equal(await page.eval(`return !!document.querySelector('section[aria-label="HockeyHK registration"] select')`), true);
   console.log('ok   clearing a name brings back the suggestions');
+
+  await page.goto('http://127.0.0.1:5202/?as=mens-convenor');
+  assert.match(await text(), /Add HockeyHK registered name for Tom Reid/);
+  await page.fullPage(path.join(out, 'convenor-missing-name-task.png'));
+  await page.eval(`const row = [...document.querySelectorAll('section[aria-label="Forms to complete"] > div')].find((el) => el.textContent.includes('Add HockeyHK registered name for Tom Reid')); row.querySelector('a').click();`);
+  await page.settle();
+  assert.equal(await page.eval('return location.pathname'), '/people/demoP102');
+  await goto('section-captain');
+  assert.equal(await field(), '');
+  assert.equal(await page.eval(`return !!document.querySelector('section[aria-label="HockeyHK registration"] select')`), true);
+  await type('REID Thomas');
+  await page.click('Save registered name', { exact: true });
+  await page.settle();
+  assert.equal(await field(), 'REID Thomas');
+  await page.goto('http://127.0.0.1:5202/?as=mens-convenor');
+  assert.doesNotMatch(await text(), /Add HockeyHK registered name for Tom Reid/);
+  await page.goto('http://127.0.0.1:5202/?as=section-captain');
+  assert.doesNotMatch(await text(), /Add HockeyHK registered name for/);
+  console.log('ok   Section Captains can edit names; a missing-name task opens People and disappears from the Convenor’s list after saving');
+  await goto('section-captain');
+  await type('');
+  await page.click('Save registered name', { exact: true });
+  await page.settle();
 
   failSuggestions = true;
   await goto('mens-convenor');
@@ -116,7 +139,7 @@ try {
   assert.deepEqual(problems, []);
   console.log('ok   editor and suggestions fit mobile/desktop without uncaught browser exceptions');
   await page.close();
-  console.log('8/8 registered-name browser scenarios passed.');
+  console.log('9/9 registered-name browser scenarios passed.');
 } finally {
   if (browser) await browser.close();
   await server.close();

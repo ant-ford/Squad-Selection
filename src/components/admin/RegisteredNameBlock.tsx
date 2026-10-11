@@ -49,7 +49,7 @@ export default function RegisteredNameBlock({ personId, registeredName, editable
     <AdminBlock title="HockeyHK registration">
       <dl><dt className="text-xs text-muted-foreground">Registered name</dt>
         <dd className="text-sm break-words">{registeredName ?? 'Not set'}</dd></dl>
-      <p className="text-xs text-muted-foreground">The Men’s Convenor can update this name.</p>
+      <p className="text-xs text-muted-foreground">The Men’s Convenor and Section Captains can update this name.</p>
     </AdminBlock>
   );
   return (

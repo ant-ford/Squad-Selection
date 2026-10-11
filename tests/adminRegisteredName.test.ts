@@ -77,9 +77,17 @@ describe('People registered-name saves', () => {
     await expect(saveRegisteredName(env, actor, 'recSAM', { registeredName: 'LEE Samuel', expect: { registeredName: null } })).rejects.toMatchObject({ status: 404 });
   });
 
-  it('checks Convenor rights before either read or save', async () => {
+  it('allows a Section Captain to save as themselves and read suggestions', async () => {
     const calls = fake();
-    const nonConvenor = { ...actor, officerRoles: [{ office: 'sectionCaptain', designation: '' }] } as AuthorizedUser;
+    const captain = { ...actor, personId: 'recCAPTAIN', officerRoles: [{ office: 'sectionCaptain', designation: '' }] } as AuthorizedUser;
+    await getRegisteredNameSuggestions(env, captain, 'recSAM');
+    expect(await saveRegisteredName(env, captain, 'recSAM', { registeredName: 'LEE Samuel', expect: { registeredName: null } })).toEqual({ ok: true, linked: 3 });
+    expect(calls.find((c) => c.table === 'admin_update_person')!.body!.p_actor).toBe('recCAPTAIN');
+  });
+
+  it('checks registered-name editing rights before either read or save', async () => {
+    const calls = fake();
+    const nonConvenor = { ...actor, officerRoles: [{ office: 'membershipOfficer', designation: '' }] } as AuthorizedUser;
     await expect(saveRegisteredName(env, nonConvenor, 'recSAM', {})).rejects.toMatchObject({ status: 403 });
     await expect(getRegisteredNameSuggestions(env, nonConvenor, 'recSAM')).rejects.toMatchObject({ status: 403 });
     expect(calls).toEqual([]);

@@ -43,7 +43,7 @@ export interface PersonAdminCan {
   squad: boolean;
   /** The registered team: the Men's Convenor only. */
   registeredTeam: boolean;
-  /** The HockeyHK registered name: the Men's Convenor only. */
+  /** The HockeyHK registered name: the Men's Convenor and Section Captains. */
   registeredName: boolean;
   /** Manual suspensions: the Men's Convenor only. */
   suspend: boolean;

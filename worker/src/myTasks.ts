@@ -25,6 +25,8 @@
  *  - kit / registration: a Section Captain's request to the Kit Convenor or
  *    the Men's Convenor for a new joiner, until they mark it done
  *    (joiners.ts).
+ *  - registered-name: active players with no registered name, for the Men's
+ *    Convenor; opens People and goes once a name is saved or the player is inactive.
  */
 import type { Env } from "./env";
 import type { AuthorizedUser } from "./auth";
@@ -39,13 +41,14 @@ import { dutyChangeText, getMyDuties, myDutiesKey } from "./myDuties";
 import { openReactivationTasks, reactivationTasksKey } from "./reactivation";
 import { systemNeedsLook } from "./systemHealth";
 import { signingTasks } from "./applicationSigning";
+import { missingRegisteredNameTasks } from "./registeredNameTasks";
 import { eventTasks, registerTasks } from "./events";
 import { checkedThisSeason } from "../../shared/profile";
 import { hkDateKey } from "../../shared/hkDateKey";
 import { seasonStartYear } from "../../shared/membershipInsights";
 import { MEMBER_SUBMITTED, NOTIFIED, REVIEWS_FROM, SPONSOR_SUBMITTED } from "../../shared/statementStages";
 
-export type MyTaskKey = "system" | "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration" | "reactivate" | "duty" | "event" | "register";
+export type MyTaskKey = "system" | "joiner" | "details" | "statement" | "waivers" | "application" | "send" | "accept" | "review" | "kit" | "registration" | "registered-name" | "reactivate" | "duty" | "event" | "register";
 export type TaskRole = "Sponsor" | "Chairman" | "Membership Officer";
 
 export interface MyTask {
@@ -165,7 +168,7 @@ export function waiversDoneThisSeason(submittedAt: unknown, today: string): bool
 }
 
 /** Own forms first, then what others are waiting on, oldest process step first. */
-const ORDER: Record<MyTaskKey, number> = { system: -1, joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9, reactivate: 10, duty: 11, event: 12, register: 13 };
+const ORDER: Record<MyTaskKey, number> = { system: -1, joiner: 0, details: 1, statement: 2, waivers: 3, application: 4, send: 5, accept: 6, review: 7, kit: 8, registration: 9, "registered-name": 10, reactivate: 11, duty: 12, event: 13, register: 14 };
 
 export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ tasks: MyTask[] }> {
   const personId = user.personId;
@@ -173,7 +176,7 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
   if (!isRowId(personId)) return { tasks: [] };
 
   // Every part at once: none depends on another, and each is a read or two.
-  const [mine, waitingOn, requests, reactivations, duties, events, registers, systemLook] = await Promise.all([
+  const [mine, waitingOn, requests, reactivations, duties, events, registers, systemLook, missingNames] = await Promise.all([
     getCached(
       `my-tasks:${personId}`,
       async (): Promise<Partial<MyTaskRow>> => (await people(env).getMyTaskFields(personId)) ?? {},
@@ -194,10 +197,11 @@ export async function getMyTasks(env: Env, user: AuthorizedUser): Promise<{ task
     registerTasks(env, user).catch(() => []),
     // The owner: the daily health check found something (systemHealth.ts).
     systemNeedsLook(env, user),
+    missingRegisteredNameTasks(env, user),
   ]);
 
   const today = hkDateKey(new Date().toISOString());
-  const tasks: MyTask[] = [...(waitingOn[personId] ?? [])];
+  const tasks: MyTask[] = [...(waitingOn[personId] ?? []), ...missingNames];
   if (!waiversDoneThisSeason(mine.waiversSubmittedAt, today)) {
     // Eddy's waivers screen (declarations.ts).
     tasks.push({ id: "waivers", key: "waivers", url: "/waivers" });

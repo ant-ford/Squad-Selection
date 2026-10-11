@@ -95,6 +95,7 @@ export function isJuniorMember(p: Pick<PersonDb, "status" | "applicant_stage" | 
  *    Officer, Section Captains);
  *  - selected teams and position: Section Captains (club); the registered
  *    team: the Men's Convenor (registration);
+ *  - registered names: the Men's Convenor and Section Captains;
  *  - manual suspensions: the Men's Convenor office only;
  *  - make active or inactive: Section Captains only (the office, or the
  *    Teams Section Captain link that auth.ts reads as isSectionCaptain);
@@ -111,7 +112,7 @@ export function canFor(user: AuthorizedUser, p: PersonDb): PersonAdminCan {
     stage: membership && stageTargets(p.status, p.applicant_stage).length > 0,
     squad: sections.includes("club") || registeredTeam,
     registeredTeam,
-    registeredName: registeredTeam,
+    registeredName: sections.includes("dataChecks"),
     suspend: offices.has("hockeyConvenor"),
     activate: offices.has("sectionCaptain") || user.isSectionCaptain,
     juniorRoute: membership && isJuniorMember(p),

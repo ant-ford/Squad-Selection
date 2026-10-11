@@ -100,4 +100,4 @@ The People registered-name editor has an interaction check:
 node tools/demo/registered-name-smoke.mjs --out /tmp/eddy-registered-names
 ```
 
-It covers ranked suggestions filling a draft, confirmed saves and linked-card feedback, editing/clearing, duplicate refusals, stale edits and Reload, read-only officers, suggestion retry with manual entry, and mobile/desktop layout. It runs automatically in the Screen smoke test workflow and saves review screenshots. Every save uses fictional demo People only.
+It covers Section Captain editing and the Men's Convenor's missing-name tasks, ranked suggestions filling a draft, confirmed saves and linked-card feedback, editing/clearing, duplicate refusals, stale edits and Reload, read-only officers, suggestion retry with manual entry, and mobile/desktop layout. It runs automatically in the Screen smoke test workflow and saves review screenshots. Every save uses fictional demo People only.

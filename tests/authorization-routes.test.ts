@@ -1381,8 +1381,8 @@ describe("routes added since the 6 Oct review", () => {
     { method: "GET", path: "/api/admin/people?q=Smith", who: PEOPLE, handler: () => later.searchPeople },
     { method: "GET", path: `/api/admin/people/${PLAYER}`, who: PEOPLE, handler: () => later.getPersonAdmin },
     // The route opens to the people section; squad.ts then checks each field (adminSquad.test.ts).
-    { method: "GET", path: `/api/admin/people/${PLAYER}/registered-name-suggestions`, who: REGISTRATION, handler: () => later.getRegisteredNameSuggestions },
-    { method: "POST", path: `/api/admin/people/${PLAYER}/registered-name`, who: REGISTRATION, handler: () => later.saveRegisteredName },
+    { method: "GET", path: `/api/admin/people/${PLAYER}/registered-name-suggestions`, who: DATA_CHECKS, handler: () => later.getRegisteredNameSuggestions },
+    { method: "POST", path: `/api/admin/people/${PLAYER}/registered-name`, who: DATA_CHECKS, handler: () => later.saveRegisteredName },
     { method: "POST", path: `/api/admin/people/${PLAYER}/squad`, who: PEOPLE, handler: () => later.saveSquad },
     { method: "POST", path: `/api/admin/people/${PLAYER}/membership`, who: MEMBERSHIP, handler: () => later.saveMembership },
     { method: "POST", path: `/api/admin/people/${PLAYER}/stage`, who: MEMBERSHIP, handler: () => later.moveStage },

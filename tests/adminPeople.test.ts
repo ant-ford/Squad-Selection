@@ -71,7 +71,7 @@ describe("what each officer may do to a person", () => {
   });
   it("a Section Captain: membership, stage, selected teams and active; not the registered team or suspensions", () => {
     expect(canFor(captain, p)).toEqual({
-      membership: true, stage: true, squad: true, registeredTeam: false, registeredName: false, suspend: false, activate: true, juniorRoute: false,
+      membership: true, stage: true, squad: true, registeredTeam: false, registeredName: true, suspend: false, activate: true, juniorRoute: false,
     });
   });
   it("a Teams-linked Section Captain may make people active or inactive", () => {

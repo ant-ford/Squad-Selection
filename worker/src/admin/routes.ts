@@ -5,8 +5,8 @@
  *   GET  /api/history?match=<api id>          people section, or the fixture's coaches
  *   GET  /api/admin/people?q=<name>           people section
  *   GET  /api/admin/people/:id                people section
- *   GET  /api/admin/people/:id/registered-name-suggestions registration section
- *   POST /api/admin/people/:id/registered-name registration section
+ *   GET  /api/admin/people/:id/registered-name-suggestions dataChecks section
+ *   POST /api/admin/people/:id/registered-name dataChecks section
  *   POST /api/admin/people/:id/membership     membership section
  *   POST /api/admin/people/:id/stage          membership section
  *   POST /api/admin/people/:id/squad          registered team: registration section;
@@ -51,8 +51,8 @@ export const ADMIN_ROUTES: readonly Route[] = [
   }),
   route("GET", "/api/admin/people", "section:people", async ({ env, url }) => ({ people: await searchPeople(env, url.searchParams.get("q") ?? "") })),
   route("GET", `/api/admin/people/:id(${ID})`, "section:people", ({ env, user, params }) => getPersonAdmin(env, user, params.id)),
-  route("GET", `/api/admin/people/:id(${ID})/registered-name-suggestions`, "section:registration", ({ env, user, params }) => getRegisteredNameSuggestions(env, user, params.id)),
-  route("POST", `/api/admin/people/:id(${ID})/registered-name`, "section:registration", async ({ request, env, user, params }) => saveRegisteredName(env, user, params.id, await readBody(request))),
+  route("GET", `/api/admin/people/:id(${ID})/registered-name-suggestions`, "section:dataChecks", ({ env, user, params }) => getRegisteredNameSuggestions(env, user, params.id)),
+  route("POST", `/api/admin/people/:id(${ID})/registered-name`, "section:dataChecks", async ({ request, env, user, params }) => saveRegisteredName(env, user, params.id, await readBody(request))),
   // Teams and position: the section check is per field (squad.ts).
   route("POST", `/api/admin/people/:id(${ID})/squad`, "section:people", async ({ request, env, user, params }) => saveSquad(env, user, params.id, await readBody(request))),
   route("POST", `/api/admin/people/:id(${ID})/membership`, "section:membership", async ({ request, env, user, params }) => saveMembership(env, user, params.id, await readBody(request))),
