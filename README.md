@@ -64,7 +64,7 @@ The Worker decides access. `SECTION_OFFICES` in `worker/src/auth.ts` maps each o
 | Suspensions | `/suspensions` | Men's Convenor |
 | Offices and teams | `/club` | Section Captains |
 | Data checks | `/data-checks` | Men's Convenor, Section Captains |
-| Events | `/events/manage`, `/events/manage/:id` | Social Secretary and Section Captains (any event); a team's social secretaries (that team's events) |
+| Events | `/events/manage`, `/events/manage/:id` | Social Secretary and Section Captains (any event, including admin meetings); a team's social secretaries (that team's other events) |
 | Volunteers | `/volunteers` | Every officer, coach and team captain |
 | System | `/system` | The owner (`SYSTEM_OWNER_IDS`) and Section Captains |
 | Stats, quizzes | `/stats`, `/quizzes` | Everyone |
@@ -126,6 +126,8 @@ Schema = `supabase/migrations/*.sql`, applied in version order. RLS is on for ev
   - Club documents with personal data are private R2 objects served behind sign-in (`/api/club-docs/:name`), never `public/docs`.
 
 The data access seam is `worker/src/data/`: one repository per module (people, teams, officers, matches, matchCards, availabilityExceptions, availabilityRules, abilityGroups, rankingEvents, membershipEvents, commitments, suspensions, seasonData). The accessors (`people(env)` and so on) return the Supabase repositories, and tests swap in in-memory fakes. Newer features call PostgREST directly from their own module (`kit.ts`, `events/`, `apply.ts`, `admin/*`, …).
+
+Events' **Admin meeting** type offers editable defaults for Captains' Meeting (current team captains, Section Captains and Assistant Director of Hockey), Men's Sub-Committee Meeting (Section Captains, Men's Convenor and Membership Officer; add Kit Convenor when needed), and Hockey Committee Meeting (the existing committee answers). Appointed roles use Active offices and current team links, with team captains limited to active teams. They do not require the person to be an active player. The meeting link accepts Teams or Zoom links; published meetings use the existing RSVP tasks and calendar feed for Going/Maybe responses, and do not count as commitment social functions.
 
 ---
 

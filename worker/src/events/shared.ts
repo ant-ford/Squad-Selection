@@ -6,7 +6,6 @@ import { HttpError } from "../http";
 import { db, eq, inList } from "../data/supabase";
 import { fileLink, photoLink } from "../data/supabase/files";
 import { eventRights, managesEvent, type EventRights } from "../eventAccess";
-import { getChairmanDirectory } from "../chairman";
 import { matches, type DirectoryPerson, type Selection } from "../../../shared/emailLists";
 import { fullName } from "../../../shared/personName";
 import {
@@ -182,9 +181,7 @@ export async function toPayment(env: Env, r: PaymentRow): Promise<PaymentInfo> {
 
 export const audienceOf = (r: Pick<EventRow, "audience" | "team">): Selection => effectiveAudience(cleanAudience(r.audience), r.team?.team_name ?? null);
 
-export async function directory(env: Env): Promise<DirectoryPerson[]> {
-  return (await getChairmanDirectory(env)).people;
-}
+export { eventDirectory as directory } from "./audience";
 
 export const invitedFrom = (dir: DirectoryPerson[], r: Pick<EventRow, "audience" | "team">) => {
   const audience = audienceOf(r);

@@ -30,7 +30,8 @@ export async function eventRights(_env: Env, user: AuthorizedUser): Promise<Even
   };
 }
 
-export const managesEvent = (r: EventRights, e: { team_id: string | null }) => r.club || (!!e.team_id && r.teams.some((t) => t.id === e.team_id));
+export const managesEvent = (r: EventRights, e: { team_id: string | null; event_type?: string }) =>
+  r.club || (e.event_type !== "admin_meeting" && !!e.team_id && r.teams.some((t) => t.id === e.team_id));
 
 /** Whether the Events screen is theirs (the officers' menu). */
 export async function canManageEvents(env: Env, user: AuthorizedUser): Promise<boolean> {

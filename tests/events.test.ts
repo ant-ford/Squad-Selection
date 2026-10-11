@@ -25,6 +25,7 @@ import { formatEventVEvent } from "../worker/src/calendar";
 import { invalidateAll } from "../worker/src/cache";
 import { billed, cleanLink, linkLabel, checkInOpen, guestsCameOf, needsRegister, registerOpen, answersCsv, cleanAnswers, cleanQuestions, missingAnswer, answerRefusal, audienceOptions, chargesCsv, cleanAudience, cleanGuests, computeCharges, describeAudience, effectiveAudience, isOpen, judgeProof, type ChargeInput } from "../shared/events";
 import { ANY } from "../shared/emailLists";
+import { EVENT_ROLES, MEETING_PRESETS } from "../shared/events";
 import { signedIn } from "./helpers/factories";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
@@ -273,6 +274,36 @@ describe("the player page and My Tasks", () => {
 });
 
 describe("keeping events", () => {
+  it("saves an admin meeting with its selected audience and a Teams link, without social commitment credit", async () => {
+    const calls = fake();
+    const audience = MEETING_PRESETS[1].audience;
+    await saveEvent(env, userOf("recSEC", { isSectionCaptain: true }), {
+      type: "admin_meeting", title: MEETING_PRESETS[1].title, audience,
+      startsAt: new Date(Date.now() + day).toISOString(),
+      linkUrl: "https://teams.microsoft.com/l/meetup-join/example", socialFunction: "Hockey Section AGM",
+    });
+    expect(calls.find((c) => c.method === "POST" && c.url.pathname.endsWith("/events"))?.body[0]).toMatchObject({
+      event_type: "admin_meeting", audience, social_function: null, payment_mode: "free", guests_allowed: false,
+      link_url: "https://teams.microsoft.com/l/meetup-join/example", status: "draft",
+    });
+  });
+
+  it("requires a meeting audience and keeps team social secretaries from creating admin meetings", async () => {
+    fake();
+    const body = { type: "admin_meeting", title: "Meeting", startsAt: new Date(Date.now() + day).toISOString() };
+    await expect(saveEvent(env, userOf("recSEC", { isSectionCaptain: true }), body)).rejects.toThrow(/who's invited/);
+    await expect(saveEvent(env, userOf("recSEC", { socialSecretaryTeams: [{ id: "team-d", name: "HKFC D" }] }), {
+      ...body, audience: MEETING_PRESETS[0].audience, team: "HKFC D",
+    })).rejects.toThrow(/Admin meetings are kept/);
+  });
+
+  it("keeps an admin meeting with a team filter under club management, including attempts to change its type", async () => {
+    fake({ events: [event({ event_type: "admin_meeting", team_id: "team-d" })], teams: [{ id: "team-d" }] });
+    await expect(saveEvent(env, userOf("recSEC", { socialSecretaryTeams: [{ id: "team-d", name: "HKFC D" }] }), {
+      id: EVENT_ID, type: "team_social", title: "Meeting", startsAt: new Date(Date.now() + day).toISOString(), team: "HKFC D",
+    })).rejects.toThrow(/another team's social secretary/);
+  });
+
   it("lets a team's social secretary add events for their own team only", async () => {
     const teamPeople = { "uuid-sec": [{ teams: { id: "team-d", team_name: "HKFC D" } }] };
     const body = { type: "team_social", title: "Curry night", startsAt: new Date(Date.now() + 5 * day).toISOString() };
@@ -291,6 +322,47 @@ describe("keeping events", () => {
   it("keeps players out of the Events screen", async () => {
     fake();
     await expect(saveEvent(env, userOf("recDAD"), { type: "team_social", title: "x", startsAt: new Date().toISOString() })).rejects.toThrow(/social secretaries/);
+  });
+});
+
+describe("meeting invitations", () => {
+  it.each([
+    ["team captain", { captainTeams: ["HKFC C"] }, true, false],
+    ["linked Section Captain", { isSectionCaptain: true }, true, true],
+    ["Section Captain office", { offices: [{ role: "section_captain", office: null, designation: "" }] }, true, true],
+    ["Assistant Director", { offices: [{ role: "assistant_director", office: null, designation: "" }] }, true, false],
+    ["Men's Convenor", { offices: [{ role: "hockey_convenor", office: null, designation: "" }] }, false, true],
+    ["Membership Officer", { offices: [{ role: "membership_officer", office: null, designation: "" }] }, false, true],
+    ["Kit Convenor", { offices: [{ role: "kit_convenor", office: null, designation: "" }] }, false, false],
+    ["ordinary player", {}, false, false],
+  ] as const)("invites %s to the correct meetings and creates matching RSVP tasks", async (_label, extra, captains, subCommittee) => {
+    const user = userOf("recDAD", extra as Partial<AuthorizedUser>);
+    for (const [preset, invited] of [[MEETING_PRESETS[0], captains], [MEETING_PRESETS[1], subCommittee]] as const) {
+      invalidateAll();
+      fake({ events: [event({ event_type: "admin_meeting", title: preset.title, audience: preset.audience, social_function: null })] });
+      expect((await getMyEvents(env, user)).events.length).toBe(invited ? 1 : 0);
+      expect((await eventTasks(env, user)).length).toBe(invited ? 1 : 0);
+    }
+  });
+
+  it("adds Kit Convenor to a particular meeting without requiring other invitees to hold that office", async () => {
+    fake({ events: [event({ audience: { eventRoles: [...MEETING_PRESETS[1].audience.eventRoles!, EVENT_ROLES.kit_convenor] } })] });
+    const kit = userOf("recDAD", { offices: [{ role: "kit_convenor", office: null, designation: "" }] });
+    expect((await getMyEvents(env, kit)).events).toHaveLength(1);
+    expect((await getMyEvents(env, userOf("recSON", { isSectionCaptain: true }))).events).toHaveLength(1);
+    expect((await getMyEvents(env, userOf("recAPP"))).events).toHaveLength(0);
+  });
+
+  it("does not impose an active-player filter and rejects an uninvited player's RSVP", async () => {
+    fake({ events: [event({ audience: MEETING_PRESETS[0].audience })] });
+    const entry = DIR[0];
+    const original = entry.values;
+    entry.values = { ...original, active: ["Not an active player"], captaincyInterest: ["Yes"] };
+    try {
+      expect((await getMyEvents(env, userOf("recDAD", { captainTeams: ["HKFC C"] }))).events).toHaveLength(1);
+      await expect(respondToEvent(env, userOf("recDAD"), EVENT_ID, { status: "going" })).rejects.toThrow(/isn't for you/);
+      await respondToEvent(env, userOf("recDAD", { captainTeams: ["HKFC C"] }), EVENT_ID, { status: "going" });
+    } finally { entry.values = original; }
   });
 });
 
@@ -569,6 +641,13 @@ describe("self-funded events and the event link", () => {
     expect(cleanLink("chat.whatsapp.com/x")).toMatchObject({ error: expect.stringMatching(/wasn't understood/) });
     expect(linkLabel("https://chat.whatsapp.com/AbC123")).toBe("Join the WhatsApp group");
     expect(linkLabel("https://example.com/tour")).toBe("Open the event link");
+    expect(linkLabel("https://teams.microsoft.com/l/meetup-join/test")).toBe("Join the Teams meeting");
+    expect(linkLabel("https://teams.cloud.microsoft/meet/123")).toBe("Join the Teams meeting");
+    expect(linkLabel("https://hkfc.zoom.us/j/123?pwd=abc")).toBe("Join the Zoom meeting");
+    expect(linkLabel("https://zoom.us.example.com/j/123")).toBe("Open the event link");
+    const longTeams = `https://teams.microsoft.com/l/meetup-join/${"x".repeat(900)}`;
+    expect(cleanLink(longTeams)).toBe(longTeams);
+    expect(cleanLink(`https://teams.microsoft.com/${"x".repeat(2000)}`)).toMatchObject({ error: expect.stringMatching(/2,000/) });
   });
 
   it("keeps a self-funded event's estimated cost and link, with no guest prices", async () => {

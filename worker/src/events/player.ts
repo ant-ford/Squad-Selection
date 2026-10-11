@@ -4,7 +4,7 @@ import { HttpError } from "../http";
 import { db, eq, inList } from "../data/supabase";
 import { invalidateCache } from "../cache";
 import { eventRights, managesEvent } from "../eventAccess";
-import { getDirectoryPerson } from "../chairman";
+import { eventDirectoryPerson } from "./audience";
 import { matches, type DirectoryPerson } from "../../../shared/emailLists";
 import {
   answerRefusal,
@@ -57,7 +57,7 @@ export async function getMyEvents(env: Env, user: AuthorizedUser): Promise<{ eve
       "events",
       `select=${EVENT_COLS}&status=in.(published,cancelled)&or=(ends_at.gte.${since},and(ends_at.is.null,starts_at.gte.${since}))&order=starts_at`,
     ),
-    getDirectoryPerson(env, user.personId),
+    eventDirectoryPerson(env, user.personId, user),
   ]);
   if (!rows.length) return { events: [] };
   const ids = rows.map((r) => r.id);
@@ -108,8 +108,8 @@ export async function respondToEvent(env: Env, user: AuthorizedUser, eventId: st
   const [rights, ev, viewerEntry, targetEntry] = await Promise.all([
     eventRights(env, user),
     loadEvent(env, eventId),
-    getDirectoryPerson(env, user.personId),
-    self ? null : getDirectoryPerson(env, targetApi),
+    eventDirectoryPerson(env, user.personId, user),
+    self ? null : eventDirectoryPerson(env, targetApi),
   ]);
   if (!rights.personUuid) throw new HttpError("Your People record wasn't found.", 403, "NOT_FOUND");
   if (ev.status === "draft") throw new HttpError("Event not found.", 404, "NOT_FOUND");

@@ -3,7 +3,7 @@ import type { AuthorizedUser } from "../auth";
 import { db, eq, inList } from "../data/supabase";
 import { getCached } from "../cache";
 import { eventRights } from "../eventAccess";
-import { getDirectoryPerson } from "../chairman";
+import { eventDirectoryPerson } from "./audience";
 import { matches } from "../../../shared/emailLists";
 import { isOpen } from "../../../shared/events";
 import {
@@ -44,7 +44,7 @@ export async function eventTasks(env: Env, user: AuthorizedUser): Promise<EventT
             ),
           OPEN_EVENTS_TTL_MS,
         ),
-        getDirectoryPerson(env, user.personId),
+        eventDirectoryPerson(env, user.personId, user),
       ]);
       const now = Date.now();
       const live = open.filter((r) => isOpen(toDetails(r, null), now));

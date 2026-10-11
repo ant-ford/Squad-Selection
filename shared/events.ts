@@ -1,22 +1,23 @@
 /**
  * Special events (worker/src/events.ts, migration 20261003120000; owner,
  * 3 Oct 2026): trials, social functions, team socials, tournaments and
- * tours. Friendlies stay fixtures.
+ * tours, plus admin meetings. Friendlies stay fixtures.
  *
  * One definition for the Worker and the app: the types, who's invited, and
  * the checks on an answer.
  */
-import { ANY, GROUPS, type Selection } from "./emailLists";
+import { ANY, GROUPS, type GroupDef, type Selection } from "./emailLists";
 import { SOCIAL_FUNCTIONS } from "./commitmentReview";
 import { csvCell } from "./csv";
 
-export const EVENT_TYPES = ["social_function", "team_social", "tournament", "tour", "trial"] as const;
+export const EVENT_TYPES = ["social_function", "team_social", "admin_meeting", "tournament", "tour", "trial"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 export const EVENT_TYPE_LABEL: Record<EventType, string> = {
   trial: "Trial",
   social_function: "Social function",
   team_social: "Team social",
+  admin_meeting: "Admin meeting",
   tournament: "Tournament",
   tour: "Tour",
 };
@@ -52,12 +53,33 @@ export function cleanLink(raw: unknown): string | null | { error: string } {
   } catch {
     return { error: "The link wasn't understood. Paste the whole address, starting https://" };
   }
-  if (url.protocol !== "https:" || v.length > 500) return { error: "The link must start https:// (and be under 500 characters)." };
+  if (url.protocol !== "https:" || v.length > 2000) return { error: "The link must start https:// (and be under 2,000 characters)." };
   return url.toString();
 }
 
 /** What the link button says: WhatsApp group invites are named as such. */
-export const linkLabel = (url: string) => (/^https:\/\/chat\.whatsapp\.com\//i.test(url) ? "Join the WhatsApp group" : "Open the event link");
+export function linkLabel(url: string): string {
+  const host = new URL(url).hostname.toLowerCase();
+  if (host === "chat.whatsapp.com") return "Join the WhatsApp group";
+  if (host === "teams.microsoft.com" || host === "teams.live.com" || host === "teams.cloud.microsoft") return "Join the Teams meeting";
+  if (host === "zoom.us" || host.endsWith(".zoom.us") || host === "zoom.com" || host.endsWith(".zoom.com")) return "Join the Zoom meeting";
+  return "Open the event link";
+}
+
+/** Appointments, distinct from the volunteering answers in the committee groups. */
+export const EVENT_ROLES: Record<string, string> = {
+  team_captain: "Team captain",
+  section_captain: "Section Captain",
+  assistant_director: "Assistant Director of Hockey",
+  hockey_convenor: "Men's Convenor",
+  membership_officer: "Membership Officer",
+  kit_convenor: "Kit Convenor",
+};
+export const MEETING_PRESETS: readonly { key: string; title: string; audience: Selection }[] = [
+  { key: "captains", title: "Captains' Meeting", audience: { eventRoles: [EVENT_ROLES.team_captain, EVENT_ROLES.section_captain, EVENT_ROLES.assistant_director] } },
+  { key: "mens-sub-committee", title: "Men's Sub-Committee Meeting", audience: { eventRoles: [EVENT_ROLES.section_captain, EVENT_ROLES.hockey_convenor, EVENT_ROLES.membership_officer] } },
+  { key: "hockey-committee", title: "Hockey Committee Meeting", audience: { hockeyCommittee: [ANY] } },
+];
 
 export { SOCIAL_FUNCTIONS };
 export type SocialFunction = (typeof SOCIAL_FUNCTIONS)[number];
@@ -65,7 +87,8 @@ export type SocialFunction = (typeof SOCIAL_FUNCTIONS)[number];
 /**
  * The chairman's email-list groups an event can be sent to (owner, 3 Oct
  * 2026). The rest (member type, age band, category, captaincy interest,
- * qualified coach, team roles, general volunteers) are left out.
+ * qualified coach, team roles, general volunteers) are left out. Meetings
+ * also offer current appointed roles, separately from volunteering answers.
  */
 export const EVENT_GROUP_KEYS = [
   "status",
@@ -79,8 +102,12 @@ export const EVENT_GROUP_KEYS = [
   "tourInterest",
   "tournamentInterest",
   "qualifiedUmpire",
+  "eventRoles",
 ] as const;
-export const EVENT_GROUPS = GROUPS.filter((g) => (EVENT_GROUP_KEYS as readonly string[]).includes(g.key));
+export const EVENT_GROUPS: readonly GroupDef[] = [
+  { key: "eventRoles", label: "Appointed roles" },
+  ...GROUPS.filter((g) => (EVENT_GROUP_KEYS as readonly string[]).includes(g.key)),
+];
 
 /**
  * The "anyone in it" option of a group that has one (committees, interests,

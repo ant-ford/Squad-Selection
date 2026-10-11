@@ -49,6 +49,7 @@ import {
   PAYMENT_MODES_OFFERED,
   DIETARY,
   MAX_OWN_QUESTIONS,
+  MEETING_PRESETS,
   SOCIAL_FUNCTIONS,
   answersCsv,
   asksDietary,
@@ -73,6 +74,7 @@ const copy = (text: string, what: string) => void navigator.clipboard.writeText(
 type Form = {
   type: EventInput['type'];
   title: string;
+  meetingPreset: string;
   socialFunction: string;
   team: string;
   startsAt: string;
@@ -99,6 +101,7 @@ const num = (v: number | null) => (v == null ? '' : String(v));
 const formOf = (e: ManagedEvent | null, view: ManageView): Form => ({
   type: e?.type ?? (view.club ? 'social_function' : 'team_social'),
   title: e?.title ?? '',
+  meetingPreset: MEETING_PRESETS.find((p) => p.title === e?.title)?.key ?? '',
   socialFunction: e?.socialFunction ?? '',
   team: e?.team ?? (view.club ? '' : view.teams[0] ?? ''),
   startsAt: toLocalInput(e?.startsAt),
@@ -186,13 +189,23 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
   };
   const paid = billed(f.paymentMode);
   const selfFunded = f.paymentMode === 'self_funded';
+  const useMeeting = (key: string) => {
+    const preset = MEETING_PRESETS.find((p) => p.key === key);
+    set({ meetingPreset: key, ...(preset ? { title: preset.title, audience: preset.audience } : {}) });
+  };
 
   return (
     <div className="space-y-4">
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Type">
-          <select className={inputClass} value={f.type} onChange={(e) => set({ type: e.target.value as Form['type'] })}>
-            {EVENT_TYPES.map((t) => (
+          <select aria-label="Type" className={inputClass} value={f.type} onChange={(e) => {
+            const type = e.target.value as Form['type'];
+            if (type === 'admin_meeting') {
+              const preset = MEETING_PRESETS[0];
+              set({ type, meetingPreset: preset.key, title: preset.title, audience: preset.audience, team: '', paymentMode: 'free', guestsAllowed: false, dietary: false, dietaryRequired: false, socialFunction: '' });
+            } else set({ type, ...(f.type === 'admin_meeting' ? { audience: DEFAULT_AUDIENCE } : {}) });
+          }}>
+            {EVENT_TYPES.filter((t) => view.club || t !== 'admin_meeting').map((t) => (
               <option key={t} value={t}>
                 {EVENT_TYPE_LABEL[t]}
               </option>
@@ -210,6 +223,14 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
           </select>
         </Field>
       </div>
+      {f.type === 'admin_meeting' && (
+        <Field label="Meeting" hint="Choosing a meeting sets its title and invite group. You can edit both below.">
+          <select aria-label="Meeting" className={inputClass} value={f.meetingPreset} onChange={(e) => useMeeting(e.target.value)}>
+            <option value="">Other meeting</option>
+            {MEETING_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.title}</option>)}
+          </select>
+        </Field>
+      )}
       {f.type === 'social_function' && (
         <Field label="Counts for commitments as">
           <select className={inputClass} value={f.socialFunction} onChange={(e) => set({ socialFunction: e.target.value })}>
@@ -295,8 +316,8 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
           )}
         </div>
       )}
-      <Field label="Link">
-        <Input type="url" inputMode="url" value={f.linkUrl} onChange={(e) => set({ linkUrl: e.target.value })} placeholder="e.g. the event's WhatsApp group link" />
+      <Field label={f.type === 'admin_meeting' ? 'Meeting link' : 'Link'}>
+        <Input aria-label={f.type === 'admin_meeting' ? 'Meeting link' : 'Link'} type="url" inputMode="url" value={f.linkUrl} onChange={(e) => set({ linkUrl: e.target.value })} placeholder={f.type === 'admin_meeting' ? 'Paste a Teams or Zoom meeting link' : "e.g. the event's WhatsApp group link"} />
       </Field>
       <Field label="Help needed">
         <Input value={f.helpNeeded} onChange={(e) => set({ helpNeeded: e.target.value })} placeholder="e.g. 3 for the BBQ and setting up" />
@@ -348,7 +369,7 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
         )}
       </fieldset>
 
-      <fieldset className="rounded-lg border border-border p-3 space-y-2">
+      <fieldset id="event-audience" className="rounded-lg border border-border p-3 space-y-2">
         <legend className="px-1 text-sm font-semibold text-foreground">Who's invited</legend>
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-xs text-foreground">{describeAudience(f.audience, f.team || null)}</p>
@@ -357,6 +378,9 @@ function EventFields({ view, f, set }: { view: ManageView; f: Form; set: (patch:
         <p className="text-xs text-muted-foreground">
           Within a group, any ticked option counts. When you tick in more than one group, people must match all of them. A group with nothing ticked doesn't narrow the list.
         </p>
+        {f.type === 'admin_meeting' && (
+          <p className="text-xs text-muted-foreground">Appointed roles use current offices and team appointments. Add Kit Convenor when needed. Hockey Committee uses the existing committee answers. Check the invite count before publishing.</p>
+        )}
         {EVENT_GROUPS.filter((g) => !(f.team && g.key === 'team')).map((g) => {
           const options = audienceOptions(g.key, view.groups[g.key] ?? []);
           if (!options.length) return null;
@@ -679,6 +703,7 @@ function EventEditor({ view, data }: { view: ManageView; data: ResponsesView | n
     formGaps([
       [!f.title.trim(), { id: 'event-title', label: 'Title' }],
       [!f.startsAt, { id: 'event-starts', label: 'Starts' }],
+      [f.type === 'admin_meeting' && !Object.values(f.audience).some((v) => v.length), { id: 'event-audience', label: "Who's invited" }],
       [endBeforeStart, { id: 'event-ends', label: 'An end after the start' }],
       [lateDeadline, { id: 'event-answer-by', label: 'An answer-by date before it ends' }],
       [f.paymentMode === 'payme_fps' && !f.paymentDetails.trim(), { id: 'event-pay-to', label: 'PayMe link or FPS ID' }],
