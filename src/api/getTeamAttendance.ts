@@ -54,7 +54,7 @@ export interface TeamAttendance {
   fixtures: TeamFixture[];
 }
 
-/** Every squad's per-fixture availability for the season. Coach only. */
+/** Every active team's read-only availability for active players and coaches. */
 export async function getTeamAttendance(): Promise<TeamAttendance> {
   return apiGet<TeamAttendance>('/api/team-attendance');
 }

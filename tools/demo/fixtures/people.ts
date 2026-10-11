@@ -18,6 +18,7 @@ import { OTHERS, PERSONAS, SEASON, SQUAD_PLAYERS, TEAMS, SAT1, at, day, sections
 interface Person {
   id: string;
   name: string;
+  registeredName: string | null;
   team: string | null;
   position: string | null;
   status: 'Member' | 'Applicant';
@@ -44,7 +45,7 @@ let memberNo = 4100;
 function member(name: string, team: string | null, position: string | null, more: Partial<Person> = {}): Person {
   memberNo += 37;
   return {
-    id: idFor(name), name, team, position, status: 'Member', stage: 'Accepted', active: true,
+    id: idFor(name), name, registeredName: `${name.split(' ').slice(1).join(' ').toUpperCase()} ${name.split(' ')[0]}`, team, position, status: 'Member', stage: 'Accepted', active: true,
     memberType: 'Main', categoryType: 'Sports Preferred', membershipNo: `D${memberNo}`,
     joinDate: `20${16 + (memberNo % 9)}-09-01`, commitmentEndDate: SEASON_END,
     selectedTeamSos: team, selectedTeamEos: null,
@@ -54,7 +55,7 @@ function member(name: string, team: string | null, position: string | null, more
 
 /** The person the guide's screenshots open: an applicant the Membership Officer is about to approve. */
 const TOM: Person = {
-  id: 'demoP102', name: 'Tom Reid', team: 'HKFC D', position: 'Midfielder',
+  id: 'demoP102', name: 'Tom Reid', registeredName: null, team: 'HKFC D', position: 'Midfielder',
   status: 'Applicant', stage: '6. Membership Officer (Signed)', active: true,
   memberType: 'Main', categoryType: 'Junior (21-27)', membershipNo: 'D20417',
   joinDate: day(-3), commitmentEndDate: `${Number(SEASON.slice(5)) + 1}-08-31`,
@@ -106,10 +107,10 @@ const SECOND_HARRY = byId('demoP113')!;
 
 function search(q: string): { people: PersonSearchRow[] } {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const people = PEOPLE.filter((p) => words.every((w) => p.name.toLowerCase().includes(w)))
+  const people = PEOPLE.filter((p) => words.every((w) => `${p.name} ${p.registeredName ?? ''}`.toLowerCase().includes(w)))
     .sort((a, b) => a.name.localeCompare(b.name))
     .slice(0, 30)
-    .map(({ id, name, team, status, stage, active }) => ({ id, name, team, status, stage, active }));
+    .map(({ id, name, registeredName, team, status, stage, active }) => ({ id, name, registeredName, team, status, stage, active }));
   return { people };
 }
 
@@ -127,6 +128,7 @@ function canFor(persona: Persona, p: Person): PersonAdminCan {
     stage: membership && stageTargets(p.status, p.stage).length > 0,
     squad: sections.includes('club') || registeredTeam,
     registeredTeam,
+    registeredName: sections.includes('dataChecks'),
     suspend: persona.offices.includes('hockeyConvenor'),
     activate: persona.offices.includes('sectionCaptain'),
     juniorRoute: membership && isJuniorMember(p),
@@ -137,7 +139,7 @@ function personView(persona: Persona, id: string) {
   const p = byId(id);
   if (!p) return reply(404, { error: 'NOT_FOUND', message: 'Person not found.' });
   const can = canFor(persona, p);
-  const view: PersonAdminView = { id: p.id, name: p.name, status: p.status, stage: p.stage, active: p.active, team: p.team, can };
+  const view: PersonAdminView = { id: p.id, name: p.name, registeredName: p.registeredName, status: p.status, stage: p.stage, active: p.active, team: p.team, can };
   if (can.membership) {
     const membership: PersonMembership = {
       memberType: p.memberType, categoryType: p.categoryType, membershipNo: p.membershipNo,
@@ -152,6 +154,14 @@ function personView(persona: Persona, id: string) {
     view.teamOptions = TEAMS;
   }
   return view;
+}
+
+/** Live demo task projection, so saves in People remove the task just as in the Worker. */
+export function missingRegisteredNameDemoTasks(persona: Persona): import('@/api/getMyTasks').MyTask[] {
+  if (!persona.offices.includes('hockeyConvenor')) return [];
+  return PEOPLE.filter((p) => p.active && !p.registeredName?.trim()).map((p) => ({
+    id: `registered-name:${p.id}`, key: 'registered-name', subject: p.name, url: `/people/${p.id}`,
+  }));
 }
 
 // ── History ─────────────────────────────────────────────────────────────
@@ -400,6 +410,25 @@ export const routes: Routes = {
   'GET /api/admin/people/:id': ({ persona, params }) => personView(persona, params.id),
   'GET /api/history': ({ query }) => history(query.get('person'), query.get('match')),
   'POST /api/admin/people': () => ({ ...ok, id: 'demoNewPerson' }),
+  'GET /api/admin/people/:id/registered-name-suggestions': ({ persona, params }) => {
+    if (!sectionsOf(persona).includes('dataChecks')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
+    const p = byId(params.id);
+    if (!p) return reply(404, { error: 'NOT_FOUND', message: 'Person not found.' });
+    return { suggestions: p.registeredName ? [] : [
+      { name: 'REID Tom', source: 'matchCard', cards: 3, teams: ['HKFC D'] },
+      { name: 'REID Thomas', source: 'matchCard', cards: 1, teams: ['HKFC C'] },
+    ] };
+  },
+  'POST /api/admin/people/:id/registered-name': ({ persona, params, body }) => {
+    if (!sectionsOf(persona).includes('dataChecks')) return reply(403, { error: 'FORBIDDEN', message: 'Officer access required.' });
+    const p = byId(params.id);
+    if (!p) return reply(404, { error: 'NOT_FOUND', message: 'Person not found.' });
+    if ((body?.expect as { registeredName?: unknown } | undefined)?.registeredName !== p.registeredName) return reply(409, { error: 'CHANGED', message: 'Someone else changed this while you had it open. Reload and try again.' });
+    const value = typeof body?.registeredName === 'string' ? body.registeredName.trim() : null;
+    if (value === 'TAKEN Name') return reply(409, { error: 'NAME_TAKEN', message: 'Another player already has this registered name.' });
+    p.registeredName = value;
+    return { ...ok, linked: value ? 3 : 0 };
+  },
   'POST /api/admin/people/:id/membership': ({ body }) => ({ ...ok, changed: keys(body?.expect), removedPeriods: 0 }),
   'POST /api/admin/people/:id/squad': ({ body }) => ({ ...ok, changed: keys(body?.expect) }),
   'POST /api/admin/people/:id/stage': () => ({ ...ok, changed: ['applicant_stage'] }),

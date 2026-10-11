@@ -341,3 +341,24 @@ describe("waivers count for the season they were signed in", () => {
     expect(waiversDoneThisSeason(at, today)).toBe(done);
   });
 });
+
+describe("missing registered names in the Convenor's task list", () => {
+  it("adds tasks to the real My tasks response and removes each when corrected or inactive", async () => {
+    db.state.officers.push(office("hockeyConvenor", ID.chris, { id: "recConvenorRow001" }));
+    pg.tables.offices.push({ id: "recConvenorRow001", role: "hockey_convenor", status: "Active", person_id: uuid(ID.chris), office_email: null });
+    for (const p of pg.tables.people) p.registered_name = `REGISTERED ${p.api_id}`;
+    const pat = pg.tables.people.find((p) => p.api_id === ID.pat)!;
+    const sue = pg.tables.people.find((p) => p.api_id === ID.sue)!;
+    pat.registered_name = null;
+    sue.registered_name = "  ";
+    const nameTasks = (tasks: any[]) => tasks.filter((t) => t.key === "registered-name");
+    expect(nameTasks(await tasksFor("chris@hkfc.com"))).toEqual([
+      { id: `registered-name:${ID.pat}`, key: "registered-name", subject: "Pat Test", url: `/people/${ID.pat}` },
+      { id: `registered-name:${ID.sue}`, key: "registered-name", subject: "Sue Test", url: `/people/${ID.sue}` },
+    ]);
+    expect(nameTasks(await tasksFor("cap@hkfc.com"))).toEqual([]);
+    pat.registered_name = "TEST Pat";
+    sue.active = false;
+    expect(nameTasks(await tasksFor("chris@hkfc.com"))).toEqual([]);
+  });
+});

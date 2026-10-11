@@ -1,6 +1,7 @@
 // Player view: profile, fixtures, tasks, availability rules, stats, details.
 import type { ProfileData } from '@/api/getMyProfile';
 import type { GetMyFixturesOutput, MyFixture, PastFixture } from '@/api/getMyFixtures';
+import { missingRegisteredNameDemoTasks } from './people';
 import type { MyTask } from '@/api/getMyTasks';
 import { demoDateTasks } from './events';
 import type { AvailabilityRule } from '@/api/availabilityRules';
@@ -32,6 +33,7 @@ export function profile(p: Persona): ProfileData {
     officerRoles: p.offices.map((office) => ({ office, designation: '' })),
     sections: sectionsOf(p) as ProfileData['sections'],
     applicant: false,
+    teamAvailability: true,
     inviteLink: 'https://app.eddy.global/join?ref=demo',
     seasonPlans: isCoach(p),
     volunteers: isCoach(p) || officer,
@@ -128,7 +130,7 @@ function tasks(p: Persona): MyTask[] {
   const out: MyTask[] = [{ id: 'demoTask1', key: 'details', url: '/my-details' }];
   if (p.offices.includes('membershipOfficer')) out.push({ id: 'demoTask2', key: 'accept', subject: 'Lucas Moreau', role: 'Membership Officer', url: '/membership' });
   if (p.umpiring) out.push({ id: 'demoTask3', key: 'duty', url: '/umpiring' });
-  return out;
+  return [...out, ...missingRegisteredNameDemoTasks(p)];
 }
 
 const RULES: AvailabilityRule[] = [
@@ -207,6 +209,7 @@ export const routes: Routes = {
   'GET /api/my-availability-rules': () => ({ rules: RULES }),
   'GET /api/player-stats/:id': ({ params }) => stats(params.id),
   'GET /api/player-attendance/:id': ({ params }) => attendance(params.id),
+  'GET /api/team-attendance/player/:id': ({ params }) => attendance(params.id),
   'GET /api/calendar/link': () => ({ url: 'https://api.example.com/calendar/demo.ics' }),
   'GET /api/calendar/team-link': () => ({ url: 'https://api.example.com/calendar/demo-team.ics' }),
   'GET /api/details/me': ({ persona }) => details(persona),
