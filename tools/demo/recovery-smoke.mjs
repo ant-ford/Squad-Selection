@@ -94,6 +94,8 @@ try {
     { name: 'interrupted downloads keep the original error', mode: 'interrupted', loads: 3 },
     { name: 'missing CSS keeps its original preload error', mode: 'css', loads: 3 },
     { name: 'exhausted recovery does not reload again', mode: 'gone', loads: 1, flag: 'cleared' },
+    { name: 'a later failure gets fresh recovery attempts after the window expires', mode: 'transient', loads: 2, success: true, flag: 'cleared', expired: true },
+    { name: 'a continuously missing screen still stops after an expired window', mode: 'gone', loads: 3, flag: 'cleared', expired: true },
     { name: 'blocked browser storage surfaces the error without looping', mode: 'gone', loads: 1, blocked: true },
   ];
   for (const test of cases) {
@@ -108,6 +110,7 @@ try {
         for (const registration of await navigator.serviceWorker.getRegistrations()) await registration.unregister();
         for (const key of await caches.keys()) await caches.delete(key);
         if (${Boolean(test.flag)}) sessionStorage.setItem('stale-deploy-recovered', ${JSON.stringify(test.flag ?? '')});
+        if (${Boolean(test.expired)}) sessionStorage.setItem('stale-deploy-recovery-started-at', String(Date.now() - 11 * 60 * 1000));
         await (await caches.open('recovery-test-marker')).put('/marker', new Response('marker'));
         await navigator.serviceWorker.register('/test-sw.js');
         await navigator.serviceWorker.ready;

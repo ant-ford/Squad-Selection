@@ -3,7 +3,7 @@
 //
 // First failure in a tab: plain reload, service worker and caches kept.
 // Second: unregister the worker, delete every cache, reload.
-// Third and later: give up, so the error shows instead of a reload loop.
+// Third and later: give up for ten minutes, avoiding a reload loop.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -51,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("recoverFromStaleDeploy", () => {
@@ -74,7 +75,7 @@ describe("recoverFromStaleDeploy", () => {
     expect(deleteCache.mock.invocationCallOrder[1]).toBeLessThan(reload.mock.invocationCallOrder[0]);
   });
 
-  it("gives up after two reloads in a tab", async () => {
+  it("gives up after two reloads within the same window", async () => {
     await (await loadPage())();
     await (await loadPage())();
     reload.mockClear();
@@ -82,6 +83,53 @@ describe("recoverFromStaleDeploy", () => {
     for (let i = 0; i < 3; i++) {
       expect(await (await loadPage())()).toBe(false);
     }
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("restores both attempts for a later failure, while preserving the limit across page loads", async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(start);
+    await (await loadPage())();
+    // The second reload must not extend the window's starting time.
+    clock.mockReturnValue(start + 1000);
+    await (await loadPage())();
+    reload.mockClear();
+    unregister.mockClear();
+
+    clock.mockReturnValue(start + 10 * 60 * 1000 - 1);
+    expect(await (await loadPage())()).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+    clock.mockReturnValue(start + 10 * 60 * 1000);
+    expect(await (await loadPage())()).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(unregister).not.toHaveBeenCalled();
+    expect(await (await loadPage())()).toBe(true);
+    expect(unregister).toHaveBeenCalledTimes(2);
+    expect(await (await loadPage())()).toBe(false);
+  });
+
+  it("lets an older client's exhausted flag expire without granting immediate repeated reloads", async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(start);
+    storage = memoryStorage({ "stale-deploy-recovered": "cleared" });
+    stubBrowser();
+    expect(await (await loadPage())()).toBe(false);
+    expect(await (await loadPage())()).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+    clock.mockReturnValue(start + 10 * 60 * 1000);
+    expect(await (await loadPage())()).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(unregister).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen the allowance when the clock moves backwards", async () => {
+    const start = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(start);
+    await (await loadPage())();
+    await (await loadPage())();
+    reload.mockClear();
+    clock.mockReturnValue(start - 1000);
+    expect(await (await loadPage())()).toBe(false);
     expect(reload).not.toHaveBeenCalled();
   });
 
