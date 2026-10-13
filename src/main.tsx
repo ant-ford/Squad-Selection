@@ -13,7 +13,7 @@ installClientErrorReporting();
 // A chunk that fails to load almost always means this client is holding an
 // index.html from a previous deploy. recoverFromStaleDeploy reloads, and if
 // the same thing happens again drops the service worker and its caches before
-// reloading; it never goes further than that in one tab.
+// reloading; it stops after those two attempts for ten minutes.
 installChunkRecovery(reportUnrecoveredScreenLoad);
 
 // The person's own fixtures, profile and tasks from their last visit go into

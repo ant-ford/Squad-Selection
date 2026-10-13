@@ -14,9 +14,13 @@
 //
 // If the reload lands on the same failure, the cached shell itself is stale,
 // so the second attempt drops the service worker and its caches before
-// reloading. After that we stop and let the error surface.
+// reloading. After that we stop and let the error surface. The allowance
+// returns after ten minutes, so a long-lived tab can recover from later
+// failures without resetting the guard while background panels still load.
 
 const RECOVERY_FLAG = 'stale-deploy-recovered';
+const RECOVERY_STARTED_AT = 'stale-deploy-recovery-started-at';
+const RECOVERY_WINDOW_MS = 10 * 60 * 1000;
 
 /** Value of RECOVERY_FLAG after the first step, kept across the reload. */
 const RELOADED = 'reloaded';
@@ -39,8 +43,8 @@ export function isChunkLoadError(error: unknown): boolean {
 
 /**
  * Reloads; on a second failure in the same tab, clears the service worker and
- * its caches first. At most those two reloads per tab: if the state is still
- * broken after both we stop rather than reload forever.
+ * its caches first. At most two reloads per ten-minute window: if the state
+ * is still broken after both we stop rather than reload forever.
  *
  * Returns false when recovery has been used up, so the caller can show a real
  * error instead.
@@ -53,8 +57,19 @@ export async function recoverFromStaleDeploy(): Promise<boolean> {
   let step: string | null;
   try {
     step = sessionStorage.getItem(RECOVERY_FLAG);
+    const storedStart = sessionStorage.getItem(RECOVERY_STARTED_AT);
+    const startedAt = storedStart === null ? NaN : Number(storedStart);
+    const now = Date.now();
+    const hasStart = Number.isFinite(startedAt) && startedAt >= 0;
+    if (step === null || !hasStart || now - startedAt >= RECOVERY_WINDOW_MS) {
+      // An older client left only a flag. Preserve its limit, but start the
+      // clock so even that exhausted state will eventually expire.
+      if (step === null || hasStart) step = null;
+      sessionStorage.setItem(RECOVERY_STARTED_AT, String(now));
+    }
     // Any other value - including '1' from the version of this code that
-    // cleared everything straight away - means both steps have been used.
+    // cleared everything straight away - means both steps have been used
+    // in this window. A clock adjustment backwards cannot reopen it.
     if (step !== null && step !== RELOADED) return false;
     sessionStorage.setItem(RECOVERY_FLAG, step === null ? RELOADED : 'cleared');
   } catch {
