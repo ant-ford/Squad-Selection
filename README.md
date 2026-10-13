@@ -9,6 +9,20 @@ Eddy is the Hong Kong Football Club men's hockey section's web app. It covers pl
 
 ---
 
+## Continuing after chat cleanup
+
+Project context was consolidated on **13 Oct 2026**, against GitHub main `5f07207` (PR #329). Read [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) for the decisions behind the product, remaining owner checks, related repositories and private resources. Earlier chat claims about pending PRs, Airtable dependencies, retention report mode or coach-only Team availability have been superseded.
+
+- Production retention is configured as `remove`; Web Push is enabled in production and preview.
+- Team availability is released at `/team-availability`; old `/coach/availability` links redirect.
+- After 20 Oct 2026, review the remaining Airtable archive and old integrations with the owner before removing them.
+- Phone checks for push delivery and umpiring WhatsApp symbols, production performance measurements, and external guide updates still need confirmation.
+- The older `feat/team-availability-for-everyone` worktree contains uncommitted work that overlaps the released feature. Compare it with current main before reusing or removing it.
+
+The main checkout was behind GitHub when this handover was prepared. These docs describe the verified GitHub main above; update the code checkout before implementation. The chat backup is private and outside this public repository.
+
+---
+
 ## Architecture
 
 ```
@@ -359,6 +373,7 @@ npx vitest run tests/golden-eligibility.test.ts
 
 | Document | What it is |
 |---|---|
+| [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) | Chat handover: owner decisions, follow-ups, related repos and private resources |
 | [docs/glossary.md](docs/glossary.md) | The words on screen: product and screen names, offices, availability terms, writing rules |
 | [docs/HKFC Eligibility & Selection Rules Specification v1.0.md](docs/HKFC%20Eligibility%20%26%20Selection%20Rules%20Specification%20v1.0.md) | The club's eligibility and selection rules, which the engine implements |
 | [docs/HKHA Competition Bye-Laws Summary.md](docs/HKHA%20Competition%20Bye-Laws%20Summary.md) | Developer summary of the HKHA bye-laws (source PDF: 10 Sep 2026 edition, alongside it) |
@@ -374,3 +389,4 @@ npx vitest run tests/golden-eligibility.test.ts
 | [docs/CUTOVER.md](docs/CUTOVER.md) | The 2 Oct 2026 Airtable → Supabase switch-over runbook (record) |
 | [docs/migration/FIELDS.md](docs/migration/FIELDS.md) | Which Airtable fields became which columns (record) |
 | [docs/archive/](docs/archive/) | Historical reviews, the cleanup prompt and report, and the original roadmap. Not current. |
+
