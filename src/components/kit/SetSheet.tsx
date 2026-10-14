@@ -10,7 +10,9 @@ import { allocateSpare, editSetSizes, getSetHistory, moveKit, releaseSet, swapIt
 import {
   KIT_ITEMS,
   KIT_SIZE_OPTIONS,
+  SWAPPABLE,
   describePlace,
+  spareSwapOptions,
   suggestSwaps,
   type KitBoard,
   type KitMove,
@@ -18,6 +20,7 @@ import {
   type KitSet,
   type KitSizes,
   type KitSwap,
+  type SwappableItem,
 } from '@shared/kit';
 import { reportMove } from '@/lib/kitMoves';
 import { PersonPicker, firstName, inputClass, primaryButton, secondaryButton, sizesLine } from './kitUi';
@@ -104,6 +107,8 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
   const [mode, setMode] = useState<'none' | 'give' | 'allocate' | 'sizes'>('none');
   const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [swapItemChoice, setSwapItemChoice] = useState<SwappableItem>('shorts');
+  const [spareId, setSpareId] = useState('');
 
   const done = () => {
     onChanged();
@@ -135,6 +140,8 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
     onError: failed,
   });
   const swaps = useMemo(() => suggestSwaps(set, board.sets), [set, board.sets]);
+  const spareOptions = useMemo(() => spareSwapOptions(set, board.sets, swapItemChoice), [set, board.sets, swapItemChoice]);
+  const chosenSpare = spareOptions.find((s) => s.id === spareId);
   const release = useMutation({
     mutationFn: () => releaseSet(set.id),
     onSuccess: () => {
@@ -224,6 +231,37 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
               </div>
             )}
           </section>
+
+          {owner && set.place !== 'on_order' && (
+            <section className="space-y-2">
+              <h3 className="text-xs font-semibold text-muted-foreground">Swap with a spare</h3>
+              <p className="text-xs text-muted-foreground">Choose another available size if their preferred size is unavailable. Shirts and shirt numbers stay the same; their preferred size stays on record.</p>
+              <label className="block text-xs text-muted-foreground">
+                Item
+                <select className={inputClass} value={swapItemChoice} onChange={(e) => { setSwapItemChoice(e.target.value as SwappableItem); setSpareId(''); }}>
+                  {SWAPPABLE.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Available spare
+                <select className={inputClass} value={chosenSpare?.id ?? ''} onChange={(e) => setSpareId(e.target.value)}>
+                  <option value="">Choose a spare</option>
+                  {spareOptions.map((s) => <option key={s.id} value={s.id}>{s.sizes[swapItemChoice]} · spare #{s.shirtNo} · {describePlace(s)}</option>)}
+                </select>
+              </label>
+              {spareOptions.length === 0 && <p className="text-xs text-muted-foreground">No spare in a different size is available from this order.</p>}
+              <button className={secondaryButton} disabled={busy || !chosenSpare} onClick={() => {
+                if (!chosenSpare) return;
+                const label = SWAPPABLE.find((s) => s.key === swapItemChoice)!.label;
+                setConfirm({
+                  title: `Swap ${label.toLowerCase()} with spare #${chosenSpare.shirtNo}?`,
+                  message: `${owner.name} (#${set.shirtNo}) gets ${label.toLowerCase()} ${chosenSpare.sizes[swapItemChoice]}. Spare #${chosenSpare.shirtNo} gets ${set.sizes[swapItemChoice] ?? 'none'} instead.${set.wanted?.[swapItemChoice] && set.wanted[swapItemChoice] !== chosenSpare.sizes[swapItemChoice] ? ` Their preferred size remains ${set.wanted[swapItemChoice]}.` : ''} Shirts and shirt numbers stay the same. Record this once the items have been exchanged.`,
+                  label: 'Record swap',
+                  run: () => swap.mutate({ item: swapItemChoice, label, with: chosenSpare, mutual: false }),
+                });
+              }}>Record swap</button>
+            </section>
+          )}
 
           {set.place === 'on_order' ? (
             <p className="text-xs text-muted-foreground">This order hasn't arrived yet, so the set can't be handed out.</p>

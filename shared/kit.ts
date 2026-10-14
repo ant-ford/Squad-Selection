@@ -88,6 +88,13 @@ export interface KitSwap {
   mutual: boolean;
 }
 
+/** Spare alternatives chosen by the convenor, without changing the player's preferred size. */
+export function spareSwapOptions(set: KitSet, sets: KitSet[], item: SwappableItem): KitSet[] {
+  return sets.filter((s) => s.id !== set.id && !s.owner && s.place !== "on_order" &&
+    s.sizes[item] && s.sizes[item] !== set.sizes[item])
+    .sort((a, b) => a.shirtNo - b.shirtNo);
+}
+
 /**
  * Swaps that give a set's owner the size they now want for an item: a spare
  * with that size (lowest number first), or another player's set whose owner

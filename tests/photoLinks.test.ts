@@ -101,7 +101,7 @@ describe("GET /api/files/:id", () => {
   it("still refuses a link with a bad signature", async () => {
     const { r2 } = bucket({ "people/u1/photo/a.jpg": { body: "PHOTO", type: "image/jpeg" } });
     const link = await photoLink(env, FILE);
-    expect((await serve(r2, `${link.replace(/sig=./, "sig=0")}&v=thumb`)).status).toBe(404);
+    expect((await serve(r2, `${link.replace(/sig=(.)/, (_, first: string) => `sig=${first === "0" ? "1" : "0"}`)}&v=thumb`)).status).toBe(404);
   });
 });
 

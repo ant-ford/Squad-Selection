@@ -61,7 +61,7 @@ describe('approved Events preview migration workflow', () => {
   });
   it('keeps test counts consistent with the SQL plans and restricts the workflow to the reviewed branch', () => {
     for (const m of MIGRATIONS) expect(readFileSync('supabase/tests/' + m.test, 'utf8')).toContain(`select plan(${m.count});`);
-    const workflow = readFileSync('.github/workflows/preview.yml', 'utf8');
+    const workflow = readFileSync('.github/workflows/preview.yml', 'utf8').replace(/\r\n/g, '\n');
     expect(workflow).toMatch(/Apply and test Events migrations on eddy-preview\n\s+if: github.ref == 'refs\/heads\/feat\/event-date-polls'/);
     expect(workflow.indexOf('node scripts/preview-event-dates.mjs')).toBeLessThan(workflow.indexOf('name: Deploy API Worker'));
   });
