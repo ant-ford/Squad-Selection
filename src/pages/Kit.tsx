@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
-import { AlertTriangle, MessageCircle, PackageOpen, Search } from 'lucide-react';
+import { AlertTriangle, Download, MessageCircle, PackageOpen, Search } from 'lucide-react';
 import AppHeader from '@/components/AppHeader';
 import AppFooter from '@/components/AppFooter';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -17,6 +17,8 @@ import { ApiError } from '@/lib/apiClient';
 import { LONG_DATE, safeFormat } from '@/lib/dateUtils';
 import { useMyProfile } from '@/lib/queries';
 import { useSheetParam } from '@/lib/useSheetParam';
+import { playerKitCsv } from '@/lib/kitCsv';
+import { saveCsv } from '@/lib/saveCsv';
 import { getKitBoard, getUncollectedKit, setOrderExpected, setOrderReceived } from '@/api/kit';
 import { hkDateKey } from '@shared/hkDateKey';
 import { suggestSwaps, type KitSet } from '@shared/kit';
@@ -102,6 +104,17 @@ export default function Kit() {
   const count = (key: string) => (board?.sets ?? []).filter(FILTERS.find((f) => f.key === key)!.test).length;
   const open = board?.sets.find((s) => s.id === openId) ?? null;
   const order = board?.order ?? null;
+  const downloadPlayers = () => {
+    if (!board || !order) return;
+    try {
+      const { csv, count } = playerKitCsv(board.people);
+      const supplier = order.supplier.replace(/[^\w -]+/g, '').trim() || 'kit';
+      saveCsv(`hkfc-hockey-${supplier}-players-kit-${hkDateKey(new Date().toISOString())}.csv`, csv);
+      toast.success(`${count} ${count === 1 ? 'player' : 'players'} in the file`);
+    } catch {
+      toast.error('Could not download the CSV. Try again.');
+    }
+  };
   // A link to a set that isn't in this order just drops the parameter.
   useEffect(() => {
     if (board && openId && !open) setSheet.close();
@@ -167,6 +180,14 @@ export default function Kit() {
               </label>
             )}
           </div>
+          <button
+            className={secondaryButton}
+            disabled={!board.people.some((p) => p.active)}
+            onClick={downloadPlayers}
+            title={`All active players' numbers and recorded ${order.supplier} sizes, including those waiting for kit`}
+          >
+            <Download className="h-4 w-4" aria-hidden /> Download players CSV
+          </button>
           {!order.receivedOn && (
             <button className={secondaryButton} disabled={arrived.isPending} onClick={() => setConfirmArrived(true)}>
               <PackageOpen className="h-4 w-4" /> The kit has arrived
