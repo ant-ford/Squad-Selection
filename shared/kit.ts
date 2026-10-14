@@ -88,9 +88,10 @@ export interface KitSwap {
   mutual: boolean;
 }
 
-/** Spare alternatives chosen by the convenor, without changing the player's preferred size. */
+/** Spare alternatives without changing the preferred size. Like direct matches,
+ * allocation swaps are allowed even when the order has no received date. */
 export function spareSwapOptions(set: KitSet, sets: KitSet[], item: SwappableItem): KitSet[] {
-  return sets.filter((s) => s.id !== set.id && !s.owner && s.place !== "on_order" &&
+  return sets.filter((s) => s.id !== set.id && !s.owner &&
     s.sizes[item] && s.sizes[item] !== set.sizes[item])
     .sort((a, b) => a.shirtNo - b.shirtNo);
 }

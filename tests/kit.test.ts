@@ -69,7 +69,7 @@ describe("kit", () => {
     expect(mismatches(sizes("L"), undefined)).toEqual([]);
   });
 
-  it("offers L spare shorts when XL is wanted, preserving the preference and excluding unavailable or owned sets", () => {
+  it("offers L spare shorts when XL is wanted, preserving the preference and excluding missing, same-size or owned items", () => {
     const me = { ...spare(5, "HKFC A", sizes("L", { shorts: "M" })),
       owner: { id: "recA", name: "Al", team: "HKFC A", status: "Member" }, wanted: sizes("L", { shorts: "XL" }) };
     const large = spare(12, "HKFC A", sizes("XL", { shorts: "L" }));
@@ -80,7 +80,8 @@ describe("kit", () => {
       { ...large, id: "owned", owner: me.owner },
     ];
     expect(suggestSwaps(me, sets)).toEqual([]);
-    expect(spareSwapOptions(me, sets, "shorts")).toEqual([large]);
+    expect(spareSwapOptions(me, sets, "shorts")).toEqual([large, sets[4]]);
+    expect(spareSwapOptions({ ...me, place: "on_order" }, sets, "shorts")).toEqual([large, sets[4]]);
     expect(me.wanted.shorts).toBe("XL");
   });
 

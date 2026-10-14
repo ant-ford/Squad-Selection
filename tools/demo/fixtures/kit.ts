@@ -89,7 +89,7 @@ function people(): KitPerson[] {
 function board(orderId: string | null): KitBoard {
   const order = orderId === NEXT_ORDER.id ? NEXT_ORDER : ORDER;
   const all = sets();
-  const onOrder = all.slice(0, 3).map((s, i): KitSet => ({
+  const onOrder = [...all.slice(0, 3), all.find((s) => s.shirtNo === 40)!].map((s, i): KitSet => ({
     ...s, id: `demoNext${i}`, shirtNo: 120 + i, teamRange: 'HKFC D', place: 'on_order', holder: null, heldSince: null, pendingTo: null, pendingSince: null,
   }));
   return { orders: [NEXT_ORDER, ORDER], order, sets: order === NEXT_ORDER ? onOrder : all, people: people(), teams: TEAMS };
@@ -125,6 +125,7 @@ export const routes: Routes = {
   'GET /api/kit/board': ({ query }) => board(query.get('order')),
   'GET /api/kit/me': ({ persona, variants }) => myKit(persona, variants),
   'GET /api/kit/sets/:id/history': (): KitMove[] => HISTORY,
+  'POST /api/kit/swap': () => ({ ok: true }),
   // Kit from an earlier delivery still in the store after 14 days.
   'GET /api/kit/uncollected': (): { people: UncollectedKit[] } => ({
     people: [

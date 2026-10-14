@@ -38,6 +38,46 @@ try {
   assert.match(await text(), /With Ben Hughes/);
   console.log('ok   Kit retains number sorting, filters and set actions');
 
+  await goto('/kit?as=kit-convenor&show=sizes');
+  await page.click('Noah Singh');
+  assert.match(await text(), /Swap an item/);
+  assert.equal(await page.eval(`return [...document.querySelectorAll('button')].some((el) => el.getClientRects().length && el.innerText.trim() === 'Correct supplier delivery record')`), false);
+  await page.click('Swap an item', { exact: true });
+  assert.deepEqual(await page.eval(`return [...document.querySelector('[role=dialog] select').options].map((o) => o.value)`), ['shorts', 'socks', 'goalieSmock']);
+  await page.eval(`const el = [...document.querySelectorAll('[role=dialog] select')].find((el) => [...el.options].some((o) => o.value === 'demoKit40')); el.value = 'demoKit40'; el.dispatchEvent(new Event('change', { bubbles: true }));`);
+  await page.settle();
+  await page.click('Record swap', { exact: true });
+  assert.match(await text(), /gets shorts L/);
+  assert.match(await text(), /preferred size remains XL/);
+  assert.match(await text(), /Shirts and shirt numbers stay the same/);
+  await page.click('Cancel', { exact: true, selector: '[role=dialog] button' });
+  await page.click('Cancel', { exact: true, selector: '[role=dialog] button' });
+  await page.click('Delivery corrections and allocation');
+  await page.click('Remove allocation and release number…', { exact: true });
+  assert.match(await text(), /will lose shirt number 66/);
+  assert.match(await text(), /Type 66 to confirm/);
+  assert.equal(await page.eval(`return [...document.querySelectorAll('button')].find((el) => el.innerText.trim() === 'Remove allocation and release number').disabled`), true);
+  await page.click('Cancel', { exact: true, selector: '[role=dialog] button' });
+  await page.click('Correct supplier delivery record', { exact: true });
+  assert.match(await text(), /To exchange items, use Swap an item/);
+  assert.match(await text(), /Save delivery correction/);
+  console.log('ok   Kit separates swaps, supplier corrections and guarded shirt-number release');
+
+  await goto('/kit?as=kit-convenor&order=demoOrder2');
+  await page.click('Marcus Leung');
+  await page.click('Swap an item', { exact: true });
+  assert.match(await text(), /This order is not marked as arrived/);
+  await page.eval(`const el = [...document.querySelectorAll('[role=dialog] select')].find((el) => [...el.options].some((o) => o.value === 'demoNext3')); el.value = 'demoNext3'; el.dispatchEvent(new Event('change', { bubbles: true }));`);
+  await page.settle();
+  await page.click('Record swap', { exact: true });
+  assert.match(await text(), /gets shorts L/);
+  assert.match(await text(), /gets M instead/);
+  await page.screenshot(path.join(out, 'kit-swap-on-order.png'));
+  await page.click('Record swap', { exact: true, nth: 1 });
+  await page.settle();
+  assert.match(await text(), /Shorts swapped with #123/);
+  console.log('ok   Kit records a spare swap when the order has no received date');
+
   await goto('/umpiring?as=umpire-coordinator');
   const attention = await page.eval(`return document.querySelector('section[aria-label="Duties needing attention"]').innerText`);
   assert.match(attention, /5 uncovered · 1 with timing conflicts/);
@@ -78,7 +118,7 @@ try {
   assert.deepEqual(problems, []);
   console.log('ok   Kit and Umpiring fit mobile and desktop without browser errors');
   await page.close();
-  console.log('5/5 action priority browser scenarios passed.');
+  console.log('7/7 action priority browser scenarios passed.');
 } finally {
   if (browser) await browser.close();
   await server.close();
