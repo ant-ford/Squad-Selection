@@ -72,7 +72,7 @@ function SizesEditor({ set, onSaved, onCancel }: { set: KitSet; onSaved: () => v
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        For what actually arrived. The shirt is printed with the number, so only change it if the supplier sent a different size.
+        Correct a recording error or a different size sent by the supplier. This changes the sizes recorded for this set. To exchange items, use Swap an item. The player’s preferred sizes are kept separately in their details.
       </p>
       <div className="grid grid-cols-2 gap-2">
         {KIT_ITEMS.map(({ key, label }) => (
@@ -91,7 +91,7 @@ function SizesEditor({ set, onSaved, onCancel }: { set: KitSet; onSaved: () => v
       </div>
       <div className="flex gap-2">
         <button className={primaryButton} disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? 'Saving…' : 'Save sizes'}
+          {save.isPending ? 'Saving…' : 'Save delivery correction'}
         </button>
         <button className={secondaryButton} onClick={onCancel}>
           Cancel
@@ -104,8 +104,8 @@ function SizesEditor({ set, onSaved, onCancel }: { set: KitSet; onSaved: () => v
 /** One set: where it is, and what can be done with it. */
 export default function SetSheet({ set, board, onClose, onChanged }: { set: KitSet; board: KitBoard; onClose: () => void; onChanged: () => void }) {
   const wide = useMediaQuery('(min-width: 640px)');
-  const [mode, setMode] = useState<'none' | 'give' | 'allocate' | 'sizes'>('none');
-  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
+  const [mode, setMode] = useState<'none' | 'give' | 'allocate' | 'sizes' | 'swap'>('none');
+  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; destructive?: boolean; typeToConfirm?: string; run: () => void }>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [swapItemChoice, setSwapItemChoice] = useState<SwappableItem>('shorts');
   const [spareId, setSpareId] = useState('');
@@ -207,6 +207,11 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" aria-hidden /> {m}
               </p>
             ))}
+            {owner && mode === 'none' && (
+              <button className={`${primaryButton} mt-2`} disabled={busy} onClick={() => setMode('swap')}>
+                Swap an item
+              </button>
+            )}
             {swaps.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {swaps.map((s) => (
@@ -232,10 +237,11 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
             )}
           </section>
 
-          {owner && set.place !== 'on_order' && (
+          {owner && mode === 'swap' && (
             <section className="space-y-2">
-              <h3 className="text-xs font-semibold text-muted-foreground">Swap with a spare</h3>
+              <h3 className="text-xs font-semibold text-muted-foreground">Swap an item with a spare</h3>
               <p className="text-xs text-muted-foreground">Choose another available size if their preferred size is unavailable. Shirts and shirt numbers stay the same; their preferred size stays on record.</p>
+              {set.place === 'on_order' && <p className="text-xs text-amber-700">This order is not marked as arrived. You can still record an item swap; its delivery status stays the same.</p>}
               <label className="block text-xs text-muted-foreground">
                 Item
                 <select className={inputClass} value={swapItemChoice} onChange={(e) => { setSwapItemChoice(e.target.value as SwappableItem); setSpareId(''); }}>
@@ -255,11 +261,12 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
                 const label = SWAPPABLE.find((s) => s.key === swapItemChoice)!.label;
                 setConfirm({
                   title: `Swap ${label.toLowerCase()} with spare #${chosenSpare.shirtNo}?`,
-                  message: `${owner.name} (#${set.shirtNo}) gets ${label.toLowerCase()} ${chosenSpare.sizes[swapItemChoice]}. Spare #${chosenSpare.shirtNo} gets ${set.sizes[swapItemChoice] ?? 'none'} instead.${set.wanted?.[swapItemChoice] && set.wanted[swapItemChoice] !== chosenSpare.sizes[swapItemChoice] ? ` Their preferred size remains ${set.wanted[swapItemChoice]}.` : ''} Shirts and shirt numbers stay the same. Record this once the items have been exchanged.`,
+                  message: `${owner.name} (#${set.shirtNo}) gets ${label.toLowerCase()} ${chosenSpare.sizes[swapItemChoice]}. Spare #${chosenSpare.shirtNo} gets ${set.sizes[swapItemChoice] ?? 'none'} instead.${set.wanted?.[swapItemChoice] && set.wanted[swapItemChoice] !== chosenSpare.sizes[swapItemChoice] ? ` Their preferred size remains ${set.wanted[swapItemChoice]}.` : ''} Shirts and shirt numbers stay the same. This records the agreed exchange between the two sets.`,
                   label: 'Record swap',
                   run: () => swap.mutate({ item: swapItemChoice, label, with: chosenSpare, mutual: false }),
                 });
               }}>Record swap</button>
+              <button className={secondaryButton} onClick={() => setMode('none')}>Cancel</button>
             </section>
           )}
 
@@ -296,32 +303,39 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
           )}
 
           {mode === 'none' && (
-            <div className="flex flex-wrap gap-2">
+            <>
               {!owner && (
                 <button className={secondaryButton} disabled={busy} onClick={() => setMode('allocate')}>
                   Give this spare to a joiner
                 </button>
               )}
-              {owner && (
-                <button
-                  className={secondaryButton}
-                  disabled={busy}
-                  onClick={() =>
-                    setConfirm({
-                      title: `Make #${set.shirtNo} a spare?`,
-                      message: `${owner.name} (${owner.status || 'no status'}) gives up number ${set.shirtNo}, and the set is kept as a spare for someone it fits. Someone who stops being Active doesn't need this: their set is already a spare.`,
-                      label: 'Make it a spare',
-                      run: () => release.mutate(),
-                    })
-                  }
-                >
-                  Make it a spare
-                </button>
-              )}
-              <button className={secondaryButton} disabled={busy} onClick={() => setMode('sizes')}>
-                Correct the sizes
-              </button>
-            </div>
+              <details className="rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-xs text-muted-foreground">Delivery corrections and allocation</summary>
+                <div className="space-y-3 pt-3">
+                  <section className="space-y-1">
+                    <p className="text-xs text-muted-foreground">For a recording error or a different size sent by the supplier. Player preferences are edited in their details.</p>
+                    <button className={secondaryButton} disabled={busy} onClick={() => setMode('sizes')}>
+                      Correct supplier delivery record
+                    </button>
+                  </section>
+                  {owner && (
+                    <section className="space-y-1 border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground">Remove {owner.name}’s allocation and release shirt number {set.shirtNo}. To return their kit to the store while keeping their number, use Back to the kit store.</p>
+                      <button className={`${secondaryButton} text-destructive`} disabled={busy} onClick={() => setConfirm({
+                        title: `Release ${owner.name}’s shirt number ${set.shirtNo}?`,
+                        message: `${owner.name} will lose shirt number ${set.shirtNo} and this kit allocation. The set becomes a spare for another player. This does not record an item swap or update their preferred sizes.`,
+                        label: 'Remove allocation and release number',
+                        destructive: true,
+                        typeToConfirm: String(set.shirtNo),
+                        run: () => release.mutate(),
+                      })}>
+                        Remove allocation and release number…
+                      </button>
+                    </section>
+                  )}
+                </div>
+              </details>
+            </>
           )}
 
           {mode === 'allocate' && (
@@ -339,7 +353,7 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
             </section>
           )}
 
-          {mode === 'sizes' && <SizesEditor set={set} onSaved={() => { toast.success('Sizes saved'); done(); }} onCancel={() => setMode('none')} />}
+          {mode === 'sizes' && <SizesEditor set={set} onSaved={() => { toast.success('Delivery record corrected'); done(); }} onCancel={() => setMode('none')} />}
 
           <section>
             <button className="text-xs text-primary underline" onClick={() => setShowHistory((v) => !v)}>
@@ -358,6 +372,8 @@ export default function SetSheet({ set, board, onClose, onChanged }: { set: KitS
           title={confirm.title}
           message={confirm.message}
           confirmLabel={confirm.label}
+          destructive={confirm.destructive}
+          typeToConfirm={confirm.typeToConfirm}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             confirm.run();
