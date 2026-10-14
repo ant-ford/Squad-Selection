@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../worker/src/env";
 import type { AuthorizedUser } from "../worker/src/auth";
 import { sectionsFor } from "../worker/src/auth";
-import { confirmKit, getKitBoard, getMyKit, getUncollectedKit, mismatches, moveKit, setOrderExpected, topUpCsv } from "../worker/src/kit";
-import { suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
+import { confirmKit, getKitBoard, getMyKit, getUncollectedKit, mismatches, moveKit, setOrderExpected, swapItem, topUpCsv } from "../worker/src/kit";
+import { spareSwapOptions, suggestSpares, suggestSwaps, type KitSet, type KitSizes } from "../shared/kit";
 
 const env = { DATA_SUPABASE_URL: "https://proj.supabase.co", DATA_SUPABASE_SECRET_KEY: "sb_secret_test" } as Env;
 const player = { email: "p@x.com", personId: "recPLAYER", role: "player", coachTeams: [], isSectionCaptain: false, officerRoles: [] } as unknown as AuthorizedUser;
@@ -67,6 +67,29 @@ describe("kit", () => {
   it("flags items where the owner's sizes differ from the set's", () => {
     expect(mismatches(sizes("L", { shorts: "M" }), sizes("L", { shorts: "XL", socks: "Large" }))).toEqual(["Shorts: M, wants XL", "Socks: wants Large, none ordered"]);
     expect(mismatches(sizes("L"), undefined)).toEqual([]);
+  });
+
+  it("offers L spare shorts when XL is wanted, preserving the preference and excluding unavailable or owned sets", () => {
+    const me = { ...spare(5, "HKFC A", sizes("L", { shorts: "M" })),
+      owner: { id: "recA", name: "Al", team: "HKFC A", status: "Member" }, wanted: sizes("L", { shorts: "XL" }) };
+    const large = spare(12, "HKFC A", sizes("XL", { shorts: "L" }));
+    const sets = [me, large,
+      spare(13, "HKFC A", sizes("L", { shorts: "M" })),
+      spare(14, "HKFC A", sizes("L")),
+      { ...large, id: "ordered", place: "on_order" as const },
+      { ...large, id: "owned", owner: me.owner },
+    ];
+    expect(suggestSwaps(me, sets)).toEqual([]);
+    expect(spareSwapOptions(me, sets, "shorts")).toEqual([large]);
+    expect(me.wanted.shorts).toBe("XL");
+  });
+
+  it("rejects shirt and number swaps before calling the database", async () => {
+    const calls = fake({});
+    for (const item of ["shirt", "shirtNo", "shirt_number_id"]) {
+      await expect(swapItem(env, convenor, { setId: "00000000-0000-0000-0000-00000000000a", otherId: "00000000-0000-0000-0000-00000000000b", item })).rejects.toMatchObject({ status: 400 });
+    }
+    expect(calls).toHaveLength(0);
   });
 
   it("hands a batch over in one call, telling the database whether the caller is an officer", async () => {
